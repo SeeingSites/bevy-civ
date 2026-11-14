@@ -6,21 +6,22 @@ Core systems from Civ 2/3 implemented modularly.
 
 ## Current Features
 - Hex map with terrain types and yields
-- Cities with production queues, completion, growth from food, and visuals
-- **Building effects**: Granary (food), Library (science), Barracks (production), Marketplace (gold), Wonders
-- Units with attack/defense/movement, selection, movement, and combat
-- A* pathfinding with terrain costs and visual path markers
+- **Tile improvements**: Farm (+food), Mine (+production), Road (movement)
+- Cities with production, growth from food, and visuals
+- Building effects (Granary, Library, Barracks, Marketplace, Wonders)
+- **Happiness system** with civil disorder risk (updates each turn)
+- Units with attack/defense/movement, selection, pathfinding, and combat
+- A* pathfinding with visual path markers
 - Settler city founding
-- Tech tree with prerequisites and research progress
-- Governments with production/science/support modifiers
-- Combat resolution on unit collision
+- Tech tree with prerequisites
+- Governments with modifiers
 - Multiple civilizations + basic AI
 - Fog of war
 - Diplomacy attitudes
 
 ## Controls
 - **WASD** — pan camera
-- **Space** — end turn (growth, production, research, AI, movement reset)
+- **Space** — end turn (growth, production, happiness, research, AI)
 - **Left click** — select unit, then click destination (path visualized)
 
 ## Roadmap toward Civ 2/3 parity
@@ -28,6 +29,8 @@ Core systems from Civ 2/3 implemented modularly.
 - [x] Cities + units + production completion
 - [x] City growth from food
 - [x] Building effects
+- [x] **Happiness / civil disorder**
+- [x] **Tile improvements**
 - [x] Tech tree + research
 - [x] Governments + modifiers
 - [x] Combat resolution
@@ -37,11 +40,11 @@ Core systems from Civ 2/3 implemented modularly.
 - [x] Multiple civs + basic AI
 - [x] Fog of war
 - [x] Diplomacy
-- [ ] Happiness / civil disorder
-- [ ] Resources and tile improvements (roads, farms, mines)
-- [ ] Advanced AI (research, war, expansion)
+- [ ] Resources (strategic/luxury)
+- [ ] Workers building improvements
+- [ ] Advanced AI
 - [ ] City / tech UI panels
-- [ ] Unique units per civilization
+- [ ] Unique units
 - [ ] Victory conditions
 
 ## Running
