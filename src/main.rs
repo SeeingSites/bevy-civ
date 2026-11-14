@@ -99,8 +99,12 @@ fn setup(
     spawn_unit(&mut commands, &mut meshes, &mut materials, &layout, start, UnitType::Settler);
     spawn_unit(&mut commands, &mut meshes, &mut materials, &layout, Hex::new(1, 0), UnitType::Worker);
 
+    // AI unique units
     let ai1 = Hex::new(6, -3);
-    spawn_unit(&mut commands, &mut meshes, &mut materials, &layout, ai1, UnitType::Warrior);
+    spawn_unit_for_owner(&mut commands, &mut meshes, &mut materials, &layout, ai1, UnitType::Legion, 1);
+
+    let ai2 = Hex::new(-5, 4);
+    spawn_unit_for_owner(&mut commands, &mut meshes, &mut materials, &layout, ai2, UnitType::WarChariot, 2);
 
     fog.reveal(start, 3);
 
@@ -352,24 +356,23 @@ fn process_turn(
         if let Some(completed) = city.process_production(&buildings) {
             match completed {
                 ProductionItem::Unit(ut) => {
-                    // Gate on strategic resources
                     let can_build = match ut.required_resource() {
                         Some(req) => has_strategic_resource(&tiles, req),
                         None => true,
                     };
                     if can_build {
-                        spawn_unit(
+                        spawn_unit_for_owner(
                             &mut commands,
                             &mut meshes,
                             &mut materials,
                             &map.layout,
                             city.position,
                             ut,
+                            city.owner,
                         );
                         info!("City {} completed {:?}", city.name, ut);
                     } else {
                         info!("Cannot build {:?}: missing strategic resource", ut);
-                        // Refund progress roughly
                         city.production_progress += ut.cost() / 2;
                     }
                 }
@@ -428,7 +431,6 @@ fn process_turn(
         }
     }
 
-    // Simple victory: control 5+ cities or research Democracy
     if player_cities >= 5 {
         state.victory = Some("Domination Victory!".into());
         info!("Victory: Domination");
