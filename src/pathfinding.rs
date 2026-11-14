@@ -5,7 +5,7 @@ use bevy::prelude::*;
 /// Movement cost for a terrain type. None = impassable.
 pub fn terrain_cost(terrain: Terrain) -> Option<u32> {
     match terrain {
-        Terrain::Water => None, // cannot enter without boats
+        Terrain::Water => None,
         Terrain::Grassland | Terrain::Plains => Some(1),
         Terrain::Desert => Some(1),
         Terrain::Forest => Some(2),
@@ -43,16 +43,55 @@ pub fn move_along_path(
     }
 
     let mut spent = 0;
-    // Skip the starting hex
     for &next in path.iter().skip(1) {
         if *movement_left == 0 {
             break;
         }
-        // For simplicity, each hex costs 1 movement regardless of terrain for now
-        // (terrain cost can be refined later)
         *unit_pos = next;
         *movement_left -= 1;
         spent += 1;
     }
     spent
+}
+
+/// Marker for temporary path visualization entities.
+#[derive(Component)]
+pub struct PathVisual;
+
+/// Spawn visual markers along a path (small yellow circles).
+pub fn visualize_path(
+    commands: &mut Commands,
+    meshes: &mut Assets<Mesh>,
+    materials: &mut Assets<ColorMaterial>,
+    layout: &hexx::HexLayout,
+    path: &[Hex],
+) {
+    let mesh = meshes.add(Circle::new(6.0));
+    let material = materials.add(Color::srgba(1.0, 0.9, 0.1, 0.7));
+
+    for (i, &hex) in path.iter().enumerate() {
+        // Skip the starting tile slightly or mark start differently
+        let color = if i == 0 {
+            Color::srgba(0.2, 0.8, 1.0, 0.6) // cyan for start
+        } else if i == path.len() - 1 {
+            Color::srgba(1.0, 0.3, 0.3, 0.8) // red for destination
+        } else {
+            Color::srgba(1.0, 0.9, 0.1, 0.7) // yellow for path
+        };
+
+        let pos = layout.hex_to_world_pos(hex);
+        commands.spawn((
+            PathVisual,
+            Mesh2d(mesh.clone()),
+            MeshMaterial2d(materials.add(color)),
+            Transform::from_xyz(pos.x, pos.y, 2.0),
+        ));
+    }
+}
+
+/// Clear all previous path visuals.
+pub fn clear_path_visuals(commands: &mut Commands, visuals: &Query<Entity, With<PathVisual>>) {
+    for entity in visuals.iter() {
+        commands.entity(entity).despawn();
+    }
 }
