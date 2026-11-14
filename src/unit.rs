@@ -1,5 +1,6 @@
 use bevy::prelude::*;
 use hexx::Hex;
+use crate::terrain::Improvement;
 
 #[derive(Component)]
 pub struct Unit {
@@ -7,6 +8,8 @@ pub struct Unit {
     pub movement_left: u32,
     pub owner: u32,
     pub position: Hex,
+    pub build_turns_left: Option<u32>,
+    pub current_build: Option<Improvement>,
 }
 
 #[derive(Component)]
@@ -55,6 +58,34 @@ impl UnitType {
             UnitType::Horseman => Color::srgb(0.7, 0.4, 0.1),
         }
     }
+
+    pub fn is_worker(&self) -> bool {
+        matches!(self, UnitType::Worker)
+    }
+}
+
+impl Unit {
+    pub fn start_build(&mut self, improvement: Improvement) {
+        if self.unit_type.is_worker() {
+            self.current_build = Some(improvement);
+            self.build_turns_left = Some(3); // 3 turns to build
+            self.movement_left = 0;
+        }
+    }
+
+    pub fn process_build(&mut self) -> Option<Improvement> {
+        if let Some(turns) = self.build_turns_left.as_mut() {
+            if *turns > 0 {
+                *turns -= 1;
+            }
+            if *turns == 0 {
+                let completed = self.current_build.take();
+                self.build_turns_left = None;
+                return completed;
+            }
+        }
+        None
+    }
 }
 
 pub fn spawn_unit(
@@ -75,6 +106,8 @@ pub fn spawn_unit(
             movement_left: mv,
             owner: 0,
             position: coord,
+            build_turns_left: None,
+            current_build: None,
         },
         Mesh2d(mesh),
         MeshMaterial2d(materials.add(unit_type.color())),
