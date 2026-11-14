@@ -48,6 +48,9 @@ cargo run --bin simulate -- --games 100 --max-turns 200
 
 Outputs average turns, scores, cities, population, techs, and victory distribution.
 
+### CI
+A GitHub Actions workflow (`.github/workflows/simulate.yml`) runs the simulator automatically on every push and pull request. You can also trigger it manually with custom game counts via the Actions tab.
+
 ## Running
 ```bash
 cargo run
