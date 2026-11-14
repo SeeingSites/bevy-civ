@@ -7,6 +7,7 @@ pub struct HexTile {
     pub coord: Hex,
     pub terrain: Terrain,
     pub improvements: Vec<Improvement>,
+    pub resource: Option<Resource>,
 }
 
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -25,6 +26,17 @@ pub enum Improvement {
     Farm,
     Mine,
     Road,
+}
+
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub enum Resource {
+    // Strategic
+    Horses,
+    Iron,
+    // Luxury
+    Wine,
+    Spices,
+    Silk,
 }
 
 impl Terrain {
@@ -59,12 +71,35 @@ impl Improvement {
         }
     }
 
-    /// Movement cost reduction (roads make movement cheaper)
     pub fn movement_cost_mod(&self) -> u32 {
         match self {
-            Improvement::Road => 0, // free or reduced
+            Improvement::Road => 0,
             _ => 1,
         }
+    }
+}
+
+impl Resource {
+    pub fn name(&self) -> &'static str {
+        match self {
+            Resource::Horses => "Horses",
+            Resource::Iron => "Iron",
+            Resource::Wine => "Wine",
+            Resource::Spices => "Spices",
+            Resource::Silk => "Silk",
+        }
+    }
+
+    pub fn is_strategic(&self) -> bool {
+        matches!(self, Resource::Horses | Resource::Iron)
+    }
+
+    pub fn is_luxury(&self) -> bool {
+        matches!(self, Resource::Wine | Resource::Spices | Resource::Silk)
+    }
+
+    pub fn happiness_bonus(&self) -> u32 {
+        if self.is_luxury() { 1 } else { 0 }
     }
 }
 
@@ -80,6 +115,12 @@ impl HexTile {
     pub fn has_road(&self) -> bool {
         self.improvements.contains(&Improvement::Road)
     }
+
+    pub fn add_improvement(&mut self, imp: Improvement) {
+        if !self.improvements.contains(&imp) {
+            self.improvements.push(imp);
+        }
+    }
 }
 
 pub fn random_terrain(rng: &mut impl Rng) -> Terrain {
@@ -91,5 +132,22 @@ pub fn random_terrain(rng: &mut impl Rng) -> Terrain {
         76..=88 => Terrain::Hills,
         89..=95 => Terrain::Desert,
         _ => Terrain::Mountain,
+    }
+}
+
+pub fn random_resource(rng: &mut impl Rng, terrain: Terrain) -> Option<Resource> {
+    if matches!(terrain, Terrain::Water) {
+        return None;
+    }
+    if rng.gen_range(0..100) < 12 {
+        Some(match rng.gen_range(0..5) {
+            0 => Resource::Horses,
+            1 => Resource::Iron,
+            2 => Resource::Wine,
+            3 => Resource::Spices,
+            _ => Resource::Silk,
+        })
+    } else {
+        None
     }
 }
