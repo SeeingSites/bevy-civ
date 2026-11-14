@@ -9,17 +9,23 @@ Core systems from Civ 2/3 implemented modularly. Goal: exceed FreeCiv.
 - Luxury resources give happiness bonuses
 - Strategic resource unit gating
 - Workers build Farm / Mine / Road
-- Cities with production, growth, and building effects
+- Cities with production, growth, building effects, and **specialists**
 - Happiness system with civil disorder
-- Units with pathfinding, combat, and selection
-- Unique units with special abilities (Legion, War Chariot, Immortal)
+- Units with pathfinding, combat, and selection (expanded unit roster)
+- Unique units with special abilities
 - Tech tree with prerequisites
-- Governments with modifiers
-- Advanced war AI (advance when stronger, retreat when weaker)
+- **Full governments** with production/science modifiers, corruption, free unit support, and upkeep
+- **Corruption** based on distance from capital (varies by government)
+- **Unit upkeep** (military units consume gold beyond free support)
+- Advanced war AI
 - AI that researches and founds cities
 - Fog of war and diplomacy
 - Victory conditions (Domination / Democracy)
+- **Score system** (population + techs + wonders)
+- **Barbarians** that spawn on empty land
+- **City capture** by military units
 - City UI panel and Tech UI panel
+- Wonder effects (Pyramids, Great Library, Hanging Gardens, Colossus, etc.)
 
 ## Controls
 - **WASD** — pan camera
@@ -34,7 +40,7 @@ Core systems from Civ 2/3 implemented modularly. Goal: exceed FreeCiv.
 - [x] Happiness / civil disorder
 - [x] Tile improvements + workers
 - [x] Tech tree + research
-- [x] Governments
+- [x] **Full government system**
 - [x] Combat + pathfinding + visualization
 - [x] City founding
 - [x] Multiple civs + AI
@@ -44,22 +50,21 @@ Core systems from Civ 2/3 implemented modularly. Goal: exceed FreeCiv.
 - [x] Unique units with abilities
 - [x] City / tech UI panels
 - [x] Advanced war AI
+- [x] **City specialists**
+- [x] **Unit upkeep & city support**
+- [x] **Corruption system**
+- [x] **Score system**
+- [x] **Barbarians**
+- [x] **More unit types & eras**
+- [x] **Wonder effects**
+- [x] **City capture**
 
-### To exceed FreeCiv
-- [ ] **Full government system**: Republic, Communism, Fundamentalism with unique effects (corruption, unit upkeep, science rate caps, celebration bonuses)
-- [ ] **City specialists**: Entertainer, Tax Collector, Scientist (convert citizens from tile work)
-- [ ] **Unit upkeep & city support**: Military units consume food/production based on government
-- [ ] **Corruption system**: Distance from capital reduces city output (varies by government)
-- [ ] **Trade routes / caravans**: Establish trade between cities for gold and science
-- [ ] **Space race victory**: Research future tech and build spaceship components
-- [ ] **Barbarians**: Random hostile units that spawn and raid
-- [ ] **Diplomacy treaties**: Peace, alliance, war declaration with AI responses
-- [ ] **Score system**: Points from population, techs, wonders, wonders for ranking
-- [ ] **More unit types & eras**: Phalanx, Catapult, Knight, Cannon, Rifleman, Tank, etc.
-- [ ] **Wonder effects**: Global bonuses (Pyramids food, Great Library science, etc.)
-- [ ] **Terrain transformation**: Workers can change terrain types (forest to plains, etc.)
-- [ ] **City capture**: Units can capture enemy cities instead of just destroying units
-- [ ] **Save / load game state**
+### Remaining
+- [ ] Trade routes / caravans
+- [ ] Space race victory
+- [ ] Diplomacy treaties (peace/alliance/war)
+- [ ] Terrain transformation
+- [ ] Save / load game state
 
 ## Running
 ```bash
