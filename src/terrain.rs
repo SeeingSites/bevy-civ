@@ -30,10 +30,8 @@ pub enum Improvement {
 
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum Resource {
-    // Strategic
     Horses,
     Iron,
-    // Luxury
     Wine,
     Spices,
     Silk,
@@ -54,6 +52,15 @@ impl Terrain {
 
     pub fn food(&self) -> u32 { match self { Terrain::Grassland => 2, Terrain::Plains => 1, Terrain::Forest => 1, _ => 0 } }
     pub fn production(&self) -> u32 { match self { Terrain::Hills => 2, Terrain::Mountain => 1, Terrain::Forest => 1, Terrain::Plains => 1, _ => 0 } }
+
+    pub fn can_transform_to(&self) -> Option<Terrain> {
+        match self {
+            Terrain::Forest => Some(Terrain::Plains),
+            Terrain::Desert => Some(Terrain::Plains),
+            Terrain::Hills => Some(Terrain::Plains),
+            _ => None,
+        }
+    }
 }
 
 impl Improvement {
@@ -119,6 +126,15 @@ impl HexTile {
     pub fn add_improvement(&mut self, imp: Improvement) {
         if !self.improvements.contains(&imp) {
             self.improvements.push(imp);
+        }
+    }
+
+    pub fn transform_terrain(&mut self) -> bool {
+        if let Some(new_terrain) = self.terrain.can_transform_to() {
+            self.terrain = new_terrain;
+            true
+        } else {
+            false
         }
     }
 }
