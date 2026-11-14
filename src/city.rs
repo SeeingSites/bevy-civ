@@ -1,6 +1,7 @@
 use bevy::prelude::*;
 use hexx::Hex;
 use crate::building::CityBuildings;
+use crate::diplomacy::Happiness;
 
 #[derive(Component)]
 pub struct City {
@@ -32,12 +33,10 @@ impl City {
         1 + self.population / 2 + buildings.total_science_bonus()
     }
 
-    /// Food needed to grow to next population
     pub fn food_to_grow(&self) -> u32 {
         10 + self.population * 5
     }
 
-    /// Process food accumulation and possible growth
     pub fn process_food(&mut self, buildings: &CityBuildings) -> bool {
         let food = self.food_per_turn(buildings);
         self.food_storage += food;
@@ -50,7 +49,6 @@ impl City {
         }
     }
 
-    /// Returns completed item if any
     pub fn process_production(&mut self, buildings: &CityBuildings) -> Option<ProductionItem> {
         let Some(item) = &self.production_queue else { return None };
         let cost = match item {
@@ -97,5 +95,6 @@ pub fn spawn_city(
         Transform::from_xyz(pos.x, pos.y, 0.5),
         Name::new(name),
         CityBuildings { buildings: vec![] },
+        Happiness::new(population),
     ));
 }
