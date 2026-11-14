@@ -5,17 +5,20 @@ Cross-platform Civilization-inspired 4X (hex grid) in Rust + Bevy.
 Core systems from Civ 2/3 implemented modularly.
 
 ## Current Features
-- Hex map with terrain, yields, improvements, and **resources**
-- **Luxury resources** (Wine, Spices, Silk) give happiness bonuses to nearby cities
-- Strategic resources (Horses, Iron) spawn on the map
-- Workers that build Farm / Mine / Road over multiple turns
+- Hex map with terrain, yields, improvements, and resources
+- Luxury resources give happiness bonuses
+- **Strategic resource unit gating**: Horseman requires Horses, Spearman/Archer require Iron
+- Workers build Farm / Mine / Road
 - Cities with production, growth, and building effects
-- Happiness system with civil disorder (now affected by luxuries)
+- Happiness system with civil disorder
 - Units with pathfinding, combat, and selection
 - Tech tree with prerequisites
 - Governments with modifiers
-- **Stronger AI**: researches techs, founds cities with settlers, moves units
+- AI that researches and founds cities
 - Fog of war and diplomacy
+- **Victory conditions**:
+  - Domination: control 5+ cities
+  - Science/Culture: research Democracy
 
 ## Controls
 - **WASD** — pan camera
@@ -32,13 +35,13 @@ Core systems from Civ 2/3 implemented modularly.
 - [x] Governments
 - [x] Combat + pathfinding + visualization
 - [x] City founding
-- [x] Multiple civs + improved AI (research + founding)
+- [x] Multiple civs + AI (research + founding)
 - [x] Fog of war + diplomacy
-- [ ] Strategic resource unit gating
+- [x] **Strategic resource unit gating**
+- [x] **Victory conditions**
 - [ ] City / tech UI panels
 - [ ] Unique units
-- [ ] Victory conditions
-- [ ] Advanced combat and war AI
+- [ ] Advanced war AI
 
 ## Running
 ```bash
