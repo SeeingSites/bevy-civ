@@ -32,6 +32,11 @@ struct GameState {
     government: Government,
 }
 
+#[derive(Resource, Default)]
+struct Selection {
+    selected_unit: Option<Entity>,
+}
+
 fn main() {
     App::new()
         .add_plugins(DefaultPlugins)
@@ -42,8 +47,9 @@ fn main() {
             government: Government::Despotism,
         })
         .insert_resource(TechState::default())
+        .insert_resource(Selection::default())
         .add_systems(Startup, setup)
-        .add_systems(Update, (camera_pan, tile_selection, process_turn, update_ui))
+        .add_systems(Update, (camera_pan, handle_click, process_turn, update_ui, update_unit_positions))
         .run();
 }
 
@@ -72,8 +78,8 @@ fn setup(
     }
 
     let start = Hex::ZERO;
-    spawn_city(&mut commands, start, "Capital".into(), 1);
-    spawn_unit(&mut commands, start, UnitType::Settler);
+    spawn_city(&mut commands, &mut meshes, &mut materials, &layout, start, "Capital".into(), 1);
+    spawn_unit(&mut commands, &mut meshes, &mut materials, &layout, start, UnitType::Settler);
 
     commands.insert_resource(MapData { layout });
 
@@ -117,19 +123,83 @@ fn camera_pan(
     if keyboard.pressed(KeyCode::KeyD) { t.translation.x += speed; }
 }
 
-fn tile_selection(
+fn handle_click(
     mouse: Res<ButtonInput<MouseButton>>,
     windows: Query<&Window>,
     cameras: Query<(&Camera, &GlobalTransform)>,
     map: Res<MapData>,
+    mut selection: ResMut<Selection>,
+    mut units: Query<(Entity, &mut Unit, &mut Transform)>,
+    cities: Query<&City>,
+    mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<ColorMaterial>>,
 ) {
     if !mouse.just_pressed(MouseButton::Left) { return; }
+
     let Ok(window) = windows.get_single() else { return };
     let Some(cursor) = window.cursor_position() else { return };
     let Ok((cam, gt)) = cameras.get_single() else { return };
     let Ok(world) = cam.viewport_to_world_2d(gt, cursor) else { return };
-    let hex = map.layout.world_pos_to_hex(world);
-    info!("Clicked hex {:?}", hex);
+    let clicked = map.layout.world_pos_to_hex(world);
+
+    // Check if clicked on a unit
+    let mut clicked_unit = None;
+    for (entity, unit, _) in &units {
+        if unit.position == clicked {
+            clicked_unit = Some(entity);
+            break;
+        }
+    }
+
+    if let Some(entity) = clicked_unit {
+        selection.selected_unit = Some(entity);
+        info!("Selected unit");
+        return;
+    }
+
+    // Move selected unit
+    if let Some(selected) = selection.selected_unit {
+        if let Ok((_, mut unit, mut transform)) = units.get_mut(selected) {
+            if unit.movement_left > 0 && unit.position.distance_to(clicked) <= 1 {
+                // Check for city founding with settler
+                if unit.unit_type == UnitType::Settler {
+                    let city_exists = cities.iter().any(|c| c.position == clicked);
+                    if !city_exists {
+                        spawn_city(
+                            &mut commands,
+                            &mut meshes,
+                            &mut materials,
+                            &map.layout,
+                            clicked,
+                            format!("City {}", cities.iter().count() + 1),
+                            1,
+                        );
+                        commands.entity(selected).despawn();
+                        selection.selected_unit = None;
+                        info!("Founded city");
+                        return;
+                    }
+                }
+
+                unit.position = clicked;
+                unit.movement_left -= 1;
+                let pos = map.layout.hex_to_world_pos(clicked);
+                transform.translation = Vec3::new(pos.x, pos.y, 1.0);
+                info!("Moved unit to {:?}", clicked);
+            }
+        }
+    }
+}
+
+fn update_unit_positions(
+    map: Res<MapData>,
+    mut units: Query<(&Unit, &mut Transform)>,
+) {
+    for (unit, mut transform) in &mut units {
+        let pos = map.layout.hex_to_world_pos(unit.position);
+        transform.translation = Vec3::new(pos.x, pos.y, 1.0);
+    }
 }
 
 fn process_turn(
@@ -137,46 +207,43 @@ fn process_turn(
     mut state: ResMut<GameState>,
     mut tech: ResMut<TechState>,
     mut cities: Query<&mut City>,
+    mut units: Query<&mut Unit>,
 ) {
     if !keyboard.just_pressed(KeyCode::Space) { return; }
 
     state.turn += 1;
 
-    // Apply government modifiers
     let prod_mod = state.government.production_modifier();
     let sci_mod = state.government.science_modifier();
 
     for mut city in &mut cities {
         let prod = (city.production_per_turn() as f32 * prod_mod) as u32;
         city.production_progress += prod;
-        // TODO: complete production items
+    }
+
+    // Reset unit movement
+    for mut unit in &mut units {
+        let (_, _, mv) = unit.unit_type.stats();
+        unit.movement_left = mv;
     }
 
     tech.science_per_turn = ((2 + state.turn / 10) as f32 * sci_mod) as u32;
     if let Some(completed) = tech.process_turn() {
         info!("Researched: {}", completed.name());
-        // Unlock government if researched
         if completed == Tech::Monarchy {
             state.government = Government::Monarchy;
-            info!("Government changed to Monarchy");
         }
         if completed == Tech::Democracy {
             state.government = Government::Democracy;
-            info!("Government changed to Democracy");
         }
     }
-
-    info!("Turn {} | Gov: {} | Tech progress: {}/{}",
-        state.turn,
-        state.government.name(),
-        tech.progress,
-        tech.current.map(|t| t.cost()).unwrap_or(0)
-    );
 }
 
 fn update_ui(
     state: Res<GameState>,
     tech: Res<TechState>,
+    selection: Res<Selection>,
+    units: Query<&Unit>,
     mut q: Query<&mut Text, With<Name>>,
 ) {
     let Ok(mut text) = q.get_single_mut() else { return };
@@ -187,13 +254,22 @@ fn update_ui(
         "-".to_string()
     };
 
+    let sel = if let Some(e) = selection.selected_unit {
+        if let Ok(u) = units.get(e) {
+            format!("{:?} (moves: {})", u.unit_type, u.movement_left)
+        } else {
+            "None".to_string()
+        }
+    } else {
+        "None".to_string()
+    };
+
     text.0 = format!(
-        "Turn: {} | Gov: {}\nTech: {} ({})\nGold: {} | Science/turn: {}\nSpace = End Turn | WASD = Pan",
+        "Turn: {} | Gov: {}\nTech: {} ({})\nSelected: {}\nSpace = End Turn | Click unit then destination",
         state.turn,
         state.government.name(),
         current,
         progress,
-        state.gold,
-        tech.science_per_turn
+        sel
     );
 }
