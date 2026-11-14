@@ -12,6 +12,7 @@ mod building;
 mod ai;
 mod fog;
 mod diplomacy;
+mod pathfinding;
 
 use city::*;
 use unit::*;
@@ -23,6 +24,7 @@ use building::*;
 use ai::*;
 use fog::*;
 use diplomacy::*;
+use pathfinding::*;
 
 const HEX_SIZE: f32 = 28.0;
 const MAP_RADIUS: u32 = 10;
@@ -178,57 +180,68 @@ fn handle_click(
 
     if let Some(selected) = selection.selected_unit {
         if let Ok((_, mut unit, mut transform)) = units.get_mut(selected) {
-            if unit.movement_left > 0 && unit.position.distance_to(clicked) <= 1 {
-                // Check for enemy unit on destination
-                let mut enemy_entity = None;
-                for (e, other, _) in &units {
-                    if other.position == clicked && other.owner != unit.owner {
-                        enemy_entity = Some((e, other.unit_type));
-                        break;
-                    }
-                }
+            if unit.movement_left == 0 {
+                return;
+            }
 
-                if let Some((enemy_e, enemy_type)) = enemy_entity {
-                    let terrain = tiles.iter().find(|t| t.coord == clicked).map(|t| t.terrain).unwrap_or(Terrain::Plains);
+            // Pathfind to destination
+            let Some(path) = find_path(unit.position, clicked, &tiles) else {
+                info!("No path to {:?}", clicked);
+                return;
+            };
+
+            // Check if destination has enemy for combat (only if adjacent after path)
+            let final_pos = path.last().copied().unwrap_or(unit.position);
+            let mut enemy_entity = None;
+            for (e, other, _) in &units {
+                if other.position == final_pos && other.owner != unit.owner {
+                    enemy_entity = Some((e, other.unit_type));
+                    break;
+                }
+            }
+
+            // Move along path up to movement points
+            let spent = move_along_path(&mut unit.position, &mut unit.movement_left, &path);
+            if spent > 0 {
+                let pos = map.layout.hex_to_world_pos(unit.position);
+                transform.translation = Vec3::new(pos.x, pos.y, 1.0);
+                fog.reveal(unit.position, 2);
+                info!("Moved {} hexes along path", spent);
+            }
+
+            // If we ended on an enemy, resolve combat
+            if let Some((enemy_e, enemy_type)) = enemy_entity {
+                if unit.position == final_pos {
+                    let terrain = tiles.iter().find(|t| t.coord == final_pos).map(|t| t.terrain).unwrap_or(Terrain::Plains);
                     let wins = resolve_combat(unit.unit_type, enemy_type, terrain);
                     log_combat(unit.unit_type, enemy_type, terrain, wins);
                     if wins {
                         commands.entity(enemy_e).despawn();
-                        unit.position = clicked;
-                        unit.movement_left -= 1;
                     } else {
                         commands.entity(selected).despawn();
                         selection.selected_unit = None;
                     }
-                    return;
                 }
+            }
 
-                // Settler founding
-                if unit.unit_type == UnitType::Settler {
-                    let city_exists = cities.iter().any(|c| c.position == clicked);
-                    let land = tiles.iter().any(|t| t.coord == clicked && t.terrain != Terrain::Water);
-                    if !city_exists && land {
-                        spawn_city(
-                            &mut commands,
-                            &mut meshes,
-                            &mut materials,
-                            &map.layout,
-                            clicked,
-                            format!("City {}", cities.iter().count() + 1),
-                            1,
-                        );
-                        commands.entity(selected).despawn();
-                        selection.selected_unit = None;
-                        fog.reveal(clicked, 2);
-                        return;
-                    }
+            // Settler founding on final tile if no enemy
+            if unit.unit_type == UnitType::Settler && enemy_entity.is_none() {
+                let city_exists = cities.iter().any(|c| c.position == unit.position);
+                let land = tiles.iter().any(|t| t.coord == unit.position && t.terrain != Terrain::Water);
+                if !city_exists && land && unit.position != path[0] {
+                    spawn_city(
+                        &mut commands,
+                        &mut meshes,
+                        &mut materials,
+                        &map.layout,
+                        unit.position,
+                        format!("City {}", cities.iter().count() + 1),
+                        1,
+                    );
+                    commands.entity(selected).despawn();
+                    selection.selected_unit = None;
+                    fog.reveal(unit.position, 2);
                 }
-
-                unit.position = clicked;
-                unit.movement_left -= 1;
-                let pos = map.layout.hex_to_world_pos(clicked);
-                transform.translation = Vec3::new(pos.x, pos.y, 1.0);
-                fog.reveal(clicked, 2);
             }
         }
     }
@@ -349,7 +362,7 @@ fn update_ui(
     let attitude = diplomacy.get_attitude(0, 1);
 
     text.0 = format!(
-        "Turn: {} | Gov: {}\nTech: {} ({})\nSelected: {}\nCivs: {} | Attitude vs AI: {}\nSpace = End Turn | Click unit then destination to move/found/attack",
+        "Turn: {} | Gov: {}\nTech: {} ({})\nSelected: {}\nCivs: {} | Attitude vs AI: {}\nSpace = End Turn | Click unit then destination (pathfinding)",
         state.turn,
         state.government.name(),
         current,
