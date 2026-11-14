@@ -81,7 +81,7 @@ impl Game {
             city.production += prod;
             if city.production >= 30 && rng.gen_bool(0.35) {
                 city.production -= 30;
-                if current_city_count + new_cities as usize < 10 && rng.gen_bool(0.5) {
+                if current_city_count + (new_cities as usize) < 10 && rng.gen_bool(0.5) {
                     new_cities += 1;
                 }
             }
