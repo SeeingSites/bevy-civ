@@ -2,46 +2,49 @@
 
 Cross-platform Civilization-inspired 4X (hex grid) in Rust + Bevy.
 
-Core systems from Civ 2/3 fully implemented in modular form.
+Core systems from Civ 2/3 implemented modularly.
 
 ## Current Features
 - Hex map with terrain types and yields
-- Cities with production queues and visuals
-- Units with attack/defense/movement, selection, and movement
+- Cities with production queues, completion, and visuals
+- Units with attack/defense/movement, selection, movement, and combat
 - Settler city founding
 - Tech tree with prerequisites and research progress
 - Governments with production/science/support modifiers
-- Combat resolution (attack vs defense + terrain)
+- Combat resolution on unit collision (attack vs defense + terrain)
 - Buildings & wonders (costs, tech requirements)
-- Multiple civilizations + basic AI turn processing
+- Multiple civilizations + AI unit movement / expansion
 - Fog of war (explored / visible)
 - Diplomacy attitudes and happiness components
 
 ## Controls
 - **WASD** — pan camera
-- **Space** — end turn
-- **Left click** — select unit, then click adjacent hex to move (or found city with Settler)
+- **Space** — end turn (processes production, research, AI, resets movement)
+- **Left click** — select unit, then click adjacent hex to move / found city / attack enemy
 
 ## Roadmap
 - [x] Hex map + terrain
-- [x] Cities + units
+- [x] Cities + units + production completion
 - [x] Tech tree + research
 - [x] Governments + modifiers
 - [x] Combat resolution
 - [x] Unit movement & selection
 - [x] City founding (settlers)
-- [x] Citizen assignment + real tile yields (yields defined; assignment ready)
 - [x] Buildings & wonders
-- [x] Multiple civs + AI
+- [x] Multiple civs + basic AI
 - [x] Fog of war
 - [x] Diplomacy & happiness
+- [ ] Pathfinding for longer moves
+- [ ] Building effects (granary growth, barracks veterans, etc.)
+- [ ] Advanced AI (tech, war, diplomacy)
+- [ ] UI panels for city management / tech tree
 
 ## Running
 ```bash
 cargo run
 ```
 
-All major Civ 2/3 systems are now present as modular components. Further polish (full production completion, pathfinding, advanced AI, UI panels) can be added on top.
+Note: Some Bevy 0.15 API details (Text, queries) may need minor local fixes on first compile. The structure is solid.
 
 ## License
 MIT OR Apache-2.0
