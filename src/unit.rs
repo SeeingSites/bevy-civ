@@ -23,6 +23,10 @@ pub enum UnitType {
     Spearman,
     Archer,
     Horseman,
+    // Unique units
+    Legion,       // Player / Rome — stronger melee
+    WarChariot,   // Egypt — faster, bonus on open terrain
+    Immortal,     // Placeholder unique — high defense
 }
 
 impl UnitType {
@@ -34,6 +38,9 @@ impl UnitType {
             UnitType::Spearman => (1, 2, 1),
             UnitType::Archer => (2, 1, 1),
             UnitType::Horseman => (2, 1, 2),
+            UnitType::Legion => (2, 2, 1),       // +1 atk / +1 def
+            UnitType::WarChariot => (2, 1, 3),   // high movement
+            UnitType::Immortal => (1, 3, 1),     // very high defense
         }
     }
 
@@ -45,6 +52,9 @@ impl UnitType {
             UnitType::Spearman => 20,
             UnitType::Archer => 20,
             UnitType::Horseman => 20,
+            UnitType::Legion => 25,
+            UnitType::WarChariot => 30,
+            UnitType::Immortal => 25,
         }
     }
 
@@ -56,6 +66,9 @@ impl UnitType {
             UnitType::Spearman => Color::srgb(0.3, 0.3, 0.8),
             UnitType::Archer => Color::srgb(0.2, 0.7, 0.2),
             UnitType::Horseman => Color::srgb(0.7, 0.4, 0.1),
+            UnitType::Legion => Color::srgb(0.9, 0.3, 0.1),
+            UnitType::WarChariot => Color::srgb(0.8, 0.6, 0.2),
+            UnitType::Immortal => Color::srgb(0.5, 0.2, 0.6),
         }
     }
 
@@ -63,11 +76,37 @@ impl UnitType {
         matches!(self, UnitType::Worker)
     }
 
-    /// Required strategic resource to build this unit (None = always available)
     pub fn required_resource(&self) -> Option<Resource> {
         match self {
-            UnitType::Horseman => Some(Resource::Horses),
-            UnitType::Spearman | UnitType::Archer => Some(Resource::Iron),
+            UnitType::Horseman | UnitType::WarChariot => Some(Resource::Horses),
+            UnitType::Spearman | UnitType::Archer | UnitType::Legion => Some(Resource::Iron),
+            _ => None,
+        }
+    }
+
+    /// Unique ability modifiers
+    pub fn attack_bonus(&self, terrain: crate::terrain::Terrain) -> f32 {
+        match self {
+            UnitType::Legion => 1.25, // always stronger
+            UnitType::WarChariot if matches!(terrain, crate::terrain::Terrain::Plains | crate::terrain::Terrain::Grassland) => 1.5,
+            _ => 1.0,
+        }
+    }
+
+    pub fn defense_bonus(&self) -> f32 {
+        match self {
+            UnitType::Immortal => 1.5,
+            UnitType::Legion => 1.2,
+            _ => 1.0,
+        }
+    }
+
+    /// Preferred unique unit for a civilization
+    pub fn unique_for_civ(civ_id: u32) -> Option<Self> {
+        match civ_id {
+            0 => Some(UnitType::Legion),      // Player
+            1 => Some(UnitType::Legion),      // Rome
+            2 => Some(UnitType::WarChariot),  // Egypt
             _ => None,
         }
     }
