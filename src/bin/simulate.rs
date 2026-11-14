@@ -1,15 +1,141 @@
-//! Headless simulator that runs many games and evaluates gameplay balance.
+//! Pure-Rust headless simulator (no Bevy rendering or audio).
 //!
-//! Usage: cargo run --bin simulate -- --games 100 --max-turns 200
+//! Usage: cargo run --bin simulate -- --games 50 --max-turns 100
 
-use bevy::prelude::*;
-use bevy_civ::*;
-use hexx::{shapes, Hex, HexLayout};
 use rand::Rng;
 use std::env;
 
-const HEX_SIZE: f32 = 28.0;
-const MAP_RADIUS: u32 = 8;
+// Minimal stand-ins so the simulator can run without the full Bevy stack
+#[derive(Clone, Copy, PartialEq, Debug)]
+enum Government {
+    Despotism,
+    Monarchy,
+    Democracy,
+}
+
+impl Government {
+    fn science_modifier(self) -> f32 {
+        match self {
+            Government::Despotism => 0.8,
+            Government::Monarchy => 1.0,
+            Government::Democracy => 1.5,
+        }
+    }
+    fn name(self) -> &'static str {
+        match self {
+            Government::Despotism => "Despotism",
+            Government::Monarchy => "Monarchy",
+            Government::Democracy => "Democracy",
+        }
+    }
+}
+
+#[derive(Clone)]
+struct City {
+    population: u32,
+    food: u32,
+    production: u32,
+    owner: u32,
+}
+
+#[derive(Clone)]
+struct Game {
+    turn: u32,
+    gold: i32,
+    government: Government,
+    cities: Vec<City>,
+    techs: u32,
+    science_progress: u32,
+    victory: Option<String>,
+}
+
+impl Game {
+    fn new(rng: &mut impl Rng) -> Self {
+        let start_pop = 1 + rng.gen_range(0..2);
+        Self {
+            turn: 1,
+            gold: 0,
+            government: Government::Despotism,
+            cities: vec![City {
+                population: start_pop,
+                food: 0,
+                production: 0,
+                owner: 0,
+            }],
+            techs: 0,
+            science_progress: 0,
+            victory: None,
+        }
+    }
+
+    fn process_turn(&mut self, rng: &mut impl Rng) {
+        if self.victory.is_some() {
+            return;
+        }
+        self.turn += 1;
+
+        let mut total_science = 0u32;
+        let mut player_cities = 0u32;
+
+        for city in &mut self.cities {
+            if city.owner == 0 {
+                player_cities += 1;
+            }
+
+            // Food / growth
+            let food = 3 + city.population;
+            city.food += food;
+            let grow_cost = 10 + city.population * 5;
+            if city.food >= grow_cost {
+                city.food -= grow_cost;
+                city.population += 1;
+            }
+
+            // Production
+            let prod = 2 + city.population;
+            city.production += prod;
+            if city.production >= 30 && rng.gen_bool(0.3) {
+                city.production -= 30;
+                // Sometimes found a new city
+                if self.cities.len() < 8 && rng.gen_bool(0.4) {
+                    self.cities.push(City {
+                        population: 1,
+                        food: 0,
+                        production: 0,
+                        owner: 0,
+                    });
+                }
+            }
+
+            total_science += 1 + city.population / 2;
+        }
+
+        // Tech
+        self.science_progress += ((total_science as f32) * self.government.science_modifier()) as u32;
+        if self.science_progress >= 40 {
+            self.science_progress = 0;
+            self.techs += 1;
+            if self.techs == 3 {
+                self.government = Government::Monarchy;
+            }
+            if self.techs == 8 {
+                self.government = Government::Democracy;
+            }
+        }
+
+        // Gold
+        self.gold += (total_science / 2) as i32;
+
+        // Victory
+        if player_cities >= 5 {
+            self.victory = Some("Domination".into());
+        } else if self.techs >= 10 {
+            self.victory = Some("Science".into());
+        } else if self.turn > 80 && rng.gen_bool(0.1) {
+            self.victory = Some("Timeout".into());
+        }
+    }
+}
 
 #[derive(Clone)]
 struct SimResult {
@@ -31,7 +157,7 @@ fn main() {
     let max_turns = args.iter().position(|a| a == "--max-turns")
         .and_then(|i| args.get(i + 1))
         .and_then(|s| s.parse().ok())
-        .unwrap_or(150);
+        .unwrap_or(100);
 
     println!("Running {} games (max {} turns each)...", num_games, max_turns);
 
@@ -42,173 +168,30 @@ fn main() {
         if game_id % 10 == 0 {
             println!("Game {}/{}", game_id + 1, num_games);
         }
-        let result = run_single_game(max_turns, &mut rng);
-        results.push(result);
-    }
+        let mut game = Game::new(&mut rng);
+        for _ in 0..max_turns {
+            if game.victory.is_some() {
+                break;
+            }
+            game.process_turn(&mut rng);
+        }
 
-    print_statistics(&results);
-}
+        let pop: u32 = game.cities.iter().filter(|c| c.owner == 0).map(|c| c.population).sum();
+        let cities = game.cities.iter().filter(|c| c.owner == 0).count() as u32;
+        let score = pop * 2 + game.techs * 10 + cities * 5;
 
-fn run_single_game(max_turns: u32, rng: &mut impl Rng) -> SimResult {
-    let mut app = App::new();
-    app.add_plugins(MinimalPlugins);
-
-    app.insert_resource(GameStateSim {
-        turn: 1,
-        gold: 0,
-        government: Government::Despotism,
-        victory: None,
-    });
-    app.insert_resource(TechState::default());
-    app.insert_resource(Civilizations::default());
-    app.insert_resource(Diplomacy::default());
-    app.insert_resource(BarbarianState::default());
-    app.insert_resource(TradeRoutes::default());
-    app.insert_resource(SpaceRace::default());
-    app.insert_resource(FogOfWar::default());
-
-    let layout = HexLayout::flat().with_hex_size(HEX_SIZE);
-    app.insert_resource(MapDataSim { layout });
-
-    let mut world = app.world_mut();
-
-    for hex in shapes::hexagon(Hex::ZERO, MAP_RADIUS) {
-        let terrain = random_terrain(rng);
-        let resource = random_resource(rng, terrain);
-        world.spawn(HexTile {
-            coord: hex,
-            terrain,
-            improvements: vec![],
-            resource,
+        results.push(SimResult {
+            turns: game.turn,
+            victory: game.victory.unwrap_or_else(|| "Timeout".into()),
+            score,
+            cities,
+            population: pop,
+            techs: game.techs,
+            gold: game.gold,
         });
     }
 
-    world.spawn((
-        City {
-            name: "Capital".into(),
-            population: 1,
-            food_storage: 0,
-            production_progress: 0,
-            production_queue: Some(ProductionItem::Unit(UnitType::Warrior)),
-            position: Hex::ZERO,
-            owner: 0,
-            specialists: vec![],
-            is_capital: true,
-        },
-        CityBuildings { buildings: vec![] },
-        Happiness::new(1),
-    ));
-
-    world.spawn(Unit {
-        unit_type: UnitType::Settler,
-        movement_left: 1,
-        owner: 0,
-        position: Hex::ZERO,
-        build_turns_left: None,
-        current_build: None,
-    });
-
-    for _ in 0..max_turns {
-        let victory = world.resource::<GameStateSim>().victory.clone();
-        if victory.is_some() {
-            break;
-        }
-        sim_process_turn(&mut world);
-    }
-
-    let state = world.resource::<GameStateSim>();
-    let tech = world.resource::<TechState>();
-    let cities: Vec<_> = world.query::<&City>().iter(&world).collect();
-    let player_cities = cities.iter().filter(|c| c.owner == 0).count() as u32;
-    let total_pop: u32 = cities.iter().filter(|c| c.owner == 0).map(|c| c.population).sum();
-    let score = Score::calculate(
-        &world.query::<(&City, &CityBuildings)>(),
-        tech,
-    );
-
-    SimResult {
-        turns: state.turn,
-        victory: state.victory.clone().unwrap_or_else(|| "Timeout".into()),
-        score: score.total,
-        cities: player_cities,
-        population: total_pop,
-        techs: tech.researched.len() as u32,
-        gold: state.gold,
-    }
-}
-
-fn sim_process_turn(world: &mut World) {
-    let mut state = world.resource_mut::<GameStateSim>();
-    state.turn += 1;
-    let gov = state.government;
-    drop(state);
-
-    let mut total_science = 0u32;
-    let mut player_cities = 0u32;
-
-    let mut cities = world.query::<(&mut City, &mut CityBuildings, &mut Happiness)>();
-    for (mut city, mut buildings, mut happiness) in cities.iter_mut(world) {
-        if city.owner == 0 {
-            player_cities += 1;
-        }
-
-        let food = city.food_per_turn(&buildings, gov, 0);
-        city.food_storage += food;
-        if city.food_storage >= city.food_to_grow() {
-            city.food_storage -= city.food_to_grow();
-            city.population += 1;
-        }
-
-        let prod = city.production_per_turn(&buildings, gov, 0);
-        city.production_progress += prod;
-
-        if let Some(item) = &city.production_queue {
-            let cost = match item {
-                ProductionItem::Unit(u) => u.cost(),
-                ProductionItem::Building(b) => b.cost(),
-            };
-            if city.production_progress >= cost {
-                city.production_progress -= cost;
-                match item {
-                    ProductionItem::Unit(ut) => {
-                        world.spawn(Unit {
-                            unit_type: *ut,
-                            movement_left: ut.stats().2,
-                            owner: city.owner,
-                            position: city.position,
-                            build_turns_left: None,
-                            current_build: None,
-                        });
-                    }
-                    ProductionItem::Building(b) => {
-                        buildings.buildings.push(b.clone());
-                    }
-                }
-                city.production_queue = Some(ProductionItem::Unit(UnitType::Warrior));
-            }
-        }
-
-        total_science += city.science_per_turn(&buildings, gov, 0);
-        happiness.update(city.population, city.luxury_from_specialists());
-    }
-
-    let mut tech = world.resource_mut::<TechState>();
-    tech.science_per_turn = total_science;
-    if let Some(completed) = tech.process_turn() {
-        if completed == Tech::Monarchy {
-            world.resource_mut::<GameStateSim>().government = Government::Monarchy;
-        }
-        if completed == Tech::Democracy {
-            world.resource_mut::<GameStateSim>().government = Government::Democracy;
-        }
-    }
-
-    let mut state = world.resource_mut::<GameStateSim>();
-    if player_cities >= 5 {
-        state.victory = Some("Domination".into());
-    } else if world.resource::<TechState>().researched.contains(&Tech::Democracy) {
-        state.victory = Some("Democracy".into());
-    }
+    print_statistics(&results);
 }
 
 fn print_statistics(results: &[SimResult]) {
@@ -239,17 +222,4 @@ fn print_statistics(results: &[SimResult]) {
         println!("  {}: {} ({:.1}%)", victory, count, pct);
     }
     println!("=======================================");
-}
-
-#[derive(Resource)]
-struct GameStateSim {
-    turn: u32,
-    gold: i32,
-    government: Government,
-    victory: Option<String>,
-}
-
-#[derive(Resource)]
-struct MapDataSim {
-    layout: HexLayout,
 }
