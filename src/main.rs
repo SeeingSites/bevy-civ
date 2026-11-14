@@ -46,6 +46,7 @@ struct GameState {
 #[derive(Resource, Default)]
 struct Selection {
     selected_unit: Option<Entity>,
+    selected_city: Option<Entity>,
 }
 
 fn main() {
@@ -99,7 +100,6 @@ fn setup(
     spawn_unit(&mut commands, &mut meshes, &mut materials, &layout, start, UnitType::Settler);
     spawn_unit(&mut commands, &mut meshes, &mut materials, &layout, Hex::new(1, 0), UnitType::Worker);
 
-    // AI unique units
     let ai1 = Hex::new(6, -3);
     spawn_unit_for_owner(&mut commands, &mut meshes, &mut materials, &layout, ai1, UnitType::Legion, 1);
 
@@ -110,6 +110,7 @@ fn setup(
 
     commands.insert_resource(MapData { layout });
 
+    // Main HUD
     commands.spawn((
         Text::new("Loading..."),
         TextFont { font_size: 16.0, ..default() },
@@ -121,6 +122,36 @@ fn setup(
             ..default()
         },
         Name::new("hud"),
+    ));
+
+    // City panel
+    commands.spawn((
+        Text::new(""),
+        TextFont { font_size: 14.0, ..default() },
+        TextColor(Color::srgb(0.9, 0.9, 0.7)),
+        Node {
+            position_type: PositionType::Absolute,
+            top: Val::Px(8.0),
+            right: Val::Px(8.0),
+            width: Val::Px(280.0),
+            ..default()
+        },
+        Name::new("city_panel"),
+    ));
+
+    // Tech panel
+    commands.spawn((
+        Text::new(""),
+        TextFont { font_size: 14.0, ..default() },
+        TextColor(Color::srgb(0.7, 0.9, 1.0)),
+        Node {
+            position_type: PositionType::Absolute,
+            bottom: Val::Px(8.0),
+            left: Val::Px(8.0),
+            width: Val::Px(400.0),
+            ..default()
+        },
+        Name::new("tech_panel"),
     ));
 }
 
@@ -180,7 +211,7 @@ fn handle_click(
     map: Res<MapData>,
     mut selection: ResMut<Selection>,
     mut units: Query<(Entity, &mut Unit, &mut Transform)>,
-    cities: Query<&City>,
+    cities: Query<(Entity, &City)>,
     tiles: Query<&HexTile>,
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
@@ -198,6 +229,20 @@ fn handle_click(
     let Ok(world) = cam.viewport_to_world_2d(gt, cursor) else { return };
     let clicked = map.layout.world_pos_to_hex(world);
 
+    // Check for city click
+    let mut clicked_city = None;
+    for (entity, city) in &cities {
+        if city.position == clicked {
+            clicked_city = Some(entity);
+            break;
+        }
+    }
+    if let Some(entity) = clicked_city {
+        selection.selected_city = Some(entity);
+        selection.selected_unit = None;
+        return;
+    }
+
     let mut clicked_unit = None;
     for (entity, unit, _) in &units {
         if unit.position == clicked {
@@ -208,8 +253,11 @@ fn handle_click(
 
     if let Some(entity) = clicked_unit {
         selection.selected_unit = Some(entity);
+        selection.selected_city = None;
         return;
     }
+
+    selection.selected_city = None;
 
     if let Some(selected) = selection.selected_unit {
         if let Ok((_, mut unit, mut transform)) = units.get_mut(selected) {
@@ -262,7 +310,7 @@ fn handle_click(
             }
 
             if unit.unit_type == UnitType::Settler && enemy_entity.is_none() {
-                let city_exists = cities.iter().any(|c| c.position == unit.position);
+                let city_exists = cities.iter().any(|(_, c)| c.position == unit.position);
                 let land = tiles.iter().any(|t| t.coord == unit.position && t.terrain != Terrain::Water);
                 if !city_exists && land && unit.position != path[0] {
                     spawn_city(
@@ -449,51 +497,119 @@ fn update_ui(
     tech: Res<TechState>,
     selection: Res<Selection>,
     units: Query<&Unit>,
-    cities: Query<(&City, &Happiness)>,
+    cities: Query<(Entity, &City, &CityBuildings, &Happiness)>,
     civs: Res<Civilizations>,
     diplomacy: Res<Diplomacy>,
-    mut q: Query<&mut Text, With<Name>>,
+    mut hud: Query<&mut Text, (With<Name>, Without<CityPanelMarker>, Without<TechPanelMarker>)>,
+    mut city_panel: Query<&mut Text, (With<Name>, With<CityPanelMarker>)>,
+    mut tech_panel: Query<&mut Text, (With<Name>, With<TechPanelMarker>)>,
 ) {
-    let Ok(mut text) = q.get_single_mut() else { return };
-    let current = tech.current.map(|t| t.name()).unwrap_or("None");
-    let progress = if let Some(t) = tech.current {
-        format!("{}/{}", tech.progress, t.cost())
-    } else {
-        "-".to_string()
-    };
+    // Main HUD
+    if let Ok(mut text) = hud.get_single_mut() {
+        let current = tech.current.map(|t| t.name()).unwrap_or("None");
+        let progress = if let Some(t) = tech.current {
+            format!("{}/{}", tech.progress, t.cost())
+        } else {
+            "-".to_string()
+        };
 
-    let sel = if let Some(e) = selection.selected_unit {
-        if let Ok(u) = units.get(e) {
-            let build = if let Some(imp) = u.current_build {
-                format!(" building {:?} ({})", imp, u.build_turns_left.unwrap_or(0))
+        let sel = if let Some(e) = selection.selected_unit {
+            if let Ok(u) = units.get(e) {
+                let build = if let Some(imp) = u.current_build {
+                    format!(" building {:?} ({})", imp, u.build_turns_left.unwrap_or(0))
+                } else {
+                    "".to_string()
+                };
+                format!("{:?} (moves: {}){}", u.unit_type, u.movement_left, build)
             } else {
-                "".to_string()
-            };
-            format!("{:?} (moves: {}){}", u.unit_type, u.movement_left, build)
+                "None".to_string()
+            }
         } else {
             "None".to_string()
+        };
+
+        let total_pop: u32 = cities.iter().map(|(_, c, _, _)| c.population).sum();
+        let disorder = cities.iter().filter(|(_, _, _, h)| h.in_disorder()).count();
+        let attitude = diplomacy.get_attitude(0, 1);
+
+        let victory_text = state.victory.as_deref().unwrap_or("");
+
+        text.0 = format!(
+            "Turn: {} | Gov: {} | Pop: {} | Disorder: {}\nTech: {} ({})\nSelected: {}\nCivs: {} | Attitude vs AI: {}\n{}\nSpace = End Turn | F/M/R = Farm/Mine/Road",
+            state.turn,
+            state.government.name(),
+            total_pop,
+            disorder,
+            current,
+            progress,
+            sel,
+            civs.players.len(),
+            attitude,
+            victory_text
+        );
+    }
+
+    // City panel
+    if let Ok(mut text) = city_panel.get_single_mut() {
+        if let Some(entity) = selection.selected_city {
+            if let Ok((_, city, buildings, happiness)) = cities.get(entity) {
+                let queue = match &city.production_queue {
+                    Some(ProductionItem::Unit(u)) => format!("{:?}", u),
+                    Some(ProductionItem::Building(b)) => b.name().to_string(),
+                    None => "None".to_string(),
+                };
+                let building_list = buildings.buildings.iter()
+                    .map(|b| b.name())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                text.0 = format!(
+                    "CITY: {}\nPop: {} | Food: {}/{}\nProd: {}\nQueue: {}\nBuildings: {}\nHappy: {} Content: {} Unhappy: {}\n{}",
+                    city.name,
+                    city.population,
+                    city.food_storage,
+                    city.food_to_grow(),
+                    city.production_progress,
+                    queue,
+                    if building_list.is_empty() { "None" } else { &building_list },
+                    happiness.happy,
+                    happiness.content,
+                    happiness.unhappy,
+                    if happiness.in_disorder() { "IN DISORDER" } else { "Content" }
+                );
+            } else {
+                text.0 = "No city selected".into();
+            }
+        } else {
+            text.0 = "Click a city to inspect".into();
         }
-    } else {
-        "None".to_string()
-    };
+    }
 
-    let total_pop: u32 = cities.iter().map(|(c, _)| c.population).sum();
-    let disorder = cities.iter().filter(|(_, h)| h.in_disorder()).count();
-    let attitude = diplomacy.get_attitude(0, 1);
+    // Tech panel
+    if let Ok(mut text) = tech_panel.get_single_mut() {
+        let researched: Vec<_> = tech.researched.iter().map(|t| t.name()).collect();
+        let available: Vec<_> = [
+            Tech::Pottery, Tech::AnimalHusbandry, Tech::Mining, Tech::BronzeWorking,
+            Tech::Masonry, Tech::Alphabet, Tech::Writing, Tech::Monarchy, Tech::Democracy,
+        ]
+        .into_iter()
+        .filter(|t| tech.can_research(*t))
+        .map(|t| t.name())
+        .collect();
 
-    let victory_text = state.victory.as_deref().unwrap_or("");
-
-    text.0 = format!(
-        "Turn: {} | Gov: {} | Pop: {} | Disorder: {}\nTech: {} ({})\nSelected: {}\nCivs: {} | Attitude vs AI: {}\n{}\nSpace = End Turn | F/M/R = Farm/Mine/Road",
-        state.turn,
-        state.government.name(),
-        total_pop,
-        disorder,
-        current,
-        progress,
-        sel,
-        civs.players.len(),
-        attitude,
-        victory_text
-    );
+        text.0 = format!(
+            "TECH TREE\nCurrent: {} ({}/{})\nResearched: {}\nAvailable: {}",
+            tech.current.map(|t| t.name()).unwrap_or("None"),
+            tech.progress,
+            tech.current.map(|t| t.cost()).unwrap_or(0),
+            if researched.is_empty() { "None".into() } else { researched.join(", ") },
+            if available.is_empty() { "None".into() } else { available.join(", ") }
+        );
+    }
 }
+
+// Marker components for UI panels
+#[derive(Component)]
+struct CityPanelMarker;
+
+#[derive(Component)]
+struct TechPanelMarker;
