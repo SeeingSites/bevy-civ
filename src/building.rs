@@ -56,9 +56,65 @@ impl Building {
             Building::HangingGardens => Some(crate::tech::Tech::Monarchy),
         }
     }
+
+    /// Food bonus from this building
+    pub fn food_bonus(&self) -> u32 {
+        match self {
+            Building::Granary => 2,
+            Building::HangingGardens => 3,
+            _ => 0,
+        }
+    }
+
+    /// Science bonus
+    pub fn science_bonus(&self) -> u32 {
+        match self {
+            Building::Library => 2,
+            Building::GreatLibrary => 5,
+            _ => 0,
+        }
+    }
+
+    /// Production bonus
+    pub fn production_bonus(&self) -> u32 {
+        match self {
+            Building::Barracks => 1,
+            _ => 0,
+        }
+    }
+
+    /// Gold / trade bonus
+    pub fn gold_bonus(&self) -> u32 {
+        match self {
+            Building::Marketplace => 2,
+            _ => 0,
+        }
+    }
 }
 
 #[derive(Component)]
 pub struct CityBuildings {
     pub buildings: Vec<Building>,
+}
+
+impl CityBuildings {
+    pub fn has(&self, building: Building) -> bool {
+        self.buildings.contains(&building)
+    }
+
+    pub fn total_food_bonus(&self) -> u32 {
+        self.buildings.iter().map(|b| b.food_bonus()).sum()
+    }
+
+    pub fn total_science_bonus(&self) -> u32 {
+        self.buildings.iter().map(|b| b.science_bonus()).sum()
+    }
+
+    pub fn total_production_bonus(&self) -> u32 {
+        self.buildings.iter().map(|b| b.production_bonus()).sum()
+    }
+
+    pub fn total_gold_bonus(&self) -> u32 {
+        self.buildings.iter().map(|b| b.gold_bonus()).sum()
+    }
 }
