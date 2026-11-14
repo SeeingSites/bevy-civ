@@ -13,6 +13,8 @@ mod ai;
 mod fog;
 mod diplomacy;
 mod pathfinding;
+mod score;
+mod barbarians;
 
 use city::*;
 use unit::*;
@@ -25,6 +27,8 @@ use ai::*;
 use fog::*;
 use diplomacy::*;
 use pathfinding::*;
+use score::*;
+use barbarians::*;
 
 const HEX_SIZE: f32 = 28.0;
 const MAP_RADIUS: u32 = 10;
@@ -41,6 +45,7 @@ struct GameState {
     science: i32,
     government: Government,
     victory: Option<String>,
+    score: Score,
 }
 
 #[derive(Resource, Default)]
@@ -64,12 +69,14 @@ fn main() {
             science: 0,
             government: Government::Despotism,
             victory: None,
+            score: Score::default(),
         })
         .insert_resource(TechState::default())
         .insert_resource(Selection::default())
         .insert_resource(Civilizations::default())
         .insert_resource(FogOfWar::default())
         .insert_resource(Diplomacy::default())
+        .insert_resource(BarbarianState::default())
         .add_systems(Startup, setup)
         .add_systems(Update, (camera_pan, handle_click, handle_worker_build, process_turn, update_ui, update_unit_positions))
         .run();
@@ -116,7 +123,6 @@ fn setup(
 
     commands.insert_resource(MapData { layout });
 
-    // Main HUD
     commands.spawn((
         Text::new("Loading..."),
         TextFont { font_size: 16.0, ..default() },
@@ -130,7 +136,6 @@ fn setup(
         Name::new("hud"),
     ));
 
-    // City panel
     commands.spawn((
         Text::new("Click a city"),
         TextFont { font_size: 14.0, ..default() },
@@ -146,7 +151,6 @@ fn setup(
         CityPanel,
     ));
 
-    // Tech panel
     commands.spawn((
         Text::new("Tech"),
         TextFont { font_size: 14.0, ..default() },
@@ -219,7 +223,7 @@ fn handle_click(
     map: Res<MapData>,
     mut selection: ResMut<Selection>,
     mut units: Query<(Entity, &mut Unit, &mut Transform)>,
-    cities: Query<(Entity, &City)>,
+    mut cities: Query<(Entity, &mut City)>,
     tiles: Query<&HexTile>,
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
@@ -316,6 +320,17 @@ fn handle_click(
                 }
             }
 
+            // City capture
+            if unit.unit_type.is_military() && unit.owner == 0 {
+                for (e, mut city) in &mut cities {
+                    if city.position == unit.position && city.owner != 0 {
+                        city.owner = 0;
+                        info!("Captured city {}", city.name);
+                        break;
+                    }
+                }
+            }
+
             if unit.unit_type == UnitType::Settler && enemy_entity.is_none() {
                 let city_exists = cities.iter().any(|(_, c)| c.position == unit.position);
                 let land = tiles.iter().any(|t| t.coord == unit.position && t.terrain != Terrain::Water);
@@ -362,6 +377,7 @@ fn process_turn(
     mut civs: ResMut<Civilizations>,
     mut fog: ResMut<FogOfWar>,
     mut diplomacy: ResMut<Diplomacy>,
+    mut barbarians: ResMut<BarbarianState>,
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<ColorMaterial>>,
@@ -372,23 +388,27 @@ fn process_turn(
 
     state.turn += 1;
 
-    let prod_mod = state.government.production_modifier();
-    let sci_mod = state.government.science_modifier();
-
+    let gov = state.government;
     let mut total_science = 0;
     let mut disorder_count = 0;
     let mut player_cities = 0;
+    let mut total_gold = 0i32;
+
+    // Find capital for distance calculations
+    let capital_pos = cities.iter().find(|(c, _, _)| c.is_capital).map(|(c, _, _)| c.position);
 
     for (mut city, mut buildings, mut happiness) in &mut cities {
         if city.owner == 0 {
             player_cities += 1;
         }
 
-        if city.process_food(&buildings) {
+        let dist = capital_pos.map(|cp| city.position.distance_to(cp)).unwrap_or(0);
+
+        if city.process_food(&buildings, gov, dist) {
             info!("{} grew to population {}", city.name, city.population);
         }
 
-        let mut luxury_bonus = 0u32;
+        let mut luxury_bonus = city.luxury_from_specialists();
         for tile in tiles.iter() {
             if tile.coord.distance_to(city.position) <= 2 {
                 if let Some(res) = tile.resource {
@@ -405,10 +425,7 @@ fn process_turn(
             info!("{} is in civil disorder!", city.name);
         }
 
-        let prod = ((city.production_per_turn(&buildings) as f32) * prod_mod) as u32;
-        city.production_progress += prod;
-
-        if let Some(completed) = city.process_production(&buildings) {
+        if let Some(completed) = city.process_production(&buildings, gov, dist) {
             match completed {
                 ProductionItem::Unit(ut) => {
                     let can_build = match ut.required_resource() {
@@ -438,10 +455,26 @@ fn process_turn(
             }
         }
 
-        total_science += city.science_per_turn(&buildings);
+        total_science += city.science_per_turn(&buildings, gov, dist);
+        total_gold += city.gold_per_turn(&buildings) as i32;
     }
 
-    tech.science_per_turn = ((total_science as f32) * sci_mod) as u32;
+    state.gold += total_gold;
+    tech.science_per_turn = total_science;
+
+    // Unit upkeep (simplified)
+    let free_support = gov.free_unit_support();
+    let mut military_count = 0u32;
+    for unit in units.iter() {
+        if unit.owner == 0 && unit.unit_type.is_military() {
+            military_count += 1;
+        }
+    }
+    if military_count > free_support {
+        let upkeep = (military_count - free_support) as i32 * gov.unit_upkeep_food() as i32;
+        state.gold -= upkeep;
+        if state.gold < 0 { state.gold = 0; }
+    }
 
     for mut unit in &mut units {
         if let Some(completed_imp) = unit.process_build() {
@@ -470,6 +503,16 @@ fn process_turn(
         &map.layout,
     );
 
+    process_barbarians(
+        &mut barbarians,
+        &mut commands,
+        &mut meshes,
+        &mut materials,
+        &map.layout,
+        &tiles,
+        &units,
+    );
+
     let unit_positions: Vec<_> = units.iter().map(|u| u.position).collect();
     let city_positions: Vec<_> = cities.iter().map(|(c, _, _)| c.position).collect();
     fog.update_visibility(&unit_positions, &city_positions);
@@ -485,6 +528,9 @@ fn process_turn(
             state.government = Government::Democracy;
         }
     }
+
+    // Score
+    state.score = Score::calculate(&cities, &tech);
 
     if player_cities >= 5 {
         state.victory = Some("Domination Victory!".into());
@@ -541,9 +587,11 @@ fn update_ui(
         let victory_text = state.victory.as_deref().unwrap_or("");
 
         text.0 = format!(
-            "Turn: {} | Gov: {} | Pop: {} | Disorder: {}\nTech: {} ({})\nSelected: {}\nCivs: {} | Attitude vs AI: {}\n{}\nSpace = End Turn | F/M/R = Farm/Mine/Road",
+            "Turn: {} | Gov: {} | Gold: {} | Score: {}\nPop: {} | Disorder: {}\nTech: {} ({})\nSelected: {}\nCivs: {} | Attitude: {}\n{}\nSpace = End Turn | F/M/R = Farm/Mine/Road",
             state.turn,
             state.government.name(),
+            state.gold,
+            state.score.total,
             total_pop,
             disorder,
             current,
@@ -567,8 +615,9 @@ fn update_ui(
                     .map(|b| b.name())
                     .collect::<Vec<_>>()
                     .join(", ");
+                let specialists = city.specialists.iter().map(|s| format!("{:?}", s)).collect::<Vec<_>>().join(", ");
                 text.0 = format!(
-                    "CITY: {}\nPop: {} | Food: {}/{}\nProd: {}\nQueue: {}\nBuildings: {}\nHappy: {} Content: {} Unhappy: {}\n{}",
+                    "CITY: {}\nPop: {} | Food: {}/{}\nProd: {}\nQueue: {}\nBuildings: {}\nSpecialists: {}\nHappy: {} Content: {} Unhappy: {}\n{}",
                     city.name,
                     city.population,
                     city.food_storage,
@@ -576,6 +625,7 @@ fn update_ui(
                     city.production_progress,
                     queue,
                     if building_list.is_empty() { "None" } else { &building_list },
+                    if specialists.is_empty() { "None" } else { &specialists },
                     happiness.happy,
                     happiness.content,
                     happiness.unhappy,
