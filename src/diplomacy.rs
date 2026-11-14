@@ -34,7 +34,6 @@ pub struct Happiness {
 
 impl Happiness {
     pub fn new(population: u32) -> Self {
-        // Simple model: base content, some become unhappy as city grows
         let happy = 1;
         let unhappy = if population > 4 { population - 4 } else { 0 };
         let content = population.saturating_sub(happy + unhappy);
@@ -49,10 +48,10 @@ impl Happiness {
         self.unhappy > self.happy + self.content
     }
 
-    /// Recalculate based on population and luxury/buildings (simplified)
+    /// Recalculate based on population and luxury resources
     pub fn update(&mut self, population: u32, luxury_bonus: u32) {
         self.happy = 1 + luxury_bonus;
-        self.unhappy = if population > 6 { (population - 6) / 2 } else { 0 };
+        self.unhappy = if population > 5 { (population - 5) / 2 } else { 0 };
         self.content = population.saturating_sub(self.happy + self.unhappy);
     }
 }
