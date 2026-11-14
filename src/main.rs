@@ -87,7 +87,7 @@ fn setup(
             Mesh2d(mesh.clone()),
             MeshMaterial2d(materials.add(terrain.color())),
             Transform::from_xyz(pos.x, pos.y, 0.0),
-            HexTile { coord: hex, terrain },
+            HexTile { coord: hex, terrain, improvements: vec![] },
         ));
     }
 
@@ -266,7 +266,7 @@ fn process_turn(
     keyboard: Res<ButtonInput<KeyCode>>,
     mut state: ResMut<GameState>,
     mut tech: ResMut<TechState>,
-    mut cities: Query<(&mut City, &mut CityBuildings)>,
+    mut cities: Query<(&mut City, &mut CityBuildings, &mut Happiness)>,
     mut units: Query<&mut Unit>,
     tiles: Query<&HexTile>,
     civs: Res<Civilizations>,
@@ -285,14 +285,20 @@ fn process_turn(
     let sci_mod = state.government.science_modifier();
 
     let mut total_science = 0;
+    let mut disorder_count = 0;
 
-    for (mut city, mut buildings) in &mut cities {
-        // Growth
+    for (mut city, mut buildings, mut happiness) in &mut cities {
         if city.process_food(&buildings) {
             info!("{} grew to population {}", city.name, city.population);
         }
 
-        // Production with building bonuses
+        // Update happiness
+        happiness.update(city.population, 0);
+        if happiness.in_disorder() {
+            disorder_count += 1;
+            info!("{} is in civil disorder!", city.name);
+        }
+
         let prod = ((city.production_per_turn(&buildings) as f32) * prod_mod) as u32;
         city.production_progress += prod;
 
@@ -319,7 +325,6 @@ fn process_turn(
         total_science += city.science_per_turn(&buildings);
     }
 
-    // Apply science from cities
     tech.science_per_turn = ((total_science as f32) * sci_mod) as u32;
 
     for mut unit in &mut units {
@@ -327,10 +332,10 @@ fn process_turn(
         unit.movement_left = mv;
     }
 
-    process_ai_turn(&civs, units.reborrow(), cities.reborrow().map(|(c, _)| c), tiles);
+    process_ai_turn(&civs, units.reborrow(), cities.reborrow().map(|(c, _, _)| c), tiles);
 
     let unit_positions: Vec<_> = units.iter().map(|u| u.position).collect();
-    let city_positions: Vec<_> = cities.iter().map(|(c, _)| c.position).collect();
+    let city_positions: Vec<_> = cities.iter().map(|(c, _, _)| c.position).collect();
     fog.update_visibility(&unit_positions, &city_positions);
 
     diplomacy.change_attitude(0, 1, -1);
@@ -344,6 +349,10 @@ fn process_turn(
             state.government = Government::Democracy;
         }
     }
+
+    if disorder_count > 0 {
+        info!("{} cities in disorder", disorder_count);
+    }
 }
 
 fn update_ui(
@@ -351,7 +360,7 @@ fn update_ui(
     tech: Res<TechState>,
     selection: Res<Selection>,
     units: Query<&Unit>,
-    cities: Query<&City>,
+    cities: Query<(&City, &Happiness)>,
     civs: Res<Civilizations>,
     diplomacy: Res<Diplomacy>,
     mut q: Query<&mut Text, With<Name>>,
@@ -374,14 +383,16 @@ fn update_ui(
         "None".to_string()
     };
 
-    let total_pop: u32 = cities.iter().map(|c| c.population).sum();
+    let total_pop: u32 = cities.iter().map(|(c, _)| c.population).sum();
+    let disorder = cities.iter().filter(|(_, h)| h.in_disorder()).count();
     let attitude = diplomacy.get_attitude(0, 1);
 
     text.0 = format!(
-        "Turn: {} | Gov: {} | Pop: {}\nTech: {} ({})\nSelected: {}\nCivs: {} | Attitude vs AI: {}\nSpace = End Turn | Click unit then destination (path shown)",
+        "Turn: {} | Gov: {} | Pop: {} | Disorder: {}\nTech: {} ({})\nSelected: {}\nCivs: {} | Attitude vs AI: {}\nSpace = End Turn | Click unit then destination",
         state.turn,
         state.government.name(),
         total_pop,
+        disorder,
         current,
         progress,
         sel,
