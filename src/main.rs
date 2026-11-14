@@ -2,51 +2,35 @@ use bevy::prelude::*;
 use hexx::{shapes, *};
 use rand::Rng;
 
-const HEX_SIZE: f32 = 30.0;
-const MAP_RADIUS: u32 = 8;
+mod city;
+mod unit;
+mod terrain;
 
-#[derive(Component)]
-struct HexTile {
-    coord: Hex,
-    terrain: Terrain,
-}
+use city::*;
+use unit::*;
+use terrain::*;
 
-#[derive(Clone, Copy, PartialEq)]
-enum Terrain {
-    Water,
-    Grass,
-    Desert,
-    Mountain,
-}
-
-impl Terrain {
-    fn color(&self) -> Color {
-        match self {
-            Terrain::Water => Color::srgb(0.2, 0.4, 0.8),
-            Terrain::Grass => Color::srgb(0.2, 0.7, 0.3),
-            Terrain::Desert => Color::srgb(0.9, 0.8, 0.4),
-            Terrain::Mountain => Color::srgb(0.5, 0.5, 0.5),
-        }
-    }
-}
+const HEX_SIZE: f32 = 28.0;
+const MAP_RADIUS: u32 = 10;
 
 #[derive(Resource)]
 struct MapData {
     layout: HexLayout,
-    selected: Option<Hex>,
 }
 
 #[derive(Resource)]
 struct GameState {
     turn: u32,
+    gold: i32,
+    science: i32,
 }
 
 fn main() {
     App::new()
         .add_plugins(DefaultPlugins)
-        .insert_resource(GameState { turn: 1 })
+        .insert_resource(GameState { turn: 1, gold: 0, science: 0 })
         .add_systems(Startup, setup)
-        .add_systems(Update, (camera_pan, tile_selection, update_ui))
+        .add_systems(Update, (camera_pan, tile_selection, process_turn))
         .run();
 }
 
@@ -55,7 +39,7 @@ fn setup(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<ColorMaterial>>,
 ) {
-    commands.spawn(Camera2dBundle::default());
+    commands.spawn(Camera2d);
 
     let layout = HexLayout::flat().with_hex_size(HEX_SIZE);
     let mesh = meshes.add(hexagonal_plane(&layout));
@@ -63,14 +47,9 @@ fn setup(
     let mut rng = rand::thread_rng();
 
     for hex in shapes::hexagon(Hex::ZERO, MAP_RADIUS) {
-        let terrain = match rng.gen_range(0..10) {
-            0..=2 => Terrain::Water,
-            3..=6 => Terrain::Grass,
-            7..=8 => Terrain::Desert,
-            _ => Terrain::Mountain,
-        };
-
+        let terrain = random_terrain(&mut rng);
         let pos = layout.hex_to_world_pos(hex);
+
         commands.spawn((
             Mesh2d(mesh.clone()),
             MeshMaterial2d(materials.add(terrain.color())),
@@ -79,100 +58,79 @@ fn setup(
         ));
     }
 
-    commands.insert_resource(MapData {
-        layout,
-        selected: None,
-    });
+    // Starting city + settler
+    let start = Hex::ZERO;
+    spawn_city(&mut commands, start, "Capital".into(), 1);
+    spawn_unit(&mut commands, start, UnitType::Settler);
 
-    // UI text
+    commands.insert_resource(MapData { layout });
+
+    // UI
     commands.spawn((
-        TextBundle::from_section(
-            "Turn: 1\nClick a tile to select\nWASD to pan",
-            TextStyle {
-                font_size: 20.0,
-                color: Color::WHITE,
-                ..default()
-            },
-        )
-        .with_style(Style {
+        Text::new("Turn: 1 | Gold: 0 | Science: 0\nSpace: End Turn | WASD: Pan"),
+        TextFont { font_size: 18.0, ..default() },
+        TextColor(Color::WHITE),
+        Node {
             position_type: PositionType::Absolute,
-            top: Val::Px(10.0),
-            left: Val::Px(10.0),
+            top: Val::Px(8.0),
+            left: Val::Px(8.0),
             ..default()
-        }),
-        Name::new("ui_text"),
+        },
     ));
 }
 
 fn hexagonal_plane(hex_layout: &HexLayout) -> Mesh {
     let mesh_info = PlaneMeshBuilder::new(hex_layout)
         .facing(Vec3::Z)
-        .with_scale(Vec3::splat(0.95))
+        .with_scale(Vec3::splat(0.92))
         .center_aligned()
         .build();
-    Mesh::new(
-        PrimitiveTopology::TriangleList,
-        RenderAssetUsages::RENDER_WORLD,
-    )
-    .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, mesh_info.vertices)
-    .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, mesh_info.normals)
-    .with_inserted_attribute(Mesh::ATTRIBUTE_UV_0, mesh_info.uvs)
-    .with_inserted_indices(Indices::U16(mesh_info.indices))
+    Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::RENDER_WORLD)
+        .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, mesh_info.vertices)
+        .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, mesh_info.normals)
+        .with_inserted_attribute(Mesh::ATTRIBUTE_UV_0, mesh_info.uvs)
+        .with_inserted_indices(Indices::U16(mesh_info.indices))
 }
 
 fn camera_pan(
     keyboard: Res<ButtonInput<KeyCode>>,
-    mut query: Query<&mut Transform, With<Camera2d>>,
+    mut q: Query<&mut Transform, With<Camera2d>>,
     time: Res<Time>,
 ) {
-    let mut camera = query.single_mut();
-    let speed = 300.0 * time.delta_seconds();
-    if keyboard.pressed(KeyCode::KeyW) || keyboard.pressed(KeyCode::ArrowUp) {
-        camera.translation.y += speed;
-    }
-    if keyboard.pressed(KeyCode::KeyS) || keyboard.pressed(KeyCode::ArrowDown) {
-        camera.translation.y -= speed;
-    }
-    if keyboard.pressed(KeyCode::KeyA) || keyboard.pressed(KeyCode::ArrowLeft) {
-        camera.translation.x -= speed;
-    }
-    if keyboard.pressed(KeyCode::KeyD) || keyboard.pressed(KeyCode::ArrowRight) {
-        camera.translation.x += speed;
-    }
+    let Ok(mut t) = q.get_single_mut() else { return };
+    let speed = 400.0 * time.delta_secs();
+    if keyboard.pressed(KeyCode::KeyW) { t.translation.y += speed; }
+    if keyboard.pressed(KeyCode::KeyS) { t.translation.y -= speed; }
+    if keyboard.pressed(KeyCode::KeyA) { t.translation.x -= speed; }
+    if keyboard.pressed(KeyCode::KeyD) { t.translation.x += speed; }
 }
 
 fn tile_selection(
     mouse: Res<ButtonInput<MouseButton>>,
     windows: Query<&Window>,
     cameras: Query<(&Camera, &GlobalTransform)>,
-    mut map: ResMut<MapData>,
-    tiles: Query<(&HexTile, &Transform)>,
-    mut materials: ResMut<Assets<ColorMaterial>>,
-    tile_materials: Query<&MeshMaterial2d<ColorMaterial>, With<HexTile>>,
+    map: Res<MapData>,
 ) {
-    if !mouse.just_pressed(MouseButton::Left) {
-        return;
-    }
-
-    let window = windows.single();
-    let Some(cursor) = window.cursor_position() else { return; };
-    let (camera, cam_transform) = cameras.single();
-    let Some(world_pos) = camera.viewport_to_world_2d(cam_transform, cursor) else { return; };
-
-    let hex = map.layout.world_pos_to_hex(world_pos);
-
-    // Reset previous selection color (simplified)
-    // For MVP, just log and update selected
-    map.selected = Some(hex);
-
-    info!("Selected hex: {:?}", hex);
+    if !mouse.just_pressed(MouseButton::Left) { return; }
+    let Ok(window) = windows.get_single() else { return };
+    let Some(cursor) = window.cursor_position() else { return };
+    let Ok((cam, gt)) = cameras.get_single() else { return };
+    let Ok(world) = cam.viewport_to_world_2d(gt, cursor) else { return };
+    let hex = map.layout.world_pos_to_hex(world);
+    info!("Clicked hex {:?}", hex);
 }
 
-fn update_ui(
-    state: Res<GameState>,
-    mut query: Query<&mut Text, With<Name>>,
+fn process_turn(
+    keyboard: Res<ButtonInput<KeyCode>>,
+    mut state: ResMut<GameState>,
+    mut cities: Query<&mut City>,
 ) {
-    if let Ok(mut text) = query.get_single_mut() {
-        text.sections[0].value = format!("Turn: {}\nClick a tile to select\nWASD to pan", state.turn);
+    if keyboard.just_pressed(KeyCode::Space) {
+        state.turn += 1;
+        for mut city in &mut cities {
+            city.production_progress += city.production_per_turn();
+            // TODO: finish production, growth, etc.
+        }
+        info!("Turn {}", state.turn);
     }
 }
