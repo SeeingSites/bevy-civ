@@ -159,7 +159,6 @@ fn handle_click(
 ) {
     if !mouse.just_pressed(MouseButton::Left) { return; }
 
-    // Clear previous path visualization
     clear_path_visuals(&mut commands, &path_visuals);
 
     let Ok(window) = windows.get_single() else { return };
@@ -192,7 +191,6 @@ fn handle_click(
                 return;
             };
 
-            // Visualize the full computed path
             visualize_path(
                 &mut commands,
                 &mut meshes,
@@ -268,7 +266,7 @@ fn process_turn(
     keyboard: Res<ButtonInput<KeyCode>>,
     mut state: ResMut<GameState>,
     mut tech: ResMut<TechState>,
-    mut cities: Query<(Entity, &mut City)>,
+    mut cities: Query<(&mut City, &mut CityBuildings)>,
     mut units: Query<&mut Unit>,
     tiles: Query<&HexTile>,
     civs: Res<Civilizations>,
@@ -286,11 +284,19 @@ fn process_turn(
     let prod_mod = state.government.production_modifier();
     let sci_mod = state.government.science_modifier();
 
-    for (entity, mut city) in &mut cities {
-        let prod = (city.production_per_turn() as f32 * prod_mod) as u32;
+    let mut total_science = 0;
+
+    for (mut city, mut buildings) in &mut cities {
+        // Growth
+        if city.process_food(&buildings) {
+            info!("{} grew to population {}", city.name, city.population);
+        }
+
+        // Production with building bonuses
+        let prod = ((city.production_per_turn(&buildings) as f32) * prod_mod) as u32;
         city.production_progress += prod;
 
-        if let Some(completed) = city.process_production() {
+        if let Some(completed) = city.process_production(&buildings) {
             match completed {
                 ProductionItem::Unit(ut) => {
                     spawn_unit(
@@ -304,26 +310,31 @@ fn process_turn(
                     info!("City {} completed {:?}", city.name, ut);
                 }
                 ProductionItem::Building(b) => {
+                    buildings.buildings.push(b.clone());
                     info!("City {} completed building {}", city.name, b.name());
                 }
             }
         }
+
+        total_science += city.science_per_turn(&buildings);
     }
+
+    // Apply science from cities
+    tech.science_per_turn = ((total_science as f32) * sci_mod) as u32;
 
     for mut unit in &mut units {
         let (_, _, mv) = unit.unit_type.stats();
         unit.movement_left = mv;
     }
 
-    process_ai_turn(&civs, units.reborrow(), cities.reborrow().map(|(_, c)| c), tiles);
+    process_ai_turn(&civs, units.reborrow(), cities.reborrow().map(|(c, _)| c), tiles);
 
     let unit_positions: Vec<_> = units.iter().map(|u| u.position).collect();
-    let city_positions: Vec<_> = cities.iter().map(|(_, c)| c.position).collect();
+    let city_positions: Vec<_> = cities.iter().map(|(c, _)| c.position).collect();
     fog.update_visibility(&unit_positions, &city_positions);
 
     diplomacy.change_attitude(0, 1, -1);
 
-    tech.science_per_turn = ((2 + state.turn / 10) as f32 * sci_mod) as u32;
     if let Some(completed) = tech.process_turn() {
         info!("Researched: {}", completed.name());
         if completed == Tech::Monarchy {
@@ -340,6 +351,7 @@ fn update_ui(
     tech: Res<TechState>,
     selection: Res<Selection>,
     units: Query<&Unit>,
+    cities: Query<&City>,
     civs: Res<Civilizations>,
     diplomacy: Res<Diplomacy>,
     mut q: Query<&mut Text, With<Name>>,
@@ -362,12 +374,14 @@ fn update_ui(
         "None".to_string()
     };
 
+    let total_pop: u32 = cities.iter().map(|c| c.population).sum();
     let attitude = diplomacy.get_attitude(0, 1);
 
     text.0 = format!(
-        "Turn: {} | Gov: {}\nTech: {} ({})\nSelected: {}\nCivs: {} | Attitude vs AI: {}\nSpace = End Turn | Click unit then destination (path shown in yellow)",
+        "Turn: {} | Gov: {} | Pop: {}\nTech: {} ({})\nSelected: {}\nCivs: {} | Attitude vs AI: {}\nSpace = End Turn | Click unit then destination (path shown)",
         state.turn,
         state.government.name(),
+        total_pop,
         current,
         progress,
         sel,
