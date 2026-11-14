@@ -26,6 +26,20 @@ pub enum UnitType {
     Legion,
     WarChariot,
     Immortal,
+    // Classical / Medieval
+    Phalanx,
+    Catapult,
+    Knight,
+    // Renaissance / Industrial
+    Cannon,
+    Rifleman,
+    Cavalry,
+    // Modern
+    Tank,
+    Artillery,
+    // Special
+    Diplomat,
+    Caravan,
 }
 
 impl UnitType {
@@ -40,6 +54,16 @@ impl UnitType {
             UnitType::Legion => (2, 2, 1),
             UnitType::WarChariot => (2, 1, 3),
             UnitType::Immortal => (1, 3, 1),
+            UnitType::Phalanx => (1, 3, 1),
+            UnitType::Catapult => (4, 1, 1),
+            UnitType::Knight => (4, 2, 2),
+            UnitType::Cannon => (6, 1, 1),
+            UnitType::Rifleman => (5, 4, 1),
+            UnitType::Cavalry => (6, 2, 2),
+            UnitType::Tank => (10, 5, 2),
+            UnitType::Artillery => (8, 2, 1),
+            UnitType::Diplomat => (0, 0, 2),
+            UnitType::Caravan => (0, 0, 1),
         }
     }
 
@@ -54,6 +78,16 @@ impl UnitType {
             UnitType::Legion => 25,
             UnitType::WarChariot => 30,
             UnitType::Immortal => 25,
+            UnitType::Phalanx => 30,
+            UnitType::Catapult => 40,
+            UnitType::Knight => 50,
+            UnitType::Cannon => 60,
+            UnitType::Rifleman => 50,
+            UnitType::Cavalry => 60,
+            UnitType::Tank => 100,
+            UnitType::Artillery => 80,
+            UnitType::Diplomat => 30,
+            UnitType::Caravan => 40,
         }
     }
 
@@ -68,6 +102,16 @@ impl UnitType {
             UnitType::Legion => Color::srgb(0.9, 0.3, 0.1),
             UnitType::WarChariot => Color::srgb(0.8, 0.6, 0.2),
             UnitType::Immortal => Color::srgb(0.5, 0.2, 0.6),
+            UnitType::Phalanx => Color::srgb(0.4, 0.4, 0.6),
+            UnitType::Catapult => Color::srgb(0.5, 0.3, 0.1),
+            UnitType::Knight => Color::srgb(0.6, 0.2, 0.5),
+            UnitType::Cannon => Color::srgb(0.3, 0.3, 0.3),
+            UnitType::Rifleman => Color::srgb(0.2, 0.5, 0.2),
+            UnitType::Cavalry => Color::srgb(0.7, 0.5, 0.2),
+            UnitType::Tank => Color::srgb(0.4, 0.4, 0.2),
+            UnitType::Artillery => Color::srgb(0.5, 0.4, 0.3),
+            UnitType::Diplomat => Color::srgb(0.8, 0.8, 0.9),
+            UnitType::Caravan => Color::srgb(0.9, 0.7, 0.4),
         }
     }
 
@@ -75,10 +119,14 @@ impl UnitType {
         matches!(self, UnitType::Worker)
     }
 
+    pub fn is_military(&self) -> bool {
+        !matches!(self, UnitType::Settler | UnitType::Worker | UnitType::Diplomat | UnitType::Caravan)
+    }
+
     pub fn required_resource(&self) -> Option<Resource> {
         match self {
-            UnitType::Horseman | UnitType::WarChariot => Some(Resource::Horses),
-            UnitType::Spearman | UnitType::Archer | UnitType::Legion => Some(Resource::Iron),
+            UnitType::Horseman | UnitType::WarChariot | UnitType::Knight | UnitType::Cavalry => Some(Resource::Horses),
+            UnitType::Spearman | UnitType::Archer | UnitType::Legion | UnitType::Phalanx | UnitType::Rifleman => Some(Resource::Iron),
             _ => None,
         }
     }
@@ -87,14 +135,16 @@ impl UnitType {
         match self {
             UnitType::Legion => 1.25,
             UnitType::WarChariot if matches!(terrain, crate::terrain::Terrain::Plains | crate::terrain::Terrain::Grassland) => 1.5,
+            UnitType::Catapult | UnitType::Cannon | UnitType::Artillery => 1.3,
             _ => 1.0,
         }
     }
 
     pub fn defense_bonus(&self) -> f32 {
         match self {
-            UnitType::Immortal => 1.5,
+            UnitType::Immortal | UnitType::Phalanx => 1.5,
             UnitType::Legion => 1.2,
+            UnitType::Rifleman | UnitType::Tank => 1.3,
             _ => 1.0,
         }
     }
