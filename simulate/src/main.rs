@@ -66,6 +66,7 @@ impl Game {
 
         let mut total_science = 0u32;
         let mut new_cities = 0u32;
+        let current_city_count = self.cities.len();
 
         for city in &mut self.cities {
             let food = 3 + city.population;
@@ -80,7 +81,7 @@ impl Game {
             city.production += prod;
             if city.production >= 30 && rng.gen_bool(0.35) {
                 city.production -= 30;
-                if self.cities.len() + new_cities as usize < 10 && rng.gen_bool(0.5) {
+                if current_city_count + new_cities as usize < 10 && rng.gen_bool(0.5) {
                     new_cities += 1;
                 }
             }
