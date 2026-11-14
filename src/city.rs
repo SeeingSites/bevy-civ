@@ -9,12 +9,13 @@ pub struct City {
     pub production_progress: u32,
     pub production_queue: Option<ProductionItem>,
     pub position: Hex,
+    pub owner: u32,
 }
 
 #[derive(Clone, Debug)]
 pub enum ProductionItem {
     Unit(crate::unit::UnitType),
-    Building(String),
+    Building(crate::building::Building),
 }
 
 impl City {
@@ -24,6 +25,24 @@ impl City {
 
     pub fn food_per_turn(&self) -> u32 {
         3 + self.population
+    }
+
+    /// Returns true if something was completed this turn
+    pub fn process_production(&mut self) -> Option<ProductionItem> {
+        let Some(item) = &self.production_queue else { return None };
+        let cost = match item {
+            ProductionItem::Unit(u) => u.cost(),
+            ProductionItem::Building(b) => b.cost(),
+        };
+        if self.production_progress >= cost {
+            self.production_progress -= cost;
+            let completed = self.production_queue.take();
+            // Default next item
+            self.production_queue = Some(ProductionItem::Unit(crate::unit::UnitType::Warrior));
+            completed
+        } else {
+            None
+        }
     }
 }
 
@@ -47,10 +66,12 @@ pub fn spawn_city(
             production_progress: 0,
             production_queue: Some(ProductionItem::Unit(crate::unit::UnitType::Warrior)),
             position: coord,
+            owner: 0,
         },
         Mesh2d(mesh),
         MeshMaterial2d(materials.add(Color::srgb(0.9, 0.8, 0.1))),
         Transform::from_xyz(pos.x, pos.y, 0.5),
         Name::new(name),
+        crate::building::CityBuildings { buildings: vec![] },
     ));
 }
