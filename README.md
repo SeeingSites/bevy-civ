@@ -15,11 +15,11 @@ Core systems from Civ 2/3 implemented modularly.
 - Unique units with special abilities (Legion, War Chariot, Immortal)
 - Tech tree with prerequisites
 - Governments with modifiers
+- **Advanced war AI**: evaluates nearby enemies, advances when stronger, retreats toward home when weaker
 - AI that researches and founds cities
 - Fog of war and diplomacy
 - Victory conditions (Domination / Democracy)
-- **City UI panel** (click a city to see population, food, production, buildings, happiness)
-- **Tech UI panel** (current research, researched techs, available techs)
+- City UI panel and Tech UI panel
 
 ## Controls
 - **WASD** — pan camera
@@ -41,8 +41,8 @@ Core systems from Civ 2/3 implemented modularly.
 - [x] Strategic resource unit gating
 - [x] Victory conditions
 - [x] Unique units with abilities
-- [x] **City / tech UI panels**
-- [ ] Advanced war AI
+- [x] City / tech UI panels
+- [x] **Advanced war AI**
 
 ## Running
 ```bash
