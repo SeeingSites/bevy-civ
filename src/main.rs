@@ -95,7 +95,6 @@ fn setup(
     spawn_city(&mut commands, &mut meshes, &mut materials, &layout, start, "Capital".into(), 1);
     spawn_unit(&mut commands, &mut meshes, &mut materials, &layout, start, UnitType::Settler);
 
-    // Spawn AI starting units far away
     let ai1 = Hex::new(6, -3);
     spawn_unit(&mut commands, &mut meshes, &mut materials, &layout, ai1, UnitType::Warrior);
 
@@ -156,8 +155,12 @@ fn handle_click(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<ColorMaterial>>,
     mut fog: ResMut<FogOfWar>,
+    path_visuals: Query<Entity, With<PathVisual>>,
 ) {
     if !mouse.just_pressed(MouseButton::Left) { return; }
+
+    // Clear previous path visualization
+    clear_path_visuals(&mut commands, &path_visuals);
 
     let Ok(window) = windows.get_single() else { return };
     let Some(cursor) = window.cursor_position() else { return };
@@ -184,13 +187,20 @@ fn handle_click(
                 return;
             }
 
-            // Pathfind to destination
             let Some(path) = find_path(unit.position, clicked, &tiles) else {
                 info!("No path to {:?}", clicked);
                 return;
             };
 
-            // Check if destination has enemy for combat (only if adjacent after path)
+            // Visualize the full computed path
+            visualize_path(
+                &mut commands,
+                &mut meshes,
+                &mut materials,
+                &map.layout,
+                &path,
+            );
+
             let final_pos = path.last().copied().unwrap_or(unit.position);
             let mut enemy_entity = None;
             for (e, other, _) in &units {
@@ -200,16 +210,14 @@ fn handle_click(
                 }
             }
 
-            // Move along path up to movement points
             let spent = move_along_path(&mut unit.position, &mut unit.movement_left, &path);
             if spent > 0 {
                 let pos = map.layout.hex_to_world_pos(unit.position);
                 transform.translation = Vec3::new(pos.x, pos.y, 1.0);
                 fog.reveal(unit.position, 2);
-                info!("Moved {} hexes along path", spent);
+                info!("Moved {} hexes along path of length {}", spent, path.len());
             }
 
-            // If we ended on an enemy, resolve combat
             if let Some((enemy_e, enemy_type)) = enemy_entity {
                 if unit.position == final_pos {
                     let terrain = tiles.iter().find(|t| t.coord == final_pos).map(|t| t.terrain).unwrap_or(Terrain::Plains);
@@ -224,7 +232,6 @@ fn handle_click(
                 }
             }
 
-            // Settler founding on final tile if no enemy
             if unit.unit_type == UnitType::Settler && enemy_entity.is_none() {
                 let city_exists = cities.iter().any(|c| c.position == unit.position);
                 let land = tiles.iter().any(|t| t.coord == unit.position && t.terrain != Terrain::Water);
@@ -279,7 +286,6 @@ fn process_turn(
     let prod_mod = state.government.production_modifier();
     let sci_mod = state.government.science_modifier();
 
-    // Process city production
     for (entity, mut city) in &mut cities {
         let prod = (city.production_per_turn() as f32 * prod_mod) as u32;
         city.production_progress += prod;
@@ -304,16 +310,13 @@ fn process_turn(
         }
     }
 
-    // Reset unit movement
     for mut unit in &mut units {
         let (_, _, mv) = unit.unit_type.stats();
         unit.movement_left = mv;
     }
 
-    // AI turn
     process_ai_turn(&civs, units.reborrow(), cities.reborrow().map(|(_, c)| c), tiles);
 
-    // Update fog
     let unit_positions: Vec<_> = units.iter().map(|u| u.position).collect();
     let city_positions: Vec<_> = cities.iter().map(|(_, c)| c.position).collect();
     fog.update_visibility(&unit_positions, &city_positions);
@@ -362,7 +365,7 @@ fn update_ui(
     let attitude = diplomacy.get_attitude(0, 1);
 
     text.0 = format!(
-        "Turn: {} | Gov: {}\nTech: {} ({})\nSelected: {}\nCivs: {} | Attitude vs AI: {}\nSpace = End Turn | Click unit then destination (pathfinding)",
+        "Turn: {} | Gov: {}\nTech: {} ({})\nSelected: {}\nCivs: {} | Attitude vs AI: {}\nSpace = End Turn | Click unit then destination (path shown in yellow)",
         state.turn,
         state.government.name(),
         current,
