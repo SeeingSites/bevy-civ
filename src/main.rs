@@ -294,7 +294,7 @@ fn process_turn(
     mut cities: Query<(&mut City, &mut CityBuildings, &mut Happiness)>,
     mut units: Query<&mut Unit>,
     mut tiles: Query<&mut HexTile>,
-    civs: Res<Civilizations>,
+    mut civs: ResMut<Civilizations>,
     mut fog: ResMut<FogOfWar>,
     mut diplomacy: ResMut<Diplomacy>,
     mut commands: Commands,
@@ -317,7 +317,19 @@ fn process_turn(
             info!("{} grew to population {}", city.name, city.population);
         }
 
-        happiness.update(city.population, 0);
+        // Count luxury resources in city radius (simplified: nearby tiles)
+        let mut luxury_bonus = 0u32;
+        for tile in tiles.iter() {
+            if tile.coord.distance_to(city.position) <= 2 {
+                if let Some(res) = tile.resource {
+                    if res.is_luxury() {
+                        luxury_bonus += res.happiness_bonus();
+                    }
+                }
+            }
+        }
+
+        happiness.update(city.population, luxury_bonus);
         if happiness.in_disorder() {
             disorder_count += 1;
             info!("{} is in civil disorder!", city.name);
@@ -354,7 +366,6 @@ fn process_turn(
     // Process worker builds and reset movement
     for mut unit in &mut units {
         if let Some(completed_imp) = unit.process_build() {
-            // Find the tile the worker is on and add the improvement
             for mut tile in &mut tiles {
                 if tile.coord == unit.position {
                     tile.add_improvement(completed_imp);
@@ -369,7 +380,16 @@ fn process_turn(
         }
     }
 
-    process_ai_turn(&civs, units.reborrow(), cities.reborrow().map(|(c, _, _)| c), tiles.reborrow());
+    process_ai_turn(
+        &mut civs,
+        units.reborrow(),
+        cities.reborrow().map(|(c, _, _)| c),
+        tiles.reborrow(),
+        commands.reborrow(),
+        meshes.reborrow(),
+        materials.reborrow(),
+        &map.layout,
+    );
 
     let unit_positions: Vec<_> = units.iter().map(|u| u.position).collect();
     let city_positions: Vec<_> = cities.iter().map(|(c, _, _)| c.position).collect();
