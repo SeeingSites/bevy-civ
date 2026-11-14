@@ -5,10 +5,16 @@ use rand::Rng;
 mod city;
 mod unit;
 mod terrain;
+mod tech;
+mod government;
+mod combat;
 
 use city::*;
 use unit::*;
 use terrain::*;
+use tech::*;
+use government::*;
+use combat::*;
 
 const HEX_SIZE: f32 = 28.0;
 const MAP_RADIUS: u32 = 10;
@@ -23,14 +29,21 @@ struct GameState {
     turn: u32,
     gold: i32,
     science: i32,
+    government: Government,
 }
 
 fn main() {
     App::new()
         .add_plugins(DefaultPlugins)
-        .insert_resource(GameState { turn: 1, gold: 0, science: 0 })
+        .insert_resource(GameState {
+            turn: 1,
+            gold: 0,
+            science: 0,
+            government: Government::Despotism,
+        })
+        .insert_resource(TechState::default())
         .add_systems(Startup, setup)
-        .add_systems(Update, (camera_pan, tile_selection, process_turn))
+        .add_systems(Update, (camera_pan, tile_selection, process_turn, update_ui))
         .run();
 }
 
@@ -58,17 +71,15 @@ fn setup(
         ));
     }
 
-    // Starting city + settler
     let start = Hex::ZERO;
     spawn_city(&mut commands, start, "Capital".into(), 1);
     spawn_unit(&mut commands, start, UnitType::Settler);
 
     commands.insert_resource(MapData { layout });
 
-    // UI
     commands.spawn((
-        Text::new("Turn: 1 | Gold: 0 | Science: 0\nSpace: End Turn | WASD: Pan"),
-        TextFont { font_size: 18.0, ..default() },
+        Text::new("Loading..."),
+        TextFont { font_size: 16.0, ..default() },
         TextColor(Color::WHITE),
         Node {
             position_type: PositionType::Absolute,
@@ -76,6 +87,7 @@ fn setup(
             left: Val::Px(8.0),
             ..default()
         },
+        Name::new("hud"),
     ));
 }
 
@@ -123,14 +135,65 @@ fn tile_selection(
 fn process_turn(
     keyboard: Res<ButtonInput<KeyCode>>,
     mut state: ResMut<GameState>,
+    mut tech: ResMut<TechState>,
     mut cities: Query<&mut City>,
 ) {
-    if keyboard.just_pressed(KeyCode::Space) {
-        state.turn += 1;
-        for mut city in &mut cities {
-            city.production_progress += city.production_per_turn();
-            // TODO: finish production, growth, etc.
-        }
-        info!("Turn {}", state.turn);
+    if !keyboard.just_pressed(KeyCode::Space) { return; }
+
+    state.turn += 1;
+
+    // Apply government modifiers
+    let prod_mod = state.government.production_modifier();
+    let sci_mod = state.government.science_modifier();
+
+    for mut city in &mut cities {
+        let prod = (city.production_per_turn() as f32 * prod_mod) as u32;
+        city.production_progress += prod;
+        // TODO: complete production items
     }
+
+    tech.science_per_turn = ((2 + state.turn / 10) as f32 * sci_mod) as u32;
+    if let Some(completed) = tech.process_turn() {
+        info!("Researched: {}", completed.name());
+        // Unlock government if researched
+        if completed == Tech::Monarchy {
+            state.government = Government::Monarchy;
+            info!("Government changed to Monarchy");
+        }
+        if completed == Tech::Democracy {
+            state.government = Government::Democracy;
+            info!("Government changed to Democracy");
+        }
+    }
+
+    info!("Turn {} | Gov: {} | Tech progress: {}/{}",
+        state.turn,
+        state.government.name(),
+        tech.progress,
+        tech.current.map(|t| t.cost()).unwrap_or(0)
+    );
+}
+
+fn update_ui(
+    state: Res<GameState>,
+    tech: Res<TechState>,
+    mut q: Query<&mut Text, With<Name>>,
+) {
+    let Ok(mut text) = q.get_single_mut() else { return };
+    let current = tech.current.map(|t| t.name()).unwrap_or("None");
+    let progress = if let Some(t) = tech.current {
+        format!("{}/{}", tech.progress, t.cost())
+    } else {
+        "-".to_string()
+    };
+
+    text.0 = format!(
+        "Turn: {} | Gov: {}\nTech: {} ({})\nGold: {} | Science/turn: {}\nSpace = End Turn | WASD = Pan",
+        state.turn,
+        state.government.name(),
+        current,
+        progress,
+        state.gold,
+        tech.science_per_turn
+    );
 }
