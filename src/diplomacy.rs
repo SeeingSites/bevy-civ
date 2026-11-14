@@ -4,12 +4,22 @@ use std::collections::HashMap;
 #[derive(Resource)]
 pub struct Diplomacy {
     pub relations: HashMap<(u32, u32), i32>,
+    pub treaties: HashMap<(u32, u32), Treaty>,
+}
+
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub enum Treaty {
+    None,
+    Peace,
+    Alliance,
+    War,
 }
 
 impl Default for Diplomacy {
     fn default() -> Self {
         Self {
             relations: HashMap::new(),
+            treaties: HashMap::new(),
         }
     }
 }
@@ -22,6 +32,21 @@ impl Diplomacy {
     pub fn change_attitude(&mut self, a: u32, b: u32, delta: i32) {
         let key = (a.min(b), a.max(b));
         *self.relations.entry(key).or_insert(0) += delta;
+    }
+
+    pub fn get_treaty(&self, a: u32, b: u32) -> Treaty {
+        *self.treaties.get(&(a.min(b), a.max(b))).unwrap_or(&Treaty::None)
+    }
+
+    pub fn set_treaty(&mut self, a: u32, b: u32, treaty: Treaty) {
+        let key = (a.min(b), a.max(b));
+        self.treaties.insert(key, treaty);
+        match treaty {
+            Treaty::Peace => self.change_attitude(a, b, 10),
+            Treaty::Alliance => self.change_attitude(a, b, 20),
+            Treaty::War => self.change_attitude(a, b, -30),
+            Treaty::None => {}
+        }
     }
 }
 
@@ -48,7 +73,6 @@ impl Happiness {
         self.unhappy > self.happy + self.content
     }
 
-    /// Recalculate based on population and luxury resources
     pub fn update(&mut self, population: u32, luxury_bonus: u32) {
         self.happy = 1 + luxury_bonus;
         self.unhappy = if population > 5 { (population - 5) / 2 } else { 0 };
