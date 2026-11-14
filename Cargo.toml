@@ -6,9 +6,12 @@ license = "MIT OR Apache-2.0"
 
 [dependencies]
 bevy = { version = "0.15", default-features = false, features = [
-  "bevy_ecs", "bevy_app", "bevy_core", "bevy_time", "bevy_log", "bevy_hierarchy"
+  "bevy_ecs",
+  "bevy_app",
+  "bevy_log",
+  "bevy_time",
 ] }
-hexx = { version = "0.21", features = ["bevy", "algorithms"] }
+hexx = { version = "0.21", features = ["algorithms"] }
 rand = "0.8"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
