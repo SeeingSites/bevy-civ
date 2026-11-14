@@ -9,6 +9,7 @@ Core systems from Civ 2/3 implemented modularly.
 - Cities with production queues, completion, and visuals
 - Units with attack/defense/movement, selection, movement, and combat
 - **A* pathfinding** (hexx algorithms) with terrain costs — units can move multi-hex paths limited by movement points
+- **Path visualization** — computed path shown with colored markers (cyan start, yellow path, red destination)
 - Settler city founding
 - Tech tree with prerequisites and research progress
 - Governments with production/science/support modifiers
@@ -21,7 +22,7 @@ Core systems from Civ 2/3 implemented modularly.
 ## Controls
 - **WASD** — pan camera
 - **Space** — end turn (processes production, research, AI, resets movement)
-- **Left click** — select unit, then click destination (pathfinding handles multi-hex movement / founding / attacking)
+- **Left click** — select unit, then click destination (path is visualized, then unit moves along it)
 
 ## Roadmap
 - [x] Hex map + terrain
@@ -31,6 +32,7 @@ Core systems from Civ 2/3 implemented modularly.
 - [x] Combat resolution
 - [x] Unit movement & selection
 - [x] **Pathfinding (A*)**
+- [x] **Visual path preview**
 - [x] City founding (settlers)
 - [x] Buildings & wonders
 - [x] Multiple civs + basic AI
@@ -39,7 +41,7 @@ Core systems from Civ 2/3 implemented modularly.
 - [ ] Building effects (granary growth, barracks veterans, etc.)
 - [ ] Advanced AI (tech, war, diplomacy)
 - [ ] UI panels for city management / tech tree
-- [ ] Visual path preview
+- [ ] Step-by-step A* animation (open/closed sets)
 
 ## Running
 ```bash
