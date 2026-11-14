@@ -93,6 +93,10 @@ fn setup(
     spawn_city(&mut commands, &mut meshes, &mut materials, &layout, start, "Capital".into(), 1);
     spawn_unit(&mut commands, &mut meshes, &mut materials, &layout, start, UnitType::Settler);
 
+    // Spawn AI starting units far away
+    let ai1 = Hex::new(6, -3);
+    spawn_unit(&mut commands, &mut meshes, &mut materials, &layout, ai1, UnitType::Warrior);
+
     fog.reveal(start, 3);
 
     commands.insert_resource(MapData { layout });
@@ -145,6 +149,7 @@ fn handle_click(
     mut selection: ResMut<Selection>,
     mut units: Query<(Entity, &mut Unit, &mut Transform)>,
     cities: Query<&City>,
+    tiles: Query<&HexTile>,
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<ColorMaterial>>,
@@ -174,9 +179,35 @@ fn handle_click(
     if let Some(selected) = selection.selected_unit {
         if let Ok((_, mut unit, mut transform)) = units.get_mut(selected) {
             if unit.movement_left > 0 && unit.position.distance_to(clicked) <= 1 {
+                // Check for enemy unit on destination
+                let mut enemy_entity = None;
+                for (e, other, _) in &units {
+                    if other.position == clicked && other.owner != unit.owner {
+                        enemy_entity = Some((e, other.unit_type));
+                        break;
+                    }
+                }
+
+                if let Some((enemy_e, enemy_type)) = enemy_entity {
+                    let terrain = tiles.iter().find(|t| t.coord == clicked).map(|t| t.terrain).unwrap_or(Terrain::Plains);
+                    let wins = resolve_combat(unit.unit_type, enemy_type, terrain);
+                    log_combat(unit.unit_type, enemy_type, terrain, wins);
+                    if wins {
+                        commands.entity(enemy_e).despawn();
+                        unit.position = clicked;
+                        unit.movement_left -= 1;
+                    } else {
+                        commands.entity(selected).despawn();
+                        selection.selected_unit = None;
+                    }
+                    return;
+                }
+
+                // Settler founding
                 if unit.unit_type == UnitType::Settler {
                     let city_exists = cities.iter().any(|c| c.position == clicked);
-                    if !city_exists {
+                    let land = tiles.iter().any(|t| t.coord == clicked && t.terrain != Terrain::Water);
+                    if !city_exists && land {
                         spawn_city(
                             &mut commands,
                             &mut meshes,
@@ -217,11 +248,16 @@ fn process_turn(
     keyboard: Res<ButtonInput<KeyCode>>,
     mut state: ResMut<GameState>,
     mut tech: ResMut<TechState>,
-    mut cities: Query<&mut City>,
+    mut cities: Query<(Entity, &mut City)>,
     mut units: Query<&mut Unit>,
+    tiles: Query<&HexTile>,
     civs: Res<Civilizations>,
     mut fog: ResMut<FogOfWar>,
     mut diplomacy: ResMut<Diplomacy>,
+    mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<ColorMaterial>>,
+    map: Res<MapData>,
 ) {
     if !keyboard.just_pressed(KeyCode::Space) { return; }
 
@@ -230,25 +266,45 @@ fn process_turn(
     let prod_mod = state.government.production_modifier();
     let sci_mod = state.government.science_modifier();
 
-    for mut city in &mut cities {
+    // Process city production
+    for (entity, mut city) in &mut cities {
         let prod = (city.production_per_turn() as f32 * prod_mod) as u32;
         city.production_progress += prod;
+
+        if let Some(completed) = city.process_production() {
+            match completed {
+                ProductionItem::Unit(ut) => {
+                    spawn_unit(
+                        &mut commands,
+                        &mut meshes,
+                        &mut materials,
+                        &map.layout,
+                        city.position,
+                        ut,
+                    );
+                    info!("City {} completed {:?}", city.name, ut);
+                }
+                ProductionItem::Building(b) => {
+                    info!("City {} completed building {}", city.name, b.name());
+                }
+            }
+        }
     }
 
+    // Reset unit movement
     for mut unit in &mut units {
         let (_, _, mv) = unit.unit_type.stats();
         unit.movement_left = mv;
     }
 
     // AI turn
-    process_ai_turn(&civs, units.reborrow(), cities.reborrow());
+    process_ai_turn(&civs, units.reborrow(), cities.reborrow().map(|(_, c)| c), tiles);
 
-    // Update fog from unit and city positions
+    // Update fog
     let unit_positions: Vec<_> = units.iter().map(|u| u.position).collect();
-    let city_positions: Vec<_> = cities.iter().map(|c| c.position).collect();
+    let city_positions: Vec<_> = cities.iter().map(|(_, c)| c.position).collect();
     fog.update_visibility(&unit_positions, &city_positions);
 
-    // Simple diplomacy drift
     diplomacy.change_attitude(0, 1, -1);
 
     tech.science_per_turn = ((2 + state.turn / 10) as f32 * sci_mod) as u32;
@@ -293,7 +349,7 @@ fn update_ui(
     let attitude = diplomacy.get_attitude(0, 1);
 
     text.0 = format!(
-        "Turn: {} | Gov: {}\nTech: {} ({})\nSelected: {}\nCivs: {} | Attitude vs AI: {}\nSpace = End Turn | Click unit then destination to move/found",
+        "Turn: {} | Gov: {}\nTech: {} ({})\nSelected: {}\nCivs: {} | Attitude vs AI: {}\nSpace = End Turn | Click unit then destination to move/found/attack",
         state.turn,
         state.government.name(),
         current,
