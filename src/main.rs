@@ -15,6 +15,9 @@ mod diplomacy;
 mod pathfinding;
 mod score;
 mod barbarians;
+mod trade;
+mod space;
+mod save;
 
 use city::*;
 use unit::*;
@@ -29,6 +32,9 @@ use diplomacy::*;
 use pathfinding::*;
 use score::*;
 use barbarians::*;
+use trade::*;
+use space::*;
+use save::*;
 
 const HEX_SIZE: f32 = 28.0;
 const MAP_RADIUS: u32 = 10;
@@ -77,8 +83,10 @@ fn main() {
         .insert_resource(FogOfWar::default())
         .insert_resource(Diplomacy::default())
         .insert_resource(BarbarianState::default())
+        .insert_resource(TradeRoutes::default())
+        .insert_resource(SpaceRace::default())
         .add_systems(Startup, setup)
-        .add_systems(Update, (camera_pan, handle_click, handle_worker_build, process_turn, update_ui, update_unit_positions))
+        .add_systems(Update, (camera_pan, handle_click, handle_worker_build, process_turn, update_ui, update_unit_positions, handle_keys))
         .run();
 }
 
@@ -193,10 +201,42 @@ fn camera_pan(
     if keyboard.pressed(KeyCode::KeyD) { t.translation.x += speed; }
 }
 
+fn handle_keys(
+    keyboard: Res<ButtonInput<KeyCode>>,
+    state: Res<GameState>,
+    mut diplomacy: ResMut<Diplomacy>,
+    mut trade: ResMut<TradeRoutes>,
+    cities: Query<&City>,
+) {
+    if keyboard.just_pressed(KeyCode::KeyP) {
+        diplomacy.set_treaty(0, 1, Treaty::Peace);
+        info!("Peace declared with AI");
+    }
+    if keyboard.just_pressed(KeyCode::KeyL) {
+        diplomacy.set_treaty(0, 1, Treaty::Alliance);
+        info!("Alliance formed with AI");
+    }
+    if keyboard.just_pressed(KeyCode::KeyK) {
+        diplomacy.set_treaty(0, 1, Treaty::War);
+        info!("War declared on AI");
+    }
+    if keyboard.just_pressed(KeyCode::KeyT) {
+        // Establish trade between first two cities
+        let positions: Vec<_> = cities.iter().map(|c| c.position).collect();
+        if positions.len() >= 2 {
+            trade.add_route(positions[0], positions[1]);
+        }
+    }
+    if keyboard.just_pressed(KeyCode::KeyS) {
+        save_game(state.turn, state.gold, state.government.name());
+    }
+}
+
 fn handle_worker_build(
     keyboard: Res<ButtonInput<KeyCode>>,
     selection: Res<Selection>,
     mut units: Query<&mut Unit>,
+    mut tiles: Query<&mut HexTile>,
 ) {
     let Some(entity) = selection.selected_unit else { return };
     let Ok(mut unit) = units.get_mut(entity) else { return };
@@ -213,6 +253,17 @@ fn handle_worker_build(
     } else if keyboard.just_pressed(KeyCode::KeyR) {
         unit.start_build(Improvement::Road);
         info!("Worker started building Road");
+    } else if keyboard.just_pressed(KeyCode::KeyX) {
+        // Terrain transform
+        for mut tile in &mut tiles {
+            if tile.coord == unit.position {
+                if tile.transform_terrain() {
+                    info!("Transformed terrain at {:?}", unit.position);
+                    unit.movement_left = 0;
+                }
+                break;
+            }
+        }
     }
 }
 
@@ -320,7 +371,6 @@ fn handle_click(
                 }
             }
 
-            // City capture
             if unit.unit_type.is_military() && unit.owner == 0 {
                 for (e, mut city) in &mut cities {
                     if city.position == unit.position && city.owner != 0 {
@@ -378,6 +428,8 @@ fn process_turn(
     mut fog: ResMut<FogOfWar>,
     mut diplomacy: ResMut<Diplomacy>,
     mut barbarians: ResMut<BarbarianState>,
+    mut trade: ResMut<TradeRoutes>,
+    mut space: ResMut<SpaceRace>,
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<ColorMaterial>>,
@@ -394,7 +446,6 @@ fn process_turn(
     let mut player_cities = 0;
     let mut total_gold = 0i32;
 
-    // Find capital for distance calculations
     let capital_pos = cities.iter().find(|(c, _, _)| c.is_capital).map(|(c, _, _)| c.position);
 
     for (mut city, mut buildings, mut happiness) in &mut cities {
@@ -459,10 +510,12 @@ fn process_turn(
         total_gold += city.gold_per_turn(&buildings) as i32;
     }
 
+    total_gold += trade.total_gold() as i32;
+    total_science += trade.total_science();
+
     state.gold += total_gold;
     tech.science_per_turn = total_science;
 
-    // Unit upkeep (simplified)
     let free_support = gov.free_unit_support();
     let mut military_count = 0u32;
     for unit in units.iter() {
@@ -517,8 +570,6 @@ fn process_turn(
     let city_positions: Vec<_> = cities.iter().map(|(c, _, _)| c.position).collect();
     fog.update_visibility(&unit_positions, &city_positions);
 
-    diplomacy.change_attitude(0, 1, -1);
-
     if let Some(completed) = tech.process_turn() {
         info!("Researched: {}", completed.name());
         if completed == Tech::Monarchy {
@@ -529,7 +580,11 @@ fn process_turn(
         }
     }
 
-    // Score
+    // Space race
+    if space.can_build(&tech) && space.progress < 4 {
+        space.add_component(SpaceComponent::Thrusters);
+    }
+
     state.score = Score::calculate(&cities, &tech);
 
     if player_cities >= 5 {
@@ -538,6 +593,9 @@ fn process_turn(
     } else if tech.researched.contains(&Tech::Democracy) {
         state.victory = Some("Science / Culture Victory!".into());
         info!("Victory: Democracy researched");
+    } else if space.is_complete() {
+        state.victory = Some("Space Race Victory!".into());
+        info!("Victory: Space Race");
     }
 
     if disorder_count > 0 {
@@ -553,6 +611,7 @@ fn update_ui(
     cities: Query<(Entity, &City, &CityBuildings, &Happiness)>,
     civs: Res<Civilizations>,
     diplomacy: Res<Diplomacy>,
+    space: Res<SpaceRace>,
     mut hud: Query<&mut Text, (With<Name>, Without<CityPanel>, Without<TechPanel>)>,
     mut city_panel: Query<&mut Text, With<CityPanel>>,
     mut tech_panel: Query<&mut Text, With<TechPanel>>,
@@ -583,22 +642,25 @@ fn update_ui(
         let total_pop: u32 = cities.iter().map(|(_, c, _, _)| c.population).sum();
         let disorder = cities.iter().filter(|(_, _, _, h)| h.in_disorder()).count();
         let attitude = diplomacy.get_attitude(0, 1);
+        let treaty = format!("{:?}", diplomacy.get_treaty(0, 1));
 
         let victory_text = state.victory.as_deref().unwrap_or("");
 
         text.0 = format!(
-            "Turn: {} | Gov: {} | Gold: {} | Score: {}\nPop: {} | Disorder: {}\nTech: {} ({})\nSelected: {}\nCivs: {} | Attitude: {}\n{}\nSpace = End Turn | F/M/R = Farm/Mine/Road",
+            "Turn: {} | Gov: {} | Gold: {} | Score: {}\nPop: {} | Disorder: {} | Space: {}/4\nTech: {} ({})\nSelected: {}\nCivs: {} | Attitude: {} | Treaty: {}\n{}\nSpace=End | F/M/R/X=Farm/Mine/Road/Transform | P/L/K=Peace/Ally/War | T=Trade | S=Save",
             state.turn,
             state.government.name(),
             state.gold,
             state.score.total,
             total_pop,
             disorder,
+            space.progress,
             current,
             progress,
             sel,
             civs.players.len(),
             attitude,
+            treaty,
             victory_text
         );
     }
