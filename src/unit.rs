@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 use hexx::Hex;
-use crate::terrain::Improvement;
+use crate::terrain::{Improvement, Resource};
 
 #[derive(Component)]
 pub struct Unit {
@@ -62,13 +62,22 @@ impl UnitType {
     pub fn is_worker(&self) -> bool {
         matches!(self, UnitType::Worker)
     }
+
+    /// Required strategic resource to build this unit (None = always available)
+    pub fn required_resource(&self) -> Option<Resource> {
+        match self {
+            UnitType::Horseman => Some(Resource::Horses),
+            UnitType::Spearman | UnitType::Archer => Some(Resource::Iron),
+            _ => None,
+        }
+    }
 }
 
 impl Unit {
     pub fn start_build(&mut self, improvement: Improvement) {
         if self.unit_type.is_worker() {
             self.current_build = Some(improvement);
-            self.build_turns_left = Some(3); // 3 turns to build
+            self.build_turns_left = Some(3);
             self.movement_left = 0;
         }
     }
