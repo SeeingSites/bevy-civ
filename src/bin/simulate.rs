@@ -3,42 +3,10 @@
 //! Usage: cargo run --bin simulate -- --games 100 --max-turns 200
 
 use bevy::prelude::*;
+use bevy_civ::*;
 use hexx::{shapes, Hex, HexLayout};
 use rand::Rng;
 use std::env;
-
-// Re-export core modules from the main crate
-mod city;
-mod unit;
-mod terrain;
-mod tech;
-mod government;
-mod combat;
-mod building;
-mod ai;
-mod fog;
-mod diplomacy;
-mod pathfinding;
-mod score;
-mod barbarians;
-mod trade;
-mod space;
-
-use city::*;
-use unit::*;
-use terrain::*;
-use tech::*;
-use government::*;
-use combat::*;
-use building::*;
-use ai::*;
-use fog::*;
-use diplomacy::*;
-use pathfinding::*;
-use score::*;
-use barbarians::*;
-use trade::*;
-use space::*;
 
 const HEX_SIZE: f32 = 28.0;
 const MAP_RADIUS: u32 = 8;
@@ -52,7 +20,6 @@ struct SimResult {
     population: u32,
     techs: u32,
     gold: i32,
-    barbarian_spawns: u32,
 }
 
 fn main() {
@@ -86,7 +53,6 @@ fn run_single_game(max_turns: u32, rng: &mut impl Rng) -> SimResult {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
 
-    // Resources
     app.insert_resource(GameStateSim {
         turn: 1,
         gold: 0,
@@ -101,13 +67,11 @@ fn run_single_game(max_turns: u32, rng: &mut impl Rng) -> SimResult {
     app.insert_resource(SpaceRace::default());
     app.insert_resource(FogOfWar::default());
 
-    // Setup map + starting units
     let layout = HexLayout::flat().with_hex_size(HEX_SIZE);
     app.insert_resource(MapDataSim { layout });
 
     let mut world = app.world_mut();
 
-    // Spawn tiles
     for hex in shapes::hexagon(Hex::ZERO, MAP_RADIUS) {
         let terrain = random_terrain(rng);
         let resource = random_resource(rng, terrain);
@@ -119,7 +83,6 @@ fn run_single_game(max_turns: u32, rng: &mut impl Rng) -> SimResult {
         });
     }
 
-    // Starting city + units
     world.spawn((
         City {
             name: "Capital".into(),
@@ -145,24 +108,14 @@ fn run_single_game(max_turns: u32, rng: &mut impl Rng) -> SimResult {
         current_build: None,
     });
 
-    // Run simulation
-    let mut barbarian_spawns = 0u32;
     for _ in 0..max_turns {
         let victory = world.resource::<GameStateSim>().victory.clone();
         if victory.is_some() {
             break;
         }
-
-        // Simplified turn processing
         sim_process_turn(&mut world);
-
-        // Count barbarian spawns roughly
-        if world.resource::<BarbarianState>().spawn_timer == 0 {
-            barbarian_spawns += 1;
-        }
     }
 
-    // Collect results
     let state = world.resource::<GameStateSim>();
     let tech = world.resource::<TechState>();
     let cities: Vec<_> = world.query::<&City>().iter(&world).collect();
@@ -181,7 +134,6 @@ fn run_single_game(max_turns: u32, rng: &mut impl Rng) -> SimResult {
         population: total_pop,
         techs: tech.researched.len() as u32,
         gold: state.gold,
-        barbarian_spawns,
     }
 }
 
@@ -189,10 +141,8 @@ fn sim_process_turn(world: &mut World) {
     let mut state = world.resource_mut::<GameStateSim>();
     state.turn += 1;
     let gov = state.government;
-    let turn = state.turn;
     drop(state);
 
-    // Simplified city processing
     let mut total_science = 0u32;
     let mut player_cities = 0u32;
 
@@ -202,7 +152,6 @@ fn sim_process_turn(world: &mut World) {
             player_cities += 1;
         }
 
-        // Growth
         let food = city.food_per_turn(&buildings, gov, 0);
         city.food_storage += food;
         if city.food_storage >= city.food_to_grow() {
@@ -210,7 +159,6 @@ fn sim_process_turn(world: &mut World) {
             city.population += 1;
         }
 
-        // Production
         let prod = city.production_per_turn(&buildings, gov, 0);
         city.production_progress += prod;
 
@@ -223,7 +171,6 @@ fn sim_process_turn(world: &mut World) {
                 city.production_progress -= cost;
                 match item {
                     ProductionItem::Unit(ut) => {
-                        // Spawn unit (simplified)
                         world.spawn(Unit {
                             unit_type: *ut,
                             movement_left: ut.stats().2,
@@ -245,7 +192,6 @@ fn sim_process_turn(world: &mut World) {
         happiness.update(city.population, city.luxury_from_specialists());
     }
 
-    // Tech
     let mut tech = world.resource_mut::<TechState>();
     tech.science_per_turn = total_science;
     if let Some(completed) = tech.process_turn() {
@@ -257,7 +203,6 @@ fn sim_process_turn(world: &mut World) {
         }
     }
 
-    // Victory checks
     let mut state = world.resource_mut::<GameStateSim>();
     if player_cities >= 5 {
         state.victory = Some("Domination".into());
