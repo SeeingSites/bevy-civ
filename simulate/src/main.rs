@@ -65,7 +65,7 @@ impl Game {
         self.turn += 1;
 
         let mut total_science = 0u32;
-        let mut player_cities = self.cities.len() as u32;
+        let mut new_cities = 0u32;
 
         for city in &mut self.cities {
             let food = 3 + city.population;
@@ -80,17 +80,20 @@ impl Game {
             city.production += prod;
             if city.production >= 30 && rng.gen_bool(0.35) {
                 city.production -= 30;
-                if self.cities.len() < 10 && rng.gen_bool(0.5) {
-                    self.cities.push(City {
-                        population: 1,
-                        food: 0,
-                        production: 0,
-                    });
-                    player_cities += 1;
+                if self.cities.len() + new_cities as usize < 10 && rng.gen_bool(0.5) {
+                    new_cities += 1;
                 }
             }
 
             total_science += 1 + city.population / 2;
+        }
+
+        for _ in 0..new_cities {
+            self.cities.push(City {
+                population: 1,
+                food: 0,
+                production: 0,
+            });
         }
 
         self.science_progress += ((total_science as f32) * self.government.science_modifier()) as u32;
@@ -107,6 +110,7 @@ impl Game {
 
         self.gold += (total_science / 2) as i32;
 
+        let player_cities = self.cities.len() as u32;
         if player_cities >= 6 {
             self.victory = Some("Domination".into());
         } else if self.techs >= 12 {
