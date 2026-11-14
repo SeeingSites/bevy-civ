@@ -62,7 +62,7 @@ fn main() {
         .insert_resource(FogOfWar::default())
         .insert_resource(Diplomacy::default())
         .add_systems(Startup, setup)
-        .add_systems(Update, (camera_pan, handle_click, process_turn, update_ui, update_unit_positions))
+        .add_systems(Update, (camera_pan, handle_click, handle_worker_build, process_turn, update_ui, update_unit_positions))
         .run();
 }
 
@@ -81,19 +81,21 @@ fn setup(
 
     for hex in shapes::hexagon(Hex::ZERO, MAP_RADIUS) {
         let terrain = random_terrain(&mut rng);
+        let resource = random_resource(&mut rng, terrain);
         let pos = layout.hex_to_world_pos(hex);
 
         commands.spawn((
             Mesh2d(mesh.clone()),
             MeshMaterial2d(materials.add(terrain.color())),
             Transform::from_xyz(pos.x, pos.y, 0.0),
-            HexTile { coord: hex, terrain, improvements: vec![] },
+            HexTile { coord: hex, terrain, improvements: vec![], resource },
         ));
     }
 
     let start = Hex::ZERO;
     spawn_city(&mut commands, &mut meshes, &mut materials, &layout, start, "Capital".into(), 1);
     spawn_unit(&mut commands, &mut meshes, &mut materials, &layout, start, UnitType::Settler);
+    spawn_unit(&mut commands, &mut meshes, &mut materials, &layout, Hex::new(1, 0), UnitType::Worker);
 
     let ai1 = Hex::new(6, -3);
     spawn_unit(&mut commands, &mut meshes, &mut materials, &layout, ai1, UnitType::Warrior);
@@ -142,6 +144,29 @@ fn camera_pan(
     if keyboard.pressed(KeyCode::KeyD) { t.translation.x += speed; }
 }
 
+fn handle_worker_build(
+    keyboard: Res<ButtonInput<KeyCode>>,
+    selection: Res<Selection>,
+    mut units: Query<&mut Unit>,
+) {
+    let Some(entity) = selection.selected_unit else { return };
+    let Ok(mut unit) = units.get_mut(entity) else { return };
+    if !unit.unit_type.is_worker() || unit.movement_left == 0 {
+        return;
+    }
+
+    if keyboard.just_pressed(KeyCode::KeyF) {
+        unit.start_build(Improvement::Farm);
+        info!("Worker started building Farm");
+    } else if keyboard.just_pressed(KeyCode::KeyM) {
+        unit.start_build(Improvement::Mine);
+        info!("Worker started building Mine");
+    } else if keyboard.just_pressed(KeyCode::KeyR) {
+        unit.start_build(Improvement::Road);
+        info!("Worker started building Road");
+    }
+}
+
 fn handle_click(
     mouse: Res<ButtonInput<MouseButton>>,
     windows: Query<&Window>,
@@ -182,7 +207,7 @@ fn handle_click(
 
     if let Some(selected) = selection.selected_unit {
         if let Ok((_, mut unit, mut transform)) = units.get_mut(selected) {
-            if unit.movement_left == 0 {
+            if unit.movement_left == 0 || unit.build_turns_left.is_some() {
                 return;
             }
 
@@ -268,7 +293,7 @@ fn process_turn(
     mut tech: ResMut<TechState>,
     mut cities: Query<(&mut City, &mut CityBuildings, &mut Happiness)>,
     mut units: Query<&mut Unit>,
-    tiles: Query<&HexTile>,
+    mut tiles: Query<&mut HexTile>,
     civs: Res<Civilizations>,
     mut fog: ResMut<FogOfWar>,
     mut diplomacy: ResMut<Diplomacy>,
@@ -292,7 +317,6 @@ fn process_turn(
             info!("{} grew to population {}", city.name, city.population);
         }
 
-        // Update happiness
         happiness.update(city.population, 0);
         if happiness.in_disorder() {
             disorder_count += 1;
@@ -327,12 +351,25 @@ fn process_turn(
 
     tech.science_per_turn = ((total_science as f32) * sci_mod) as u32;
 
+    // Process worker builds and reset movement
     for mut unit in &mut units {
+        if let Some(completed_imp) = unit.process_build() {
+            // Find the tile the worker is on and add the improvement
+            for mut tile in &mut tiles {
+                if tile.coord == unit.position {
+                    tile.add_improvement(completed_imp);
+                    info!("Built {:?} at {:?}", completed_imp, unit.position);
+                    break;
+                }
+            }
+        }
         let (_, _, mv) = unit.unit_type.stats();
-        unit.movement_left = mv;
+        if unit.build_turns_left.is_none() {
+            unit.movement_left = mv;
+        }
     }
 
-    process_ai_turn(&civs, units.reborrow(), cities.reborrow().map(|(c, _, _)| c), tiles);
+    process_ai_turn(&civs, units.reborrow(), cities.reborrow().map(|(c, _, _)| c), tiles.reborrow());
 
     let unit_positions: Vec<_> = units.iter().map(|u| u.position).collect();
     let city_positions: Vec<_> = cities.iter().map(|(c, _, _)| c.position).collect();
@@ -375,7 +412,12 @@ fn update_ui(
 
     let sel = if let Some(e) = selection.selected_unit {
         if let Ok(u) = units.get(e) {
-            format!("{:?} (moves: {})", u.unit_type, u.movement_left)
+            let build = if let Some(imp) = u.current_build {
+                format!(" building {:?} ({})", imp, u.build_turns_left.unwrap_or(0))
+            } else {
+                "".to_string()
+            };
+            format!("{:?} (moves: {}){}", u.unit_type, u.movement_left, build)
         } else {
             "None".to_string()
         }
@@ -388,7 +430,7 @@ fn update_ui(
     let attitude = diplomacy.get_attitude(0, 1);
 
     text.0 = format!(
-        "Turn: {} | Gov: {} | Pop: {} | Disorder: {}\nTech: {} ({})\nSelected: {}\nCivs: {} | Attitude vs AI: {}\nSpace = End Turn | Click unit then destination",
+        "Turn: {} | Gov: {} | Pop: {} | Disorder: {}\nTech: {} ({})\nSelected: {}\nCivs: {} | Attitude vs AI: {}\nSpace = End Turn | F/M/R = Farm/Mine/Road (worker)",
         state.turn,
         state.government.name(),
         total_pop,
