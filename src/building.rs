@@ -8,10 +8,16 @@ pub enum Building {
     Marketplace,
     Walls,
     Aqueduct,
+    University,
+    Bank,
+    Factory,
     // Wonders
     Pyramids,
     GreatLibrary,
     HangingGardens,
+    Colossus,
+    Oracle,
+    GreatLighthouse,
 }
 
 impl Building {
@@ -23,9 +29,15 @@ impl Building {
             Building::Marketplace => "Marketplace",
             Building::Walls => "Walls",
             Building::Aqueduct => "Aqueduct",
+            Building::University => "University",
+            Building::Bank => "Bank",
+            Building::Factory => "Factory",
             Building::Pyramids => "Pyramids",
             Building::GreatLibrary => "Great Library",
             Building::HangingGardens => "Hanging Gardens",
+            Building::Colossus => "Colossus",
+            Building::Oracle => "Oracle",
+            Building::GreatLighthouse => "Great Lighthouse",
         }
     }
 
@@ -37,9 +49,15 @@ impl Building {
             Building::Marketplace => 60,
             Building::Walls => 40,
             Building::Aqueduct => 80,
+            Building::University => 100,
+            Building::Bank => 120,
+            Building::Factory => 150,
             Building::Pyramids => 200,
             Building::GreatLibrary => 250,
             Building::HangingGardens => 180,
+            Building::Colossus => 200,
+            Building::Oracle => 150,
+            Building::GreatLighthouse => 180,
         }
     }
 
@@ -51,42 +69,53 @@ impl Building {
             Building::Marketplace => Some(crate::tech::Tech::Currency),
             Building::Walls => Some(crate::tech::Tech::Masonry),
             Building::Aqueduct => Some(crate::tech::Tech::Construction),
+            Building::University => Some(crate::tech::Tech::Philosophy),
+            Building::Bank => Some(crate::tech::Tech::Currency),
+            Building::Factory => Some(crate::tech::Tech::Engineering),
             Building::Pyramids => Some(crate::tech::Tech::Masonry),
             Building::GreatLibrary => Some(crate::tech::Tech::Writing),
             Building::HangingGardens => Some(crate::tech::Tech::Monarchy),
+            Building::Colossus => Some(crate::tech::Tech::BronzeWorking),
+            Building::Oracle => Some(crate::tech::Tech::Mysticism),
+            Building::GreatLighthouse => Some(crate::tech::Tech::Masonry),
         }
     }
 
-    /// Food bonus from this building
+    pub fn is_wonder(&self) -> bool {
+        matches!(self, Building::Pyramids | Building::GreatLibrary | Building::HangingGardens | Building::Colossus | Building::Oracle | Building::GreatLighthouse)
+    }
+
     pub fn food_bonus(&self) -> u32 {
         match self {
             Building::Granary => 2,
             Building::HangingGardens => 3,
+            Building::Pyramids => 1, // half granary effect approximated
             _ => 0,
         }
     }
 
-    /// Science bonus
     pub fn science_bonus(&self) -> u32 {
         match self {
             Building::Library => 2,
+            Building::University => 4,
             Building::GreatLibrary => 5,
             _ => 0,
         }
     }
 
-    /// Production bonus
     pub fn production_bonus(&self) -> u32 {
         match self {
             Building::Barracks => 1,
+            Building::Factory => 3,
             _ => 0,
         }
     }
 
-    /// Gold / trade bonus
     pub fn gold_bonus(&self) -> u32 {
         match self {
             Building::Marketplace => 2,
+            Building::Bank => 4,
+            Building::Colossus => 3,
             _ => 0,
         }
     }
@@ -116,5 +145,9 @@ impl CityBuildings {
 
     pub fn total_gold_bonus(&self) -> u32 {
         self.buildings.iter().map(|b| b.gold_bonus()).sum()
+    }
+
+    pub fn has_wonder(&self, wonder: Building) -> bool {
+        self.buildings.iter().any(|b| *b == wonder && b.is_wonder())
     }
 }
