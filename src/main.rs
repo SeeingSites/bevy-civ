@@ -40,6 +40,7 @@ struct GameState {
     gold: i32,
     science: i32,
     government: Government,
+    victory: Option<String>,
 }
 
 #[derive(Resource, Default)]
@@ -55,6 +56,7 @@ fn main() {
             gold: 0,
             science: 0,
             government: Government::Despotism,
+            victory: None,
         })
         .insert_resource(TechState::default())
         .insert_resource(Selection::default())
@@ -287,6 +289,10 @@ fn update_unit_positions(
     }
 }
 
+fn has_strategic_resource(tiles: &Query<&HexTile>, required: Resource) -> bool {
+    tiles.iter().any(|t| t.resource == Some(required))
+}
+
 fn process_turn(
     keyboard: Res<ButtonInput<KeyCode>>,
     mut state: ResMut<GameState>,
@@ -303,6 +309,7 @@ fn process_turn(
     map: Res<MapData>,
 ) {
     if !keyboard.just_pressed(KeyCode::Space) { return; }
+    if state.victory.is_some() { return; }
 
     state.turn += 1;
 
@@ -311,13 +318,17 @@ fn process_turn(
 
     let mut total_science = 0;
     let mut disorder_count = 0;
+    let mut player_cities = 0;
 
     for (mut city, mut buildings, mut happiness) in &mut cities {
+        if city.owner == 0 {
+            player_cities += 1;
+        }
+
         if city.process_food(&buildings) {
             info!("{} grew to population {}", city.name, city.population);
         }
 
-        // Count luxury resources in city radius (simplified: nearby tiles)
         let mut luxury_bonus = 0u32;
         for tile in tiles.iter() {
             if tile.coord.distance_to(city.position) <= 2 {
@@ -341,15 +352,26 @@ fn process_turn(
         if let Some(completed) = city.process_production(&buildings) {
             match completed {
                 ProductionItem::Unit(ut) => {
-                    spawn_unit(
-                        &mut commands,
-                        &mut meshes,
-                        &mut materials,
-                        &map.layout,
-                        city.position,
-                        ut,
-                    );
-                    info!("City {} completed {:?}", city.name, ut);
+                    // Gate on strategic resources
+                    let can_build = match ut.required_resource() {
+                        Some(req) => has_strategic_resource(&tiles, req),
+                        None => true,
+                    };
+                    if can_build {
+                        spawn_unit(
+                            &mut commands,
+                            &mut meshes,
+                            &mut materials,
+                            &map.layout,
+                            city.position,
+                            ut,
+                        );
+                        info!("City {} completed {:?}", city.name, ut);
+                    } else {
+                        info!("Cannot build {:?}: missing strategic resource", ut);
+                        // Refund progress roughly
+                        city.production_progress += ut.cost() / 2;
+                    }
                 }
                 ProductionItem::Building(b) => {
                     buildings.buildings.push(b.clone());
@@ -363,7 +385,6 @@ fn process_turn(
 
     tech.science_per_turn = ((total_science as f32) * sci_mod) as u32;
 
-    // Process worker builds and reset movement
     for mut unit in &mut units {
         if let Some(completed_imp) = unit.process_build() {
             for mut tile in &mut tiles {
@@ -405,6 +426,15 @@ fn process_turn(
         if completed == Tech::Democracy {
             state.government = Government::Democracy;
         }
+    }
+
+    // Simple victory: control 5+ cities or research Democracy
+    if player_cities >= 5 {
+        state.victory = Some("Domination Victory!".into());
+        info!("Victory: Domination");
+    } else if tech.researched.contains(&Tech::Democracy) {
+        state.victory = Some("Science / Culture Victory!".into());
+        info!("Victory: Democracy researched");
     }
 
     if disorder_count > 0 {
@@ -449,8 +479,10 @@ fn update_ui(
     let disorder = cities.iter().filter(|(_, h)| h.in_disorder()).count();
     let attitude = diplomacy.get_attitude(0, 1);
 
+    let victory_text = state.victory.as_deref().unwrap_or("");
+
     text.0 = format!(
-        "Turn: {} | Gov: {} | Pop: {} | Disorder: {}\nTech: {} ({})\nSelected: {}\nCivs: {} | Attitude vs AI: {}\nSpace = End Turn | F/M/R = Farm/Mine/Road (worker)",
+        "Turn: {} | Gov: {} | Pop: {} | Disorder: {}\nTech: {} ({})\nSelected: {}\nCivs: {} | Attitude vs AI: {}\n{}\nSpace = End Turn | F/M/R = Farm/Mine/Road",
         state.turn,
         state.government.name(),
         total_pop,
@@ -459,6 +491,7 @@ fn update_ui(
         progress,
         sel,
         civs.players.len(),
-        attitude
+        attitude,
+        victory_text
     );
 }
