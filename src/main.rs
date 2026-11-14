@@ -8,6 +8,10 @@ mod terrain;
 mod tech;
 mod government;
 mod combat;
+mod building;
+mod ai;
+mod fog;
+mod diplomacy;
 
 use city::*;
 use unit::*;
@@ -15,6 +19,10 @@ use terrain::*;
 use tech::*;
 use government::*;
 use combat::*;
+use building::*;
+use ai::*;
+use fog::*;
+use diplomacy::*;
 
 const HEX_SIZE: f32 = 28.0;
 const MAP_RADIUS: u32 = 10;
@@ -48,6 +56,9 @@ fn main() {
         })
         .insert_resource(TechState::default())
         .insert_resource(Selection::default())
+        .insert_resource(Civilizations::default())
+        .insert_resource(FogOfWar::default())
+        .insert_resource(Diplomacy::default())
         .add_systems(Startup, setup)
         .add_systems(Update, (camera_pan, handle_click, process_turn, update_ui, update_unit_positions))
         .run();
@@ -57,6 +68,7 @@ fn setup(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<ColorMaterial>>,
+    mut fog: ResMut<FogOfWar>,
 ) {
     commands.spawn(Camera2d);
 
@@ -80,6 +92,8 @@ fn setup(
     let start = Hex::ZERO;
     spawn_city(&mut commands, &mut meshes, &mut materials, &layout, start, "Capital".into(), 1);
     spawn_unit(&mut commands, &mut meshes, &mut materials, &layout, start, UnitType::Settler);
+
+    fog.reveal(start, 3);
 
     commands.insert_resource(MapData { layout });
 
@@ -134,6 +148,7 @@ fn handle_click(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<ColorMaterial>>,
+    mut fog: ResMut<FogOfWar>,
 ) {
     if !mouse.just_pressed(MouseButton::Left) { return; }
 
@@ -143,7 +158,6 @@ fn handle_click(
     let Ok(world) = cam.viewport_to_world_2d(gt, cursor) else { return };
     let clicked = map.layout.world_pos_to_hex(world);
 
-    // Check if clicked on a unit
     let mut clicked_unit = None;
     for (entity, unit, _) in &units {
         if unit.position == clicked {
@@ -154,15 +168,12 @@ fn handle_click(
 
     if let Some(entity) = clicked_unit {
         selection.selected_unit = Some(entity);
-        info!("Selected unit");
         return;
     }
 
-    // Move selected unit
     if let Some(selected) = selection.selected_unit {
         if let Ok((_, mut unit, mut transform)) = units.get_mut(selected) {
             if unit.movement_left > 0 && unit.position.distance_to(clicked) <= 1 {
-                // Check for city founding with settler
                 if unit.unit_type == UnitType::Settler {
                     let city_exists = cities.iter().any(|c| c.position == clicked);
                     if !city_exists {
@@ -177,7 +188,7 @@ fn handle_click(
                         );
                         commands.entity(selected).despawn();
                         selection.selected_unit = None;
-                        info!("Founded city");
+                        fog.reveal(clicked, 2);
                         return;
                     }
                 }
@@ -186,7 +197,7 @@ fn handle_click(
                 unit.movement_left -= 1;
                 let pos = map.layout.hex_to_world_pos(clicked);
                 transform.translation = Vec3::new(pos.x, pos.y, 1.0);
-                info!("Moved unit to {:?}", clicked);
+                fog.reveal(clicked, 2);
             }
         }
     }
@@ -208,6 +219,9 @@ fn process_turn(
     mut tech: ResMut<TechState>,
     mut cities: Query<&mut City>,
     mut units: Query<&mut Unit>,
+    civs: Res<Civilizations>,
+    mut fog: ResMut<FogOfWar>,
+    mut diplomacy: ResMut<Diplomacy>,
 ) {
     if !keyboard.just_pressed(KeyCode::Space) { return; }
 
@@ -221,11 +235,21 @@ fn process_turn(
         city.production_progress += prod;
     }
 
-    // Reset unit movement
     for mut unit in &mut units {
         let (_, _, mv) = unit.unit_type.stats();
         unit.movement_left = mv;
     }
+
+    // AI turn
+    process_ai_turn(&civs, units.reborrow(), cities.reborrow());
+
+    // Update fog from unit and city positions
+    let unit_positions: Vec<_> = units.iter().map(|u| u.position).collect();
+    let city_positions: Vec<_> = cities.iter().map(|c| c.position).collect();
+    fog.update_visibility(&unit_positions, &city_positions);
+
+    // Simple diplomacy drift
+    diplomacy.change_attitude(0, 1, -1);
 
     tech.science_per_turn = ((2 + state.turn / 10) as f32 * sci_mod) as u32;
     if let Some(completed) = tech.process_turn() {
@@ -244,6 +268,8 @@ fn update_ui(
     tech: Res<TechState>,
     selection: Res<Selection>,
     units: Query<&Unit>,
+    civs: Res<Civilizations>,
+    diplomacy: Res<Diplomacy>,
     mut q: Query<&mut Text, With<Name>>,
 ) {
     let Ok(mut text) = q.get_single_mut() else { return };
@@ -264,12 +290,16 @@ fn update_ui(
         "None".to_string()
     };
 
+    let attitude = diplomacy.get_attitude(0, 1);
+
     text.0 = format!(
-        "Turn: {} | Gov: {}\nTech: {} ({})\nSelected: {}\nSpace = End Turn | Click unit then destination",
+        "Turn: {} | Gov: {}\nTech: {} ({})\nSelected: {}\nCivs: {} | Attitude vs AI: {}\nSpace = End Turn | Click unit then destination to move/found",
         state.turn,
         state.government.name(),
         current,
         progress,
-        sel
+        sel,
+        civs.players.len(),
+        attitude
     );
 }
