@@ -23,10 +23,9 @@ pub enum UnitType {
     Spearman,
     Archer,
     Horseman,
-    // Unique units
-    Legion,       // Player / Rome — stronger melee
-    WarChariot,   // Egypt — faster, bonus on open terrain
-    Immortal,     // Placeholder unique — high defense
+    Legion,
+    WarChariot,
+    Immortal,
 }
 
 impl UnitType {
@@ -38,9 +37,9 @@ impl UnitType {
             UnitType::Spearman => (1, 2, 1),
             UnitType::Archer => (2, 1, 1),
             UnitType::Horseman => (2, 1, 2),
-            UnitType::Legion => (2, 2, 1),       // +1 atk / +1 def
-            UnitType::WarChariot => (2, 1, 3),   // high movement
-            UnitType::Immortal => (1, 3, 1),     // very high defense
+            UnitType::Legion => (2, 2, 1),
+            UnitType::WarChariot => (2, 1, 3),
+            UnitType::Immortal => (1, 3, 1),
         }
     }
 
@@ -84,10 +83,9 @@ impl UnitType {
         }
     }
 
-    /// Unique ability modifiers
     pub fn attack_bonus(&self, terrain: crate::terrain::Terrain) -> f32 {
         match self {
-            UnitType::Legion => 1.25, // always stronger
+            UnitType::Legion => 1.25,
             UnitType::WarChariot if matches!(terrain, crate::terrain::Terrain::Plains | crate::terrain::Terrain::Grassland) => 1.5,
             _ => 1.0,
         }
@@ -101,12 +99,10 @@ impl UnitType {
         }
     }
 
-    /// Preferred unique unit for a civilization
     pub fn unique_for_civ(civ_id: u32) -> Option<Self> {
         match civ_id {
-            0 => Some(UnitType::Legion),      // Player
-            1 => Some(UnitType::Legion),      // Rome
-            2 => Some(UnitType::WarChariot),  // Egypt
+            0 | 1 => Some(UnitType::Legion),
+            2 => Some(UnitType::WarChariot),
             _ => None,
         }
     }
@@ -144,6 +140,18 @@ pub fn spawn_unit(
     coord: Hex,
     unit_type: UnitType,
 ) {
+    spawn_unit_for_owner(commands, meshes, materials, layout, coord, unit_type, 0);
+}
+
+pub fn spawn_unit_for_owner(
+    commands: &mut Commands,
+    meshes: &mut Assets<Mesh>,
+    materials: &mut Assets<ColorMaterial>,
+    layout: &hexx::HexLayout,
+    coord: Hex,
+    unit_type: UnitType,
+    owner: u32,
+) {
     let (_, _, mv) = unit_type.stats();
     let pos = layout.hex_to_world_pos(coord);
     let mesh = meshes.add(Circle::new(8.0));
@@ -152,7 +160,7 @@ pub fn spawn_unit(
         Unit {
             unit_type,
             movement_left: mv,
-            owner: 0,
+            owner,
             position: coord,
             build_turns_left: None,
             current_build: None,
