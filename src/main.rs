@@ -49,6 +49,12 @@ struct Selection {
     selected_city: Option<Entity>,
 }
 
+#[derive(Component)]
+struct CityPanel;
+
+#[derive(Component)]
+struct TechPanel;
+
 fn main() {
     App::new()
         .add_plugins(DefaultPlugins)
@@ -126,7 +132,7 @@ fn setup(
 
     // City panel
     commands.spawn((
-        Text::new(""),
+        Text::new("Click a city"),
         TextFont { font_size: 14.0, ..default() },
         TextColor(Color::srgb(0.9, 0.9, 0.7)),
         Node {
@@ -137,11 +143,12 @@ fn setup(
             ..default()
         },
         Name::new("city_panel"),
+        CityPanel,
     ));
 
     // Tech panel
     commands.spawn((
-        Text::new(""),
+        Text::new("Tech"),
         TextFont { font_size: 14.0, ..default() },
         TextColor(Color::srgb(0.7, 0.9, 1.0)),
         Node {
@@ -152,6 +159,7 @@ fn setup(
             ..default()
         },
         Name::new("tech_panel"),
+        TechPanel,
     ));
 }
 
@@ -229,7 +237,6 @@ fn handle_click(
     let Ok(world) = cam.viewport_to_world_2d(gt, cursor) else { return };
     let clicked = map.layout.world_pos_to_hex(world);
 
-    // Check for city click
     let mut clicked_city = None;
     for (entity, city) in &cities {
         if city.position == clicked {
@@ -500,11 +507,10 @@ fn update_ui(
     cities: Query<(Entity, &City, &CityBuildings, &Happiness)>,
     civs: Res<Civilizations>,
     diplomacy: Res<Diplomacy>,
-    mut hud: Query<&mut Text, (With<Name>, Without<CityPanelMarker>, Without<TechPanelMarker>)>,
-    mut city_panel: Query<&mut Text, (With<Name>, With<CityPanelMarker>)>,
-    mut tech_panel: Query<&mut Text, (With<Name>, With<TechPanelMarker>)>,
+    mut hud: Query<&mut Text, (With<Name>, Without<CityPanel>, Without<TechPanel>)>,
+    mut city_panel: Query<&mut Text, With<CityPanel>>,
+    mut tech_panel: Query<&mut Text, With<TechPanel>>,
 ) {
-    // Main HUD
     if let Ok(mut text) = hud.get_single_mut() {
         let current = tech.current.map(|t| t.name()).unwrap_or("None");
         let progress = if let Some(t) = tech.current {
@@ -549,7 +555,6 @@ fn update_ui(
         );
     }
 
-    // City panel
     if let Ok(mut text) = city_panel.get_single_mut() {
         if let Some(entity) = selection.selected_city {
             if let Ok((_, city, buildings, happiness)) = cities.get(entity) {
@@ -584,7 +589,6 @@ fn update_ui(
         }
     }
 
-    // Tech panel
     if let Ok(mut text) = tech_panel.get_single_mut() {
         let researched: Vec<_> = tech.researched.iter().map(|t| t.name()).collect();
         let available: Vec<_> = [
@@ -606,10 +610,3 @@ fn update_ui(
         );
     }
 }
-
-// Marker components for UI panels
-#[derive(Component)]
-struct CityPanelMarker;
-
-#[derive(Component)]
-struct TechPanelMarker;
