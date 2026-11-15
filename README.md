@@ -17,7 +17,7 @@ Core systems from Civ 2/3 implemented modularly. Goal: exceed FreeCiv. **All maj
 - Full governments with production/science modifiers, corruption, free unit support, and upkeep
 - Corruption based on distance from capital
 - Unit upkeep
-- Advanced war AI (aggression-based attack/retreat, targets cities)
+- Advanced war AI (aggression-based attack/retreat, targets cities, uses A* pathfinding)
 - AI that researches, founds cities, and improves tiles
 - Fog of war and diplomacy treaties (Peace / Alliance / War)
 - Victory conditions (Domination / Democracy / Space Race / Culture)
@@ -28,14 +28,15 @@ Core systems from Civ 2/3 implemented modularly. Goal: exceed FreeCiv. **All maj
 - City UI panel and Tech UI panel
 - Wonder effects
 - Save / load (expanded)
-- Culture and borders (with per-turn generation from population + buildings)
+- Culture and borders (per-turn generation from population + buildings)
 - Great Leaders (elite victories → armies)
 - Naval units (Galley through Battleship + Transport)
 - Air units (Fighter, Bomber, Helicopter, Jet Fighter, Stealth Bomber) with fuel
 - Espionage (steal tech, sabotage, steal gold, incite unrest)
 - Economy (inflation, building maintenance, trade gold, government modifiers)
 - Religion (Polytheism / Monotheism / Philosophy)
-- Unit promotions (Veteran, Elite, Combat I/II, Mobility, Siege) — now applied in combat resolution
+- Unit promotions (Veteran, Elite, Combat I/II, Mobility, Siege) — applied in combat + XP awards
+- **Turn integration** (`src/turn.rs`) — helpers to run culture generation, economy, and promotion-aware combat from the main turn loop
 - Hotseat multiplayer scaffolding
 - Headless game simulator for balance evaluation
 
