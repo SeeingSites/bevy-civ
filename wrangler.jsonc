@@ -1,0 +1,10 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  // Static-assets-only Worker: serves the WebAssembly build of the game from ./dist.
+  // Build it first with `npm run build` (scripts/build-web.sh).
+  "name": "bevy-civ",
+  "compatibility_date": "2026-11-01",
+  "assets": {
+    "directory": "./dist"
+  }
+}

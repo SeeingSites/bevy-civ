@@ -1,7 +1,6 @@
 use bevy::prelude::*;
 use hexx::Hex;
 use crate::unit::{Unit, UnitType};
-use crate::city::City;
 use crate::terrain::HexTile;
 use crate::tech::TechState;
 use rand::Rng;
@@ -41,12 +40,12 @@ fn unit_strength(unit: &Unit) -> f32 {
 
 pub fn process_ai_turn(
     civs: &mut Civilizations,
-    mut units: Query<&mut Unit>,
-    mut cities: Query<&mut City>,
-    tiles: Query<&HexTile>,
-    mut commands: Commands,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<ColorMaterial>>,
+    units: &mut Query<&mut Unit>,
+    city_positions: &[(Hex, u32)],
+    tiles: &Query<&mut HexTile>,
+    commands: &mut Commands,
+    meshes: &mut Assets<Mesh>,
+    materials: &mut Assets<ColorMaterial>,
     layout: &hexx::HexLayout,
 ) {
     let mut rng = rand::thread_rng();
@@ -69,9 +68,7 @@ pub fn process_ai_turn(
         .map(|u| (u.position, u.owner, u.unit_type, unit_strength(u)))
         .collect();
 
-    let city_positions: Vec<(Hex, u32)> = cities.iter().map(|c| (c.position, c.owner)).collect();
-
-    for mut unit in &mut units {
+    for mut unit in units.iter_mut() {
         if unit.owner == 0 || unit.movement_left == 0 || unit.build_turns_left.is_some() {
             continue;
         }
@@ -85,16 +82,16 @@ pub fn process_ai_turn(
         if unit.unit_type == UnitType::Settler {
             let neighbors = unit.position.all_neighbors();
             for &n in &neighbors {
-                let occupied = cities.iter().any(|c| c.position == n);
+                let occupied = city_positions.iter().any(|(p, _)| *p == n);
                 let land = tiles.iter().any(|t| t.coord == n && t.terrain != crate::terrain::Terrain::Water);
                 if !occupied && land {
                     crate::city::spawn_city(
-                        &mut commands,
-                        &mut meshes,
-                        &mut materials,
+                        commands,
+                        meshes,
+                        materials,
                         layout,
                         n,
-                        format!("AI City {}", cities.iter().count() + 1),
+                        format!("AI City {}", city_positions.len() + 1),
                         1,
                     );
                     info!("AI founded city at {:?}", n);
@@ -137,7 +134,7 @@ pub fn process_ai_turn(
 
         // Also target enemy cities if aggressive
         if best_target.is_none() && civ_aggression > 0.6 {
-            for (pos, owner) in &city_positions {
+            for (pos, owner) in city_positions {
                 if *owner != unit.owner && unit.position.distance_to(*pos) <= 4 {
                     best_target = Some((*pos, 0.0));
                     break;

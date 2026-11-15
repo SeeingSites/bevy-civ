@@ -1,6 +1,11 @@
 use bevy::prelude::*;
+// Explicit import: `terrain::Resource` (map resources) would otherwise clash with Bevy's trait.
+use bevy::prelude::Resource;
+use bevy::render::{
+    mesh::{Indices, PrimitiveTopology},
+    render_asset::RenderAssetUsages,
+};
 use hexx::{shapes, *};
-use rand::Rng;
 
 mod city;
 mod unit;
@@ -61,6 +66,9 @@ struct Selection {
 }
 
 #[derive(Component)]
+struct Hud;
+
+#[derive(Component)]
 struct CityPanel;
 
 #[derive(Component)]
@@ -68,7 +76,17 @@ struct TechPanel;
 
 fn main() {
     App::new()
-        .add_plugins(DefaultPlugins)
+        .add_plugins(DefaultPlugins.set(WindowPlugin {
+            primary_window: Some(Window {
+                title: "Bevy Civ".into(),
+                // Web build: render into the page's canvas and track its size.
+                canvas: Some("#bevy-canvas".into()),
+                fit_canvas_to_parent: true,
+                prevent_default_event_handling: true,
+                ..default()
+            }),
+            ..default()
+        }))
         .insert_resource(GameState {
             turn: 1,
             gold: 0,
@@ -142,6 +160,7 @@ fn setup(
             ..default()
         },
         Name::new("hud"),
+        Hud,
     ));
 
     commands.spawn((
@@ -322,7 +341,12 @@ fn handle_click(
     selection.selected_city = None;
 
     if let Some(selected) = selection.selected_unit {
+        let others: Vec<(Entity, Hex, u32, UnitType)> = units
+            .iter()
+            .map(|(e, u, _)| (e, u.position, u.owner, u.unit_type))
+            .collect();
         if let Ok((_, mut unit, mut transform)) = units.get_mut(selected) {
+            let unit = &mut *unit;
             if unit.movement_left == 0 || unit.build_turns_left.is_some() {
                 return;
             }
@@ -342,9 +366,9 @@ fn handle_click(
 
             let final_pos = path.last().copied().unwrap_or(unit.position);
             let mut enemy_entity = None;
-            for (e, other, _) in &units {
-                if other.position == final_pos && other.owner != unit.owner {
-                    enemy_entity = Some((e, other.unit_type));
+            for &(e, pos, owner, unit_type) in &others {
+                if pos == final_pos && owner != unit.owner {
+                    enemy_entity = Some((e, unit_type));
                     break;
                 }
             }
@@ -372,7 +396,7 @@ fn handle_click(
             }
 
             if unit.unit_type.is_military() && unit.owner == 0 {
-                for (e, mut city) in &mut cities {
+                for (_, mut city) in &mut cities {
                     if city.position == unit.position && city.owner != 0 {
                         city.owner = 0;
                         info!("Captured city {}", city.name);
@@ -413,7 +437,7 @@ fn update_unit_positions(
     }
 }
 
-fn has_strategic_resource(tiles: &Query<&HexTile>, required: Resource) -> bool {
+fn has_strategic_resource(tiles: &Query<&mut HexTile>, required: terrain::Resource) -> bool {
     tiles.iter().any(|t| t.resource == Some(required))
 }
 
@@ -453,7 +477,7 @@ fn process_turn(
             player_cities += 1;
         }
 
-        let dist = capital_pos.map(|cp| city.position.distance_to(cp)).unwrap_or(0);
+        let dist = capital_pos.map(|cp| city.position.distance_to(cp) as u32).unwrap_or(0);
 
         if city.process_food(&buildings, gov, dist) {
             info!("{} grew to population {}", city.name, city.population);
@@ -545,14 +569,15 @@ fn process_turn(
         }
     }
 
+    let city_owners: Vec<(Hex, u32)> = cities.iter().map(|(c, _, _)| (c.position, c.owner)).collect();
     process_ai_turn(
         &mut civs,
-        units.reborrow(),
-        cities.reborrow().map(|(c, _, _)| c),
-        tiles.reborrow(),
-        commands.reborrow(),
-        meshes.reborrow(),
-        materials.reborrow(),
+        &mut units,
+        &city_owners,
+        &tiles,
+        &mut commands,
+        &mut meshes,
+        &mut materials,
         &map.layout,
     );
 
@@ -585,7 +610,7 @@ fn process_turn(
         space.add_component(SpaceComponent::Thrusters);
     }
 
-    state.score = Score::calculate(&cities, &tech);
+    state.score = Score::calculate(cities.iter().map(|(c, b, _)| (c, b)), &tech);
 
     if player_cities >= 5 {
         state.victory = Some("Domination Victory!".into());
@@ -612,9 +637,9 @@ fn update_ui(
     civs: Res<Civilizations>,
     diplomacy: Res<Diplomacy>,
     space: Res<SpaceRace>,
-    mut hud: Query<&mut Text, (With<Name>, Without<CityPanel>, Without<TechPanel>)>,
-    mut city_panel: Query<&mut Text, With<CityPanel>>,
-    mut tech_panel: Query<&mut Text, With<TechPanel>>,
+    mut hud: Query<&mut Text, (With<Hud>, Without<CityPanel>, Without<TechPanel>)>,
+    mut city_panel: Query<&mut Text, (With<CityPanel>, Without<Hud>, Without<TechPanel>)>,
+    mut tech_panel: Query<&mut Text, (With<TechPanel>, Without<Hud>, Without<CityPanel>)>,
 ) {
     if let Ok(mut text) = hud.get_single_mut() {
         let current = tech.current.map(|t| t.name()).unwrap_or("None");

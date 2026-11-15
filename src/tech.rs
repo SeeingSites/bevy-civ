@@ -1,7 +1,7 @@
 use bevy::prelude::*;
 use std::collections::HashSet;
 
-#[derive(Resource)]
+#[derive(Resource, Clone)]
 pub struct TechState {
     pub researched: HashSet<Tech>,
     pub current: Option<Tech>,

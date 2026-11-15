@@ -1,5 +1,4 @@
 use bevy::prelude::*;
-use hexx::Hex;
 use crate::unit::{Unit, UnitType, spawn_unit_for_owner};
 use crate::terrain::HexTile;
 use rand::Rng;
@@ -10,13 +9,13 @@ pub struct BarbarianState {
 }
 
 pub fn process_barbarians(
-    mut state: ResMut<BarbarianState>,
-    mut commands: Commands,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<ColorMaterial>>,
+    state: &mut BarbarianState,
+    commands: &mut Commands,
+    meshes: &mut Assets<Mesh>,
+    materials: &mut Assets<ColorMaterial>,
     layout: &hexx::HexLayout,
-    tiles: &Query<&HexTile>,
-    units: &Query<&Unit>,
+    tiles: &Query<&mut HexTile>,
+    units: &Query<&mut Unit>,
 ) {
     state.spawn_timer += 1;
     if state.spawn_timer < 8 { return; }
@@ -33,9 +32,9 @@ pub fn process_barbarians(
     let nearby_units = units.iter().any(|u| u.position.distance_to(tile.coord) < 4);
     if !nearby_units {
         spawn_unit_for_owner(
-            &mut commands,
-            &mut meshes,
-            &mut materials,
+            commands,
+            meshes,
+            materials,
             layout,
             tile.coord,
             UnitType::Warrior,

@@ -1,4 +1,6 @@
-/target
-Cargo.lock
+target/
+/dist
+/node_modules
+.wrangler
 **/*.rs.bk
 .DS_Store

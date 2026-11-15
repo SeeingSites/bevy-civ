@@ -62,5 +62,22 @@ GitHub Actions workflow (`.github/workflows/simulate.yml`) runs on push/PR.
 cargo run
 ```
 
+## Play in the browser (Cloudflare)
+The game compiles to WebAssembly and is served by a static-assets Cloudflare Worker (`wrangler.jsonc`).
+
+One-time tooling: `rustup target add wasm32-unknown-unknown`, a `wasm-bindgen` CLI matching the
+version in `Cargo.lock`, and `npm install`.
+
+```bash
+npm run build    # builds ./dist (scripts/build-web.sh)
+npm run dev      # serve locally at http://localhost:8787
+npm run deploy   # build + wrangler deploy (needs `wrangler login` or an API token)
+```
+
+`.github/workflows/deploy.yml` builds on every PR and deploys on every push to `main`. It needs two
+repository secrets: `CLOUDFLARE_API_TOKEN` (the "Edit Cloudflare Workers" token template) and
+`CLOUDFLARE_ACCOUNT_ID`. The game is then live at `https://bevy-civ.<your-subdomain>.workers.dev`.
+In the browser, **S** saves to localStorage.
+
 ## License
 MIT OR Apache-2.0

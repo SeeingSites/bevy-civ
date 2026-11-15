@@ -77,6 +77,9 @@ impl Game {
         let mut total_science = 0u32;
         let mut player_cities = 0u32;
 
+        let city_count = self.cities.len();
+        let mut founded = 0;
+
         for city in &mut self.cities {
             if city.owner == 0 {
                 player_cities += 1;
@@ -97,17 +100,22 @@ impl Game {
             if city.production >= 30 && rng.gen_bool(0.3) {
                 city.production -= 30;
                 // Sometimes found a new city
-                if self.cities.len() < 8 && rng.gen_bool(0.4) {
-                    self.cities.push(City {
-                        population: 1,
-                        food: 0,
-                        production: 0,
-                        owner: 0,
-                    });
+                if city_count + founded < 8 && rng.gen_bool(0.4) {
+                    founded += 1;
                 }
             }
 
             total_science += 1 + city.population / 2;
+        }
+
+        // Newly founded cities join after this turn's pass.
+        for _ in 0..founded {
+            self.cities.push(City {
+                population: 1,
+                food: 0,
+                production: 0,
+                owner: 0,
+            });
         }
 
         // Tech

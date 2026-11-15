@@ -12,16 +12,17 @@ pub struct Score {
 }
 
 impl Score {
-    pub fn calculate(
-        cities: &Query<(&City, &CityBuildings)>,
+    pub fn calculate<'a>(
+        cities: impl Iterator<Item = (&'a City, &'a CityBuildings)>,
         tech: &TechState,
     ) -> Self {
-        let population: u32 = cities.iter().filter(|(c, _)| c.owner == 0).map(|(c, _)| c.population).sum();
+        let mut population = 0;
+        let mut wonders = 0;
+        for (city, buildings) in cities.filter(|(c, _)| c.owner == 0) {
+            population += city.population;
+            wonders += buildings.buildings.iter().filter(|b| b.is_wonder()).count() as u32 * 50;
+        }
         let techs = tech.researched.len() as u32 * 10;
-        let wonders: u32 = cities.iter()
-            .filter(|(c, _)| c.owner == 0)
-            .map(|(_, b)| b.buildings.iter().filter(|b| b.is_wonder()).count() as u32 * 50)
-            .sum();
         let total = population * 2 + techs + wonders;
         Self { population, techs, wonders, total }
     }
