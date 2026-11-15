@@ -27,15 +27,16 @@ Core systems from Civ 2/3 implemented modularly. Goal: exceed FreeCiv. **All maj
 - Trade routes (gold + science)
 - City UI panel and Tech UI panel
 - Wonder effects
-- Save / load (basic)
+- **Save / load** (expanded: turn, gold, science, government, score, cities, techs, mode)
 - Culture and borders
 - Great Leaders (elite victories → armies)
 - Naval units (Galley through Battleship + Transport)
 - Air units (Fighter, Bomber, Helicopter, Jet Fighter, Stealth Bomber) with fuel
 - Espionage (steal tech, sabotage, steal gold, incite unrest)
 - Economy (inflation, building maintenance, government modifiers)
-- **Religion** (Polytheism / Monotheism / Philosophy with happiness and science effects)
-- **Unit promotions** (Veteran, Elite, Combat I/II, Mobility, Siege via XP)
+- Religion (Polytheism / Monotheism / Philosophy)
+- Unit promotions (Veteran, Elite, Combat I/II, Mobility, Siege)
+- **Hotseat multiplayer** scaffolding (local multi-player turns)
 - Headless game simulator for balance evaluation
 
 ## Controls
