@@ -27,16 +27,16 @@ Core systems from Civ 2/3 implemented modularly. Goal: exceed FreeCiv. **All maj
 - Trade routes (gold + science)
 - City UI panel and Tech UI panel
 - Wonder effects
-- **Save / load** (expanded: turn, gold, science, government, score, cities, techs, mode)
-- Culture and borders
+- Save / load (expanded)
+- Culture and borders (with per-turn generation from population + buildings)
 - Great Leaders (elite victories → armies)
 - Naval units (Galley through Battleship + Transport)
 - Air units (Fighter, Bomber, Helicopter, Jet Fighter, Stealth Bomber) with fuel
 - Espionage (steal tech, sabotage, steal gold, incite unrest)
-- Economy (inflation, building maintenance, government modifiers)
+- Economy (inflation, building maintenance, trade gold, government modifiers)
 - Religion (Polytheism / Monotheism / Philosophy)
-- Unit promotions (Veteran, Elite, Combat I/II, Mobility, Siege)
-- **Hotseat multiplayer** scaffolding (local multi-player turns)
+- Unit promotions (Veteran, Elite, Combat I/II, Mobility, Siege) — now applied in combat resolution
+- Hotseat multiplayer scaffolding
 - Headless game simulator for balance evaluation
 
 ## Controls
@@ -58,7 +58,16 @@ cd simulate && cargo run -- --games 100 --max-turns 120
 ### CI
 GitHub Actions workflow (`.github/workflows/simulate.yml`) runs on push/PR.
 
-## Running
+## Web / Browser (Cloudflare)
+See the `cloudflare-web-deploy` branch for the WASM build, Cloudflare Worker static hosting, and GitHub Actions deploy workflow. That branch also contains the compilation fixes that make the game buildable.
+
+```bash
+npm run build    # builds ./dist
+npm run dev      # local serve
+npm run deploy   # deploy to Cloudflare
+```
+
+## Running (native)
 ```bash
 cargo run
 ```
