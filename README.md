@@ -32,8 +32,10 @@ Core systems from Civ 2/3 implemented modularly. Goal: exceed FreeCiv. **All maj
 - Great Leaders (elite victories → armies)
 - Naval units (Galley through Battleship + Transport)
 - Air units (Fighter, Bomber, Helicopter, Jet Fighter, Stealth Bomber) with fuel
-- **Espionage** (steal tech, sabotage, steal gold, incite unrest)
-- **Economy** (inflation, building maintenance, government modifiers)
+- Espionage (steal tech, sabotage, steal gold, incite unrest)
+- Economy (inflation, building maintenance, government modifiers)
+- **Religion** (Polytheism / Monotheism / Philosophy with happiness and science effects)
+- **Unit promotions** (Veteran, Elite, Combat I/II, Mobility, Siege via XP)
 - Headless game simulator for balance evaluation
 
 ## Controls
