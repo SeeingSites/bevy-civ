@@ -29,12 +29,12 @@ impl Religion {
         }
     }
 
-    pub fn science_penalty(&self) -> f32 {
+    pub fn science_modifier(&self) -> f32 {
         match self {
-            Religion::None => 0.0,
-            Religion::Polytheism => 0.05,
-            Religion::Monotheism => 0.1,
-            Religion::Philosophy => -0.1, // bonus
+            Religion::None => 1.0,
+            Religion::Polytheism => 0.95,
+            Religion::Monotheism => 0.9,
+            Religion::Philosophy => 1.1,
         }
     }
 }
@@ -65,6 +65,14 @@ impl CityReligion {
             }
         }
     }
+
+    pub fn apply_to_happiness(&self, base: u32) -> u32 {
+        base + self.religion.happiness_bonus()
+    }
+
+    pub fn apply_to_science(&self, base: u32) -> u32 {
+        (base as f32 * self.religion.science_modifier()) as u32
+    }
 }
 
 #[derive(Resource, Default)]
@@ -80,9 +88,5 @@ impl ReligionState {
         } else {
             false
         }
-    }
-
-    pub fn spread_from_city(&self, city_pos: Hex, religion: Religion, cities: &mut Query<&mut CityReligion>) {
-        // Simple spread to nearby cities handled externally
     }
 }
