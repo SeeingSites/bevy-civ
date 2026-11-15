@@ -23,3 +23,4 @@ pub mod espionage;
 pub mod economy;
 pub mod religion;
 pub mod promotions;
+pub mod multiplayer;
