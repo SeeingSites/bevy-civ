@@ -18,15 +18,16 @@ pub struct Civ {
     pub is_human: bool,
     pub gold: i32,
     pub tech: TechState,
+    pub aggression: f32,
 }
 
 impl Default for Civilizations {
     fn default() -> Self {
         Self {
             players: vec![
-                Civ { id: 0, name: "Player".into(), is_human: true, gold: 0, tech: TechState::default() },
-                Civ { id: 1, name: "AI Rome".into(), is_human: false, gold: 50, tech: TechState::default() },
-                Civ { id: 2, name: "AI Egypt".into(), is_human: false, gold: 50, tech: TechState::default() },
+                Civ { id: 0, name: "Player".into(), is_human: true, gold: 0, tech: TechState::default(), aggression: 0.5 },
+                Civ { id: 1, name: "AI Rome".into(), is_human: false, gold: 50, tech: TechState::default(), aggression: 0.7 },
+                Civ { id: 2, name: "AI Egypt".into(), is_human: false, gold: 50, tech: TechState::default(), aggression: 0.4 },
             ],
         }
     }
@@ -50,27 +51,37 @@ pub fn process_ai_turn(
 ) {
     let mut rng = rand::thread_rng();
 
-    // AI research
+    // AI research + gold management
     for civ in &mut civs.players {
         if civ.is_human { continue; }
-        civ.tech.science_per_turn = 3;
+        civ.tech.science_per_turn = 4;
         if let Some(completed) = civ.tech.process_turn() {
             info!("{} researched {}", civ.name, completed.name());
         }
+        // AI spends gold on unit production occasionally
+        if civ.gold > 100 && rng.gen_bool(0.3) {
+            civ.gold -= 40;
+        }
     }
 
-    // Collect unit data for war decisions (avoid borrow issues)
     let unit_snapshots: Vec<(Hex, u32, UnitType, f32)> = units
         .iter()
         .map(|u| (u.position, u.owner, u.unit_type, unit_strength(u)))
         .collect();
+
+    let city_positions: Vec<(Hex, u32)> = cities.iter().map(|c| (c.position, c.owner)).collect();
 
     for mut unit in &mut units {
         if unit.owner == 0 || unit.movement_left == 0 || unit.build_turns_left.is_some() {
             continue;
         }
 
-        // Settler: found city
+        let civ_aggression = civs.players.iter()
+            .find(|c| c.id == unit.owner)
+            .map(|c| c.aggression)
+            .unwrap_or(0.5);
+
+        // Settler: found city on good land
         if unit.unit_type == UnitType::Settler {
             let neighbors = unit.position.all_neighbors();
             for &n in &neighbors {
@@ -95,7 +106,17 @@ pub fn process_ai_turn(
             continue;
         }
 
-        // War AI: look for nearby enemies
+        // Worker: improve tiles near own cities
+        if unit.unit_type.is_worker() {
+            if let Some(home) = city_positions.iter().find(|(_, o)| *o == unit.owner).map(|(p, _)| *p) {
+                if unit.position.distance_to(home) <= 2 && rng.gen_bool(0.6) {
+                    // Prefer farm on food tiles
+                    unit.start_build(crate::terrain::Improvement::Farm);
+                    continue;
+                }
+            }
+        }
+
         let my_strength = unit_strength(&unit);
         let mut best_target: Option<(Hex, f32)> = None;
         let mut threat_nearby = false;
@@ -103,10 +124,10 @@ pub fn process_ai_turn(
         for (pos, owner, _, enemy_strength) in &unit_snapshots {
             if *owner == unit.owner { continue; }
             let dist = unit.position.distance_to(*pos);
-            if dist <= 2 {
+            if dist <= 3 {
                 threat_nearby = true;
-                if my_strength > *enemy_strength * 1.1 {
-                    // Stronger: attack toward it
+                let attack_threshold = if civ_aggression > 0.6 { 0.9 } else { 1.2 };
+                if my_strength > *enemy_strength * attack_threshold {
                     if best_target.map(|(_, s)| *enemy_strength < s).unwrap_or(true) {
                         best_target = Some((*pos, *enemy_strength));
                     }
@@ -114,8 +135,17 @@ pub fn process_ai_turn(
             }
         }
 
+        // Also target enemy cities if aggressive
+        if best_target.is_none() && civ_aggression > 0.6 {
+            for (pos, owner) in &city_positions {
+                if *owner != unit.owner && unit.position.distance_to(*pos) <= 4 {
+                    best_target = Some((*pos, 0.0));
+                    break;
+                }
+            }
+        }
+
         if let Some((target_pos, _)) = best_target {
-            // Move toward the weak enemy
             let neighbors = unit.position.all_neighbors();
             let mut best_move = None;
             let mut best_dist = unit.position.distance_to(target_pos);
@@ -132,12 +162,11 @@ pub fn process_ai_turn(
             if let Some(mv) = best_move {
                 unit.position = mv;
                 unit.movement_left = unit.movement_left.saturating_sub(1);
-                info!("AI unit advancing on enemy at {:?}", target_pos);
+                info!("AI unit advancing on target at {:?}", target_pos);
                 continue;
             }
-        } else if threat_nearby && my_strength < 3.0 {
-            // Weaker and threatened: try to retreat toward own city
-            if let Some(home) = cities.iter().find(|c| c.owner == unit.owner).map(|c| c.position) {
+        } else if threat_nearby && my_strength < 4.0 {
+            if let Some(home) = city_positions.iter().find(|(_, o)| *o == unit.owner).map(|(p, _)| *p) {
                 let neighbors = unit.position.all_neighbors();
                 let mut best_move = None;
                 let mut best_dist = unit.position.distance_to(home);
@@ -160,7 +189,7 @@ pub fn process_ai_turn(
             }
         }
 
-        // Default: random land move
+        // Default: move toward own cities or random
         let neighbors = unit.position.all_neighbors();
         if let Some(&target) = neighbors.get(rng.gen_range(0..neighbors.len())) {
             let land = tiles.iter().any(|t| t.coord == target && t.terrain != crate::terrain::Terrain::Water);
