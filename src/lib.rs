@@ -19,3 +19,5 @@ pub mod leaders;
 pub mod naval;
 pub mod air;
 pub mod victory;
+pub mod espionage;
+pub mod economy;
