@@ -1,11 +1,13 @@
 use bevy::prelude::*;
 use hexx::Hex;
 use crate::city::City;
+use crate::building::CityBuildings;
 
 #[derive(Component)]
 pub struct Culture {
     pub points: u32,
     pub border_radius: u32,
+    pub per_turn: u32,
 }
 
 impl Culture {
@@ -13,12 +15,12 @@ impl Culture {
         Self {
             points: 0,
             border_radius: 1,
+            per_turn: 1,
         }
     }
 
     pub fn add(&mut self, amount: u32) {
         self.points += amount;
-        // Expand borders every 50 culture
         self.border_radius = 1 + self.points / 50;
         if self.border_radius > 4 {
             self.border_radius = 4;
@@ -27,6 +29,15 @@ impl Culture {
 
     pub fn contains(&self, city_pos: Hex, hex: Hex) -> bool {
         city_pos.distance_to(hex) <= self.border_radius as i32
+    }
+
+    /// Culture generated this turn from population + buildings.
+    pub fn calculate_yield(city: &City, buildings: &CityBuildings) -> u32 {
+        let base = 1 + city.population / 2;
+        let building_bonus = buildings.buildings.iter()
+            .filter(|b| b.is_wonder() || matches!(b, crate::building::Building::Library | crate::building::Building::University))
+            .count() as u32 * 2;
+        base + building_bonus
     }
 }
 
@@ -49,5 +60,15 @@ pub fn update_culture_borders(
                 }
             }
         }
+    }
+}
+
+pub fn process_culture_turn(
+    mut cities: Query<(&City, &CityBuildings, &mut Culture)>,
+) {
+    for (city, buildings, mut culture) in &mut cities {
+        let yield_amount = Culture::calculate_yield(city, buildings);
+        culture.per_turn = yield_amount;
+        culture.add(yield_amount);
     }
 }
