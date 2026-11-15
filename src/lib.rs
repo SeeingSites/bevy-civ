@@ -21,3 +21,5 @@ pub mod air;
 pub mod victory;
 pub mod espionage;
 pub mod economy;
+pub mod religion;
+pub mod promotions;
