@@ -1,19 +1,29 @@
 use bevy::prelude::*;
 use crate::unit::UnitType;
 use crate::terrain::Terrain;
+use crate::promotions::UnitPromotions;
 
-/// Simple Civ-style combat resolution with unique unit bonuses.
+/// Civ-style combat with terrain, unique unit, and promotion bonuses.
 /// Returns true if attacker wins.
 pub fn resolve_combat(
     attacker: UnitType,
     defender: UnitType,
     defender_terrain: Terrain,
+    attacker_promos: Option<&UnitPromotions>,
+    defender_promos: Option<&UnitPromotions>,
 ) -> bool {
     let (atk, _, _) = attacker.stats();
     let (_, def, _) = defender.stats();
 
     let mut atk_mod = (atk as f32) * attacker.attack_bonus(defender_terrain);
     let mut def_mod = (def as f32) * defender.defense_bonus();
+
+    if let Some(p) = attacker_promos {
+        atk_mod *= 1.0 + p.total_attack_bonus();
+    }
+    if let Some(p) = defender_promos {
+        def_mod *= 1.0 + p.total_defense_bonus();
+    }
 
     // Terrain defense bonuses
     match defender_terrain {
@@ -40,4 +50,10 @@ pub fn log_combat(attacker: UnitType, defender: UnitType, terrain: Terrain, atta
         "Combat: {:?} vs {:?} on {:?} → {}",
         attacker, defender, terrain, result
     );
+}
+
+/// Award XP to a unit that participated in combat.
+pub fn award_combat_xp(promos: &mut UnitPromotions, won: bool) {
+    let amount = if won { 2 } else { 1 };
+    promos.add_xp(amount);
 }

@@ -16,7 +16,7 @@ use bevy_civ::diplomacy::{Diplomacy, Happiness, Treaty};
 use bevy_civ::fog::FogOfWar;
 use bevy_civ::government::Government;
 use bevy_civ::pathfinding::{find_path, move_along_path};
-use bevy_civ::save::save_game;
+use bevy_civ::save::{save_game, SaveData};
 use bevy_civ::score::Score;
 use bevy_civ::space::{SpaceComponent, SpaceRace};
 use bevy_civ::tech::{Tech, TechState};
@@ -360,7 +360,7 @@ fn handle_map_click(
                     diplomacy.set_treaty(PLAYER, enemy_owner, Treaty::War);
                     log.push("Your attack means war!");
                 }
-                if resolve_combat(unit.unit_type, enemy_type, terrain) {
+                if resolve_combat(unit.unit_type, enemy_type, terrain, None, None) {
                     log.push(format!("Victory! Your {} defeated the enemy {}.", unit.unit_type.name(), enemy_type.name()));
                     commands.entity(enemy_entity).despawn_recursive();
                     let more_defenders = snapshot.iter().any(|u| u.1 == hex && u.2 != PLAYER && u.0 != enemy_entity);
@@ -498,8 +498,17 @@ fn apply_actions(
                 }
             }
             Action::Save => {
-                save_game(state.turn, state.gold, state.government.name());
-                log.push("Game saved.");
+                let saved = save_game(&SaveData {
+                    turn: state.turn,
+                    gold: state.gold,
+                    science: tech.science_per_turn as i32,
+                    government: state.government.name().to_string(),
+                    score: state.score.total,
+                    player_cities: cities.iter().filter(|c| c.owner == PLAYER).count() as u32,
+                    researched_techs: tech.researched.len() as u32,
+                    mode: "single".into(),
+                });
+                log.push(if saved { "Game saved." } else { "The game could not be saved." });
             }
             Action::SetProduction(item) => {
                 let Some(mut city) = selection.city.and_then(|e| cities.get_mut(e).ok()) else { continue };

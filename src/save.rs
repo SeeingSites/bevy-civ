@@ -1,11 +1,16 @@
 use bevy::prelude::*;
 use serde::{Serialize, Deserialize};
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct SaveData {
     pub turn: u32,
     pub gold: i32,
+    pub science: i32,
     pub government: String,
+    pub score: u32,
+    pub player_cities: u32,
+    pub researched_techs: u32,
+    pub mode: String,
 }
 
 const SAVE_KEY: &str = "save.json";
@@ -38,18 +43,24 @@ mod storage {
     }
 }
 
-pub fn save_game(turn: u32, gold: i32, government: &str) {
-    let data = SaveData {
-        turn,
-        gold,
-        government: government.to_string(),
-    };
-    match serde_json::to_string_pretty(&data) {
-        Ok(json) if storage::write(SAVE_KEY, &json) => info!("Game saved to {SAVE_KEY}"),
-        _ => warn!("Could not save game"),
+/// Returns whether the save was written.
+pub fn save_game(data: &SaveData) -> bool {
+    match serde_json::to_string_pretty(data) {
+        Ok(json) if storage::write(SAVE_KEY, &json) => {
+            info!("Game saved to {SAVE_KEY} (turn {})", data.turn);
+            true
+        }
+        _ => {
+            warn!("Could not save game");
+            false
+        }
     }
 }
 
 pub fn load_game() -> Option<SaveData> {
     serde_json::from_str(&storage::read(SAVE_KEY)?).ok()
+}
+
+pub fn save_exists() -> bool {
+    storage::read(SAVE_KEY).is_some()
 }

@@ -17,7 +17,7 @@ Core systems from Civ 2/3 implemented modularly. Goal: exceed FreeCiv. **All maj
 - Full governments with production/science modifiers, corruption, free unit support, and upkeep
 - Corruption based on distance from capital
 - Unit upkeep
-- Advanced war AI (aggression-based attack/retreat, targets cities)
+- Advanced war AI (aggression-based attack/retreat, targets cities, uses A* pathfinding)
 - AI that researches, founds cities, and improves tiles
 - Fog of war and diplomacy treaties (Peace / Alliance / War)
 - Victory conditions (Domination / Democracy / Space Race / Culture)
@@ -29,15 +29,17 @@ Core systems from Civ 2/3 implemented modularly. Goal: exceed FreeCiv. **All maj
 - Animated units, cities that grow visually, fog of war, minimap
 - Interface with status bar, unit and city panels, science and foreign advisors, message log
 - Wonder effects
-- Save / load (basic)
-- Culture and borders
+- Save / load (expanded)
+- Culture and borders (per-turn generation from population + buildings)
 - Great Leaders (elite victories → armies)
-- Naval units (Galley through Battleship + Transport)
-- Air units (Fighter, Bomber, Helicopter, Jet Fighter, Stealth Bomber) with fuel
+- **Naval units** (Galley through Battleship + Transport) with cargo load/unload and naval combat
+- **Air units** (Fighter, Bomber, Helicopter, Jet Fighter, Stealth Bomber) with fuel, air combat, and bombing damage
 - Espionage (steal tech, sabotage, steal gold, incite unrest)
-- Economy (inflation, building maintenance, government modifiers)
-- **Religion** (Polytheism / Monotheism / Philosophy with happiness and science effects)
-- **Unit promotions** (Veteran, Elite, Combat I/II, Mobility, Siege via XP)
+- Economy (inflation, building maintenance, trade gold, government modifiers)
+- **Religion** (Polytheism / Monotheism / Philosophy) with happiness bonuses and science modifiers applied per city
+- Unit promotions (Veteran, Elite, Combat I/II, Mobility, Siege) — applied in combat + XP awards
+- Turn integration (`src/turn.rs`) — helpers to run culture, economy, and promotion-aware combat
+- Hotseat multiplayer scaffolding
 - Headless game simulator for balance evaluation
 
 ## Controls
@@ -70,7 +72,7 @@ cd simulate && cargo run -- --games 100 --max-turns 120
 ### CI
 GitHub Actions workflow (`.github/workflows/simulate.yml`) runs on push/PR.
 
-## Running
+## Running (native)
 ```bash
 cargo run
 ```
