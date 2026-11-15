@@ -20,7 +20,7 @@ Core systems from Civ 2/3 implemented modularly. Goal: exceed FreeCiv. **All maj
 - Advanced war AI (aggression-based attack/retreat, targets cities)
 - AI that researches, founds cities, and improves tiles
 - Fog of war and diplomacy treaties (Peace / Alliance / War)
-- Victory conditions (Domination / Democracy / Space Race / **Culture**)
+- Victory conditions (Domination / Democracy / Space Race / Culture)
 - Score system
 - Barbarians
 - City capture
@@ -28,10 +28,12 @@ Core systems from Civ 2/3 implemented modularly. Goal: exceed FreeCiv. **All maj
 - City UI panel and Tech UI panel
 - Wonder effects
 - Save / load (basic)
-- Culture and borders (cities expand influence)
+- Culture and borders
 - Great Leaders (elite victories → armies)
 - Naval units (Galley through Battleship + Transport)
 - Air units (Fighter, Bomber, Helicopter, Jet Fighter, Stealth Bomber) with fuel
+- **Espionage** (steal tech, sabotage, steal gold, incite unrest)
+- **Economy** (inflation, building maintenance, government modifiers)
 - Headless game simulator for balance evaluation
 
 ## Controls
