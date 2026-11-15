@@ -51,6 +51,10 @@ impl AirType {
             AirType::StealthBomber => Some("Stealth"),
         }
     }
+
+    pub fn is_bomber(&self) -> bool {
+        matches!(self, AirType::Bomber | AirType::StealthBomber)
+    }
 }
 
 impl AirUnit {
@@ -65,5 +69,22 @@ impl AirUnit {
 
     pub fn refuel(&mut self) {
         self.fuel = self.max_fuel;
+    }
+
+    pub fn resolve_air_combat(self_type: AirType, enemy_type: AirType) -> bool {
+        let (atk, _, _, _) = self_type.stats();
+        let (_, def, _, _) = enemy_type.stats();
+        let atk_roll = atk as f32 * (0.8 + rand::random::<f32>() * 0.4);
+        let def_roll = def as f32 * (0.8 + rand::random::<f32>() * 0.4);
+        atk_roll > def_roll
+    }
+
+    /// Bombing damage against a city or ground unit (returns damage amount).
+    pub fn bomb_damage(self_type: AirType) -> u32 {
+        if self_type.is_bomber() {
+            self_type.stats().0 / 2
+        } else {
+            0
+        }
     }
 }
