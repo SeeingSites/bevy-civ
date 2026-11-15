@@ -18,3 +18,4 @@ pub mod culture;
 pub mod leaders;
 pub mod naval;
 pub mod air;
+pub mod victory;
