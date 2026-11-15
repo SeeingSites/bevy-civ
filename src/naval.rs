@@ -49,3 +49,27 @@ impl NavalType {
         matches!(terrain, Terrain::Water)
     }
 }
+
+impl NavalUnit {
+    pub fn load_cargo(&mut self, unit: Entity) -> bool {
+        let capacity = self.unit_type.stats().3;
+        if (self.cargo.len() as u32) < capacity {
+            self.cargo.push(unit);
+            true
+        } else {
+            false
+        }
+    }
+
+    pub fn unload_cargo(&mut self) -> Option<Entity> {
+        self.cargo.pop()
+    }
+
+    pub fn resolve_naval_combat(self_type: NavalType, enemy_type: NavalType) -> bool {
+        let (atk, _, _, _) = self_type.stats();
+        let (_, def, _, _) = enemy_type.stats();
+        let atk_roll = atk as f32 * (0.8 + rand::random::<f32>() * 0.4);
+        let def_roll = def as f32 * (0.8 + rand::random::<f32>() * 0.4);
+        atk_roll > def_roll
+    }
+}
