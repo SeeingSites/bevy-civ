@@ -28,6 +28,9 @@ Core systems from Civ 2/3 implemented modularly. Goal: exceed FreeCiv. **All maj
 - City UI panel and Tech UI panel
 - Wonder effects
 - Save / load (basic)
+- **Culture and borders** (cities expand influence with culture points)
+- **Great Leaders** (generated on elite victories; form armies)
+- **Naval units** (Galley, Trireme, Caravel, Frigate, Battleship, Transport)
 - **Headless game simulator** for balance evaluation
 
 ## Controls
@@ -40,16 +43,16 @@ Core systems from Civ 2/3 implemented modularly. Goal: exceed FreeCiv. **All maj
 - **S** — save game
 
 ## Simulator
-Run many headless games to evaluate balance, victory rates, and AI performance:
+Standalone pure-Rust simulator (no Bevy dependency):
 
 ```bash
-cargo run --bin simulate -- --games 100 --max-turns 200
+cd simulate && cargo run -- --games 100 --max-turns 120
 ```
 
 Outputs average turns, scores, cities, population, techs, and victory distribution.
 
 ### CI
-A GitHub Actions workflow (`.github/workflows/simulate.yml`) runs the simulator automatically on every push and pull request. You can also trigger it manually with custom game counts via the Actions tab.
+A GitHub Actions workflow (`.github/workflows/simulate.yml`) runs the simulator automatically on every push and pull request.
 
 ## Running
 ```bash
