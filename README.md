@@ -30,13 +30,13 @@ Core systems from Civ 2/3 implemented modularly. Goal: exceed FreeCiv. **All maj
 - Save / load (expanded)
 - Culture and borders (per-turn generation from population + buildings)
 - Great Leaders (elite victories → armies)
-- Naval units (Galley through Battleship + Transport)
-- Air units (Fighter, Bomber, Helicopter, Jet Fighter, Stealth Bomber) with fuel
+- **Naval units** (Galley through Battleship + Transport) with cargo load/unload and naval combat
+- **Air units** (Fighter, Bomber, Helicopter, Jet Fighter, Stealth Bomber) with fuel, air combat, and bombing damage
 - Espionage (steal tech, sabotage, steal gold, incite unrest)
 - Economy (inflation, building maintenance, trade gold, government modifiers)
-- Religion (Polytheism / Monotheism / Philosophy)
+- **Religion** (Polytheism / Monotheism / Philosophy) with happiness bonuses and science modifiers applied per city
 - Unit promotions (Veteran, Elite, Combat I/II, Mobility, Siege) — applied in combat + XP awards
-- **Turn integration** (`src/turn.rs`) — helpers to run culture generation, economy, and promotion-aware combat from the main turn loop
+- Turn integration (`src/turn.rs`) — helpers to run culture, economy, and promotion-aware combat
 - Hotseat multiplayer scaffolding
 - Headless game simulator for balance evaluation
 
