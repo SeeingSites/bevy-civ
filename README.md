@@ -17,8 +17,8 @@ Core systems from Civ 2/3 implemented modularly. Goal: exceed FreeCiv. **All maj
 - Full governments with production/science modifiers, corruption, free unit support, and upkeep
 - Corruption based on distance from capital
 - Unit upkeep
-- Advanced war AI
-- AI that researches and founds cities
+- Advanced war AI (aggression-based attack/retreat, targets cities)
+- AI that researches, founds cities, and improves tiles
 - Fog of war and diplomacy treaties (Peace / Alliance / War)
 - Victory conditions (Domination / Democracy / Space Race)
 - Score system
@@ -28,10 +28,11 @@ Core systems from Civ 2/3 implemented modularly. Goal: exceed FreeCiv. **All maj
 - City UI panel and Tech UI panel
 - Wonder effects
 - Save / load (basic)
-- **Culture and borders** (cities expand influence with culture points)
-- **Great Leaders** (generated on elite victories; form armies)
-- **Naval units** (Galley, Trireme, Caravel, Frigate, Battleship, Transport)
-- **Headless game simulator** for balance evaluation
+- Culture and borders
+- Great Leaders (elite victories → armies)
+- Naval units (Galley through Battleship + Transport)
+- **Air units** (Fighter, Bomber, Helicopter, Jet Fighter, Stealth Bomber) with fuel
+- Headless game simulator for balance evaluation
 
 ## Controls
 - **WASD** — pan camera
@@ -49,10 +50,8 @@ Standalone pure-Rust simulator (no Bevy dependency):
 cd simulate && cargo run -- --games 100 --max-turns 120
 ```
 
-Outputs average turns, scores, cities, population, techs, and victory distribution.
-
 ### CI
-A GitHub Actions workflow (`.github/workflows/simulate.yml`) runs the simulator automatically on every push and pull request.
+GitHub Actions workflow (`.github/workflows/simulate.yml`) runs on push/PR.
 
 ## Running
 ```bash
