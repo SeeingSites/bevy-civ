@@ -25,7 +25,9 @@ Core systems from Civ 2/3 implemented modularly. Goal: exceed FreeCiv. **All maj
 - Barbarians
 - City capture
 - Trade routes (gold + science)
-- City UI panel and Tech UI panel
+- Sprite-based map: textured terrain, animated water, shores, borders, roads, farms and mines
+- Animated units, cities that grow visually, fog of war, minimap
+- Interface with status bar, unit and city panels, science and foreign advisors, message log
 - Wonder effects
 - Save / load (basic)
 - Culture and borders
@@ -39,13 +41,24 @@ Core systems from Civ 2/3 implemented modularly. Goal: exceed FreeCiv. **All maj
 - Headless game simulator for balance evaluation
 
 ## Controls
-- **WASD** — pan camera
-- **Space** — end turn
-- **Left click** — select unit or city, then click destination (path visualized)
-- **F / M / R / X** — worker builds Farm / Mine / Road / Transform terrain
-- **P / L / K** — Peace / Alliance / War with AI
-- **T** — establish trade route
-- **S** — save game
+- **Click / tap** a unit or city to select it (click again to cycle what is on the tile)
+- **Click a tile** (or **right-click**) to move the selected unit; moving onto an enemy attacks
+- **Drag** to pan, **mouse wheel / pinch** to zoom, **WASD / arrows** to pan, click the minimap to jump
+- **Space / Enter** or the **End Turn** button — end turn
+- **B** — settler founds a city
+- **F / M / R / X** — worker builds Farm / Mine / Road / clears terrain
+- **Q** — science advisor (choose research), **E** — foreign advisor (treaties, trade)
+- **P / L / K** — Peace / Alliance / War with Rome, **T** — trade routes, **F2** — save
+- **Esc** — close a window or deselect
+
+Every order also has a button, so the game is playable with a mouse or touch screen alone.
+City production is chosen from the city panel.
+
+## Art
+All sprites are original and generated from code: `tools/art/*.cjs` describe each sprite as SVG
+and `node tools/art/generate.cjs` rasterises them into the atlases in `assets/sprites/`
+(needs Playwright with Chromium). Fonts are Cinzel and Alegreya Sans (SIL Open Font License,
+see `assets/fonts/`).
 
 ## Simulator
 Standalone pure-Rust simulator (no Bevy dependency):

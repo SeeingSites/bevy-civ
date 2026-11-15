@@ -1,0 +1,183 @@
+//! Camera control (drag, wheel, pinch, keys) and translation of clicks, taps and keys into game events.
+
+use bevy::input::mouse::{MouseScrollUnit, MouseWheel};
+use bevy::prelude::*;
+
+use bevy_civ::diplomacy::Treaty;
+use bevy_civ::terrain::Improvement;
+
+use super::map::{Hovered, HEX_SIZE};
+use super::ui::{Modal, UiState};
+use crate::{Action, MapClick, MapData, MAP_RADIUS};
+
+const DRAG_THRESHOLD: f32 = 7.0;
+
+/// Tracks a press so a drag pans the map and a clean release counts as a click.
+#[derive(Resource, Default)]
+pub struct Pointer {
+    press: Option<Vec2>,
+    last: Vec2,
+    dragging: bool,
+    pinch: Option<f32>,
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn pointer_input(
+    time: Res<Time>,
+    mouse: Res<ButtonInput<MouseButton>>,
+    keys: Res<ButtonInput<KeyCode>>,
+    touches: Res<Touches>,
+    mut wheel: EventReader<MouseWheel>,
+    windows: Query<&Window>,
+    interactions: Query<&Interaction>,
+    map: Res<MapData>,
+    mut pointer: ResMut<Pointer>,
+    mut hovered: ResMut<Hovered>,
+    mut clicks: EventWriter<MapClick>,
+    mut camera: Query<(&Camera, &GlobalTransform, &mut Transform, &mut OrthographicProjection), With<Camera2d>>,
+) {
+    let Ok(window) = windows.get_single() else { return };
+    let Ok((cam, cam_global, mut cam_transform, mut projection)) = camera.get_single_mut() else { return };
+    let over_ui = interactions.iter().any(|i| *i != Interaction::None);
+    let to_hex = |screen: Vec2| cam.viewport_to_world_2d(cam_global, screen).ok().map(|w| map.layout.world_pos_to_hex(w));
+    let scale = projection.scale;
+    let mut pan = Vec2::ZERO;
+    let mut zoom = 1.0f32;
+
+    // --- touch -----------------------------------------------------------------------------
+    let active: Vec<Vec2> = touches.iter().map(|t| t.position()).collect();
+    let touching = !active.is_empty() || touches.iter_just_released().next().is_some();
+    if active.len() >= 2 {
+        let spread = active[0].distance(active[1]);
+        if let Some(previous) = pointer.pinch {
+            if spread > 1.0 {
+                zoom *= previous / spread;
+            }
+        }
+        pointer.pinch = Some(spread);
+        pointer.dragging = true;
+    } else {
+        pointer.pinch = None;
+        if let Some(touch) = touches.iter_just_pressed().next() {
+            if !over_ui {
+                pointer.press = Some(touch.position());
+                pointer.last = touch.position();
+                pointer.dragging = false;
+            }
+        } else if let (Some(start), Some(pos)) = (pointer.press, active.first().copied()) {
+            if pos.distance(start) > DRAG_THRESHOLD {
+                pointer.dragging = true;
+            }
+            if pointer.dragging {
+                pan += pos - pointer.last;
+            }
+            pointer.last = pos;
+        }
+        if let Some(touch) = touches.iter_just_released().next() {
+            if pointer.press.take().is_some() && !pointer.dragging {
+                if let Some(hex) = to_hex(touch.position()) {
+                    clicks.send(MapClick { hex, secondary: false });
+                }
+            }
+            pointer.dragging = false;
+        }
+    }
+
+    // --- mouse -----------------------------------------------------------------------------
+    if !touching {
+        if let Some(cursor) = window.cursor_position() {
+            if mouse.just_pressed(MouseButton::Left) && !over_ui {
+                pointer.press = Some(cursor);
+                pointer.dragging = false;
+            }
+            if mouse.just_pressed(MouseButton::Right) && !over_ui {
+                if let Some(hex) = to_hex(cursor) {
+                    clicks.send(MapClick { hex, secondary: true });
+                }
+            }
+            let dragging_left = mouse.pressed(MouseButton::Left) && pointer.press.is_some();
+            if dragging_left && pointer.press.is_some_and(|start| cursor.distance(start) > DRAG_THRESHOLD) {
+                pointer.dragging = true;
+            }
+            if (dragging_left && pointer.dragging) || mouse.pressed(MouseButton::Middle) {
+                pan += cursor - pointer.last;
+            }
+            if mouse.just_released(MouseButton::Left) {
+                if pointer.press.take().is_some() && !pointer.dragging {
+                    if let Some(hex) = to_hex(cursor) {
+                        clicks.send(MapClick { hex, secondary: false });
+                    }
+                }
+                pointer.dragging = false;
+            }
+            pointer.last = cursor;
+            hovered.0 = if over_ui { None } else { to_hex(cursor).filter(|h| h.distance_to(hexx::Hex::ZERO) <= MAP_RADIUS as i32) };
+        } else {
+            hovered.0 = None;
+        }
+        for event in wheel.read() {
+            let lines = match event.unit {
+                MouseScrollUnit::Line => event.y,
+                MouseScrollUnit::Pixel => event.y / 60.0,
+            };
+            if !over_ui {
+                zoom *= 1.0 - lines.clamp(-3.0, 3.0) * 0.1;
+            }
+        }
+    } else {
+        wheel.clear();
+        hovered.0 = None;
+    }
+
+    // --- keyboard pan ----------------------------------------------------------------------
+    let mut key_pan = Vec2::ZERO;
+    if keys.any_pressed([KeyCode::KeyW, KeyCode::ArrowUp]) { key_pan.y += 1.0; }
+    if keys.any_pressed([KeyCode::KeyS, KeyCode::ArrowDown]) { key_pan.y -= 1.0; }
+    if keys.any_pressed([KeyCode::KeyA, KeyCode::ArrowLeft]) { key_pan.x -= 1.0; }
+    if keys.any_pressed([KeyCode::KeyD, KeyCode::ArrowRight]) { key_pan.x += 1.0; }
+
+    projection.scale = (scale * zoom).clamp(0.45, 2.4);
+    cam_transform.translation.x += -pan.x * scale + key_pan.x * 620.0 * scale * time.delta_secs();
+    cam_transform.translation.y += pan.y * scale + key_pan.y * 620.0 * scale * time.delta_secs();
+    let limit = MAP_RADIUS as f32 * HEX_SIZE * 1.8;
+    cam_transform.translation.x = cam_transform.translation.x.clamp(-limit, limit);
+    cam_transform.translation.y = cam_transform.translation.y.clamp(-limit, limit);
+}
+
+pub fn keyboard_input(keys: Res<ButtonInput<KeyCode>>, mut actions: EventWriter<Action>, mut ui: ResMut<UiState>, mut dirty: ResMut<crate::Dirty>) {
+    let bindings = [
+        (KeyCode::Space, Action::EndTurn),
+        (KeyCode::Enter, Action::EndTurn),
+        (KeyCode::KeyF, Action::Build(Improvement::Farm)),
+        (KeyCode::KeyM, Action::Build(Improvement::Mine)),
+        (KeyCode::KeyR, Action::Build(Improvement::Road)),
+        (KeyCode::KeyX, Action::Transform),
+        (KeyCode::KeyB, Action::FoundCity),
+        (KeyCode::KeyP, Action::SetTreaty(1, Treaty::Peace)),
+        (KeyCode::KeyL, Action::SetTreaty(1, Treaty::Alliance)),
+        (KeyCode::KeyK, Action::SetTreaty(1, Treaty::War)),
+        (KeyCode::KeyT, Action::TradeRoute),
+        (KeyCode::F2, Action::Save),
+    ];
+    for (key, action) in bindings {
+        if keys.just_pressed(key) {
+            actions.send(action);
+        }
+    }
+    let mut toggle = |modal: Modal, ui: &mut UiState| {
+        ui.modal = if ui.modal == Some(modal) { None } else { Some(modal) };
+        dirty.ui = true;
+    };
+    if keys.just_pressed(KeyCode::KeyQ) {
+        toggle(Modal::Science, &mut ui);
+    }
+    if keys.just_pressed(KeyCode::KeyE) {
+        toggle(Modal::Diplomacy, &mut ui);
+    }
+    if keys.just_pressed(KeyCode::Escape) {
+        if ui.modal.take().is_none() {
+            actions.send(Action::Deselect);
+        }
+        dirty.ui = true;
+    }
+}

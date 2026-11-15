@@ -24,10 +24,26 @@ pub enum Specialist {
     Scientist,     // +3 science
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum ProductionItem {
     Unit(crate::unit::UnitType),
     Building(crate::building::Building),
+}
+
+impl ProductionItem {
+    pub fn name(&self) -> &'static str {
+        match self {
+            ProductionItem::Unit(u) => u.name(),
+            ProductionItem::Building(b) => b.name(),
+        }
+    }
+
+    pub fn cost(&self) -> u32 {
+        match self {
+            ProductionItem::Unit(u) => u.cost(),
+            ProductionItem::Building(b) => b.cost(),
+        }
+    }
 }
 
 impl City {
@@ -47,7 +63,8 @@ impl City {
         let base = 1 + self.population / 2 + buildings.total_science_bonus();
         let specialist_sci = self.specialists.iter().filter(|s| matches!(s, Specialist::Scientist)).count() as u32 * 3;
         let corruption = self.corruption_penalty(gov, dist_to_capital);
-        (((base + specialist_sci) as f32) * gov.science_modifier() * (1.0 - corruption)).max(0.0) as u32
+        // Round up so a small city under a weak government still contributes something.
+        (((base + specialist_sci) as f32) * gov.science_modifier() * (1.0 - corruption)).max(0.0).ceil() as u32
     }
 
     pub fn gold_per_turn(&self, buildings: &CityBuildings) -> u32 {
@@ -91,8 +108,11 @@ impl City {
         self.production_progress += prod;
         if self.production_progress >= cost {
             self.production_progress -= cost;
-            let completed = self.production_queue.take();
-            self.production_queue = Some(ProductionItem::Unit(crate::unit::UnitType::Warrior));
+            // Units keep being trained until the order changes; a finished building falls back to Warriors.
+            let completed = self.production_queue.clone();
+            if matches!(completed, Some(ProductionItem::Building(_))) {
+                self.production_queue = Some(ProductionItem::Unit(crate::unit::UnitType::Warrior));
+            }
             completed
         } else {
             None
@@ -106,35 +126,31 @@ impl City {
     }
 }
 
+/// Spawns the logical city; the client attaches sprites to anything with a `City`.
 pub fn spawn_city(
     commands: &mut Commands,
-    meshes: &mut Assets<Mesh>,
-    materials: &mut Assets<ColorMaterial>,
-    layout: &hexx::HexLayout,
     coord: Hex,
     name: String,
     population: u32,
-) {
-    let pos = layout.hex_to_world_pos(coord);
-    let mesh = meshes.add(Circle::new(12.0));
-
-    commands.spawn((
-        City {
-            name: name.clone(),
-            population,
-            food_storage: 0,
-            production_progress: 0,
-            production_queue: Some(ProductionItem::Unit(crate::unit::UnitType::Warrior)),
-            position: coord,
-            owner: 0,
-            specialists: vec![],
-            is_capital: name == "Capital",
-        },
-        Mesh2d(mesh),
-        MeshMaterial2d(materials.add(Color::srgb(0.9, 0.8, 0.1))),
-        Transform::from_xyz(pos.x, pos.y, 0.5),
-        Name::new(name),
-        CityBuildings { buildings: vec![] },
-        Happiness::new(population),
-    ));
+    owner: u32,
+    is_capital: bool,
+) -> Entity {
+    commands
+        .spawn((
+            City {
+                name: name.clone(),
+                population,
+                food_storage: 0,
+                production_progress: 0,
+                production_queue: Some(ProductionItem::Unit(crate::unit::UnitType::Warrior)),
+                position: coord,
+                owner,
+                specialists: vec![],
+                is_capital,
+            },
+            Name::new(name),
+            CityBuildings { buildings: vec![] },
+            Happiness::new(population),
+        ))
+        .id()
 }

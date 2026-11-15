@@ -15,7 +15,7 @@ pub struct Unit {
 #[derive(Component)]
 pub struct Selected;
 
-#[derive(Clone, Copy, PartialEq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum UnitType {
     Settler,
     Worker,
@@ -43,6 +43,57 @@ pub enum UnitType {
 }
 
 impl UnitType {
+    /// Every unit type, in declaration order (also the row order of the sprite atlas).
+    pub const ALL: [UnitType; 19] = [
+        UnitType::Settler, UnitType::Worker, UnitType::Warrior, UnitType::Spearman, UnitType::Archer,
+        UnitType::Horseman, UnitType::Legion, UnitType::WarChariot, UnitType::Immortal, UnitType::Phalanx,
+        UnitType::Catapult, UnitType::Knight, UnitType::Cannon, UnitType::Rifleman, UnitType::Cavalry,
+        UnitType::Tank, UnitType::Artillery, UnitType::Diplomat, UnitType::Caravan,
+    ];
+
+    pub fn name(&self) -> &'static str {
+        match self {
+            UnitType::WarChariot => "War Chariot",
+            UnitType::Settler => "Settler",
+            UnitType::Worker => "Worker",
+            UnitType::Warrior => "Warrior",
+            UnitType::Spearman => "Spearman",
+            UnitType::Archer => "Archer",
+            UnitType::Horseman => "Horseman",
+            UnitType::Legion => "Legion",
+            UnitType::Immortal => "Immortal",
+            UnitType::Phalanx => "Phalanx",
+            UnitType::Catapult => "Catapult",
+            UnitType::Knight => "Knight",
+            UnitType::Cannon => "Cannon",
+            UnitType::Rifleman => "Rifleman",
+            UnitType::Cavalry => "Cavalry",
+            UnitType::Tank => "Tank",
+            UnitType::Artillery => "Artillery",
+            UnitType::Diplomat => "Diplomat",
+            UnitType::Caravan => "Caravan",
+        }
+    }
+
+    /// Technology needed before a city can train this unit.
+    pub fn required_tech(&self) -> Option<crate::tech::Tech> {
+        use crate::tech::Tech;
+        match self {
+            UnitType::Settler | UnitType::Worker | UnitType::Warrior => None,
+            UnitType::Spearman | UnitType::Phalanx => Some(Tech::BronzeWorking),
+            UnitType::Archer => Some(Tech::Mining),
+            UnitType::Horseman => Some(Tech::AnimalHusbandry),
+            UnitType::Legion | UnitType::Immortal => Some(Tech::IronWorking),
+            UnitType::WarChariot => Some(Tech::TheWheel),
+            UnitType::Catapult => Some(Tech::Mathematics),
+            UnitType::Knight => Some(Tech::HorsebackRiding),
+            UnitType::Cannon | UnitType::Rifleman | UnitType::Cavalry => Some(Tech::Gunpowder),
+            UnitType::Tank | UnitType::Artillery => Some(Tech::Democracy),
+            UnitType::Diplomat => Some(Tech::Writing),
+            UnitType::Caravan => Some(Tech::Pottery),
+        }
+    }
+
     pub fn stats(&self) -> (u32, u32, u32) {
         match self {
             UnitType::Settler => (0, 0, 1),
@@ -182,41 +233,17 @@ impl Unit {
     }
 }
 
-pub fn spawn_unit(
-    commands: &mut Commands,
-    meshes: &mut Assets<Mesh>,
-    materials: &mut Assets<ColorMaterial>,
-    layout: &hexx::HexLayout,
-    coord: Hex,
-    unit_type: UnitType,
-) {
-    spawn_unit_for_owner(commands, meshes, materials, layout, coord, unit_type, 0);
-}
-
-pub fn spawn_unit_for_owner(
-    commands: &mut Commands,
-    meshes: &mut Assets<Mesh>,
-    materials: &mut Assets<ColorMaterial>,
-    layout: &hexx::HexLayout,
-    coord: Hex,
-    unit_type: UnitType,
-    owner: u32,
-) {
+/// Spawns the logical unit; the client attaches sprites to anything with a `Unit`.
+pub fn spawn_unit(commands: &mut Commands, coord: Hex, unit_type: UnitType, owner: u32) -> Entity {
     let (_, _, mv) = unit_type.stats();
-    let pos = layout.hex_to_world_pos(coord);
-    let mesh = meshes.add(Circle::new(8.0));
-
-    commands.spawn((
-        Unit {
+    commands
+        .spawn(Unit {
             unit_type,
             movement_left: mv,
             owner,
             position: coord,
             build_turns_left: None,
             current_build: None,
-        },
-        Mesh2d(mesh),
-        MeshMaterial2d(materials.add(unit_type.color())),
-        Transform::from_xyz(pos.x, pos.y, 1.0),
-    ));
+        })
+        .id()
 }

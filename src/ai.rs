@@ -44,9 +44,6 @@ pub fn process_ai_turn(
     city_positions: &[(Hex, u32)],
     tiles: &Query<&mut HexTile>,
     commands: &mut Commands,
-    meshes: &mut Assets<Mesh>,
-    materials: &mut Assets<ColorMaterial>,
-    layout: &hexx::HexLayout,
 ) {
     let mut rng = rand::thread_rng();
 
@@ -87,12 +84,11 @@ pub fn process_ai_turn(
                 if !occupied && land {
                     crate::city::spawn_city(
                         commands,
-                        meshes,
-                        materials,
-                        layout,
                         n,
-                        format!("AI City {}", city_positions.len() + 1),
+                        format!("Outpost {}", city_positions.len() + 1),
                         1,
+                        unit.owner,
+                        false,
                     );
                     info!("AI founded city at {:?}", n);
                     unit.position = n;

@@ -1,448 +1,526 @@
+//! Bevy Civ — game setup, turn processing and player orders.
+//! Everything visual (sprites, camera, interface) lives in `client`.
+
+use bevy::asset::AssetMetaCheck;
 use bevy::prelude::*;
-// Explicit import: `terrain::Resource` (map resources) would otherwise clash with Bevy's trait.
-use bevy::prelude::Resource;
-use bevy::render::{
-    mesh::{Indices, PrimitiveTopology},
-    render_asset::RenderAssetUsages,
-};
-use hexx::{shapes, *};
+use hexx::{shapes, Hex, HexLayout};
+use rand::Rng;
+use std::collections::HashMap;
 
-mod city;
-mod unit;
-mod terrain;
-mod tech;
-mod government;
-mod combat;
-mod building;
-mod ai;
-mod fog;
-mod diplomacy;
-mod pathfinding;
-mod score;
-mod barbarians;
-mod trade;
-mod space;
-mod save;
+use bevy_civ::ai::{process_ai_turn, Civilizations};
+use bevy_civ::barbarians::{process_barbarians, BarbarianState};
+use bevy_civ::building::CityBuildings;
+use bevy_civ::city::{spawn_city, City, ProductionItem};
+use bevy_civ::combat::resolve_combat;
+use bevy_civ::diplomacy::{Diplomacy, Happiness, Treaty};
+use bevy_civ::fog::FogOfWar;
+use bevy_civ::government::Government;
+use bevy_civ::pathfinding::{find_path, move_along_path};
+use bevy_civ::save::save_game;
+use bevy_civ::score::Score;
+use bevy_civ::space::{SpaceComponent, SpaceRace};
+use bevy_civ::tech::{Tech, TechState};
+use bevy_civ::terrain::{random_resource, HexTile, Improvement, Terrain};
+use bevy_civ::trade::TradeRoutes;
+use bevy_civ::unit::{spawn_unit, Unit, UnitType};
 
-use city::*;
-use unit::*;
-use terrain::*;
-use tech::*;
-use government::*;
-use combat::*;
-use building::*;
-use ai::*;
-use fog::*;
-use diplomacy::*;
-use pathfinding::*;
-use score::*;
-use barbarians::*;
-use trade::*;
-use space::*;
-use save::*;
+mod client;
 
-const HEX_SIZE: f32 = 28.0;
-const MAP_RADIUS: u32 = 10;
+pub const MAP_RADIUS: u32 = 10;
+pub const PLAYER: u32 = 0;
+pub const BARBARIANS: u32 = 99;
+/// Tiles around a city that belong to its owner.
+pub const CITY_RADIUS: i32 = 2;
+
+const CITY_NAMES: [&str; 10] = [
+    "Ashford", "Brightwater", "Stonehaven", "Eastmarch", "Highgate", "Riverbend", "Oakhollow",
+    "Silverkeep", "Windmere", "Thornwall",
+];
 
 #[derive(Resource)]
-struct MapData {
-    layout: HexLayout,
+pub struct MapData {
+    pub layout: HexLayout,
 }
 
 #[derive(Resource)]
-struct GameState {
-    turn: u32,
-    gold: i32,
-    science: i32,
-    government: Government,
-    victory: Option<String>,
-    score: Score,
+pub struct GameState {
+    pub turn: u32,
+    pub gold: i32,
+    pub gold_per_turn: i32,
+    pub government: Government,
+    pub victory: Option<String>,
+    pub score: Score,
 }
 
 #[derive(Resource, Default)]
-struct Selection {
-    selected_unit: Option<Entity>,
-    selected_city: Option<Entity>,
+pub struct Selection {
+    pub unit: Option<Entity>,
+    pub city: Option<Entity>,
 }
 
-#[derive(Component)]
-struct Hud;
+/// Messages shown to the player, newest last.
+#[derive(Resource, Default)]
+pub struct GameLog {
+    pub lines: Vec<String>,
+}
 
-#[derive(Component)]
-struct CityPanel;
+impl GameLog {
+    pub fn push(&mut self, line: impl Into<String>) {
+        self.lines.push(line.into());
+        if self.lines.len() > 60 {
+            self.lines.remove(0);
+        }
+    }
+}
 
-#[derive(Component)]
-struct TechPanel;
+/// What needs redrawing after the game state changed.
+#[derive(Resource)]
+pub struct Dirty {
+    pub map: bool,
+    pub ui: bool,
+}
+
+/// The route of the last move order, drawn as dots on the map.
+#[derive(Resource, Default)]
+pub struct PathPreview(pub Vec<Hex>);
+
+/// A player order, from the keyboard or an interface button.
+#[derive(Event, Clone, Debug, PartialEq)]
+pub enum Action {
+    EndTurn,
+    Build(Improvement),
+    Transform,
+    FoundCity,
+    Skip,
+    Deselect,
+    SetTreaty(u32, Treaty),
+    TradeRoute,
+    Save,
+    SetProduction(ProductionItem),
+    Research(Tech),
+}
+
+/// A click (or tap) on a map tile. `secondary` is the right mouse button: always an order.
+#[derive(Event)]
+pub struct MapClick {
+    pub hex: Hex,
+    pub secondary: bool,
+}
+
+/// Plays a combat effect on a tile.
+#[derive(Event)]
+pub struct Burst(pub Hex);
 
 fn main() {
     App::new()
-        .add_plugins(DefaultPlugins.set(WindowPlugin {
-            primary_window: Some(Window {
-                title: "Bevy Civ".into(),
-                // Web build: render into the page's canvas and track its size.
-                canvas: Some("#bevy-canvas".into()),
-                fit_canvas_to_parent: true,
-                prevent_default_event_handling: true,
-                ..default()
-            }),
-            ..default()
-        }))
+        .add_plugins(
+            DefaultPlugins
+                .set(WindowPlugin {
+                    primary_window: Some(Window {
+                        title: "Bevy Civ".into(),
+                        // Web build: render into the page's canvas and track its size.
+                        canvas: Some("#bevy-canvas".into()),
+                        fit_canvas_to_parent: true,
+                        prevent_default_event_handling: true,
+                        ..default()
+                    }),
+                    ..default()
+                })
+                .set(AssetPlugin {
+                    // Static hosting serves no `.meta` files; don't request them.
+                    meta_check: AssetMetaCheck::Never,
+                    ..default()
+                }),
+        )
+        .insert_resource(ClearColor(Color::srgb(0.07, 0.065, 0.055)))
         .insert_resource(GameState {
             turn: 1,
             gold: 0,
-            science: 0,
+            gold_per_turn: 0,
             government: Government::Despotism,
             victory: None,
             score: Score::default(),
         })
-        .insert_resource(TechState::default())
-        .insert_resource(Selection::default())
-        .insert_resource(Civilizations::default())
-        .insert_resource(FogOfWar::default())
-        .insert_resource(Diplomacy::default())
-        .insert_resource(BarbarianState::default())
-        .insert_resource(TradeRoutes::default())
-        .insert_resource(SpaceRace::default())
-        .add_systems(Startup, setup)
-        .add_systems(Update, (camera_pan, handle_click, handle_worker_build, process_turn, update_ui, update_unit_positions, handle_keys))
+        .insert_resource(Dirty { map: true, ui: true })
+        .init_resource::<TechState>()
+        .init_resource::<Selection>()
+        .init_resource::<GameLog>()
+        .init_resource::<PathPreview>()
+        .init_resource::<Civilizations>()
+        .init_resource::<FogOfWar>()
+        .init_resource::<Diplomacy>()
+        .init_resource::<BarbarianState>()
+        .init_resource::<TradeRoutes>()
+        .init_resource::<SpaceRace>()
+        .add_event::<Action>()
+        .add_event::<MapClick>()
+        .add_event::<Burst>()
+        .add_plugins(client::ClientPlugin)
+        .add_systems(Startup, setup_world)
+        .add_systems(
+            Update,
+            (handle_map_click, apply_actions, process_turn)
+                .chain()
+                .in_set(GameLogic),
+        )
         .run();
 }
 
-fn setup(
-    mut commands: Commands,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<ColorMaterial>>,
-    mut fog: ResMut<FogOfWar>,
-) {
-    commands.spawn(Camera2d);
+/// Game rules run after input is gathered and before the views are refreshed.
+#[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
+pub struct GameLogic;
 
-    let layout = HexLayout::flat().with_hex_size(HEX_SIZE);
-    let mesh = meshes.add(hexagonal_plane(&layout));
+/// Smooth pseudo-random field in [0, 1] built from a few sine waves.
+struct Field {
+    waves: Vec<(f32, f32, f32, f32)>,
+}
 
+impl Field {
+    fn new(rng: &mut impl Rng, base_freq: f32) -> Self {
+        let waves = (0..5)
+            .map(|i| {
+                let freq = base_freq * (1.0 + i as f32 * 0.55);
+                let angle = rng.gen_range(0.0..std::f32::consts::TAU);
+                (angle.cos() * freq, angle.sin() * freq, rng.gen_range(0.0..std::f32::consts::TAU), 1.0 / (1.0 + i as f32 * 0.5))
+            })
+            .collect();
+        Self { waves }
+    }
+
+    fn at(&self, p: Vec2) -> f32 {
+        let total: f32 = self.waves.iter().map(|w| w.3).sum();
+        let v: f32 = self.waves.iter().map(|(fx, fy, phase, amp)| (p.x * fx + p.y * fy + phase).sin() * amp).sum();
+        0.5 + 0.5 * v / total
+    }
+}
+
+fn setup_world(mut commands: Commands, mut fog: ResMut<FogOfWar>, mut log: ResMut<GameLog>) {
+    let layout = HexLayout::flat().with_hex_size(client::map::HEX_SIZE);
     let mut rng = rand::thread_rng();
 
+    let starts = [(Hex::ZERO, PLAYER), (Hex::new(7, -4), 1), (Hex::new(-6, 6), 2)];
+    let height = Field::new(&mut rng, 0.006);
+    let moisture = Field::new(&mut rng, 0.008);
+
     for hex in shapes::hexagon(Hex::ZERO, MAP_RADIUS) {
-        let terrain = random_terrain(&mut rng);
-        let resource = random_resource(&mut rng, terrain);
         let pos = layout.hex_to_world_pos(hex);
-
-        commands.spawn((
-            Mesh2d(mesh.clone()),
-            MeshMaterial2d(materials.add(terrain.color())),
-            Transform::from_xyz(pos.x, pos.y, 0.0),
-            HexTile { coord: hex, terrain, improvements: vec![], resource },
-        ));
+        let edge = hex.distance_to(Hex::ZERO) as f32 / MAP_RADIUS as f32;
+        // Continents in the middle, ocean towards the rim.
+        let h = height.at(pos) + rng.gen_range(-0.04..0.04) - edge.powi(3) * 0.38;
+        let m = moisture.at(pos) + rng.gen_range(-0.05..0.05);
+        let near_start = starts.iter().any(|(s, _)| s.distance_to(hex) <= 1);
+        let terrain = if near_start {
+            if hex.x.rem_euclid(2) == 0 { Terrain::Grassland } else { Terrain::Plains }
+        } else if h < 0.34 {
+            Terrain::Water
+        } else if h > 0.78 {
+            Terrain::Mountain
+        } else if h > 0.66 {
+            Terrain::Hills
+        } else if m < 0.3 {
+            Terrain::Desert
+        } else if m > 0.62 {
+            Terrain::Forest
+        } else if m > 0.46 {
+            Terrain::Grassland
+        } else {
+            Terrain::Plains
+        };
+        let resource = random_resource(&mut rng, terrain);
+        commands.spawn(HexTile { coord: hex, terrain, improvements: vec![], resource });
     }
 
-    let start = Hex::ZERO;
-    spawn_city(&mut commands, &mut meshes, &mut materials, &layout, start, "Capital".into(), 1);
-    spawn_unit(&mut commands, &mut meshes, &mut materials, &layout, start, UnitType::Settler);
-    spawn_unit(&mut commands, &mut meshes, &mut materials, &layout, Hex::new(1, 0), UnitType::Worker);
+    spawn_city(&mut commands, starts[0].0, "Aurelia".into(), 1, PLAYER, true);
+    spawn_unit(&mut commands, Hex::new(0, 1), UnitType::Settler, PLAYER);
+    spawn_unit(&mut commands, Hex::new(1, 0), UnitType::Worker, PLAYER);
+    spawn_unit(&mut commands, Hex::new(-1, 0), UnitType::Warrior, PLAYER);
 
-    let ai1 = Hex::new(6, -3);
-    spawn_unit_for_owner(&mut commands, &mut meshes, &mut materials, &layout, ai1, UnitType::Legion, 1);
+    spawn_city(&mut commands, starts[1].0, "Rome".into(), 1, 1, true);
+    spawn_unit(&mut commands, starts[1].0 + Hex::new(0, 1), UnitType::Legion, 1);
+    spawn_city(&mut commands, starts[2].0, "Thebes".into(), 1, 2, true);
+    spawn_unit(&mut commands, starts[2].0 + Hex::new(1, 0), UnitType::WarChariot, 2);
 
-    let ai2 = Hex::new(-5, 4);
-    spawn_unit_for_owner(&mut commands, &mut meshes, &mut materials, &layout, ai2, UnitType::WarChariot, 2);
-
-    fog.reveal(start, 3);
-
+    fog.reveal(Hex::ZERO, 3);
     commands.insert_resource(MapData { layout });
-
-    commands.spawn((
-        Text::new("Loading..."),
-        TextFont { font_size: 16.0, ..default() },
-        TextColor(Color::WHITE),
-        Node {
-            position_type: PositionType::Absolute,
-            top: Val::Px(8.0),
-            left: Val::Px(8.0),
-            ..default()
-        },
-        Name::new("hud"),
-        Hud,
-    ));
-
-    commands.spawn((
-        Text::new("Click a city"),
-        TextFont { font_size: 14.0, ..default() },
-        TextColor(Color::srgb(0.9, 0.9, 0.7)),
-        Node {
-            position_type: PositionType::Absolute,
-            top: Val::Px(8.0),
-            right: Val::Px(8.0),
-            width: Val::Px(280.0),
-            ..default()
-        },
-        Name::new("city_panel"),
-        CityPanel,
-    ));
-
-    commands.spawn((
-        Text::new("Tech"),
-        TextFont { font_size: 14.0, ..default() },
-        TextColor(Color::srgb(0.7, 0.9, 1.0)),
-        Node {
-            position_type: PositionType::Absolute,
-            bottom: Val::Px(8.0),
-            left: Val::Px(8.0),
-            width: Val::Px(400.0),
-            ..default()
-        },
-        Name::new("tech_panel"),
-        TechPanel,
-    ));
+    log.push("Your people settle at Aurelia. Lead them well.");
 }
 
-fn hexagonal_plane(hex_layout: &HexLayout) -> Mesh {
-    let mesh_info = PlaneMeshBuilder::new(hex_layout)
-        .facing(Vec3::Z)
-        .with_scale(Vec3::splat(0.92))
-        .center_aligned()
-        .build();
-    Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::RENDER_WORLD)
-        .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, mesh_info.vertices)
-        .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, mesh_info.normals)
-        .with_inserted_attribute(Mesh::ATTRIBUTE_UV_0, mesh_info.uvs)
-        .with_inserted_indices(Indices::U16(mesh_info.indices))
-}
-
-fn camera_pan(
-    keyboard: Res<ButtonInput<KeyCode>>,
-    mut q: Query<&mut Transform, With<Camera2d>>,
-    time: Res<Time>,
-) {
-    let Ok(mut t) = q.get_single_mut() else { return };
-    let speed = 400.0 * time.delta_secs();
-    if keyboard.pressed(KeyCode::KeyW) { t.translation.y += speed; }
-    if keyboard.pressed(KeyCode::KeyS) { t.translation.y -= speed; }
-    if keyboard.pressed(KeyCode::KeyA) { t.translation.x -= speed; }
-    if keyboard.pressed(KeyCode::KeyD) { t.translation.x += speed; }
-}
-
-fn handle_keys(
-    keyboard: Res<ButtonInput<KeyCode>>,
-    state: Res<GameState>,
-    mut diplomacy: ResMut<Diplomacy>,
-    mut trade: ResMut<TradeRoutes>,
-    cities: Query<&City>,
-) {
-    if keyboard.just_pressed(KeyCode::KeyP) {
-        diplomacy.set_treaty(0, 1, Treaty::Peace);
-        info!("Peace declared with AI");
-    }
-    if keyboard.just_pressed(KeyCode::KeyL) {
-        diplomacy.set_treaty(0, 1, Treaty::Alliance);
-        info!("Alliance formed with AI");
-    }
-    if keyboard.just_pressed(KeyCode::KeyK) {
-        diplomacy.set_treaty(0, 1, Treaty::War);
-        info!("War declared on AI");
-    }
-    if keyboard.just_pressed(KeyCode::KeyT) {
-        // Establish trade between first two cities
-        let positions: Vec<_> = cities.iter().map(|c| c.position).collect();
-        if positions.len() >= 2 {
-            trade.add_route(positions[0], positions[1]);
-        }
-    }
-    if keyboard.just_pressed(KeyCode::KeyS) {
-        save_game(state.turn, state.gold, state.government.name());
-    }
-}
-
-fn handle_worker_build(
-    keyboard: Res<ButtonInput<KeyCode>>,
-    selection: Res<Selection>,
-    mut units: Query<&mut Unit>,
-    mut tiles: Query<&mut HexTile>,
-) {
-    let Some(entity) = selection.selected_unit else { return };
-    let Ok(mut unit) = units.get_mut(entity) else { return };
-    if !unit.unit_type.is_worker() || unit.movement_left == 0 {
-        return;
-    }
-
-    if keyboard.just_pressed(KeyCode::KeyF) {
-        unit.start_build(Improvement::Farm);
-        info!("Worker started building Farm");
-    } else if keyboard.just_pressed(KeyCode::KeyM) {
-        unit.start_build(Improvement::Mine);
-        info!("Worker started building Mine");
-    } else if keyboard.just_pressed(KeyCode::KeyR) {
-        unit.start_build(Improvement::Road);
-        info!("Worker started building Road");
-    } else if keyboard.just_pressed(KeyCode::KeyX) {
-        // Terrain transform
-        for mut tile in &mut tiles {
-            if tile.coord == unit.position {
-                if tile.transform_terrain() {
-                    info!("Transformed terrain at {:?}", unit.position);
-                    unit.movement_left = 0;
-                }
-                break;
-            }
-        }
-    }
-}
-
-fn handle_click(
-    mouse: Res<ButtonInput<MouseButton>>,
-    windows: Query<&Window>,
-    cameras: Query<(&Camera, &GlobalTransform)>,
-    map: Res<MapData>,
+fn handle_map_click(
+    mut clicks: EventReader<MapClick>,
     mut selection: ResMut<Selection>,
-    mut units: Query<(Entity, &mut Unit, &mut Transform)>,
+    mut units: Query<(Entity, &mut Unit)>,
     mut cities: Query<(Entity, &mut City)>,
     tiles: Query<&HexTile>,
-    mut commands: Commands,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<ColorMaterial>>,
+    state: Res<GameState>,
     mut fog: ResMut<FogOfWar>,
-    path_visuals: Query<Entity, With<PathVisual>>,
+    mut diplomacy: ResMut<Diplomacy>,
+    mut log: ResMut<GameLog>,
+    mut dirty: ResMut<Dirty>,
+    mut path: ResMut<PathPreview>,
+    mut bursts: EventWriter<Burst>,
+    mut commands: Commands,
 ) {
-    if !mouse.just_pressed(MouseButton::Left) { return; }
-
-    clear_path_visuals(&mut commands, &path_visuals);
-
-    let Ok(window) = windows.get_single() else { return };
-    let Some(cursor) = window.cursor_position() else { return };
-    let Ok((cam, gt)) = cameras.get_single() else { return };
-    let Ok(world) = cam.viewport_to_world_2d(gt, cursor) else { return };
-    let clicked = map.layout.world_pos_to_hex(world);
-
-    let mut clicked_city = None;
-    for (entity, city) in &cities {
-        if city.position == clicked {
-            clicked_city = Some(entity);
-            break;
+    for click in clicks.read() {
+        if state.victory.is_some() {
+            continue;
         }
-    }
-    if let Some(entity) = clicked_city {
-        selection.selected_city = Some(entity);
-        selection.selected_unit = None;
-        return;
-    }
-
-    let mut clicked_unit = None;
-    for (entity, unit, _) in &units {
-        if unit.position == clicked {
-            clicked_unit = Some(entity);
-            break;
-        }
-    }
-
-    if let Some(entity) = clicked_unit {
-        selection.selected_unit = Some(entity);
-        selection.selected_city = None;
-        return;
-    }
-
-    selection.selected_city = None;
-
-    if let Some(selected) = selection.selected_unit {
-        let others: Vec<(Entity, Hex, u32, UnitType)> = units
-            .iter()
-            .map(|(e, u, _)| (e, u.position, u.owner, u.unit_type))
-            .collect();
-        if let Ok((_, mut unit, mut transform)) = units.get_mut(selected) {
-            let unit = &mut *unit;
-            if unit.movement_left == 0 || unit.build_turns_left.is_some() {
-                return;
+        dirty.ui = true;
+        let hex = click.hex;
+        let Some(terrain) = tiles.iter().find(|t| t.coord == hex).map(|t| t.terrain) else {
+            if !click.secondary {
+                selection.unit = None;
+                selection.city = None;
+                path.0.clear();
             }
+            continue;
+        };
 
-            let Some(path) = find_path(unit.position, clicked, &tiles) else {
-                info!("No path to {:?}", clicked);
-                return;
-            };
+        let snapshot: Vec<(Entity, Hex, u32, UnitType)> =
+            units.iter().map(|(e, u)| (e, u.position, u.owner, u.unit_type)).collect();
+        let city_here = cities.iter().find(|(_, c)| c.position == hex).map(|(e, c)| (e, c.owner));
+        let own_here: Vec<Entity> =
+            snapshot.iter().filter(|u| u.1 == hex && u.2 == PLAYER).map(|u| u.0).collect();
+        let commanding = selection
+            .unit
+            .and_then(|e| snapshot.iter().find(|u| u.0 == e && u.2 == PLAYER))
+            .copied();
 
-            visualize_path(
-                &mut commands,
-                &mut meshes,
-                &mut materials,
-                &map.layout,
-                &path,
-            );
+        let own_city = matches!(city_here, Some((_, PLAYER)));
+        let wants_move = commanding.is_some_and(|u| u.1 != hex)
+            && (click.secondary || (own_here.is_empty() && !own_city));
 
-            let final_pos = path.last().copied().unwrap_or(unit.position);
-            let mut enemy_entity = None;
-            for &(e, pos, owner, unit_type) in &others {
-                if pos == final_pos && owner != unit.owner {
-                    enemy_entity = Some((e, unit_type));
-                    break;
+        if !wants_move {
+            if click.secondary {
+                continue;
+            }
+            path.0.clear();
+            // Select: repeated clicks cycle through the city and the player's units on the tile.
+            #[derive(PartialEq, Clone, Copy)]
+            enum Pick {
+                City(Entity),
+                Unit(Entity),
+            }
+            let mut picks: Vec<Pick> = Vec::new();
+            if let Some((entity, _)) = city_here.filter(|_| fog.explored.contains(&hex)) {
+                picks.push(Pick::City(entity));
+            }
+            picks.extend(own_here.iter().map(|e| Pick::Unit(*e)));
+            if picks.is_empty() && fog.visible.contains(&hex) {
+                picks.extend(snapshot.iter().filter(|u| u.1 == hex).take(1).map(|u| Pick::Unit(u.0)));
+            }
+            let current = selection.city.map(Pick::City).or(selection.unit.map(Pick::Unit));
+            let index = current.and_then(|c| picks.iter().position(|p| *p == c)).map(|i| i + 1).unwrap_or(0);
+            match picks.get(index % picks.len().max(1)) {
+                Some(Pick::City(entity)) => {
+                    selection.city = Some(*entity);
+                    selection.unit = None;
+                }
+                Some(Pick::Unit(entity)) => {
+                    selection.unit = Some(*entity);
+                    selection.city = None;
+                }
+                None => {
+                    selection.unit = None;
+                    selection.city = None;
                 }
             }
+            continue;
+        }
 
-            let spent = move_along_path(&mut unit.position, &mut unit.movement_left, &path);
-            if spent > 0 {
-                let pos = map.layout.hex_to_world_pos(unit.position);
-                transform.translation = Vec3::new(pos.x, pos.y, 1.0);
-                fog.reveal(unit.position, 2);
-                info!("Moved {} hexes along path of length {}", spent, path.len());
+        // --- Move / attack order -------------------------------------------------------------
+        let (selected, ..) = commanding.unwrap();
+        let Ok((_, mut unit)) = units.get_mut(selected) else { continue };
+        let unit = &mut *unit;
+        if unit.build_turns_left.is_some() {
+            log.push(format!("{} is busy building.", unit.unit_type.name()));
+            continue;
+        }
+        if unit.movement_left == 0 {
+            log.push(format!("{} has no moves left this turn.", unit.unit_type.name()));
+            continue;
+        }
+        let Some(route) = find_path(unit.position, hex, tiles.iter().map(|t| (t.coord, t.terrain))) else {
+            log.push("There is no route to that tile.");
+            continue;
+        };
+        dirty.map = true;
+
+        let enemy = snapshot.iter().find(|u| u.1 == hex && u.2 != unit.owner).copied();
+        // Stop next to a defended tile; the last step is the attack itself.
+        let walk = if enemy.is_some() { &route[..route.len() - 1] } else { &route[..] };
+        move_along_path(&mut unit.position, &mut unit.movement_left, walk);
+        path.0 = route.clone();
+
+        if let Some((enemy_entity, _, enemy_owner, enemy_type)) = enemy {
+            let adjacent = unit.position.distance_to(hex) == 1;
+            if adjacent && unit.movement_left > 0 && unit.unit_type.is_military() {
+                unit.movement_left -= 1;
+                bursts.send(Burst(hex));
+                if enemy_owner != BARBARIANS && diplomacy.get_treaty(PLAYER, enemy_owner) != Treaty::War {
+                    diplomacy.set_treaty(PLAYER, enemy_owner, Treaty::War);
+                    log.push("Your attack means war!");
+                }
+                if resolve_combat(unit.unit_type, enemy_type, terrain) {
+                    log.push(format!("Victory! Your {} defeated the enemy {}.", unit.unit_type.name(), enemy_type.name()));
+                    commands.entity(enemy_entity).despawn_recursive();
+                    let more_defenders = snapshot.iter().any(|u| u.1 == hex && u.2 != PLAYER && u.0 != enemy_entity);
+                    if !more_defenders {
+                        unit.position = hex;
+                    }
+                } else {
+                    log.push(format!("Defeat. Your {} was lost attacking a {}.", unit.unit_type.name(), enemy_type.name()));
+                    commands.entity(selected).despawn_recursive();
+                    selection.unit = None;
+                    path.0.clear();
+                    continue;
+                }
+            } else if !unit.unit_type.is_military() {
+                log.push(format!("A {} cannot attack.", unit.unit_type.name()));
             }
+        }
 
-            if let Some((enemy_e, enemy_type)) = enemy_entity {
-                if unit.position == final_pos {
-                    let terrain = tiles.iter().find(|t| t.coord == final_pos).map(|t| t.terrain).unwrap_or(Terrain::Plains);
-                    let wins = resolve_combat(unit.unit_type, enemy_type, terrain);
-                    log_combat(unit.unit_type, enemy_type, terrain, wins);
-                    if wins {
-                        commands.entity(enemy_e).despawn();
+        fog.reveal(unit.position, 2);
+
+        if unit.unit_type.is_military() {
+            for (_, mut city) in &mut cities {
+                if city.position == unit.position && city.owner != PLAYER {
+                    city.owner = PLAYER;
+                    city.is_capital = false;
+                    log.push(format!("Your {} captured {}!", unit.unit_type.name(), city.name));
+                }
+            }
+        }
+    }
+}
+
+fn apply_actions(
+    mut actions: EventReader<Action>,
+    mut selection: ResMut<Selection>,
+    mut units: Query<&mut Unit>,
+    mut cities: Query<&mut City>,
+    mut tiles: Query<&mut HexTile>,
+    state: Res<GameState>,
+    mut tech: ResMut<TechState>,
+    mut diplomacy: ResMut<Diplomacy>,
+    mut trade: ResMut<TradeRoutes>,
+    mut fog: ResMut<FogOfWar>,
+    civs: Res<Civilizations>,
+    mut log: ResMut<GameLog>,
+    mut dirty: ResMut<Dirty>,
+    mut path: ResMut<PathPreview>,
+    mut commands: Commands,
+) {
+    for action in actions.read() {
+        dirty.ui = true;
+        dirty.map = true;
+        let selected_unit = selection.unit.filter(|e| units.get(*e).is_ok_and(|u| u.owner == PLAYER));
+        match action {
+            Action::EndTurn => {}
+            Action::Deselect => {
+                selection.unit = None;
+                selection.city = None;
+                path.0.clear();
+            }
+            Action::Build(improvement) => {
+                let Some(mut unit) = selected_unit.and_then(|e| units.get_mut(e).ok()) else { continue };
+                if !unit.unit_type.is_worker() || unit.movement_left == 0 {
+                    continue;
+                }
+                let Some(tile) = tiles.iter().find(|t| t.coord == unit.position) else { continue };
+                if tile.terrain == Terrain::Water || tile.improvements.contains(improvement) {
+                    log.push("That cannot be built here.");
+                    continue;
+                }
+                unit.start_build(*improvement);
+                log.push(format!("Worker begins a {:?} (3 turns).", improvement));
+            }
+            Action::Transform => {
+                let Some(mut unit) = selected_unit.and_then(|e| units.get_mut(e).ok()) else { continue };
+                if !unit.unit_type.is_worker() || unit.movement_left == 0 {
+                    continue;
+                }
+                if let Some(mut tile) = tiles.iter_mut().find(|t| t.coord == unit.position) {
+                    if tile.transform_terrain() {
+                        unit.movement_left = 0;
+                        log.push("The land is cleared into plains.");
                     } else {
-                        commands.entity(selected).despawn();
-                        selection.selected_unit = None;
+                        log.push("This terrain cannot be transformed.");
                     }
                 }
             }
-
-            if unit.unit_type.is_military() && unit.owner == 0 {
-                for (_, mut city) in &mut cities {
-                    if city.position == unit.position && city.owner != 0 {
-                        city.owner = 0;
-                        info!("Captured city {}", city.name);
-                        break;
-                    }
+            Action::FoundCity => {
+                let Some(entity) = selected_unit else { continue };
+                let Ok(unit) = units.get(entity) else { continue };
+                if unit.unit_type != UnitType::Settler {
+                    continue;
+                }
+                let here = unit.position;
+                let land = tiles.iter().any(|t| t.coord == here && t.terrain != Terrain::Water);
+                let crowded = cities.iter().any(|c| c.position.distance_to(here) < 2);
+                if !land || crowded {
+                    log.push("A city cannot be founded here; move further from other cities.");
+                    continue;
+                }
+                let count = cities.iter().filter(|c| c.owner == PLAYER).count();
+                let name = CITY_NAMES[(count.max(1) - 1) % CITY_NAMES.len()];
+                let city = spawn_city(&mut commands, here, name.into(), 1, PLAYER, false);
+                commands.entity(entity).despawn_recursive();
+                selection.unit = None;
+                selection.city = Some(city);
+                fog.reveal(here, 3);
+                log.push(format!("The city of {name} is founded."));
+            }
+            Action::Skip => {
+                if let Some(mut unit) = selected_unit.and_then(|e| units.get_mut(e).ok()) {
+                    unit.movement_left = 0;
                 }
             }
-
-            if unit.unit_type == UnitType::Settler && enemy_entity.is_none() {
-                let city_exists = cities.iter().any(|(_, c)| c.position == unit.position);
-                let land = tiles.iter().any(|t| t.coord == unit.position && t.terrain != Terrain::Water);
-                if !city_exists && land && unit.position != path[0] {
-                    spawn_city(
-                        &mut commands,
-                        &mut meshes,
-                        &mut materials,
-                        &map.layout,
-                        unit.position,
-                        format!("City {}", cities.iter().count() + 1),
-                        1,
-                    );
-                    commands.entity(selected).despawn();
-                    selection.selected_unit = None;
-                    fog.reveal(unit.position, 2);
+            Action::SetTreaty(civ, treaty) => {
+                let name = civs.players.iter().find(|c| c.id == *civ).map(|c| c.name.clone()).unwrap_or_default();
+                diplomacy.set_treaty(PLAYER, *civ, *treaty);
+                log.push(match treaty {
+                    Treaty::Peace => format!("Peace is agreed with {name}."),
+                    Treaty::Alliance => format!("An alliance is formed with {name}."),
+                    Treaty::War => format!("War is declared on {name}!"),
+                    Treaty::None => format!("Treaties with {name} are dissolved."),
+                });
+            }
+            Action::TradeRoute => {
+                let own: Vec<Hex> = cities.iter().filter(|c| c.owner == PLAYER).map(|c| c.position).collect();
+                if own.len() >= 2 {
+                    let before = trade.routes.len();
+                    for pair in own.windows(2) {
+                        trade.add_route(pair[0], pair[1]);
+                    }
+                    log.push(if trade.routes.len() > before { "New trade routes link your cities." } else { "Your cities already trade with each other." });
+                } else {
+                    log.push("Trade needs at least two cities.");
+                }
+            }
+            Action::Save => {
+                save_game(state.turn, state.gold, state.government.name());
+                log.push("Game saved.");
+            }
+            Action::SetProduction(item) => {
+                let Some(mut city) = selection.city.and_then(|e| cities.get_mut(e).ok()) else { continue };
+                if city.owner == PLAYER {
+                    city.production_queue = Some(item.clone());
+                    log.push(format!("{} begins work on {}.", city.name, item.name()));
+                }
+            }
+            Action::Research(target) => {
+                if tech.can_research(*target) && tech.current != Some(*target) {
+                    tech.current = Some(*target);
+                    log.push(format!("Our scholars turn to {}.", target.name()));
                 }
             }
         }
     }
 }
 
-fn update_unit_positions(
-    map: Res<MapData>,
-    mut units: Query<(&Unit, &mut Transform)>,
-) {
-    for (unit, mut transform) in &mut units {
-        let pos = map.layout.hex_to_world_pos(unit.position);
-        transform.translation = Vec3::new(pos.x, pos.y, 1.0);
-    }
-}
-
-fn has_strategic_resource(tiles: &Query<&mut HexTile>, required: terrain::Resource) -> bool {
-    tiles.iter().any(|t| t.resource == Some(required))
-}
-
+#[allow(clippy::too_many_arguments)]
 fn process_turn(
-    keyboard: Res<ButtonInput<KeyCode>>,
+    mut actions: EventReader<Action>,
     mut state: ResMut<GameState>,
     mut tech: ResMut<TechState>,
     mut cities: Query<(&mut City, &mut CityBuildings, &mut Happiness)>,
@@ -450,300 +528,149 @@ fn process_turn(
     mut tiles: Query<&mut HexTile>,
     mut civs: ResMut<Civilizations>,
     mut fog: ResMut<FogOfWar>,
-    mut diplomacy: ResMut<Diplomacy>,
     mut barbarians: ResMut<BarbarianState>,
-    mut trade: ResMut<TradeRoutes>,
+    trade: Res<TradeRoutes>,
     mut space: ResMut<SpaceRace>,
+    mut log: ResMut<GameLog>,
+    mut dirty: ResMut<Dirty>,
+    mut path: ResMut<PathPreview>,
     mut commands: Commands,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<ColorMaterial>>,
-    map: Res<MapData>,
 ) {
-    if !keyboard.just_pressed(KeyCode::Space) { return; }
-    if state.victory.is_some() { return; }
-
+    if !actions.read().any(|a| *a == Action::EndTurn) || state.victory.is_some() {
+        return;
+    }
+    dirty.map = true;
+    dirty.ui = true;
+    path.0.clear();
     state.turn += 1;
 
     let gov = state.government;
     let mut total_science = 0;
-    let mut disorder_count = 0;
-    let mut player_cities = 0;
     let mut total_gold = 0i32;
+    let mut player_cities = 0;
 
-    let capital_pos = cities.iter().find(|(c, _, _)| c.is_capital).map(|(c, _, _)| c.position);
+    let capitals: HashMap<u32, Hex> =
+        cities.iter().filter(|(c, _, _)| c.is_capital).map(|(c, _, _)| (c.owner, c.position)).collect();
+    let mut army_sizes: HashMap<u32, usize> = HashMap::new();
+    for unit in units.iter() {
+        *army_sizes.entry(unit.owner).or_default() += 1;
+    }
 
     for (mut city, mut buildings, mut happiness) in &mut cities {
-        if city.owner == 0 {
+        let mine = city.owner == PLAYER;
+        if mine {
             player_cities += 1;
         }
+        let dist = capitals.get(&city.owner).map(|cp| city.position.distance_to(*cp) as u32).unwrap_or(0);
 
-        let dist = capital_pos.map(|cp| city.position.distance_to(cp) as u32).unwrap_or(0);
-
-        if city.process_food(&buildings, gov, dist) {
-            info!("{} grew to population {}", city.name, city.population);
+        if city.process_food(&buildings, gov, dist) && mine {
+            log.push(format!("{} grows to size {}.", city.name, city.population));
         }
 
         let mut luxury_bonus = city.luxury_from_specialists();
         for tile in tiles.iter() {
-            if tile.coord.distance_to(city.position) <= 2 {
+            if tile.coord.distance_to(city.position) <= CITY_RADIUS {
                 if let Some(res) = tile.resource {
-                    if res.is_luxury() {
-                        luxury_bonus += res.happiness_bonus();
-                    }
+                    luxury_bonus += res.happiness_bonus();
                 }
             }
         }
-
         happiness.update(city.population, luxury_bonus);
-        if happiness.in_disorder() {
-            disorder_count += 1;
-            info!("{} is in civil disorder!", city.name);
+        if happiness.in_disorder() && mine {
+            log.push(format!("Civil disorder in {}!", city.name));
         }
 
         if let Some(completed) = city.process_production(&buildings, gov, dist) {
             match completed {
                 ProductionItem::Unit(ut) => {
-                    let can_build = match ut.required_resource() {
-                        Some(req) => has_strategic_resource(&tiles, req),
-                        None => true,
-                    };
-                    if can_build {
-                        spawn_unit_for_owner(
-                            &mut commands,
-                            &mut meshes,
-                            &mut materials,
-                            &map.layout,
-                            city.position,
-                            ut,
-                            city.owner,
-                        );
-                        info!("City {} completed {:?}", city.name, ut);
-                    } else {
-                        info!("Cannot build {:?}: missing strategic resource", ut);
+                    let has_resource = ut.required_resource().is_none_or(|req| tiles.iter().any(|t| t.resource == Some(req)));
+                    // Keep computer players from flooding the map.
+                    let at_cap = !mine && army_sizes.get(&city.owner).copied().unwrap_or(0) >= 6;
+                    if has_resource && !at_cap {
+                        spawn_unit(&mut commands, city.position, ut, city.owner);
+                        *army_sizes.entry(city.owner).or_default() += 1;
+                        if mine {
+                            log.push(format!("{} trains a {}.", city.name, ut.name()));
+                        }
+                    } else if mine {
+                        log.push(format!("{} cannot train a {} without its strategic resource.", city.name, ut.name()));
                         city.production_progress += ut.cost() / 2;
                     }
                 }
                 ProductionItem::Building(b) => {
-                    buildings.buildings.push(b.clone());
-                    info!("City {} completed building {}", city.name, b.name());
+                    if mine {
+                        log.push(format!("{} completes the {}.", city.name, b.name()));
+                    }
+                    buildings.buildings.push(b);
                 }
             }
         }
 
-        total_science += city.science_per_turn(&buildings, gov, dist);
-        total_gold += city.gold_per_turn(&buildings) as i32;
+        if mine {
+            total_science += city.science_per_turn(&buildings, gov, dist);
+            total_gold += city.gold_per_turn(&buildings) as i32 + 1;
+        }
     }
 
     total_gold += trade.total_gold() as i32;
     total_science += trade.total_science();
 
-    state.gold += total_gold;
+    let free_support = gov.free_unit_support() * player_cities.max(1);
+    let military = units.iter().filter(|u| u.owner == PLAYER && u.unit_type.is_military()).count() as u32;
+    if military > free_support {
+        total_gold -= (military - free_support) as i32 * gov.unit_upkeep_food() as i32;
+    }
+    state.gold_per_turn = total_gold;
+    state.gold = (state.gold + total_gold).max(0);
     tech.science_per_turn = total_science;
 
-    let free_support = gov.free_unit_support();
-    let mut military_count = 0u32;
-    for unit in units.iter() {
-        if unit.owner == 0 && unit.unit_type.is_military() {
-            military_count += 1;
-        }
-    }
-    if military_count > free_support {
-        let upkeep = (military_count - free_support) as i32 * gov.unit_upkeep_food() as i32;
-        state.gold -= upkeep;
-        if state.gold < 0 { state.gold = 0; }
-    }
-
     for mut unit in &mut units {
-        if let Some(completed_imp) = unit.process_build() {
-            for mut tile in &mut tiles {
-                if tile.coord == unit.position {
-                    tile.add_improvement(completed_imp);
-                    info!("Built {:?} at {:?}", completed_imp, unit.position);
-                    break;
+        if let Some(done) = unit.process_build() {
+            if let Some(mut tile) = tiles.iter_mut().find(|t| t.coord == unit.position) {
+                tile.add_improvement(done);
+                if unit.owner == PLAYER {
+                    log.push(format!("A {:?} is finished.", done));
                 }
             }
         }
-        let (_, _, mv) = unit.unit_type.stats();
         if unit.build_turns_left.is_none() {
-            unit.movement_left = mv;
+            unit.movement_left = unit.unit_type.stats().2;
         }
     }
 
     let city_owners: Vec<(Hex, u32)> = cities.iter().map(|(c, _, _)| (c.position, c.owner)).collect();
-    process_ai_turn(
-        &mut civs,
-        &mut units,
-        &city_owners,
-        &tiles,
-        &mut commands,
-        &mut meshes,
-        &mut materials,
-        &map.layout,
-    );
+    process_ai_turn(&mut civs, &mut units, &city_owners, &tiles, &mut commands);
+    process_barbarians(&mut barbarians, &mut commands, &tiles, &units);
 
-    process_barbarians(
-        &mut barbarians,
-        &mut commands,
-        &mut meshes,
-        &mut materials,
-        &map.layout,
-        &tiles,
-        &units,
-    );
-
-    let unit_positions: Vec<_> = units.iter().map(|u| u.position).collect();
-    let city_positions: Vec<_> = cities.iter().map(|(c, _, _)| c.position).collect();
+    let unit_positions: Vec<Hex> = units.iter().filter(|u| u.owner == PLAYER).map(|u| u.position).collect();
+    let city_positions: Vec<Hex> = cities.iter().filter(|(c, _, _)| c.owner == PLAYER).map(|(c, _, _)| c.position).collect();
     fog.update_visibility(&unit_positions, &city_positions);
 
     if let Some(completed) = tech.process_turn() {
-        info!("Researched: {}", completed.name());
+        log.push(format!("Discovery! We have learned {}.", completed.name()));
         if completed == Tech::Monarchy {
             state.government = Government::Monarchy;
+            log.push("Our government becomes a Monarchy.");
         }
         if completed == Tech::Democracy {
             state.government = Government::Democracy;
         }
     }
 
-    // Space race
     if space.can_build(&tech) && space.progress < 4 {
-        space.add_component(SpaceComponent::Thrusters);
+        let next = [SpaceComponent::Thrusters, SpaceComponent::LifeSupport, SpaceComponent::Habitation, SpaceComponent::SolarPanels][space.progress as usize].clone();
+        space.add_component(next);
     }
 
     state.score = Score::calculate(cities.iter().map(|(c, b, _)| (c, b)), &tech);
 
     if player_cities >= 5 {
         state.victory = Some("Domination Victory!".into());
-        info!("Victory: Domination");
     } else if tech.researched.contains(&Tech::Democracy) {
-        state.victory = Some("Science / Culture Victory!".into());
-        info!("Victory: Democracy researched");
+        state.victory = Some("Cultural Victory!".into());
     } else if space.is_complete() {
         state.victory = Some("Space Race Victory!".into());
-        info!("Victory: Space Race");
-    }
-
-    if disorder_count > 0 {
-        info!("{} cities in disorder", disorder_count);
-    }
-}
-
-fn update_ui(
-    state: Res<GameState>,
-    tech: Res<TechState>,
-    selection: Res<Selection>,
-    units: Query<&Unit>,
-    cities: Query<(Entity, &City, &CityBuildings, &Happiness)>,
-    civs: Res<Civilizations>,
-    diplomacy: Res<Diplomacy>,
-    space: Res<SpaceRace>,
-    mut hud: Query<&mut Text, (With<Hud>, Without<CityPanel>, Without<TechPanel>)>,
-    mut city_panel: Query<&mut Text, (With<CityPanel>, Without<Hud>, Without<TechPanel>)>,
-    mut tech_panel: Query<&mut Text, (With<TechPanel>, Without<Hud>, Without<CityPanel>)>,
-) {
-    if let Ok(mut text) = hud.get_single_mut() {
-        let current = tech.current.map(|t| t.name()).unwrap_or("None");
-        let progress = if let Some(t) = tech.current {
-            format!("{}/{}", tech.progress, t.cost())
-        } else {
-            "-".to_string()
-        };
-
-        let sel = if let Some(e) = selection.selected_unit {
-            if let Ok(u) = units.get(e) {
-                let build = if let Some(imp) = u.current_build {
-                    format!(" building {:?} ({})", imp, u.build_turns_left.unwrap_or(0))
-                } else {
-                    "".to_string()
-                };
-                format!("{:?} (moves: {}){}", u.unit_type, u.movement_left, build)
-            } else {
-                "None".to_string()
-            }
-        } else {
-            "None".to_string()
-        };
-
-        let total_pop: u32 = cities.iter().map(|(_, c, _, _)| c.population).sum();
-        let disorder = cities.iter().filter(|(_, _, _, h)| h.in_disorder()).count();
-        let attitude = diplomacy.get_attitude(0, 1);
-        let treaty = format!("{:?}", diplomacy.get_treaty(0, 1));
-
-        let victory_text = state.victory.as_deref().unwrap_or("");
-
-        text.0 = format!(
-            "Turn: {} | Gov: {} | Gold: {} | Score: {}\nPop: {} | Disorder: {} | Space: {}/4\nTech: {} ({})\nSelected: {}\nCivs: {} | Attitude: {} | Treaty: {}\n{}\nSpace=End | F/M/R/X=Farm/Mine/Road/Transform | P/L/K=Peace/Ally/War | T=Trade | S=Save",
-            state.turn,
-            state.government.name(),
-            state.gold,
-            state.score.total,
-            total_pop,
-            disorder,
-            space.progress,
-            current,
-            progress,
-            sel,
-            civs.players.len(),
-            attitude,
-            treaty,
-            victory_text
-        );
-    }
-
-    if let Ok(mut text) = city_panel.get_single_mut() {
-        if let Some(entity) = selection.selected_city {
-            if let Ok((_, city, buildings, happiness)) = cities.get(entity) {
-                let queue = match &city.production_queue {
-                    Some(ProductionItem::Unit(u)) => format!("{:?}", u),
-                    Some(ProductionItem::Building(b)) => b.name().to_string(),
-                    None => "None".to_string(),
-                };
-                let building_list = buildings.buildings.iter()
-                    .map(|b| b.name())
-                    .collect::<Vec<_>>()
-                    .join(", ");
-                let specialists = city.specialists.iter().map(|s| format!("{:?}", s)).collect::<Vec<_>>().join(", ");
-                text.0 = format!(
-                    "CITY: {}\nPop: {} | Food: {}/{}\nProd: {}\nQueue: {}\nBuildings: {}\nSpecialists: {}\nHappy: {} Content: {} Unhappy: {}\n{}",
-                    city.name,
-                    city.population,
-                    city.food_storage,
-                    city.food_to_grow(),
-                    city.production_progress,
-                    queue,
-                    if building_list.is_empty() { "None" } else { &building_list },
-                    if specialists.is_empty() { "None" } else { &specialists },
-                    happiness.happy,
-                    happiness.content,
-                    happiness.unhappy,
-                    if happiness.in_disorder() { "IN DISORDER" } else { "Content" }
-                );
-            } else {
-                text.0 = "No city selected".into();
-            }
-        } else {
-            text.0 = "Click a city to inspect".into();
-        }
-    }
-
-    if let Ok(mut text) = tech_panel.get_single_mut() {
-        let researched: Vec<_> = tech.researched.iter().map(|t| t.name()).collect();
-        let available: Vec<_> = [
-            Tech::Pottery, Tech::AnimalHusbandry, Tech::Mining, Tech::BronzeWorking,
-            Tech::Masonry, Tech::Alphabet, Tech::Writing, Tech::Monarchy, Tech::Democracy,
-        ]
-        .into_iter()
-        .filter(|t| tech.can_research(*t))
-        .map(|t| t.name())
-        .collect();
-
-        text.0 = format!(
-            "TECH TREE\nCurrent: {} ({}/{})\nResearched: {}\nAvailable: {}",
-            tech.current.map(|t| t.name()).unwrap_or("None"),
-            tech.progress,
-            tech.current.map(|t| t.cost()).unwrap_or(0),
-            if researched.is_empty() { "None".into() } else { researched.join(", ") },
-            if available.is_empty() { "None".into() } else { available.join(", ") }
-        );
+    } else if player_cities == 0 {
+        state.victory = Some("Your civilization has fallen.".into());
     }
 }

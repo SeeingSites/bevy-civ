@@ -1,5 +1,5 @@
 use bevy::prelude::*;
-use crate::unit::{Unit, UnitType, spawn_unit_for_owner};
+use crate::unit::{Unit, UnitType, spawn_unit};
 use crate::terrain::HexTile;
 use rand::Rng;
 
@@ -11,9 +11,6 @@ pub struct BarbarianState {
 pub fn process_barbarians(
     state: &mut BarbarianState,
     commands: &mut Commands,
-    meshes: &mut Assets<Mesh>,
-    materials: &mut Assets<ColorMaterial>,
-    layout: &hexx::HexLayout,
     tiles: &Query<&mut HexTile>,
     units: &Query<&mut Unit>,
 ) {
@@ -31,15 +28,7 @@ pub fn process_barbarians(
     let tile = land_tiles[rng.gen_range(0..land_tiles.len())];
     let nearby_units = units.iter().any(|u| u.position.distance_to(tile.coord) < 4);
     if !nearby_units {
-        spawn_unit_for_owner(
-            commands,
-            meshes,
-            materials,
-            layout,
-            tile.coord,
-            UnitType::Warrior,
-            99, // barbarian owner
-        );
+        spawn_unit(commands, tile.coord, UnitType::Warrior, 99); // 99 = barbarians
         info!("Barbarians spawned at {:?}", tile.coord);
     }
 }

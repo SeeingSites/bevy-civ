@@ -20,4 +20,5 @@ if command -v wasm-opt >/dev/null; then
 fi
 
 cp web/index.html dist/
+cp -r assets dist/assets
 ls -lh dist

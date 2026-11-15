@@ -21,6 +21,13 @@ pub enum Building {
 }
 
 impl Building {
+    pub const ALL: [Building; 15] = [
+        Building::Granary, Building::Barracks, Building::Library, Building::Marketplace, Building::Walls,
+        Building::Aqueduct, Building::University, Building::Bank, Building::Factory, Building::Pyramids,
+        Building::GreatLibrary, Building::HangingGardens, Building::Colossus, Building::Oracle,
+        Building::GreatLighthouse,
+    ];
+
     pub fn name(&self) -> &'static str {
         match self {
             Building::Granary => "Granary",

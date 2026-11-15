@@ -38,6 +38,18 @@ pub enum Resource {
 }
 
 impl Terrain {
+    pub fn name(&self) -> &'static str {
+        match self {
+            Terrain::Water => "Ocean",
+            Terrain::Grassland => "Grassland",
+            Terrain::Plains => "Plains",
+            Terrain::Desert => "Desert",
+            Terrain::Hills => "Hills",
+            Terrain::Mountain => "Mountains",
+            Terrain::Forest => "Forest",
+        }
+    }
+
     pub fn color(&self) -> Color {
         match self {
             Terrain::Water => Color::srgb(0.15, 0.35, 0.75),

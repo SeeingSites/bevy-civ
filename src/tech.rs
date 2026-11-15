@@ -38,6 +38,14 @@ pub enum Tech {
 }
 
 impl Tech {
+    pub const ALL: [Tech; 21] = [
+        Tech::Pottery, Tech::AnimalHusbandry, Tech::Mining, Tech::BronzeWorking, Tech::Masonry,
+        Tech::Alphabet, Tech::TheWheel, Tech::Writing, Tech::CodeOfLaws, Tech::Mysticism,
+        Tech::IronWorking, Tech::Mathematics, Tech::HorsebackRiding, Tech::Construction,
+        Tech::Philosophy, Tech::Monarchy, Tech::Currency, Tech::Engineering, Tech::Gunpowder,
+        Tech::PrintingPress, Tech::Democracy,
+    ];
+
     pub fn cost(&self) -> u32 {
         match self {
             Tech::Pottery | Tech::AnimalHusbandry | Tech::Mining => 10,
@@ -121,18 +129,8 @@ impl TechState {
         if self.progress >= current.cost() {
             self.researched.insert(current);
             self.progress = 0;
-            // Auto-pick next available (simple)
-            let next = [
-                Tech::AnimalHusbandry,
-                Tech::Mining,
-                Tech::BronzeWorking,
-                Tech::Alphabet,
-                Tech::Masonry,
-                Tech::Writing,
-                Tech::TheWheel,
-            ]
-            .into_iter()
-            .find(|t| self.can_research(*t));
+            // Auto-pick the next available technology; the player can change it.
+            let next = Tech::ALL.into_iter().find(|t| self.can_research(*t));
             self.current = next;
             Some(current)
         } else {
