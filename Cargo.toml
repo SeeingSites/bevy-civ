@@ -5,11 +5,13 @@ edition = "2021"
 license = "MIT OR Apache-2.0"
 
 [features]
-default = ["full"]
+default = ["full", "audio"]
 full = ["bevy", "hexx"]
+# Sound effects. Build with `--no-default-features --features full` for a silent game without audio deps.
+audio = ["full", "bevy/bevy_audio", "bevy/wav"]
 
 [dependencies]
-# Only the pieces a 2D game needs: keeps the web build small and avoids native audio deps.
+# Only the pieces a 2D game needs: keeps the web build small. Audio comes from the `audio` feature.
 bevy = { version = "0.15", optional = true, default-features = false, features = [
     "bevy_asset",
     "bevy_color",
