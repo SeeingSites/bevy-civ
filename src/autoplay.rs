@@ -54,6 +54,10 @@ pub fn run(which: &str, turns: u32) -> bool {
     let mut seen_techs: HashSet<Tech> = HashSet::new();
     let mut eras_reached: BTreeMap<&str, u32> = BTreeMap::new();
     let mut log_seen = 0;
+    // Cities changing hands (conquest, defection), and peoples wiped out.
+    let mut owners: std::collections::HashMap<hexx::Hex, u32> = std::collections::HashMap::new();
+    let mut changes = 0;
+    let mut alive: HashSet<u32> = HashSet::new();
     for _ in 0..turns {
         app.world_mut().send_event(EndTurnNow);
         app.update();
@@ -83,11 +87,32 @@ pub fn run(which: &str, turns: u32) -> bool {
                 println!("  turn {turn:>3}: {line}");
             }
         }
+        {
+            let mut q = world.query::<&City>();
+            let now: Vec<(hexx::Hex, u32)> = q.iter(world).map(|c| (c.position, c.owner)).collect();
+            for (at, owner) in &now {
+                if owners.get(at).is_some_and(|o| o != owner) {
+                    changes += 1;
+                }
+                owners.insert(*at, *owner);
+            }
+            let holding: HashSet<u32> = now.iter().map(|(_, o)| *o).collect();
+            if alive.is_empty() {
+                alive = holding.clone();
+            }
+            let names = world.resource::<Civilizations>().players.iter().map(|c| (c.id, c.name.clone())).collect::<Vec<_>>();
+            for gone in alive.difference(&holding) {
+                let name = names.iter().find(|(id, _)| id == gone).map(|(_, n)| n.clone()).unwrap_or_else(|| "The barbarians".into());
+                println!("  turn {turn:>3}: {name} have lost their last city.");
+            }
+            alive = holding;
+        }
         if turn % 25 == 0 {
             snapshot(world, turn);
         }
         if let Some(outcome) = world.resource::<GameState>().victory.clone() {
             println!("Game over on turn {turn}: {outcome}");
+            println!("Cities that changed hands: {changes}.");
             snapshot(world, turn);
             armies(world);
             break;

@@ -208,6 +208,9 @@ Computer players follow the same rules as you and are run by three pieces of cod
   sell resources among themselves.
 - **Reaching cut-off cities**: a city with no land route to the capital is roaded to the nearest
   coastal city of its owner, and coastal cities on both sides build Harbors to join the networks.
+- **Modern armies**: troops in their cities are upgraded while the treasury allows (keeping 100
+  gold in reserve, up to three a turn); at the army size limit the weakest unit that can no longer
+  be upgraded is stood down when something twice as strong can be built.
 - **Navy and air force**: at war, coastal cities add warships and industrial powers add aircraft;
   both hunt enemies within reach and otherwise stay at their base.
 

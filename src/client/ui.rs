@@ -84,11 +84,22 @@ pub enum HelpTopic {
     Buildings,
     Wonders,
     Cities,
+    Peoples,
+    War,
     Victory,
 }
 
 impl HelpTopic {
-    const ALL: [HelpTopic; 6] = [HelpTopic::Basics, HelpTopic::Units, HelpTopic::Buildings, HelpTopic::Wonders, HelpTopic::Cities, HelpTopic::Victory];
+    const ALL: [HelpTopic; 8] = [
+        HelpTopic::Basics,
+        HelpTopic::Units,
+        HelpTopic::Buildings,
+        HelpTopic::Wonders,
+        HelpTopic::Cities,
+        HelpTopic::Peoples,
+        HelpTopic::War,
+        HelpTopic::Victory,
+    ];
 
     fn name(self) -> &'static str {
         match self {
@@ -97,6 +108,8 @@ impl HelpTopic {
             HelpTopic::Buildings => "Buildings",
             HelpTopic::Wonders => "Wonders",
             HelpTopic::Cities => "Cities & happiness",
+            HelpTopic::Peoples => "Peoples & faith",
+            HelpTopic::War => "War",
             HelpTopic::Victory => "Victory",
         }
     }
@@ -106,12 +119,13 @@ impl HelpTopic {
 fn help_lines(topic: HelpTopic) -> Vec<String> {
     match topic {
         HelpTopic::Basics => [
-            "Click a unit or city to select it; click again or press Tab for the next unit on that tile. Click a tile (or right-click) to move; far destinations become standing orders.",
+            "Click a unit or city to select it; click again or press Tab for the next unit on that tile. Click a tile (or right-click) to move; far destinations become standing orders. Hover over a tile to see the route and how many turns it takes.",
             "Space: skip a unit (or go to a city that needs a project, then end the turn). Enter: end the turn. N: next unit. H: fortify or sleep. Esc: close or deselect.",
-            "Workers: F farm, M mine, R road (railroad on a road, with Steam Power), X clear land (or clean pollution), K automate. Settlers: B found a city.",
-            "U uses a great person or a caravan's help on a wonder; T opens a caravan's trade route. Diplomats act from the unit panel next to a foreign city.",
-            "Q science, E foreign affairs, G trade, Y empire (government, cities, military, score), F1 this encyclopedia, V sound, F2 save (the game also saves itself every turn).",
-            "Roads triple movement for troops on foot; railroads make it free. Hills and forest cost 2 moves, mountains 3.",
+            "Workers and Engineers: F farm, M mine, R road (railroad on a road, with Steam Power), O fortress (Construction), X clear land or clean pollution, K automate. Settlers: B found a city.",
+            "U uses the selected unit: a great person's gift, a General forming an army, a Missionary preaching, a caravan helping a wonder. T opens a caravan's trade route. P pillages enemy land. Diplomats act from the unit panel next to a foreign city.",
+            "Q science, E foreign affairs, G trade, Y empire (government, rates, cities, military, score), F1 this encyclopedia, V sound, F2 save a file (the game also saves itself every turn).",
+            "Roads triple movement for troops on foot; railroads make it free. Hills and forest cost 2 moves, mountains 3. Troops cross water in boats once you know Seafaring.",
+            "Tribal villages dot the land: the first unit in finds gold, a technology, warriors who join you, maps of the area - or hostile tribesmen (Scouts rarely meet them).",
         ]
         .into_iter()
         .map(String::from)
@@ -145,20 +159,34 @@ fn help_lines(topic: HelpTopic) -> Vec<String> {
             "When the unhappy outnumber the happy the city falls into disorder: no growth, production, science or taxes until it is calmed.",
             "Cities grow when their granary fills and cannot pass size 8 without an Aqueduct, or 16 without a Sewer System. Specialists eat without farming: too many and the city starves.",
             "Culture from temples, cathedrals, colosseums, libraries, universities and wonders widens a city's borders over time (2 tiles, 3 at 100, 4 at 1,000, 5 at 5,000). Where borders meet, the land goes to the city with the stronger culture for its distance, so a great culture pushes its neighbours' borders back. A city in disorder next to a much greater culture may defect to it.",
-            "Corruption grows with distance from the capital and is halved by a Courthouse. A city keeps training the same unit until told otherwise; a finished building or wonder leaves it waiting for its next project.",
+            "Corruption grows with distance from the capital and is halved by a Courthouse. A city keeps training the same unit until told otherwise; a finished building or wonder leaves it waiting for its next project - unless its build queue holds more (switch the city panel to Add to queue and pick up to six projects).",
+            "Projects other than wonders can be bought with gold, or rushed under Despotism and Communism by putting citizens to forced labour. Luxury (Empire advisor) makes one citizen happy for every 2 points.",
         ]
         .into_iter()
         .map(String::from)
         .collect(),
-        HelpTopic::Victory => [
-            "Conquest: take every rival city. Domination: hold two thirds of the cities in the world (at least five).",
-            "Space: research Space Flight, Plastics and Superconductors; cities with a Factory build 4 Space Structures, 2 Components and 2 Modules. The ship launches when complete and arrives 12 turns later - unless your capital falls first.",
-            "Culture: reach 5,000 culture points and twice the culture of any rival.",
-            "Score: if nobody has won by the last turn, the highest score wins. Score counts citizens, technologies and wonders.",
-        ]
-        .into_iter()
-        .map(String::from)
-        .collect(),
+        HelpTopic::Peoples => vec![
+            "Every people has two traits - Militaristic (troops promoted after half their victories), Commercial (+1 gold a city), Scientific (+1 science a city), Religious (+1 content a city, shorter revolutions), Industrious (+1 shield a city) or Agricultural (+1 food a city) - and a unique unit, which it trains a rank higher.".to_string(),
+            "Governments: a revolution brings a few turns of anarchy. Each government limits how much of your commerce can go to science or luxury (Empire advisor, Government tab); taxes take the rest, and savings earn 5% interest, up to 2 gold per Bank and 3 per Stock Exchange.".to_string(),
+            "Faith: the first to learn Mysticism, Philosophy, Theology and Printing Press founds the Old Gods, the Way of Reason, the One Faith and the Reformed Faith. Faiths spread to nearby cities; Missionaries carry your state religion (your capital's faith) further. Cities of your state religion get +1 content (+2 with a Temple); a holy city's owner earns gold from the faith's followers; shared faith warms relations, different faiths cool them.".to_string(),
+            "Diplomacy (E): peace, alliances, gifts, tribute, trade agreements, technology and resource deals. A right of passage lets your units share tiles with theirs; an alliance includes it, and war ends it. Units cannot walk into the units or cities of a people at peace with you: declare war first.".to_string(),
+            "Culture from temples, libraries, colosseums, cathedrals, universities and wonders widens borders (2 tiles, 3 at 100 culture, 4 at 1,000, 5 at 5,000) and pushes neighbours' borders back. A city in disorder next to a much greater culture may defect.".to_string(),
+            "Great people come from great-person points: Merchants trade abroad or settle as trading houses, Scientists complete research, Artists make masterpieces, Engineers finish projects; Generals come from victories.".to_string(),
+        ],
+        HelpTopic::War => vec![
+            "Attack by moving onto an enemy. Battles are fought in rounds over hit points (3, 4 for a veteran, 5 for an elite); winners may be promoted, faster attackers may retreat, wounds heal while resting.".to_string(),
+            "Defence: hills and forest +50%, mountains double, rivers +25%, fortifying +25%, city walls or a fortress double against land attacks, a Coastal Fortress double against ships. A Great General on the tile makes troops fight half again as hard.".to_string(),
+            "Armies: a Great General in one of your cities forms up to three land units into one army that fights as its best unit with the hit points of all, and moves at its slowest member's pace.".to_string(),
+            "Artillery, some ships and bombers bombard without risk. Troops cannot slip past enemy troops (zone of control). Pillage (P) wrecks improvements on enemy land; computer raiders do the same to yours.".to_string(),
+            "A captured city resists for a while (longer for a big one; a garrison of two halves it) and produces nothing. Under a Republic or Democracy a long war makes citizens unhappy (a Police Station halves it).".to_string(),
+            "Older units are upgraded in your cities for gold once the better unit can be built there.".to_string(),
+        ],
+        HelpTopic::Victory => vec![
+            "Conquest: take every rival city. Domination: hold two thirds of the cities in the world (at least five).".to_string(),
+            "Space: research Space Flight, Plastics and Superconductors; cities with a Factory build 4 Space Structures, 2 Components and 2 Modules. The ship launches when complete and arrives 12 turns later - unless your capital falls first.".to_string(),
+            format!("Culture: reach {} culture points and half as much again as any rival.", bevy_civ::culture::VICTORY_CULTURE),
+            "Score: if nobody has won by the last turn (chosen when the game begins), the highest score wins. Score counts citizens, technologies and wonders.".to_string(),
+        ],
     }
 }
 

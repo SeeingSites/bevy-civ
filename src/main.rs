@@ -3140,6 +3140,61 @@ fn process_turn(
             city.production_queue = Some(ProductionItem::Unit(UnitType::Warrior));
         }
     }
+    // Computer players keep their armies modern: troops in their cities are re-equipped while the
+    // treasury allows (keeping a reserve), and when the army is at its size limit the weakest unit
+    // that can no longer be upgraded is stood down to make room for something better.
+    {
+        let city_spots: HashMap<Hex, u32> = cities.iter().map(|(c, _, _)| (c.position, c.owner)).collect();
+        let city_count = |owner: u32| city_spots.values().filter(|o| **o == owner).count();
+        for civ in civs.players.iter_mut().filter(|c| c.id != PLAYER && !c.is_human) {
+            let knows = |t: Option<Tech>| t.is_none_or(|t| civ.tech.researched.contains(&t));
+            let power = |u: UnitType| u.stats().0 + u.stats().1;
+            let mut upgraded = 0;
+            let candidates: Vec<Entity> = units
+                .iter()
+                .filter(|(_, u)| u.owner == civ.id && u.troops.is_empty() && city_spots.get(&u.position) == Some(&civ.id))
+                .filter(|(_, u)| u.unit_type.upgrades_to().is_some_and(|to| knows(to.required_tech()) && supplies.has(u.position, to.required_resources())))
+                .map(|(e, _)| e)
+                .collect();
+            for entity in candidates {
+                if upgraded >= 3 {
+                    break;
+                }
+                let Ok((_, mut unit)) = units.get_mut(entity) else { continue };
+                let Some(to) = unit.unit_type.upgrades_to() else { continue };
+                let cost = unit.unit_type.upgrade_cost(to);
+                if civ.gold < cost + 100 {
+                    break;
+                }
+                civ.gold -= cost;
+                unit.unit_type = to;
+                unit.hp = unit.max_hp();
+                upgraded += 1;
+            }
+            // At the size limit: stand down the weakest land unit if something twice as strong can be built.
+            let military: Vec<(Entity, UnitType)> = units
+                .iter()
+                .filter(|(e, u)| !dead.contains(e) && u.owner == civ.id && u.unit_type.is_army() && u.troops.is_empty())
+                .map(|(e, u)| (e, u.unit_type))
+                .collect();
+            let all_military = units.iter().filter(|(_, u)| u.owner == civ.id && u.unit_type.is_military()).count();
+            if all_military >= governor::army_cap(city_count(civ.id)) {
+                let best = UnitType::ALL
+                    .into_iter()
+                    .filter(|u| u.is_trainable() && u.is_army() && knows(u.required_tech()))
+                    .map(power)
+                    .max()
+                    .unwrap_or(0);
+                if let Some((entity, kind)) = military.iter().min_by_key(|(_, k)| power(*k)) {
+                    let stuck = kind.upgrades_to().is_none_or(|to| !knows(to.required_tech()));
+                    if power(*kind) * 2 <= best && (stuck || civ.gold < 200) {
+                        dead.insert(*entity);
+                        commands.entity(*entity).try_despawn_recursive();
+                    }
+                }
+            }
+        }
+    }
     // Computer troops standing on improved enemy land they are at war with sometimes pillage it.
     {
         let city_tiles: HashSet<Hex> = cities.iter().map(|(c, _, _)| c.position).collect();
