@@ -4,7 +4,6 @@
 use bevy::asset::AssetMetaCheck;
 use bevy::prelude::*;
 use hexx::{Hex, HexLayout};
-use rand::Rng;
 use std::collections::HashMap;
 
 use bevy_civ::ai::{process_ai_turn, Civilizations};
@@ -27,6 +26,7 @@ use bevy_civ::unit::{spawn_unit, Unit, UnitType};
 
 mod client;
 mod foreign;
+mod governor;
 mod scenario;
 mod supply;
 
@@ -583,7 +583,7 @@ fn apply_actions(
     mut civs: ResMut<Civilizations>,
     mut log: ResMut<GameLog>,
     mut dirty: ResMut<Dirty>,
-    (mut path, mut cycle, supplies, mut end_turn): (ResMut<PathPreview>, ResMut<Cycle>, Res<Supplies>, EventWriter<EndTurnNow>),
+    (mut path, mut cycle, supplies, map, mut end_turn): (ResMut<PathPreview>, ResMut<Cycle>, Res<Supplies>, Res<MapData>, EventWriter<EndTurnNow>),
     mut commands: Commands,
 ) {
     for action in actions.read() {
@@ -733,6 +733,10 @@ fn apply_actions(
                 if city.owner != PLAYER {
                     continue;
                 }
+                if *item == ProductionItem::Building(Building::Harbor) && !city.position.all_neighbors().iter().any(|n| map.water.contains(n)) {
+                    log.push(format!("{} is not on the coast and cannot build a Harbor.", city.name));
+                    continue;
+                }
                 if missing.is_empty() {
                     city.production_queue = Some(item.clone());
                     log.push(format!("{} begins work on {}.", city.name, item.name()));
@@ -794,9 +798,30 @@ fn process_turn(
             *worker_counts.entry(unit.owner).or_default() += 1;
         }
     }
+    let mut settler_counts: HashMap<u32, usize> = HashMap::new();
+    for (_, unit) in units.iter().filter(|(_, u)| u.unit_type == UnitType::Settler) {
+        *settler_counts.entry(unit.owner).or_default() += 1;
+    }
+    // Where every army stands, who is at war, and how much road work each computer player has left.
+    let armies: Vec<(Hex, u32)> = units.iter().filter(|(_, u)| u.unit_type.is_military()).map(|(_, u)| (u.position, u.owner)).collect();
+    let wars: HashSet<(u32, u32)> = diplomacy.treaties.iter().filter(|(_, t)| **t == Treaty::War).map(|(pair, _)| *pair).collect();
+    let enemies = |a: u32, b: u32| a != b && (a == BARBARIANS || b == BARBARIANS || wars.contains(&(a.min(b), a.max(b))));
+    let mut road_work: HashMap<u32, usize> = HashMap::new();
+    for owner in supplies.unconnected.values() {
+        *road_work.entry(*owner).or_default() += 1;
+    }
+    // Science and gold the computer players' cities bring in this turn.
+    let mut ai_income: HashMap<u32, (u32, i32)> = HashMap::new();
+    let mut hurried: HashSet<u32> = HashSet::new();
     let mut city_counts: HashMap<u32, usize> = HashMap::new();
     for (city, _, _) in cities.iter() {
         *city_counts.entry(city.owner).or_default() += 1;
+        // Workers and settlers already on order count, so cities do not all train the same thing.
+        match city.production_queue {
+            Some(ProductionItem::Unit(UnitType::Worker)) => *worker_counts.entry(city.owner).or_default() += 1,
+            Some(ProductionItem::Unit(UnitType::Settler)) => *settler_counts.entry(city.owner).or_default() += 1,
+            _ => {}
+        }
     }
 
     for (mut city, mut buildings, mut happiness) in &mut cities {
@@ -805,6 +830,47 @@ fn process_turn(
             player_cities += 1;
         }
         let dist = capitals.get(&city.owner).map(|cp| city.position.distance_to(*cp) as u32).unwrap_or(0);
+
+        // What a computer player's governor sees of this city.
+        let owner = city.owner;
+        let view = governor::CityView {
+            position: city.position,
+            population: city.population,
+            built: buildings.buildings.clone(),
+            coastal: city.position.all_neighbors().iter().any(|n| map.water.contains(n)),
+            linked: supplies.linked.contains(&city.position),
+            defended: armies.iter().any(|(p, o)| *p == city.position && *o == owner),
+            threatened: armies.iter().any(|(p, o)| enemies(owner, *o) && p.distance_to(city.position) <= 3),
+        };
+        let mut needs_orders = false;
+        let mut just_trained = false;
+        if !mine && owner != BARBARIANS && !view.defended {
+            if let Some(civ) = civs.players.iter_mut().find(|c| c.id == owner) {
+                // An empty city drops everything for a defender, and pays to hurry it when in danger.
+                let already = matches!(&city.production_queue, Some(ProductionItem::Unit(u)) if u.is_military());
+                if !already {
+                    let civ_view = governor::CivView { tech: &civ.tech, aggression: civ.aggression, cities: 1, workers: 1, settlers: 1, military: 0, road_work: 0, at_war: true };
+                    city.production_queue = Some(ProductionItem::Unit(governor::best_defender(&view, &civ_view, &supplies)));
+                }
+                let remaining = city.production_queue.as_ref().map(|i| i.cost()).unwrap_or(0).saturating_sub(city.production_progress) as i32;
+                if view.threatened && remaining > 0 && civ.gold >= remaining * 2 {
+                    civ.gold -= remaining * 2;
+                    city.production_progress += remaining as u32;
+                }
+            }
+        }
+
+        // A rich treasury hurries along whatever a city is working on (one purchase per civilization per turn).
+        if !mine && owner != BARBARIANS && !hurried.contains(&owner) {
+            if let Some(civ) = civs.players.iter_mut().find(|c| c.id == owner) {
+                let remaining = city.production_queue.as_ref().map(|i| i.cost()).unwrap_or(0).saturating_sub(city.production_progress) as i32;
+                if remaining > 0 && civ.gold >= 150 + remaining * 2 {
+                    civ.gold -= remaining * 2;
+                    city.production_progress += remaining as u32;
+                    hurried.insert(owner);
+                }
+            }
+        }
 
         // Farms, mines and bonus resources on the city's land add to what it gathers.
         let (extra_food, extra_shields, extra_gold) = supplies.yields.get(&city.position).copied().unwrap_or_default();
@@ -835,18 +901,21 @@ fn process_turn(
                     log.push(format!("{} has no access to {} and stops work on {}.", city.name, names.join(" or "), item.name()));
                 }
                 city.production_queue = Some(ProductionItem::Unit(UnitType::Warrior));
+                needs_orders = true;
             }
         }
 
         if let Some(completed) = city.process_production(&buildings, gov, dist) {
+            needs_orders = true;
             match completed {
                 ProductionItem::Unit(ut) => {
                     // Keep computer players from flooding the map.
-                    let at_cap = !mine && ut.is_military() && army_sizes.get(&city.owner).copied().unwrap_or(0) >= 8;
+                    let at_cap = !mine && ut.is_military() && army_sizes.get(&city.owner).copied().unwrap_or(0) >= governor::army_cap(city_counts.get(&city.owner).copied().unwrap_or(1));
                     if !at_cap {
                         spawn_unit(&mut commands, city.position, ut, city.owner);
                         if ut.is_military() {
                             *army_sizes.entry(city.owner).or_default() += 1;
+                            just_trained = true;
                         }
                     }
                     {
@@ -866,27 +935,6 @@ fn process_turn(
                                     city.production_queue = Some(ProductionItem::Building(building));
                                 }
                             }
-                        } else if let Some(civ) = civs.players.iter().find(|c| c.id == city.owner) {
-                            // Computer players field the strongest unit their technology and resources allow.
-                            let best = UnitType::ALL
-                                .into_iter()
-                                .filter(|u| u.is_military())
-                                .filter(|u| u.required_tech().is_none_or(|t| civ.tech.researched.contains(&t)))
-                                .filter(|u| supplies.has(city.position, u.required_resources()))
-                                .max_by_key(|u| (u.stats().0 + u.stats().1, u.stats().2));
-                            // Enough workers to road the resources and link the cities: one per two cities.
-                            let workers = worker_counts.entry(city.owner).or_default();
-                            let wants_worker = *workers < city_counts.get(&city.owner).copied().unwrap_or(1).div_ceil(2);
-                            // Small empires send out settlers now and then.
-                            let wants_settler = city.population >= 2 && rng.gen_bool(0.2);
-                            if wants_worker {
-                                *workers += 1;
-                                city.production_queue = Some(ProductionItem::Unit(UnitType::Worker));
-                            } else if wants_settler {
-                                city.production_queue = Some(ProductionItem::Unit(UnitType::Settler));
-                            } else if let Some(best) = best {
-                                city.production_queue = Some(ProductionItem::Unit(best));
-                            }
                         }
                     }
                 }
@@ -899,10 +947,50 @@ fn process_turn(
             }
         }
 
+        // A computer player's city gets its next project from the governor.
+        if needs_orders && !mine && owner != BARBARIANS {
+            if let Some(civ) = civs.players.iter().find(|c| c.id == owner) {
+                let civ_view = governor::CivView {
+                    tech: &civ.tech,
+                    aggression: civ.aggression,
+                    cities: city_counts.get(&owner).copied().unwrap_or(1),
+                    workers: worker_counts.get(&owner).copied().unwrap_or(0),
+                    settlers: settler_counts.get(&owner).copied().unwrap_or(0),
+                    military: army_sizes.get(&owner).copied().unwrap_or(0),
+                    road_work: road_work.get(&owner).copied().unwrap_or(0),
+                    at_war: wars.iter().any(|(a, b)| *a == owner || *b == owner),
+                };
+                // The unit just trained (if any) now holds the city.
+                let view = governor::CityView { built: buildings.buildings.clone(), defended: view.defended || just_trained, ..view };
+                let next = governor::choose(&view, &civ_view, &supplies, &mut rng);
+                // Count what is now on order so the civilization's other cities do not duplicate it.
+                match &next {
+                    ProductionItem::Unit(UnitType::Worker) => *worker_counts.entry(owner).or_default() += 1,
+                    ProductionItem::Unit(UnitType::Settler) => *settler_counts.entry(owner).or_default() += 1,
+                    _ => {}
+                }
+                city.production_queue = Some(next);
+            }
+        }
+        if !mine {
+            let income = ai_income.entry(owner).or_default();
+            income.0 += city.science_per_turn(&buildings, gov, dist);
+            income.1 += city.gold_per_turn(&buildings) as i32 + 2 + supplies.yields.get(&city.position).map(|y| y.2 as i32).unwrap_or(0);
+        }
+
         if mine {
             total_science += city.science_per_turn(&buildings, gov, dist);
             total_gold += city.gold_per_turn(&buildings) as i32 + 1;
         }
+    }
+
+    for civ in civs.players.iter_mut().filter(|c| !c.is_human) {
+        let (science, gold) = ai_income.get(&civ.id).copied().unwrap_or_default();
+        civ.gold += gold;
+        // Savings beyond a reserve are invested in research.
+        let invested = ((civ.gold - 250) / 10).max(0);
+        civ.gold -= invested;
+        civ.tech.science_per_turn = (science + invested as u32 / 2).max(1);
     }
 
     total_gold += trade.total_gold() as i32 + foreign.pacts.len() as i32 * foreign::PACT_INCOME;
@@ -1067,7 +1155,7 @@ fn process_turn(
     }
     {
         let mut ctx = foreign::Ctx { diplomacy: &mut diplomacy, foreign: &mut foreign, civs: &mut civs, state: &mut state, tech: &mut tech, log: &mut log };
-        foreign::turn(&mut ctx, &fog, &unit_owners, &city_owners);
+        foreign::turn(&mut ctx, &fog, &supplies, &unit_owners, &city_owners);
     }
 
     let all_positions: Vec<Hex> = units.iter().filter(|(e, _)| !dead.contains(e)).map(|(_, u)| u.position).collect();

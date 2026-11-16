@@ -94,6 +94,22 @@ on, propose technology swaps, ask you to join their wars, and declare war when r
 Breaking a treaty costs reputation with everyone, allies join each other's wars, and the other
 powers fight and make peace among themselves.
 
+## Computer players
+Computer players follow the same rules as you and are run by three pieces of code:
+
+- **Armies** (`src/ai.rs`): the best defender in each city is its garrison and stays put; an empty
+  city is re-occupied by the nearest unit; field units strike beatable enemies nearby and march on
+  enemy cities, but gather outside a defended city until enough of the army has arrived. Workers
+  road resources and cities, then farm and mine. Settlers walk clear of existing cities to found
+  new ones. Research follows temperament: warlike leaders study arms first, builders the economy.
+- **Cities** (`src/governor.rs`): each city picks its next project in order of need - a defender if
+  it has none, workers while roads are missing, a Harbor if it is cut off from the capital, an army
+  sized to peace or war, settlers, then buildings and wonders. A city in danger pays gold to hurry
+  its defender.
+- **Economy and diplomacy** (`src/main.rs`, `src/foreign.rs`): science and gold come from their own
+  cities and buildings. Spare gold hurries production and is invested in research. Their merchants
+  propose resource deals: to buy what you can spare and sell what they can.
+
 ## Controls
 - **Click / tap** a unit or city to select it (click again to cycle what is on the tile)
 - **Click a tile** (or **right-click**) to move the selected unit; moving onto an enemy attacks

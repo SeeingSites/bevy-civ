@@ -3,7 +3,7 @@ use hexx::Hex;
 use crate::unit::{Unit, UnitType};
 use crate::terrain::{HexTile, Improvement, Terrain};
 use std::collections::HashMap;
-use crate::tech::TechState;
+use crate::tech::{Tech, TechState};
 use crate::pathfinding::find_path;
 use rand::Rng;
 
@@ -32,6 +32,49 @@ impl Default for Civilizations {
     fn default() -> Self {
         Self { players: Vec::new() }
     }
+}
+
+/// How much a technology appeals to a warlike (first) and to a builder (second) civilization.
+fn appeal(tech: Tech) -> (f32, f32) {
+    match tech {
+        Tech::BronzeWorking => (3.0, 1.0),
+        Tech::AnimalHusbandry => (3.0, 1.5),
+        Tech::IronWorking => (4.0, 1.0),
+        Tech::HorsebackRiding => (3.5, 0.5),
+        Tech::TheWheel => (2.5, 1.0),
+        Tech::Mathematics => (3.0, 1.5),
+        Tech::Gunpowder => (5.0, 1.0),
+        Tech::ReplaceableParts => (4.0, 2.0),
+        Tech::MotorizedTransport => (5.0, 1.0),
+        Tech::Masonry => (2.0, 2.0),
+        Tech::Mining => (1.5, 1.5),
+        Tech::Pottery => (0.5, 3.0),
+        Tech::Alphabet => (0.5, 2.5),
+        Tech::Writing => (0.5, 3.5),
+        Tech::Seafaring => (1.5, 3.0),
+        Tech::CodeOfLaws => (0.5, 2.5),
+        Tech::Currency => (0.5, 3.5),
+        Tech::Mysticism => (0.5, 2.0),
+        Tech::Philosophy => (0.5, 3.0),
+        Tech::Monarchy => (1.5, 2.5),
+        Tech::Construction => (1.0, 2.5),
+        Tech::Engineering => (2.0, 2.5),
+        Tech::PrintingPress => (0.5, 3.0),
+        Tech::Democracy => (0.0, 3.5),
+        Tech::SteamPower => (2.5, 3.0),
+        Tech::Industrialization => (2.0, 4.0),
+        Tech::Refining => (3.0, 2.5),
+    }
+}
+
+/// The technology a computer player studies next: warlike leaders favour arms, builders the economy,
+/// and cheap discoveries are preferred over distant ones.
+pub fn pick_research(tech: &TechState, aggression: f32) -> Option<Tech> {
+    let score = |t: Tech| {
+        let (war, peace) = appeal(t);
+        war * aggression + peace * (1.0 - aggression) - t.cost() as f32 / 40.0
+    };
+    Tech::ALL.into_iter().filter(|t| tech.can_research(*t)).max_by(|a, b| score(*a).total_cmp(&score(*b)))
 }
 
 pub fn unit_strength(unit: &Unit) -> f32 {
@@ -66,12 +109,9 @@ pub fn process_ai_turn(
 
     for civ in &mut civs.players {
         if civ.is_human { continue; }
-        civ.tech.science_per_turn = 4;
-        if let Some(completed) = civ.tech.process_turn() {
-            info!("{} researched {}", civ.name, completed.name());
-        }
-        if civ.gold > 100 && rng.gen_bool(0.3) {
-            civ.gold -= 40;
+        // Science comes from the civilization's cities (set by the caller before this phase).
+        if civ.tech.process_turn().is_some() || civ.tech.current.is_none() {
+            civ.tech.current = pick_research(&civ.tech, civ.aggression);
         }
     }
 
@@ -96,6 +136,32 @@ pub fn process_ai_turn(
         .collect();
     let mut founded: Vec<Hex> = Vec::new();
 
+    // The best defender standing in each city is its garrison and stays there.
+    let mut holders: HashMap<Hex, (Entity, f32)> = HashMap::new();
+    let mut field_armies: HashMap<u32, usize> = HashMap::new();
+    for (entity, unit) in units.iter() {
+        if unit.owner == 0 || !unit.unit_type.is_military() {
+            continue;
+        }
+        *field_armies.entry(unit.owner).or_default() += 1;
+        if city_positions.iter().any(|(p, o)| *p == unit.position && *o == unit.owner) {
+            let defence = unit.unit_type.stats().1 as f32 * unit.unit_type.defense_bonus();
+            if holders.get(&unit.position).is_none_or(|(_, best)| defence > *best) {
+                holders.insert(unit.position, (entity, defence));
+            }
+        }
+    }
+    let garrison: std::collections::HashSet<Entity> = holders.values().map(|(e, _)| *e).collect();
+    for (pos, owner) in city_positions {
+        if holders.contains_key(pos) {
+            if let Some(count) = field_armies.get_mut(owner) {
+                *count = count.saturating_sub(1);
+            }
+        }
+    }
+    // Cities of computer players that nobody is holding.
+    let mut undefended: Vec<(Hex, u32)> = city_positions.iter().copied().filter(|(p, o)| *o != 0 && !holders.contains_key(p)).collect();
+
     for (entity, mut unit) in units.iter_mut() {
         if unit.owner == 0 || unit.movement_left == 0 || unit.build_turns_left.is_some() {
             continue;
@@ -103,7 +169,7 @@ pub fn process_ai_turn(
         let owner = unit.owner;
         let civ = civs.players.iter().find(|c| c.id == owner);
         let aggression = civ.map(|c| c.aggression).unwrap_or(0.8);
-        let can_sail = civ.is_some_and(|c| c.tech.researched.contains(&crate::tech::Tech::Seafaring));
+        let can_sail = civ.is_some_and(|c| c.tech.researched.contains(&Tech::Seafaring));
 
         // Settler: walk away from existing cities, then found a new one
         if unit.unit_type == UnitType::Settler {
@@ -180,10 +246,24 @@ pub fn process_ai_turn(
             continue;
         }
 
-        // Pick a target: a beatable enemy unit close by, otherwise the nearest enemy city.
+        let here = unit.position;
+        if garrison.contains(&entity) {
+            unit.fortified = true;
+            unit.movement_left = 0;
+            continue;
+        }
+        unit.fortified = false;
+
+        // Goal, in order: hold an undefended city of ours, strike a beatable enemy nearby,
+        // march on the nearest enemy city.
         let my_strength = unit_strength(&unit);
         let threshold = if aggression > 0.6 { 0.9 } else { 1.2 };
-        let here = unit.position;
+        let relief = undefended
+            .iter()
+            .enumerate()
+            .filter(|(_, (p, o))| *o == owner && here.distance_to(*p) <= 8)
+            .min_by_key(|(_, (p, _))| here.distance_to(*p))
+            .map(|(index, (p, _))| (index, *p));
         let enemy_unit = unit_snapshots
             .iter()
             .filter(|(pos, other, strength)| {
@@ -198,7 +278,29 @@ pub fn process_ai_turn(
             .min_by_key(|(pos, _)| here.distance_to(*pos))
             .map(|(pos, _)| *pos);
 
-        if let Some(target) = enemy_unit.or(enemy_city) {
+        let goal = if let Some((index, city)) = relief {
+            undefended.remove(index);
+            Some(city)
+        } else if enemy_unit.is_some() {
+            enemy_unit
+        } else if let Some(city) = enemy_city {
+            // A defended city is attacked in strength: wait nearby until enough of the army has gathered.
+            let defended = occupied.get(&city).is_some_and(|(other, _)| *other != owner);
+            let needed = if !defended { 1 } else if aggression > 0.6 { 2 } else { 3 };
+            let gathered = unit_snapshots.iter().filter(|(pos, other, strength)| *other == owner && *strength > 0.0 && here.distance_to(*pos) <= 3).count();
+            let available = field_armies.get(&owner).copied().unwrap_or(0);
+            if available < needed {
+                None
+            } else if gathered < needed && here.distance_to(city) <= 3 {
+                continue;
+            } else {
+                Some(city)
+            }
+        } else {
+            None
+        };
+
+        if let Some(target) = goal {
             if let Some(path) = find_path(here, target, land.iter().copied(), can_sail) {
                 for next in path.into_iter().skip(1) {
                     if unit.movement_left == 0 {
@@ -225,17 +327,22 @@ pub fn process_ai_turn(
             continue;
         }
 
-        // Nothing to fight: garrison a city, or wander a little.
-        let in_own_city = city_positions.iter().any(|(p, o)| *p == here && *o == owner);
-        if in_own_city || rng.gen_bool(0.5) {
+        // Nothing to do: stay near home, drifting back towards the nearest city of ours.
+        let home = city_positions.iter().filter(|(_, o)| *o == owner).min_by_key(|(p, _)| here.distance_to(*p)).map(|(p, _)| *p);
+        let options: Vec<Hex> = here
+            .all_neighbors()
+            .into_iter()
+            .filter(|n| is_land(*n) && is_land(here) && !occupied.get(n).is_some_and(|(other, _)| *other != owner))
+            .collect();
+        if options.is_empty() || rng.gen_bool(0.5) {
             continue;
         }
-        let neighbors = here.all_neighbors();
-        let step = neighbors[rng.gen_range(0..neighbors.len())];
-        if is_land(step) && is_land(here) && !occupied.get(&step).is_some_and(|(other, _)| *other != owner) {
-            unit.position = step;
-            unit.movement_left -= 1;
-        }
+        let step = match home {
+            Some(home) if here.distance_to(home) > 3 => options.iter().copied().min_by_key(|n| n.distance_to(home)).unwrap(),
+            _ => options[rng.gen_range(0..options.len())],
+        };
+        unit.position = step;
+        unit.movement_left -= 1;
     }
     attacks
 }
@@ -303,6 +410,67 @@ mod tests {
         let unit = world.get::<Unit>(worker).unwrap();
         assert_eq!(unit.position, Hex::new(1, 0));
         assert_eq!(unit.current_build, Some(Improvement::Road));
+    }
+
+    fn soldier(world: &mut World, kind: UnitType, owner: u32, q: i32) -> Entity {
+        world
+            .spawn(Unit { unit_type: kind, movement_left: 1, owner, position: Hex::new(q, 0), build_turns_left: None, current_build: None, fortified: false })
+            .id()
+    }
+
+    fn war_phase(
+        mut civs: ResMut<Civilizations>,
+        mut units: Query<(Entity, &mut Unit)>,
+        tiles: Query<&mut HexTile>,
+        mut commands: Commands,
+    ) {
+        // Rival city at the origin, the player's city three tiles east; they are at war.
+        let cities = [(Hex::ZERO, 1), (Hex::new(3, 0), 0)];
+        process_ai_turn(&mut civs, &mut units, &cities, &tiles, &|a, b| a != b, &mut HashMap::new(), &|_, _| false, &mut commands);
+    }
+
+    #[test]
+    fn best_defender_garrisons_and_the_rest_take_the_field() {
+        let (mut world, worker) = world_with_worker(Terrain::Plains);
+        world.despawn(worker);
+        let phalanx = soldier(&mut world, UnitType::Phalanx, 1, 0);
+        let warrior = soldier(&mut world, UnitType::Warrior, 1, 0);
+        world.run_system_once(war_phase).unwrap();
+        let held = world.get::<Unit>(phalanx).unwrap();
+        assert_eq!(held.position, Hex::ZERO);
+        assert!(held.fortified, "the stronger defender holds the city");
+        // The enemy city is undefended, so a single unit is enough to march on it.
+        assert_eq!(world.get::<Unit>(warrior).unwrap().position, Hex::new(1, 0));
+    }
+
+    #[test]
+    fn a_lone_unit_waits_for_support_before_a_defended_city() {
+        let (mut world, worker) = world_with_worker(Terrain::Plains);
+        world.despawn(worker);
+        soldier(&mut world, UnitType::Phalanx, 1, 0); // garrison
+        let scout = soldier(&mut world, UnitType::Warrior, 1, 1);
+        let support = soldier(&mut world, UnitType::Warrior, 1, -3);
+        soldier(&mut world, UnitType::Warrior, 1, -3);
+        soldier(&mut world, UnitType::Warrior, 0, 3); // the defender
+        world.run_system_once(war_phase).unwrap();
+        assert_eq!(world.get::<Unit>(scout).unwrap().position, Hex::new(1, 0), "too few have gathered to attack");
+        assert_eq!(world.get::<Unit>(support).unwrap().position, Hex::new(-2, 0), "the rest of the army closes up");
+    }
+
+    #[test]
+    fn an_empty_city_is_reoccupied() {
+        let (mut world, worker) = world_with_worker(Terrain::Plains);
+        world.despawn(worker);
+        let warrior = soldier(&mut world, UnitType::Warrior, 1, -2);
+        world.run_system_once(war_phase).unwrap();
+        assert_eq!(world.get::<Unit>(warrior).unwrap().position, Hex::new(-1, 0));
+    }
+
+    #[test]
+    fn research_follows_temperament() {
+        let tech = TechState::default();
+        assert_eq!(pick_research(&tech, 0.9), Some(Tech::AnimalHusbandry));
+        assert_eq!(pick_research(&tech, 0.1), Some(Tech::Pottery));
     }
 
     #[test]

@@ -392,7 +392,7 @@ pub fn rebuild_panels(
     mut dirty: ResMut<Dirty>,
     selection: Res<Selection>,
     mut ui: ResMut<UiState>,
-    (foreign, supplies): (Res<Foreign>, Res<Supplies>),
+    (foreign, supplies, map): (Res<Foreign>, Res<Supplies>, Res<MapData>),
     art: Res<Art>,
     state: Res<GameState>,
     tech: Res<TechState>,
@@ -528,7 +528,13 @@ pub fn rebuild_panels(
             p.spawn(row(5.0)).with_children(|r| {
                 let known = |t: Option<Tech>| t.is_none_or(|t| tech.researched.contains(&t));
                 let mut options: Vec<ProductionItem> = UnitType::ALL.into_iter().filter(|u| known(u.required_tech())).map(ProductionItem::Unit).collect();
-                options.extend(Building::ALL.into_iter().filter(|b| known(b.required_tech()) && !buildings.buildings.contains(b)).map(ProductionItem::Building));
+                let coastal = city.position.all_neighbors().iter().any(|n| map.water.contains(n));
+                options.extend(
+                    Building::ALL
+                        .into_iter()
+                        .filter(|b| known(b.required_tech()) && !buildings.buildings.contains(b) && (*b != Building::Harbor || coastal))
+                        .map(ProductionItem::Building),
+                );
                 for item in options {
                     let current = city.production_queue.as_ref() == Some(&item);
                     let missing = supplies.missing(city.position, item.required_resources());
@@ -586,6 +592,8 @@ pub fn rebuild_panels(
                         OfferKind::TechSwap { give, get } => format!("We would learn {} and teach them {}.", get.name(), give.name()),
                         OfferKind::JoinWar(target) => format!("Accepting means declaring war on {}.", civs.players.iter().find(|c| c.id == *target).map(|c| c.name.as_str()).unwrap_or("them")),
                         OfferKind::Peace => "Accepting ends the war.".to_string(),
+                        OfferKind::BuyFromUs(good, gold) => format!("We would send them our spare {} and receive {gold} gold a turn for {} turns.", good.name(), foreign::DEAL_TURNS),
+                        OfferKind::SellToUs(good, gold) => format!("We would receive {} and pay {gold} gold a turn for {} turns. We have {} gold.", good.name(), foreign::DEAL_TURNS, state.gold),
                         OfferKind::Notice => String::new(),
                     };
                     if !detail.is_empty() {

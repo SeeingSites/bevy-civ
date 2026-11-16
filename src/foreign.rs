@@ -66,6 +66,10 @@ pub enum OfferKind {
     Tribute(i32),
     TechSwap { give: Tech, get: Tech },
     JoinWar(u32),
+    /// They want to buy a resource from us for this much gold a turn.
+    BuyFromUs(Good, i32),
+    /// They offer to sell us a resource for this much gold a turn.
+    SellToUs(Good, i32),
 }
 
 /// A message from another leader waiting for the player's answer.
@@ -469,12 +473,25 @@ pub fn answer_offer(ctx: &mut Ctx, accept: bool) {
             shift(ctx, civ, -6);
             "We had hoped for more from you."
         }
+        (OfferKind::BuyFromUs(good, gold), true) => {
+            ctx.foreign.deals.push(Deal { civ, export: Some(good), import: None, gold, ends: ctx.state.turn + DEAL_TURNS });
+            shift(ctx, civ, 4);
+            ctx.log.push(format!("We will supply {name} with {} for {gold} gold a turn ({DEAL_TURNS} turns).", good.name()));
+            "A pleasure doing business."
+        }
+        (OfferKind::SellToUs(good, gold), true) => {
+            ctx.foreign.deals.push(Deal { civ, export: None, import: Some(good), gold: -gold, ends: ctx.state.turn + DEAL_TURNS });
+            shift(ctx, civ, 2);
+            ctx.log.push(format!("{name} will supply us with {} for {gold} gold a turn ({DEAL_TURNS} turns).", good.name()));
+            "Our caravans leave at dawn."
+        }
+        (OfferKind::BuyFromUs(..) | OfferKind::SellToUs(..), false) => "Perhaps another time.",
     };
     ctx.foreign.reply.insert(civ, reply.to_string());
 }
 
 /// Runs once per turn: contact, drifting attitudes, and the decisions other leaders make.
-pub fn turn(ctx: &mut Ctx, fog: &FogOfWar, units: &[(Hex, u32)], cities: &[(Hex, u32)]) {
+pub fn turn(ctx: &mut Ctx, fog: &FogOfWar, supplies: &Supplies, units: &[(Hex, u32)], cities: &[(Hex, u32)]) {
     let mut rng = rand::thread_rng();
     let turn = ctx.state.turn;
     let roster: Vec<(u32, String, String, f32)> =
@@ -494,11 +511,6 @@ pub fn turn(ctx: &mut Ctx, fog: &FogOfWar, units: &[(Hex, u32)], cities: &[(Hex,
         let alive = city_count(*id) > 0 || units.iter().any(|(_, o)| o == id);
         if !alive && ctx.foreign.gone.insert(*id) && ctx.foreign.met.contains(id) {
             ctx.log.push(format!("{name} has been destroyed."));
-        }
-        if !ctx.foreign.gone.contains(id) {
-            if let Some(civ) = ctx.civs.players.iter_mut().find(|c| c.id == *id) {
-                civ.gold += 2 * city_count(*id) as i32;
-            }
         }
     }
     let alive: Vec<&(u32, String, String, f32)> = roster.iter().filter(|c| !ctx.foreign.gone.contains(&c.0)).collect();
@@ -611,6 +623,28 @@ pub fn turn(ctx: &mut Ctx, fog: &FogOfWar, units: &[(Hex, u32)], cities: &[(Hex,
         } else {
             None
         };
+        // Failing all that, their merchants look for business: buy what they lack, sell what they can spare.
+        let offer = offer.or_else(|| {
+            if treaty == Treaty::War || attitude < -5 || !rng.gen_bool(0.12) {
+                return None;
+            }
+            let (ours, theirs) = (supplies.civ(PLAYER), supplies.civ(id));
+            let their_gold = ctx.civs.players.iter().find(|c| c.id == id).map(|c| c.gold).unwrap_or(0);
+            let their_tech = ctx.civs.players.iter().find(|c| c.id == id).map(|c| c.tech.researched.clone()).unwrap_or_default();
+            let tradeable = |g: &Good| g.is_strategic() || g.is_luxury();
+            let wanted = Good::ALL.into_iter().filter(tradeable).find(|g| {
+                ours.spare(*g) > 0 && !theirs.has(*g) && g.reveal_tech().is_none_or(|t| their_tech.contains(&t)) && their_gold >= price(*g) * 4
+            });
+            if let Some(good) = wanted {
+                let gold = price(good) - 1;
+                return Some((OfferKind::BuyFromUs(good, gold), format!("We hear you have {} to spare. We would pay {gold} gold a turn for it.", good.name()), 15));
+            }
+            let needed = |g: Good| if g.is_strategic() { attitude >= 10 } else { true };
+            let on_offer = Good::ALL.into_iter().filter(tradeable).find(|g| {
+                theirs.spare(*g) > 0 && !ours.has(*g) && needed(*g) && g.reveal_tech().is_none_or(|t| ctx.tech.researched.contains(&t)) && ctx.state.gold >= price(*g) * 3
+            });
+            on_offer.map(|good| (OfferKind::SellToUs(good, price(good)), format!("Our merchants can bring you {} for {} gold a turn.", good.name(), price(good)), 15))
+        });
         if let Some((kind, text, wait)) = offer {
             ctx.foreign.cooldown.insert(id, turn + wait);
             ctx.foreign.offer = Some(Offer { from: id, kind, text });
