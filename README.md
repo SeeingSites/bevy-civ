@@ -73,8 +73,11 @@ Eighteen resources are scattered by terrain:
 
 A source only counts when it is inside your borders **and connected**: its tile needs a road, and
 roads must link it to the city that wants it. Cities with a Harbor are linked to each other across
-the sea. Cities check access when you choose production and stop work if they lose it. Computer
-players are spared the road building and use whatever lies inside their borders.
+the sea. Roads count inside your borders and on unclaimed land, so a rival's border across the
+route cuts it. Cities check access when you choose production and stop work if they lose it.
+
+Computer players follow the same rules: their cities train workers, and the workers road each
+source to its city, link cities to the capital, then farm and mine the land inside the borders.
 
 A second connected source of a resource is spare and can be sold; other leaders sell their spares.
 Deals are made in the foreign advisor, pay gold every turn, run for 20 turns and end at once if war

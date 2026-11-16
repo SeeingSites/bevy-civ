@@ -187,7 +187,7 @@ pub fn refresh_map(
         let revealed = tile.resource.filter(|r| r.reveal_tech().is_none_or(|t| tech.researched.contains(&t)));
         if let Some(resource) = revealed {
             // A source inside our borders that no road reaches yet is shown washed out.
-            let tint = if supplies.unconnected.contains(&hex) { tint.with_alpha(0.55) } else { tint };
+            let tint = if supplies.unconnected.get(&hex) == Some(&PLAYER) { tint.with_alpha(0.55) } else { tint };
             commands.spawn((
                 Decor,
                 Sprite {

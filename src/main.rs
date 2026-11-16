@@ -377,7 +377,7 @@ fn cleanup_world(
     for entity in &entities {
         // Children (flags, labels, bases) go with their parents.
         if parents.get(entity).is_err() {
-            commands.entity(entity).despawn_recursive();
+            commands.entity(entity).try_despawn_recursive();
         }
     }
     commands.insert_resource(GameState::default());
@@ -528,14 +528,14 @@ fn handle_map_click(
                 let terrain = defence_terrain(Some(terrain), city_here.is_some());
                 if resolve_combat(unit.unit_type, enemy_type, terrain, None, None) {
                     log.push(format!("Victory! Your {} defeated the enemy {}.", unit.unit_type.name(), enemy_type.name()));
-                    commands.entity(enemy_entity).despawn_recursive();
+                    commands.entity(enemy_entity).try_despawn_recursive();
                     let more_defenders = snapshot.iter().any(|u| u.1 == hex && u.2 != PLAYER && u.0 != enemy_entity);
                     if !more_defenders {
                         unit.position = hex;
                     }
                 } else {
                     log.push(format!("Defeat. Your {} was lost attacking a {}.", unit.unit_type.name(), enemy_type.name()));
-                    commands.entity(selected).despawn_recursive();
+                    commands.entity(selected).try_despawn_recursive();
                     selection.unit = None;
                     path.0.clear();
                     continue;
@@ -682,7 +682,7 @@ fn apply_actions(
                     .map(str::to_string)
                     .unwrap_or_else(|| format!("Colony {}", count + 1));
                 let city = spawn_city(&mut commands, here, name.clone(), 1, PLAYER, false);
-                commands.entity(entity).despawn_recursive();
+                commands.entity(entity).try_despawn_recursive();
                 selection.unit = None;
                 selection.city = Some(city);
                 fog.reveal(here, 3);
@@ -786,8 +786,17 @@ fn process_turn(
     let capitals: HashMap<u32, Hex> =
         cities.iter().filter(|(c, _, _)| c.is_capital).map(|(c, _, _)| (c.owner, c.position)).collect();
     let mut army_sizes: HashMap<u32, usize> = HashMap::new();
+    let mut worker_counts: HashMap<u32, usize> = HashMap::new();
     for (_, unit) in units.iter() {
-        *army_sizes.entry(unit.owner).or_default() += 1;
+        if unit.unit_type.is_military() {
+            *army_sizes.entry(unit.owner).or_default() += 1;
+        } else if unit.unit_type.is_worker() {
+            *worker_counts.entry(unit.owner).or_default() += 1;
+        }
+    }
+    let mut city_counts: HashMap<u32, usize> = HashMap::new();
+    for (city, _, _) in cities.iter() {
+        *city_counts.entry(city.owner).or_default() += 1;
     }
 
     for (mut city, mut buildings, mut happiness) in &mut cities {
@@ -833,10 +842,14 @@ fn process_turn(
             match completed {
                 ProductionItem::Unit(ut) => {
                     // Keep computer players from flooding the map.
-                    let at_cap = !mine && army_sizes.get(&city.owner).copied().unwrap_or(0) >= 8;
+                    let at_cap = !mine && ut.is_military() && army_sizes.get(&city.owner).copied().unwrap_or(0) >= 8;
                     if !at_cap {
                         spawn_unit(&mut commands, city.position, ut, city.owner);
-                        *army_sizes.entry(city.owner).or_default() += 1;
+                        if ut.is_military() {
+                            *army_sizes.entry(city.owner).or_default() += 1;
+                        }
+                    }
+                    {
                         if mine {
                             log.push(format!("{} trains a {}.", city.name, ut.name()));
                             // Once the army outgrows what the government supports for free, a city left on
@@ -861,9 +874,15 @@ fn process_turn(
                                 .filter(|u| u.required_tech().is_none_or(|t| civ.tech.researched.contains(&t)))
                                 .filter(|u| supplies.has(city.position, u.required_resources()))
                                 .max_by_key(|u| (u.stats().0 + u.stats().1, u.stats().2));
+                            // Enough workers to road the resources and link the cities: one per two cities.
+                            let workers = worker_counts.entry(city.owner).or_default();
+                            let wants_worker = *workers < city_counts.get(&city.owner).copied().unwrap_or(1).div_ceil(2);
                             // Small empires send out settlers now and then.
                             let wants_settler = city.population >= 2 && rng.gen_bool(0.2);
-                            if wants_settler {
+                            if wants_worker {
+                                *workers += 1;
+                                city.production_queue = Some(ProductionItem::Unit(UnitType::Worker));
+                            } else if wants_settler {
                                 city.production_queue = Some(ProductionItem::Unit(UnitType::Settler));
                             } else if let Some(best) = best {
                                 city.production_queue = Some(ProductionItem::Unit(best));
@@ -928,7 +947,38 @@ fn process_turn(
         }
         a == BARBARIANS || b == BARBARIANS || treaties.get(&(a.min(b), a.max(b))).copied() == Some(Treaty::War)
     };
-    let attacks = process_ai_turn(&mut civs, &mut units, &city_owners, &tiles, &hostile, &mut commands);
+    // Roads the computer players want: from the governing city to each source that is not yet
+    // connected, and from each capital to cities that are cut off from it.
+    let mut road_jobs: HashMap<u32, Vec<Hex>> = HashMap::new();
+    {
+        let land: Vec<(Hex, Terrain)> = tiles.iter().map(|t| (t.coord, t.terrain)).collect();
+        let done: HashSet<Hex> = tiles.iter().filter(|t| t.has_road()).map(|t| t.coord).chain(city_owners.iter().map(|(p, _)| *p)).collect();
+        let mut routes: Vec<(u32, Hex, Hex)> = supplies
+            .unconnected
+            .iter()
+            .filter(|(_, owner)| **owner != PLAYER)
+            .filter_map(|(hex, owner)| supplies.territory.get(hex).map(|(_, home)| (*owner, *home, *hex)))
+            .collect();
+        for (owner, capital) in capitals.iter().filter(|(owner, _)| **owner != PLAYER) {
+            for (city, _) in city_owners.iter().filter(|(p, o)| o == owner && !supplies.linked.contains(p) && p.distance_to(*capital) <= 12) {
+                routes.push((*owner, *capital, *city));
+            }
+        }
+        // Nearest goals first, so short useful roads are finished before long ones.
+        routes.sort_by_key(|(_, from, to)| from.distance_to(*to));
+        for (owner, from, to) in routes {
+            if let Some(route) = find_path(from, to, land.iter().copied(), false) {
+                let jobs = road_jobs.entry(owner).or_default();
+                for step in route {
+                    if !done.contains(&step) && !jobs.contains(&step) {
+                        jobs.push(step);
+                    }
+                }
+            }
+        }
+    }
+    let owns = |hex: Hex, owner: u32| supplies.territory.get(&hex).is_some_and(|(o, _)| *o == owner);
+    let attacks = process_ai_turn(&mut civs, &mut units, &city_owners, &tiles, &hostile, &mut road_jobs, &owns, &mut commands);
     let names: HashMap<u32, String> = civs.players.iter().map(|c| (c.id, c.adjective.clone())).collect();
     let civ_name = |owner: u32| names.get(&owner).cloned().unwrap_or_else(|| "Barbarian".to_string());
 
@@ -961,7 +1011,7 @@ fn process_turn(
         }
         if resolve_combat(a_type, d_type, terrain, None, None) {
             dead.insert(d_entity);
-            commands.entity(d_entity).despawn_recursive();
+            commands.entity(d_entity).try_despawn_recursive();
             if d_owner == PLAYER {
                 log.push(format!("Our {} was destroyed by a {} {}.", d_type.name(), civ_name(a_owner), a_type.name()));
             }
@@ -973,7 +1023,7 @@ fn process_turn(
             }
         } else {
             dead.insert(attack.attacker);
-            commands.entity(attack.attacker).despawn_recursive();
+            commands.entity(attack.attacker).try_despawn_recursive();
             if d_owner == PLAYER {
                 log.push(format!("Our {} repelled a {} {}.", d_type.name(), civ_name(a_owner), a_type.name()));
             }

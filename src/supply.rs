@@ -1,9 +1,9 @@
 //! Resources and the trade network: which civilization owns which sources, and which cities can use them.
 //!
-//! A source counts for its owner when it lies inside their borders and their technology can see it.
-//! For the player it must also be connected: the tile needs a road (or a city on it), and roads or
-//! harbours must link it to the city that wants to use it. Computer players are spared the road
-//! building and use everything inside their borders.
+//! A source counts for its owner when it lies inside their borders, their technology can see it, and
+//! it is connected: the tile needs a road (or a city on it), and roads or harbours must link it to
+//! the city that wants to use it. Roads count inside the owner's borders and on unclaimed land.
+//! The same rules apply to the player and to computer players.
 
 use bevy::prelude::*;
 use hexx::Hex;
@@ -19,7 +19,7 @@ use crate::{CITY_RADIUS, PLAYER};
 pub struct CivSupply {
     /// Visible sources inside the civilization's borders.
     pub sources: HashMap<Good, u32>,
-    /// Sources linked to the capital's trade network (all of them for computer players).
+    /// Sources linked to the capital's trade network.
     pub connected: HashMap<Good, u32>,
     pub imports: HashSet<Good>,
     pub exports: HashMap<Good, u32>,
@@ -54,8 +54,10 @@ pub struct Supplies {
     pub yields: HashMap<Hex, (u32, u32, u32)>,
     /// Owner and governing city of every claimed tile.
     pub territory: HashMap<Hex, (u32, Hex)>,
-    /// Player sources inside the borders that no road reaches yet.
-    pub unconnected: HashSet<Hex>,
+    /// Sources inside someone's borders that no road links to their capital yet, with the owner.
+    pub unconnected: HashMap<Hex, u32>,
+    /// Cities joined to their capital's trade network.
+    pub linked: HashSet<Hex>,
 }
 
 impl Supplies {
@@ -104,45 +106,10 @@ pub fn recompute<'a>(
         }
     }
     supplies.territory = claim.iter().map(|(hex, (owner, city, _))| (*hex, (*owner, *city))).collect();
-    let city_tiles: HashMap<Hex, u32> = cities.iter().map(|c| (c.position, c.owner)).collect();
     let sees = |owner: u32, good: Good| good.reveal_tech().is_none_or(|t| techs.get(&owner).is_some_and(|known| known.contains(&t)));
 
-    // The player's road network: roads and cities inside the borders, grouped into connected pieces.
-    let nodes: HashSet<Hex> = tiles
-        .iter()
-        .filter(|t| supplies.territory.get(&t.coord).is_some_and(|(o, _)| *o == PLAYER) && (t.has_road() || city_tiles.contains_key(&t.coord)))
-        .map(|t| t.coord)
-        .collect();
-    let mut piece: HashMap<Hex, usize> = HashMap::new();
-    let mut pieces = 0;
-    for start in &nodes {
-        if piece.contains_key(start) {
-            continue;
-        }
-        let mut stack = vec![*start];
-        piece.insert(*start, pieces);
-        while let Some(hex) = stack.pop() {
-            for next in hex.all_neighbors() {
-                if nodes.contains(&next) && !piece.contains_key(&next) {
-                    piece.insert(next, pieces);
-                    stack.push(next);
-                }
-            }
-        }
-        pieces += 1;
-    }
-    // Harbours join their cities into one piece across the sea.
-    let harbour_piece = cities.iter().filter(|c| c.owner == PLAYER && c.harbor).filter_map(|c| piece.get(&c.position).copied()).min();
-    let harbour_pieces: HashSet<usize> = cities.iter().filter(|c| c.owner == PLAYER && c.harbor).filter_map(|c| piece.get(&c.position).copied()).collect();
-    let canonical = |p: usize| if harbour_pieces.contains(&p) { harbour_piece.unwrap_or(p) } else { p };
-    let capital_piece = cities
-        .iter()
-        .filter(|c| c.owner == PLAYER)
-        .max_by_key(|c| c.capital)
-        .and_then(|c| piece.get(&c.position).copied())
-        .map(canonical);
-
-    let mut by_piece: HashMap<usize, HashSet<Good>> = HashMap::new();
+    // Yields from the land, and every usable source with its owner.
+    let mut usable: Vec<(Hex, Good, u32)> = Vec::new();
     for tile in &tiles {
         let Some((owner, city)) = supplies.territory.get(&tile.coord).copied() else { continue };
         let entry = supplies.yields.entry(city).or_default();
@@ -161,20 +128,80 @@ pub fn recompute<'a>(
             entry.0 += food;
             entry.1 += shields;
             entry.2 += gold;
-            continue;
-        }
-        let supply = supplies.civs.entry(owner).or_default();
-        *supply.sources.entry(good).or_default() += 1;
-        if owner != PLAYER {
-            *supply.connected.entry(good).or_default() += 1;
-        } else if let Some(p) = piece.get(&tile.coord).copied().map(canonical) {
-            by_piece.entry(p).or_default().insert(good);
-            if Some(p) == capital_piece {
-                *supply.connected.entry(good).or_default() += 1;
-            }
         } else {
-            supplies.unconnected.insert(tile.coord);
+            *supplies.civs.entry(owner).or_default().sources.entry(good).or_default() += 1;
+            usable.push((tile.coord, good, owner));
         }
+    }
+
+    // Each civilization's road network: its cities plus roads on its own or unclaimed land,
+    // grouped into connected pieces. Harbours join their cities into one piece across the sea.
+    struct Network {
+        piece: HashMap<Hex, usize>,
+        goods: HashMap<usize, HashSet<Good>>,
+        capital: Option<usize>,
+    }
+    let roads: Vec<Hex> = tiles.iter().filter(|t| t.has_road()).map(|t| t.coord).collect();
+    let owners: HashSet<u32> = cities.iter().map(|c| c.owner).collect();
+    let mut networks: HashMap<u32, Network> = HashMap::new();
+    for owner in owners {
+        let own: Vec<&CityNode> = cities.iter().filter(|c| c.owner == owner).collect();
+        let nodes: HashSet<Hex> = roads
+            .iter()
+            .copied()
+            .filter(|h| supplies.territory.get(h).is_none_or(|(o, _)| *o == owner))
+            .chain(own.iter().map(|c| c.position))
+            .collect();
+        let mut piece: HashMap<Hex, usize> = HashMap::new();
+        let mut pieces = 0;
+        for start in &nodes {
+            if piece.contains_key(start) {
+                continue;
+            }
+            let mut stack = vec![*start];
+            piece.insert(*start, pieces);
+            while let Some(hex) = stack.pop() {
+                for next in hex.all_neighbors() {
+                    if nodes.contains(&next) && !piece.contains_key(&next) {
+                        piece.insert(next, pieces);
+                        stack.push(next);
+                    }
+                }
+            }
+            pieces += 1;
+        }
+        let harbour_pieces: HashSet<usize> = own.iter().filter(|c| c.harbor).filter_map(|c| piece.get(&c.position).copied()).collect();
+        if let Some(first) = harbour_pieces.iter().copied().min() {
+            for p in piece.values_mut() {
+                if harbour_pieces.contains(p) {
+                    *p = first;
+                }
+            }
+        }
+        let capital = own.iter().max_by_key(|c| c.capital).and_then(|c| piece.get(&c.position).copied());
+
+        let mut goods: HashMap<usize, HashSet<Good>> = HashMap::new();
+        for (hex, good, _) in usable.iter().filter(|(_, _, o)| *o == owner) {
+            match piece.get(hex).copied() {
+                Some(p) => {
+                    goods.entry(p).or_default().insert(*good);
+                    if Some(p) == capital {
+                        *supplies.civs.entry(owner).or_default().connected.entry(*good).or_default() += 1;
+                    } else {
+                        supplies.unconnected.insert(*hex, owner);
+                    }
+                }
+                None => {
+                    supplies.unconnected.insert(*hex, owner);
+                }
+            }
+        }
+        for city in &own {
+            if piece.get(&city.position).copied() == capital {
+                supplies.linked.insert(city.position);
+            }
+        }
+        networks.insert(owner, Network { piece, goods, capital });
     }
 
     for deal in deals {
@@ -196,18 +223,14 @@ pub fn recompute<'a>(
 
     for city in cities {
         let supply = supplies.civ(city.owner);
-        let access: HashSet<Good> = if city.owner == PLAYER {
-            let p = piece.get(&city.position).copied().map(canonical);
-            let mut set = p.and_then(|p| by_piece.get(&p)).cloned().unwrap_or_default();
-            if p == capital_piece {
-                // Goods sold abroad leave the capital's network; goods bought abroad arrive there.
-                set.retain(|g| supply.has(*g));
-                set.extend(supply.imports.iter().copied());
-            }
-            set
-        } else {
-            Good::ALL.into_iter().filter(|g| supply.has(*g)).collect()
-        };
+        let Some(network) = networks.get(&city.owner) else { continue };
+        let p = network.piece.get(&city.position).copied();
+        let mut access = p.and_then(|p| network.goods.get(&p)).cloned().unwrap_or_default();
+        if p == network.capital {
+            // Goods sold abroad leave the capital's network; goods bought abroad arrive there.
+            access.retain(|g| supply.has(*g));
+            access.extend(supply.imports.iter().copied());
+        }
         supplies.city.insert(city.position, access);
     }
 }
@@ -244,7 +267,7 @@ mod tests {
         recompute(&mut supplies, tiles.iter(), &cities, &techs, &[]);
         assert_eq!(supplies.civ(PLAYER).sources.get(&Good::Iron), Some(&1));
         assert!(!supplies.has(Hex::ZERO, &[Good::Iron]), "no road, no iron");
-        assert!(supplies.unconnected.contains(&Hex::new(2, 0)));
+        assert_eq!(supplies.unconnected.get(&Hex::new(2, 0)), Some(&PLAYER));
 
         let tiles = strip(3, true, false);
         recompute(&mut supplies, tiles.iter(), &cities, &techs, &[]);
@@ -289,7 +312,7 @@ mod tests {
         // The rival has two iron sources (so one to spare); the player has none.
         let mut tiles = strip(3, false, false);
         tiles[2].resource = None;
-        tiles.extend([tile(20, 0, false, None), tile(21, 0, false, Some(Good::Iron)), tile(22, 0, false, Some(Good::Iron))]);
+        tiles.extend([tile(20, 0, false, None), tile(21, 0, true, Some(Good::Iron)), tile(22, 0, true, Some(Good::Iron))]);
         let cities = [city(0, 0, PLAYER, true, false), city(20, 0, rival, true, false)];
         let techs = all_techs(&[PLAYER, rival]);
         let mut supplies = Supplies::default();
@@ -303,6 +326,39 @@ mod tests {
         assert!(supplies.has(Hex::ZERO, &[Good::Iron]), "imports arrive in the capital");
         assert_eq!(supplies.civ(rival).spare(Good::Iron), 0);
         assert!(supplies.has(Hex::new(20, 0), &[Good::Iron]), "the seller keeps one for itself");
+    }
+
+    #[test]
+    fn computer_players_need_roads_too() {
+        let rival = 1;
+        let cities = [city(0, 0, rival, true, false)];
+        let techs = all_techs(&[rival]);
+        let mut supplies = Supplies::default();
+
+        let tiles = strip(3, false, false);
+        recompute(&mut supplies, tiles.iter(), &cities, &techs, &[]);
+        assert!(!supplies.has(Hex::ZERO, &[Good::Iron]));
+        assert_eq!(supplies.unconnected.get(&Hex::new(2, 0)), Some(&rival));
+
+        let tiles = strip(3, true, true);
+        recompute(&mut supplies, tiles.iter(), &cities, &techs, &[]);
+        assert!(supplies.has(Hex::ZERO, &[Good::Iron]));
+    }
+
+    #[test]
+    fn roads_across_unclaimed_land_link_cities() {
+        // Cities eight tiles apart leave unclaimed land between their borders.
+        let roaded: Vec<HexTile> = (0..=8).map(|q| tile(q, 0, q != 0 && q != 8, (q == 1).then_some(Good::Wine))).collect();
+        let cities = [city(0, 0, PLAYER, true, false), city(8, 0, PLAYER, false, false)];
+        let mut supplies = Supplies::default();
+        recompute(&mut supplies, roaded.iter(), &cities, &all_techs(&[PLAYER]), &[]);
+        assert!(supplies.linked.contains(&Hex::new(8, 0)));
+        assert!(supplies.has(Hex::new(8, 0), &[Good::Wine]));
+
+        // A rival's border in the gap breaks the route.
+        let cities = [city(0, 0, PLAYER, true, false), city(8, 0, PLAYER, false, false), city(4, 0, 1, true, false)];
+        recompute(&mut supplies, roaded.iter(), &cities, &all_techs(&[PLAYER, 1]), &[]);
+        assert!(!supplies.linked.contains(&Hex::new(8, 0)));
     }
 
     #[test]

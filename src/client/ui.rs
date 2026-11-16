@@ -879,7 +879,7 @@ pub fn update_tile_info(
                 .resource
                 .iter()
                 .filter(|r| r.reveal_tech().is_none_or(|t| tech.researched.contains(&t)))
-                .map(|r| if supplies.unconnected.contains(&tile.coord) { format!("{} (needs a road)", r.name()) } else { r.name().to_string() })
+                .map(|r| if supplies.unconnected.get(&tile.coord) == Some(&PLAYER) { format!("{} (needs a road)", r.name()) } else { r.name().to_string() })
                 .collect();
             extras.extend(tile.improvements.iter().map(|i| format!("{:?}", i)));
             format!("{}  -  {} food, {} shields\n{}", tile.terrain.name(), tile.total_food(), tile.total_production(), extras.join(", "))
