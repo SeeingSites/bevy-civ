@@ -15,6 +15,15 @@ pub struct City {
     pub owner: u32,
     pub specialists: Vec<Specialist>,
     pub is_capital: bool,
+    /// Turns its people still resist a conqueror: the city produces nothing until they settle.
+    #[serde(default)]
+    pub resistance: u32,
+}
+
+/// Turns a captured city resists its new owner: longer for a big city (a garrison of two or more
+/// land units shortens it).
+pub fn resistance_turns(population: u32) -> u32 {
+    (1 + population / 3).min(6)
 }
 
 #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -241,6 +250,7 @@ pub fn spawn_city(
                 owner,
                 specialists: vec![],
                 is_capital,
+                resistance: 0,
             },
             Name::new(name),
             CityBuildings { buildings: vec![] },
@@ -266,6 +276,7 @@ mod hurry_tests {
             owner: 0,
             specialists: vec![],
             is_capital: true,
+            resistance: 0,
         }
     }
 
@@ -287,5 +298,15 @@ mod hurry_tests {
         assert_eq!(barracks.rush_citizens(Government::Democracy), None);
         let small = city(ProductionItem::Building(Building::Barracks), 0, 2);
         assert_eq!(small.rush_citizens(Government::Despotism), None, "a city keeps one citizen");
+    }
+}
+
+#[cfg(test)]
+mod resistance_tests {
+    #[test]
+    fn bigger_cities_resist_longer_up_to_a_limit() {
+        assert_eq!(super::resistance_turns(1), 1);
+        assert_eq!(super::resistance_turns(9), 4);
+        assert_eq!(super::resistance_turns(40), 6);
     }
 }

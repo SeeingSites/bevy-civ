@@ -12,7 +12,7 @@ use bevy_civ::diplomacy::{Diplomacy, Happiness, Treaty};
 use bevy_civ::save::{read_setting, write_setting};
 use bevy_civ::unit::{Unit, UnitType};
 
-use super::ui::{label_bundle, tip_buttons};
+use super::ui::{label_bundle, tip_buttons, UiState};
 use super::Art;
 use crate::foreign::Foreign;
 use crate::{GameState, Selection, PLAYER};
@@ -79,8 +79,10 @@ pub fn queue_tips(
     cities: Query<(&City, &Happiness)>,
     foreign: Res<Foreign>,
     diplomacy: Res<Diplomacy>,
+    ui: Res<UiState>,
 ) {
-    if !tips.enabled || tips.current.is_some() || state.victory.is_some() {
+    // No new tip while a window is open: it would only cover what the player is reading.
+    if !tips.enabled || tips.current.is_some() || state.victory.is_some() || ui.modal.is_some() {
         return;
     }
     let selected = selection.unit.and_then(|e| units.get(e).ok()).filter(|u| u.owner == PLAYER).map(|u| u.unit_type);
@@ -108,13 +110,17 @@ pub fn queue_tips(
     }
 }
 
-/// Shows (or hides) the tip panel.
-pub fn show_tip(tips: Res<Tips>, art: Res<Art>, panel: Query<Entity, With<TipPanel>>, mut commands: Commands) {
-    if !tips.is_changed() {
+/// Shows (or hides) the tip panel. It sits in the top-left corner, clear of the city panel and the
+/// windows in the middle of the screen, and steps aside while a window is open.
+pub fn show_tip(tips: Res<Tips>, ui: Res<UiState>, art: Res<Art>, panel: Query<Entity, With<TipPanel>>, mut commands: Commands) {
+    if !tips.is_changed() && !ui.is_changed() {
         return;
     }
     for entity in &panel {
         commands.entity(entity).despawn_recursive();
+    }
+    if ui.modal.is_some() {
+        return;
     }
     let Some((_, title, text)) = tips.current.and_then(|id| TIPS.iter().find(|(t, _, _)| *t == id)) else { return };
     commands
@@ -122,10 +128,9 @@ pub fn show_tip(tips: Res<Tips>, art: Res<Art>, panel: Query<Entity, With<TipPan
             TipPanel,
             Node {
                 position_type: PositionType::Absolute,
-                top: Val::Px(64.0),
-                left: Val::Percent(50.0),
-                margin: UiRect::left(Val::Px(-230.0)),
-                width: Val::Px(460.0),
+                top: Val::Px(62.0),
+                left: Val::Px(10.0),
+                width: Val::Px(380.0),
                 max_width: Val::Percent(94.0),
                 padding: UiRect::all(Val::Px(12.0)),
                 flex_direction: FlexDirection::Column,
