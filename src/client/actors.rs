@@ -146,12 +146,18 @@ pub fn animate_units(
     map: Res<MapData>,
     fog: Res<FogOfWar>,
     selection: Res<Selection>,
-    mut units: Query<(Entity, &Unit, &mut Transform, &mut Sprite, &mut UnitView, &mut Visibility, &Children, Option<&mut Trail>)>,
+    mut units: Query<(Entity, &Unit, &mut Transform, &mut Sprite, &mut UnitView, &mut Visibility, &Children, Option<&mut Trail>, Option<&mut super::battles::Lunge>)>,
     mut bases: Query<&mut Sprite, (With<UnitBase>, Without<UnitView>)>,
+    mut commands: Commands,
 ) {
     let place = |hex: Hex| map.layout.hex_to_world_pos(hex) + UNIT_OFFSET;
     let stacked = stacks(units.iter().map(|(e, u, ..)| (e, u)), selection.unit);
-    for (entity, unit, mut transform, mut sprite, mut view, mut visibility, children, trail) in &mut units {
+    for (entity, unit, mut transform, mut sprite, mut view, mut visibility, children, trail, mut lunge) in &mut units {
+        // Take off last frame's lunge before the figure's own movement.
+        if let Some(lunge) = lunge.as_mut() {
+            transform.translation -= lunge.applied.extend(0.0);
+            lunge.applied = Vec2::ZERO;
+        }
         let slot = stacked.get(&unit.position).and_then(|s| s.iter().position(|e| *e == entity)).unwrap_or(0);
         let target = place(unit.position) + stack_offset(slot);
         // The unit moved: walk the figure through every tile on the way, following the route it took
@@ -189,6 +195,21 @@ pub fn animate_units(
             transform.translation = goal.extend(unit_z(goal.y));
             view.shown = goal_hex;
             view.waypoints.pop_front();
+        }
+        // A battle lunge on top of wherever the figure stands.
+        if let Some(lunge) = lunge.as_mut() {
+            match lunge.offset(time.delta_secs()) {
+                Some(offset) => {
+                    lunge.applied = offset;
+                    transform.translation += offset.extend(0.0);
+                    if offset.x.abs() > 1.0 {
+                        view.facing_left = offset.x < 0.0;
+                    }
+                }
+                None => {
+                    commands.entity(entity).remove::<super::battles::Lunge>();
+                }
+            }
         }
         sprite.flip_x = view.facing_left;
         let speed = if moving { 11.0 } else if unit.build_turns_left.is_some() { 7.0 } else { 3.5 };

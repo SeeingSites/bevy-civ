@@ -23,6 +23,9 @@ Turn-based, Civilization-style empire building on a hex map, playable in the bro
 - World wonders (one per world) with real effects, golden ages
 - Great people: generals, merchants, scientists, artists, engineers
 - Armies: a great general in one of your cities forms up to three land units into one army
+- Battles played out on the map, one at a time: the camera goes to every battle you fight (also
+  attacks on your units in the other peoples' turns), the attacker lunges, blows land, the fallen
+  topple and the result floats over the tile; the next unit waits until the battle is over
 - A health gauge beside every military unit on the map (green, yellow, red; gold-framed for armies)
 - Culture that widens borders and can win over restless cities
 - Caravans (trade routes, help with wonders) and diplomats (embassies and espionage)
