@@ -1,0 +1,518 @@
+//! Diplomacy: how other leaders feel about the player, what they agree to, and what they propose.
+
+use bevy::prelude::*;
+use hexx::Hex;
+use rand::Rng;
+use std::collections::{HashMap, HashSet};
+
+use bevy_civ::ai::Civilizations;
+use bevy_civ::diplomacy::{Diplomacy, Treaty};
+use bevy_civ::fog::FogOfWar;
+use bevy_civ::tech::{Tech, TechState};
+
+use crate::{GameLog, GameState, AI_GRACE_TURNS, BARBARIANS, PLAYER};
+
+pub const GIFT: i32 = 50;
+pub const PACT_INCOME: i32 = 2;
+
+/// Something the player can ask of another leader.
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub enum DiploAct {
+    Peace,
+    Alliance,
+    War,
+    Gift,
+    Demand,
+    TradePact,
+    TechTrade,
+}
+
+#[derive(Clone, PartialEq, Debug)]
+pub enum OfferKind {
+    /// Just news; nothing to decide.
+    Notice,
+    Peace,
+    Tribute(i32),
+    TechSwap { give: Tech, get: Tech },
+    JoinWar(u32),
+}
+
+/// A message from another leader waiting for the player's answer.
+#[derive(Clone, Debug)]
+pub struct Offer {
+    pub from: u32,
+    pub kind: OfferKind,
+    pub text: String,
+}
+
+#[derive(Resource, Default)]
+pub struct Foreign {
+    /// Civilizations the player has made contact with.
+    pub met: HashSet<u32>,
+    /// Civilizations that have lost everything.
+    pub gone: HashSet<u32>,
+    /// Each leader's latest words to the player.
+    pub reply: HashMap<u32, String>,
+    /// Turn on which the current treaty between two civilizations began.
+    pub since: HashMap<(u32, u32), u32>,
+    /// Civilizations with a trade agreement with the player.
+    pub pacts: HashSet<u32>,
+    /// Falls when the player breaks treaties; every leader remembers.
+    pub reputation: i32,
+    pub offer: Option<Offer>,
+    /// Earliest turn each civilization will approach the player again.
+    pub cooldown: HashMap<u32, u32>,
+    /// Military strength per civilization, refreshed every turn.
+    pub strength: HashMap<u32, f32>,
+}
+
+impl Foreign {
+    pub fn treaty_age(&self, a: u32, b: u32, turn: u32) -> u32 {
+        turn.saturating_sub(self.since.get(&pair(a, b)).copied().unwrap_or(0))
+    }
+}
+
+/// Mutable access to everything diplomacy touches.
+pub struct Ctx<'a> {
+    pub diplomacy: &'a mut Diplomacy,
+    pub foreign: &'a mut Foreign,
+    pub civs: &'a mut Civilizations,
+    pub state: &'a mut GameState,
+    pub tech: &'a mut TechState,
+    pub log: &'a mut GameLog,
+}
+
+fn pair(a: u32, b: u32) -> (u32, u32) {
+    (a.min(b), a.max(b))
+}
+
+pub fn mood(attitude: i32) -> &'static str {
+    match attitude {
+        i32::MIN..=-40 => "Furious",
+        -39..=-15 => "Hostile",
+        -14..=-1 => "Wary",
+        0..=14 => "Neutral",
+        15..=34 => "Friendly",
+        _ => "Devoted",
+    }
+}
+
+fn set_treaty(ctx: &mut Ctx, a: u32, b: u32, treaty: Treaty) {
+    ctx.diplomacy.set_treaty(a, b, treaty);
+    ctx.foreign.since.insert(pair(a, b), ctx.state.turn);
+    if treaty == Treaty::War {
+        for (x, y) in [(a, b), (b, a)] {
+            if x == PLAYER {
+                ctx.foreign.pacts.remove(&y);
+            }
+        }
+    }
+}
+
+fn shift(ctx: &mut Ctx, civ: u32, delta: i32) {
+    ctx.diplomacy.change_attitude(PLAYER, civ, delta);
+    let key = pair(PLAYER, civ);
+    if let Some(value) = ctx.diplomacy.relations.get_mut(&key) {
+        *value = (*value).clamp(-100, 100);
+    }
+}
+
+fn strength(ctx: &Ctx, civ: u32) -> f32 {
+    ctx.foreign.strength.get(&civ).copied().unwrap_or(0.0).max(1.0)
+}
+
+/// What each side could teach the other: (they teach us, we teach them).
+fn tech_swap(ctx: &Ctx, civ: u32) -> (Option<Tech>, Option<Tech>) {
+    let Some(other) = ctx.civs.players.iter().find(|c| c.id == civ) else { return (None, None) };
+    let get = Tech::ALL.into_iter().find(|t| other.tech.researched.contains(t) && ctx.tech.can_research(*t));
+    let give = Tech::ALL.into_iter().find(|t| ctx.tech.researched.contains(t) && other.tech.can_research(*t));
+    (get, give)
+}
+
+fn teach(ctx: &mut Ctx, civ: u32, tech: Tech) {
+    if let Some(other) = ctx.civs.players.iter_mut().find(|c| c.id == civ) {
+        other.tech.learn(tech);
+    }
+}
+
+/// The player declares war; treaty-breaking costs reputation and the victim's allies join in.
+fn declare_war(ctx: &mut Ctx, civ: u32, name: &str) {
+    let treaty = ctx.diplomacy.get_treaty(PLAYER, civ);
+    if matches!(treaty, Treaty::Peace | Treaty::Alliance) {
+        ctx.foreign.reputation -= 15;
+        let others: Vec<u32> = ctx.civs.players.iter().filter(|c| !c.is_human && c.id != civ).map(|c| c.id).collect();
+        for other in others {
+            shift(ctx, other, -8);
+        }
+        ctx.log.push("Breaking our treaty has damaged our reputation abroad.");
+    }
+    set_treaty(ctx, PLAYER, civ, Treaty::War);
+    ctx.log.push(format!("We declare war on {name}."));
+    let allies: Vec<(u32, String)> = ctx
+        .civs
+        .players
+        .iter()
+        .filter(|c| !c.is_human && c.id != civ && !ctx.foreign.gone.contains(&c.id))
+        .filter(|c| ctx.diplomacy.get_treaty(civ, c.id) == Treaty::Alliance && ctx.diplomacy.get_treaty(PLAYER, c.id) != Treaty::War)
+        .map(|c| (c.id, c.name.clone()))
+        .collect();
+    for (ally, ally_name) in allies {
+        set_treaty(ctx, PLAYER, ally, Treaty::War);
+        ctx.log.push(format!("{ally_name}, allied with {name}, declares war on us!"));
+    }
+}
+
+/// Handles a request the player makes in the foreign advisor window.
+pub fn player_act(ctx: &mut Ctx, civ: u32, act: DiploAct) {
+    let Some(other) = ctx.civs.players.iter().find(|c| c.id == civ) else { return };
+    let (name, aggression, their_gold) = (other.name.clone(), other.aggression, other.gold);
+    let treaty = ctx.diplomacy.get_treaty(PLAYER, civ);
+    let attitude = ctx.diplomacy.get_attitude(PLAYER, civ);
+    let (ours, theirs) = (strength(ctx, PLAYER), strength(ctx, civ));
+    let age = ctx.foreign.treaty_age(PLAYER, civ, ctx.state.turn);
+    let at_war = treaty == Treaty::War;
+
+    let reply: String = match act {
+        DiploAct::War => {
+            if at_war {
+                "We are already at war.".into()
+            } else {
+                declare_war(ctx, civ, &name);
+                if aggression > 0.6 { "You will regret this." } else { "So be it. We will defend what is ours." }.into()
+            }
+        }
+        DiploAct::Peace => {
+            if !at_war {
+                "There is no war between us to end.".into()
+            } else if age < 5 {
+                "The blood is not yet dry. Ask again later.".into()
+            } else if theirs > ours * 1.5 && attitude < -20 {
+                "Why would we stop now? We are winning.".into()
+            } else {
+                set_treaty(ctx, PLAYER, civ, Treaty::Peace);
+                ctx.log.push(format!("Peace is made with {name}."));
+                "Let there be peace between our peoples.".into()
+            }
+        }
+        DiploAct::Alliance => {
+            if at_war {
+                "End this war first.".into()
+            } else if treaty == Treaty::Alliance {
+                "We already stand together.".into()
+            } else if attitude >= 30 {
+                set_treaty(ctx, PLAYER, civ, Treaty::Alliance);
+                ctx.log.push(format!("We are now allied with {name}."));
+                "Together we shall prosper. Your enemies are ours.".into()
+            } else {
+                "An alliance is for trusted friends. We are not there yet.".into()
+            }
+        }
+        DiploAct::Gift => {
+            if ctx.state.gold < GIFT {
+                format!("(A gift costs {GIFT} gold.)")
+            } else {
+                ctx.state.gold -= GIFT;
+                if let Some(other) = ctx.civs.players.iter_mut().find(|c| c.id == civ) {
+                    other.gold += GIFT;
+                }
+                shift(ctx, civ, 12);
+                "A generous gift. It will be remembered.".into()
+            }
+        }
+        DiploAct::Demand => {
+            if treaty == Treaty::Alliance {
+                shift(ctx, civ, -5);
+                "Allies do not make demands of each other.".into()
+            } else if ours > theirs * 1.8 && their_gold >= 10 {
+                let amount = their_gold.min(40);
+                if let Some(other) = ctx.civs.players.iter_mut().find(|c| c.id == civ) {
+                    other.gold -= amount;
+                }
+                ctx.state.gold += amount;
+                shift(ctx, civ, -15);
+                ctx.log.push(format!("{name} pays us {amount} gold in tribute."));
+                "Take it, and leave us in peace.".into()
+            } else if aggression > 0.6 && theirs >= ours && !at_war && ctx.state.turn >= AI_GRACE_TURNS {
+                shift(ctx, civ, -10);
+                set_treaty(ctx, PLAYER, civ, Treaty::War);
+                ctx.log.push(format!("{name} answers our demand with war!"));
+                "Insolence! To arms!".into()
+            } else {
+                shift(ctx, civ, -10);
+                "You are in no position to make demands.".into()
+            }
+        }
+        DiploAct::TradePact => {
+            if at_war {
+                "We do not trade with enemies.".into()
+            } else if ctx.foreign.pacts.contains(&civ) {
+                "Our merchants already trade freely.".into()
+            } else if attitude >= 5 {
+                ctx.foreign.pacts.insert(civ);
+                shift(ctx, civ, 5);
+                ctx.log.push(format!("A trade agreement is signed with {name} (+{PACT_INCOME} gold per turn)."));
+                "Our markets are open to you.".into()
+            } else {
+                "We see no profit in it yet.".into()
+            }
+        }
+        DiploAct::TechTrade => {
+            if at_war {
+                "We share nothing with enemies.".into()
+            } else if attitude < 10 {
+                "Our knowledge is not for strangers.".into()
+            } else {
+                match tech_swap(ctx, civ) {
+                    (Some(get), Some(give)) => {
+                        ctx.tech.learn(get);
+                        teach(ctx, civ, give);
+                        shift(ctx, civ, 4);
+                        ctx.log.push(format!("{name} teaches us {} in exchange for {}.", get.name(), give.name()));
+                        format!("A fair exchange: {} for {}.", get.name(), give.name())
+                    }
+                    (Some(get), None) => {
+                        let price = get.cost() as i32 * 3;
+                        if ctx.state.gold >= price {
+                            ctx.state.gold -= price;
+                            ctx.tech.learn(get);
+                            ctx.log.push(format!("We buy the secret of {} from {name} for {price} gold.", get.name()));
+                            format!("For {price} gold, the secret of {} is yours.", get.name())
+                        } else {
+                            format!("You have nothing to teach us. {} would cost you {price} gold.", get.name())
+                        }
+                    }
+                    (None, _) => "You have nothing to learn from us.".into(),
+                }
+            }
+        }
+    };
+    ctx.foreign.reply.insert(civ, reply);
+}
+
+/// Applies the player's answer to the pending offer.
+pub fn answer_offer(ctx: &mut Ctx, accept: bool) {
+    let Some(offer) = ctx.foreign.offer.take() else { return };
+    let civ = offer.from;
+    let name = ctx.civs.players.iter().find(|c| c.id == civ).map(|c| c.name.clone()).unwrap_or_default();
+    let reply: &str = match (offer.kind, accept) {
+        (OfferKind::Notice, _) => return,
+        (OfferKind::Peace, true) => {
+            set_treaty(ctx, PLAYER, civ, Treaty::Peace);
+            ctx.log.push(format!("Peace is made with {name}."));
+            "A wise choice."
+        }
+        (OfferKind::Peace, false) => "Then the war goes on.",
+        (OfferKind::Tribute(amount), true) => {
+            let paid = amount.min(ctx.state.gold);
+            ctx.state.gold -= paid;
+            if let Some(other) = ctx.civs.players.iter_mut().find(|c| c.id == civ) {
+                other.gold += paid;
+            }
+            shift(ctx, civ, 8);
+            ctx.log.push(format!("We pay {paid} gold in tribute to {name}."));
+            "You have bought yourself some time."
+        }
+        (OfferKind::Tribute(_), false) => {
+            shift(ctx, civ, -15);
+            if rand::thread_rng().gen_bool(0.5) && ctx.diplomacy.get_treaty(PLAYER, civ) != Treaty::War {
+                set_treaty(ctx, PLAYER, civ, Treaty::War);
+                ctx.log.push(format!("{name} declares war on us!"));
+                "Then we will take it by force."
+            } else {
+                "You will come to regret your pride."
+            }
+        }
+        (OfferKind::TechSwap { give, get }, true) => {
+            ctx.tech.learn(get);
+            teach(ctx, civ, give);
+            shift(ctx, civ, 5);
+            ctx.log.push(format!("{name} teaches us {} in exchange for {}.", get.name(), give.name()));
+            "Knowledge shared is knowledge doubled."
+        }
+        (OfferKind::TechSwap { .. }, false) => "As you wish.",
+        (OfferKind::JoinWar(target), true) => {
+            let target_name = ctx.civs.players.iter().find(|c| c.id == target).map(|c| c.name.clone()).unwrap_or_default();
+            declare_war(ctx, target, &target_name);
+            shift(ctx, civ, 20);
+            "We will not forget your friendship."
+        }
+        (OfferKind::JoinWar(_), false) => {
+            shift(ctx, civ, -6);
+            "We had hoped for more from you."
+        }
+    };
+    ctx.foreign.reply.insert(civ, reply.to_string());
+}
+
+/// Runs once per turn: contact, drifting attitudes, and the decisions other leaders make.
+pub fn turn(ctx: &mut Ctx, fog: &FogOfWar, units: &[(Hex, u32)], cities: &[(Hex, u32)]) {
+    let mut rng = rand::thread_rng();
+    let turn = ctx.state.turn;
+    let roster: Vec<(u32, String, String, f32)> =
+        ctx.civs.players.iter().filter(|c| !c.is_human).map(|c| (c.id, c.name.clone(), c.leader.clone(), c.aggression)).collect();
+    let city_count = |owner: u32| cities.iter().filter(|(_, o)| *o == owner).count();
+    let nearest = |a: u32, b: u32| {
+        cities
+            .iter()
+            .filter(|(_, o)| *o == a)
+            .flat_map(|(p, _)| cities.iter().filter(|(_, o)| *o == b).map(move |(q, _)| p.distance_to(*q)))
+            .min()
+            .unwrap_or(i32::MAX)
+    };
+
+    // The fallen leave the stage.
+    for (id, name, _, _) in &roster {
+        let alive = city_count(*id) > 0 || units.iter().any(|(_, o)| o == id);
+        if !alive && ctx.foreign.gone.insert(*id) && ctx.foreign.met.contains(id) {
+            ctx.log.push(format!("{name} has been destroyed."));
+        }
+        if !ctx.foreign.gone.contains(id) {
+            if let Some(civ) = ctx.civs.players.iter_mut().find(|c| c.id == *id) {
+                civ.gold += 2 * city_count(*id) as i32;
+            }
+        }
+    }
+    let alive: Vec<&(u32, String, String, f32)> = roster.iter().filter(|c| !ctx.foreign.gone.contains(&c.0)).collect();
+
+    // First contact.
+    for (id, name, leader, aggression) in alive.iter().copied() {
+        if ctx.foreign.met.contains(id) {
+            continue;
+        }
+        let seen = units.iter().any(|(p, o)| o == id && fog.visible.contains(p)) || cities.iter().any(|(p, o)| o == id && fog.explored.contains(p));
+        if seen {
+            ctx.foreign.met.insert(*id);
+            ctx.log.push(format!("We have made contact with {name}, led by {leader}."));
+            let greeting = if *aggression > 0.6 { "Stay out of our way and you may live to see us prosper." } else { "Greetings, stranger. May our peoples know peace." };
+            ctx.foreign.reply.insert(*id, greeting.to_string());
+        }
+    }
+
+    let ours = strength(ctx, PLAYER);
+    for (id, name, leader, aggression) in alive.iter().copied() {
+        let (id, aggression) = (*id, *aggression);
+        if !ctx.foreign.met.contains(&id) {
+            continue;
+        }
+        let treaty = ctx.diplomacy.get_treaty(PLAYER, id);
+        let age = ctx.foreign.treaty_age(PLAYER, id, turn);
+        let theirs = strength(ctx, id);
+
+        // Attitude drifts towards what the situation warrants.
+        let shared_enemy = alive.iter().any(|other| {
+            other.0 != id && ctx.diplomacy.get_treaty(PLAYER, other.0) == Treaty::War && ctx.diplomacy.get_treaty(id, other.0) == Treaty::War
+        });
+        let crowding = cities
+            .iter()
+            .filter(|(_, o)| *o == PLAYER)
+            .filter(|(p, _)| cities.iter().any(|(q, o)| *o == id && p.distance_to(*q) <= 5))
+            .count() as i32;
+        let mut target = 15 - (aggression * 50.0) as i32 + ctx.foreign.reputation - crowding * 4;
+        target += match treaty {
+            Treaty::War => -40,
+            Treaty::Peace => 5,
+            Treaty::Alliance => 25,
+            Treaty::None => 0,
+        };
+        if ctx.foreign.pacts.contains(&id) {
+            target += 15;
+        }
+        if shared_enemy {
+            target += 15;
+        }
+        if aggression > 0.55 && ours < theirs * 0.6 {
+            target -= 10; // contempt for the weak
+        }
+        let attitude = ctx.diplomacy.get_attitude(PLAYER, id);
+        shift(ctx, id, (target - attitude).clamp(-2, 2));
+        let attitude = ctx.diplomacy.get_attitude(PLAYER, id);
+
+        // Allies join the player's wars.
+        if treaty == Treaty::Alliance {
+            for other in alive.iter().copied() {
+                if other.0 != id && ctx.diplomacy.get_treaty(PLAYER, other.0) == Treaty::War && ctx.diplomacy.get_treaty(id, other.0) != Treaty::War {
+                    set_treaty(ctx, id, other.0, Treaty::War);
+                    ctx.log.push(format!("Our ally {name} declares war on {}.", other.1));
+                }
+            }
+        }
+
+        // An unhappy, confident neighbour declares war.
+        let may_attack = match treaty {
+            Treaty::None => true,
+            Treaty::Peace => age >= 15 && aggression > 0.6,
+            _ => false,
+        };
+        let threshold = -12 - ((1.0 - aggression) * 40.0) as i32;
+        if may_attack && turn >= AI_GRACE_TURNS && attitude <= threshold && theirs >= ours * 0.8 && rng.gen_bool(0.25) {
+            set_treaty(ctx, PLAYER, id, Treaty::War);
+            ctx.log.push(format!("{name} declares war on us!"));
+            ctx.foreign.reply.insert(id, "Your lands will be ours.".into());
+            if ctx.foreign.offer.is_none() {
+                ctx.foreign.offer = Some(Offer { from: id, kind: OfferKind::Notice, text: format!("{leader} has had enough of words. {name} declares war on us!") });
+            }
+            continue;
+        }
+
+        // Proposals, at most one waiting at a time.
+        if ctx.foreign.offer.is_some() || ctx.foreign.cooldown.get(&id).copied().unwrap_or(0) > turn {
+            continue;
+        }
+        let offer = if treaty == Treaty::War {
+            (age >= 8 && (theirs < ours * 0.8 || age >= 25))
+                .then(|| (OfferKind::Peace, "This war bleeds us both. Shall we put down our swords?".to_string(), 10))
+        } else if treaty != Treaty::Alliance && aggression > 0.55 && theirs > ours * 1.5 && turn >= AI_GRACE_TURNS && rng.gen_bool(0.15) {
+            let amount = (ctx.state.gold / 2).clamp(20, 80);
+            Some((OfferKind::Tribute(amount), format!("Our armies are restless. {amount} gold would calm them."), 20))
+        } else if attitude >= 20 && rng.gen_bool(0.2) {
+            match tech_swap(ctx, id) {
+                (Some(get), Some(give)) => Some((OfferKind::TechSwap { give, get }, format!("Our scholars would trade {} for your knowledge of {}.", get.name(), give.name()), 12)),
+                _ => None,
+            }
+        } else if attitude >= 15 && rng.gen_bool(0.15) {
+            alive
+                .iter()
+                .find(|other| {
+                    other.0 != id
+                        && ctx.foreign.met.contains(&other.0)
+                        && ctx.diplomacy.get_treaty(id, other.0) == Treaty::War
+                        && matches!(ctx.diplomacy.get_treaty(PLAYER, other.0), Treaty::None | Treaty::Peace)
+                })
+                .map(|other| (OfferKind::JoinWar(other.0), format!("{} threatens us all. Join our war against them.", other.1), 20))
+        } else {
+            None
+        };
+        if let Some((kind, text, wait)) = offer {
+            ctx.foreign.cooldown.insert(id, turn + wait);
+            ctx.foreign.offer = Some(Offer { from: id, kind, text });
+        }
+    }
+
+    // The other powers fight and make up among themselves.
+    for (i, a) in alive.iter().enumerate() {
+        for b in alive.iter().skip(i + 1) {
+            if nearest(a.0, b.0) > 12 {
+                continue;
+            }
+            let treaty = ctx.diplomacy.get_treaty(a.0, b.0);
+            let age = ctx.foreign.treaty_age(a.0, b.0, turn);
+            let known = ctx.foreign.met.contains(&a.0) || ctx.foreign.met.contains(&b.0);
+            match treaty {
+                Treaty::War if age >= 15 && rng.gen_bool(0.07) => {
+                    set_treaty(ctx, a.0, b.0, Treaty::Peace);
+                    if known {
+                        ctx.log.push(format!("{} and {} make peace.", a.1, b.1));
+                    }
+                }
+                Treaty::None | Treaty::Peace if turn >= AI_GRACE_TURNS && (treaty == Treaty::None || age >= 20) && rng.gen_bool((0.008 * (a.3 + b.3)) as f64) => {
+                    set_treaty(ctx, a.0, b.0, Treaty::War);
+                    if known {
+                        ctx.log.push(format!("{} and {} are now at war.", a.1, b.1));
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+    let _ = BARBARIANS;
+}

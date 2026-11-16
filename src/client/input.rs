@@ -3,12 +3,11 @@
 use bevy::input::mouse::{MouseScrollUnit, MouseWheel};
 use bevy::prelude::*;
 
-use bevy_civ::diplomacy::Treaty;
 use bevy_civ::terrain::Improvement;
 
 use super::map::{Hovered, HEX_SIZE};
 use super::ui::{Modal, UiState};
-use crate::{Action, MapClick, MapData, MAP_RADIUS};
+use crate::{Action, MapClick, MapData};
 
 const DRAG_THRESHOLD: f32 = 7.0;
 
@@ -111,7 +110,7 @@ pub fn pointer_input(
                 pointer.dragging = false;
             }
             pointer.last = cursor;
-            hovered.0 = if over_ui { None } else { to_hex(cursor).filter(|h| h.distance_to(hexx::Hex::ZERO) <= MAP_RADIUS as i32) };
+            hovered.0 = if over_ui { None } else { to_hex(cursor).filter(|h| map.cells.contains(h)) };
         } else {
             hovered.0 = None;
         }
@@ -139,9 +138,9 @@ pub fn pointer_input(
     projection.scale = (scale * zoom).clamp(0.45, 2.4);
     cam_transform.translation.x += -pan.x * scale + key_pan.x * 620.0 * scale * time.delta_secs();
     cam_transform.translation.y += pan.y * scale + key_pan.y * 620.0 * scale * time.delta_secs();
-    let limit = MAP_RADIUS as f32 * HEX_SIZE * 1.8;
-    cam_transform.translation.x = cam_transform.translation.x.clamp(-limit, limit);
-    cam_transform.translation.y = cam_transform.translation.y.clamp(-limit, limit);
+    let margin = HEX_SIZE * 3.0;
+    cam_transform.translation.x = cam_transform.translation.x.clamp(map.min.x - margin, map.max.x + margin);
+    cam_transform.translation.y = cam_transform.translation.y.clamp(map.min.y - margin, map.max.y + margin);
 }
 
 pub fn keyboard_input(keys: Res<ButtonInput<KeyCode>>, mut actions: EventWriter<Action>, mut ui: ResMut<UiState>, mut dirty: ResMut<crate::Dirty>) {
@@ -153,9 +152,6 @@ pub fn keyboard_input(keys: Res<ButtonInput<KeyCode>>, mut actions: EventWriter<
         (KeyCode::KeyR, Action::Build(Improvement::Road)),
         (KeyCode::KeyX, Action::Transform),
         (KeyCode::KeyB, Action::FoundCity),
-        (KeyCode::KeyP, Action::SetTreaty(1, Treaty::Peace)),
-        (KeyCode::KeyL, Action::SetTreaty(1, Treaty::Alliance)),
-        (KeyCode::KeyK, Action::SetTreaty(1, Treaty::War)),
         (KeyCode::KeyT, Action::TradeRoute),
         (KeyCode::F2, Action::Save),
     ];

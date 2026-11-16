@@ -22,6 +22,7 @@ pub enum Tech {
     Writing,
     CodeOfLaws,
     Mysticism,
+    Seafaring,
     // Classical / Medieval
     IronWorking,
     Mathematics,
@@ -38,9 +39,9 @@ pub enum Tech {
 }
 
 impl Tech {
-    pub const ALL: [Tech; 21] = [
+    pub const ALL: [Tech; 22] = [
         Tech::Pottery, Tech::AnimalHusbandry, Tech::Mining, Tech::BronzeWorking, Tech::Masonry,
-        Tech::Alphabet, Tech::TheWheel, Tech::Writing, Tech::CodeOfLaws, Tech::Mysticism,
+        Tech::Alphabet, Tech::TheWheel, Tech::Writing, Tech::CodeOfLaws, Tech::Mysticism, Tech::Seafaring,
         Tech::IronWorking, Tech::Mathematics, Tech::HorsebackRiding, Tech::Construction,
         Tech::Philosophy, Tech::Monarchy, Tech::Currency, Tech::Engineering, Tech::Gunpowder,
         Tech::PrintingPress, Tech::Democracy,
@@ -50,7 +51,7 @@ impl Tech {
         match self {
             Tech::Pottery | Tech::AnimalHusbandry | Tech::Mining => 10,
             Tech::BronzeWorking | Tech::Masonry | Tech::Alphabet | Tech::TheWheel => 15,
-            Tech::Writing | Tech::CodeOfLaws | Tech::Mysticism => 20,
+            Tech::Writing | Tech::CodeOfLaws | Tech::Mysticism | Tech::Seafaring => 20,
             Tech::IronWorking | Tech::Mathematics | Tech::HorsebackRiding => 25,
             Tech::Construction | Tech::Philosophy | Tech::Monarchy | Tech::Currency => 30,
             Tech::Engineering => 40,
@@ -64,6 +65,7 @@ impl Tech {
             Tech::Writing => vec![Tech::Alphabet],
             Tech::CodeOfLaws => vec![Tech::Writing],
             Tech::Mysticism => vec![Tech::Pottery],
+            Tech::Seafaring => vec![Tech::Pottery],
             Tech::IronWorking => vec![Tech::BronzeWorking],
             Tech::Mathematics => vec![Tech::Writing, Tech::Masonry],
             Tech::HorsebackRiding => vec![Tech::AnimalHusbandry],
@@ -91,6 +93,7 @@ impl Tech {
             Tech::Writing => "Writing",
             Tech::CodeOfLaws => "Code of Laws",
             Tech::Mysticism => "Mysticism",
+            Tech::Seafaring => "Seafaring",
             Tech::IronWorking => "Iron Working",
             Tech::Mathematics => "Mathematics",
             Tech::HorsebackRiding => "Horseback Riding",
@@ -118,6 +121,28 @@ impl Default for TechState {
 }
 
 impl TechState {
+    /// A fresh state that already knows the named technologies.
+    pub fn knowing(names: &[String]) -> Self {
+        let mut state = Self { researched: HashSet::new(), current: None, progress: 0, science_per_turn: 2 };
+        state.researched.extend(Tech::ALL.into_iter().filter(|t| names.iter().any(|n| n == t.name())));
+        state.current = Tech::ALL.into_iter().find(|t| state.can_research(*t));
+        state
+    }
+
+    /// Adds a technology gained by trade and moves research on if it was the current project.
+    pub fn learn(&mut self, tech: Tech) {
+        self.researched.insert(tech);
+        if self.current == Some(tech) {
+            self.progress = 0;
+            self.current = Tech::ALL.into_iter().find(|t| self.can_research(*t));
+        }
+    }
+
+    /// Research cost of a technology right now: each discovery makes the next ones dearer.
+    pub fn cost_of(&self, tech: Tech) -> u32 {
+        tech.cost() * (2 + self.researched.len() as u32) / 2
+    }
+
     pub fn can_research(&self, tech: Tech) -> bool {
         !self.researched.contains(&tech)
             && tech.prerequisites().iter().all(|p| self.researched.contains(p))
@@ -126,7 +151,7 @@ impl TechState {
     pub fn process_turn(&mut self) -> Option<Tech> {
         let Some(current) = self.current else { return None };
         self.progress += self.science_per_turn;
-        if self.progress >= current.cost() {
+        if self.progress >= self.cost_of(current) {
             self.researched.insert(current);
             self.progress = 0;
             // Auto-pick the next available technology; the player can change it.

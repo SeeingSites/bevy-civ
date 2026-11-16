@@ -10,6 +10,7 @@ const sheets = {
   ...(fs.existsSync(path.join(__dirname, 'units.cjs')) ? require('./units.cjs') : {}),
   ...(fs.existsSync(path.join(__dirname, 'world.cjs')) ? require('./world.cjs') : {}),
   ...(fs.existsSync(path.join(__dirname, 'ui.cjs')) ? require('./ui.cjs') : {}),
+  ...require('./leaders.cjs'),
 };
 
 (async () => {

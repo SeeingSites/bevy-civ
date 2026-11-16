@@ -20,21 +20,21 @@ pub struct Civ {
     pub gold: i32,
     pub tech: TechState,
     pub aggression: f32,
+    pub leader: String,
+    pub adjective: String,
+    /// Frame in the leader portrait atlas.
+    pub portrait: usize,
+    /// Names for cities this civilization founds later.
+    pub city_names: Vec<String>,
 }
 
 impl Default for Civilizations {
     fn default() -> Self {
-        Self {
-            players: vec![
-                Civ { id: 0, name: "Player".into(), is_human: true, gold: 0, tech: TechState::default(), aggression: 0.5 },
-                Civ { id: 1, name: "AI Rome".into(), is_human: false, gold: 50, tech: TechState::default(), aggression: 0.7 },
-                Civ { id: 2, name: "AI Egypt".into(), is_human: false, gold: 50, tech: TechState::default(), aggression: 0.4 },
-            ],
-        }
+        Self { players: Vec::new() }
     }
 }
 
-fn unit_strength(unit: &Unit) -> f32 {
+pub fn unit_strength(unit: &Unit) -> f32 {
     let (atk, def, _) = unit.unit_type.stats();
     (atk as f32) * unit.unit_type.attack_bonus(crate::terrain::Terrain::Plains)
         + (def as f32) * unit.unit_type.defense_bonus()
@@ -84,7 +84,8 @@ pub fn process_ai_turn(
         }
     }
     let land: Vec<(Hex, Terrain)> = tiles.iter().map(|t| (t.coord, t.terrain)).collect();
-    let is_land = |hex: Hex| land.iter().any(|(c, t)| *c == hex && *t != Terrain::Water);
+    let land_set: std::collections::HashSet<Hex> = land.iter().filter(|(_, t)| *t != Terrain::Water).map(|(c, _)| *c).collect();
+    let is_land = |hex: Hex| land_set.contains(&hex);
     let mut founded: Vec<Hex> = Vec::new();
 
     for (entity, mut unit) in units.iter_mut() {
@@ -92,17 +93,33 @@ pub fn process_ai_turn(
             continue;
         }
         let owner = unit.owner;
-        let aggression = civs.players.iter().find(|c| c.id == owner).map(|c| c.aggression).unwrap_or(0.8);
+        let civ = civs.players.iter().find(|c| c.id == owner);
+        let aggression = civ.map(|c| c.aggression).unwrap_or(0.8);
+        let can_sail = civ.is_some_and(|c| c.tech.researched.contains(&crate::tech::Tech::Seafaring));
 
-        // Settler: found a city on free land nearby
+        // Settler: walk away from existing cities, then found a new one
         if unit.unit_type == UnitType::Settler {
-            let spot = unit.position.all_neighbors().into_iter().find(|n| {
-                is_land(*n) && !founded.contains(n) && !city_positions.iter().any(|(p, _)| p.distance_to(*n) < 2)
-            });
-            if let Some(n) = spot {
-                crate::city::spawn_city(commands, n, format!("Outpost {}", city_positions.len() + founded.len() + 1), 1, owner, false);
-                founded.push(n);
+            let here = unit.position;
+            let crowded = |hex: Hex| {
+                city_positions.iter().any(|(p, _)| p.distance_to(hex) < 3) || founded.iter().any(|p| p.distance_to(hex) < 3)
+            };
+            if is_land(here) && !crowded(here) {
+                let civ = civs.players.iter().find(|c| c.id == owner);
+                let count = city_positions.iter().filter(|(_, o)| *o == owner).count() + founded.len();
+                let name = civ
+                    .and_then(|c| c.city_names.get(count.saturating_sub(1)).cloned())
+                    .unwrap_or_else(|| format!("Outpost {}", city_positions.len() + founded.len() + 1));
+                crate::city::spawn_city(commands, here, name, 1, owner, false);
+                founded.push(here);
                 commands.entity(entity).despawn_recursive();
+            } else {
+                let options: Vec<Hex> = here.all_neighbors().into_iter().filter(|n| is_land(*n) && !occupied.get(n).is_some_and(|(o, _)| *o != owner)).collect();
+                // Prefer steps that lead away from the nearest city.
+                let away = |hex: Hex| city_positions.iter().map(|(p, _)| p.distance_to(hex)).min().unwrap_or(0);
+                if let Some(step) = options.iter().copied().max_by_key(|n| (away(*n), rng.gen_range(0..4))) {
+                    unit.position = step;
+                    unit.movement_left = 0;
+                }
             }
             continue;
         }
@@ -139,11 +156,12 @@ pub fn process_ai_turn(
             .map(|(pos, _)| *pos);
 
         if let Some(target) = enemy_unit.or(enemy_city) {
-            if let Some(path) = find_path(here, target, land.iter().copied()) {
+            if let Some(path) = find_path(here, target, land.iter().copied(), can_sail) {
                 for next in path.into_iter().skip(1) {
                     if unit.movement_left == 0 {
                         break;
                     }
+                    let boarding = is_land(unit.position) != is_land(next);
                     match occupied.get(&next) {
                         Some((other, strength)) if *other != owner => {
                             // Attack if the odds look acceptable; otherwise hold position.
@@ -155,7 +173,8 @@ pub fn process_ai_turn(
                         }
                         _ => {
                             unit.position = next;
-                            unit.movement_left -= 1;
+                            // Boarding or leaving a boat takes the rest of the turn.
+                            unit.movement_left = if boarding { 0 } else { unit.movement_left - 1 };
                         }
                     }
                 }
@@ -170,7 +189,7 @@ pub fn process_ai_turn(
         }
         let neighbors = here.all_neighbors();
         let step = neighbors[rng.gen_range(0..neighbors.len())];
-        if is_land(step) && !occupied.get(&step).is_some_and(|(other, _)| *other != owner) {
+        if is_land(step) && is_land(here) && !occupied.get(&step).is_some_and(|(other, _)| *other != owner) {
             unit.position = step;
             unit.movement_left -= 1;
         }

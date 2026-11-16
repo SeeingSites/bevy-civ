@@ -304,6 +304,23 @@ const UNITS = [
   },
   // Caravan
   (f) => shadow(62, 44) + wrap(camel(60, GROUND, f)),
+  // Transport boat: shown for any land unit while it is at sea
+  (f) => {
+    const bob = [0, -2, 0, 2][f];
+    const tilt = [-2, 0, 2, 0][f];
+    const flutter = [0, 2, 4, 2][f];
+    return wrap(
+      `<g transform="translate(0,${bob}) rotate(${tilt} 64 ${GROUND - 14})">` +
+        `<path d="M62,${GROUND - 24} V${GROUND - 92}" stroke-width="5"/><path d="M62,${GROUND - 24} V${GROUND - 92}" stroke="${WOOD}" stroke-width="2.5"/>` +
+        `<path d="M66,${GROUND - 88} q${30 + flutter},14 ${34},48 h-34 Z" fill="#efe6d0"/><path d="M66,${GROUND - 70} h24 M66,${GROUND - 54} h32" stroke="rgba(0,0,0,0.2)" stroke-width="1.5"/>` +
+        `<path d="M58,${GROUND - 84} q-${20 + flutter},12 -26,40 h26 Z" fill="#d9c7a0"/>` +
+        `<path d="M62,${GROUND - 92} l14,4 l-14,5 Z" fill="#c8281c"/>` +
+        `<circle cx="40" cy="${GROUND - 30}" r="5.5" fill="${SKIN}"/><circle cx="84" cy="${GROUND - 30}" r="5.5" fill="${SKIN}"/>` +
+        `<path d="M14,${GROUND - 26} h100 q-6,22 -24,24 h-52 q-18,-2 -24,-24 Z" fill="#8b5a2b"/><path d="M18,${GROUND - 18} h92" stroke="#5b3a1c" stroke-width="2"/><path d="M14,${GROUND - 26} h100" stroke="#c9973f" stroke-width="3"/>` +
+        `</g>` +
+        `<path d="M8,${GROUND - 1} q8,-6 16,0 t16,0 t16,0 t16,0 t16,0 t16,0 t16,0" fill="none" stroke="rgba(220,240,255,0.9)" stroke-width="3"/>`,
+    );
+  },
 ];
 
 module.exports = {

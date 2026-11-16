@@ -3,20 +3,20 @@
 
 use bevy::asset::AssetMetaCheck;
 use bevy::prelude::*;
-use hexx::{shapes, Hex, HexLayout};
+use hexx::{Hex, HexLayout};
 use rand::Rng;
 use std::collections::HashMap;
 
 use bevy_civ::ai::{process_ai_turn, Civilizations};
 use std::collections::HashSet;
 use bevy_civ::barbarians::{process_barbarians, BarbarianState};
-use bevy_civ::building::CityBuildings;
+use bevy_civ::building::{Building, CityBuildings};
 use bevy_civ::city::{spawn_city, City, ProductionItem};
 use bevy_civ::combat::resolve_combat;
 use bevy_civ::diplomacy::{Diplomacy, Happiness, Treaty};
 use bevy_civ::fog::FogOfWar;
 use bevy_civ::government::Government;
-use bevy_civ::pathfinding::{find_path, move_along_path};
+use bevy_civ::pathfinding::find_path;
 use bevy_civ::save::{save_game, SaveData};
 use bevy_civ::score::Score;
 use bevy_civ::space::{SpaceComponent, SpaceRace};
@@ -26,8 +26,12 @@ use bevy_civ::trade::TradeRoutes;
 use bevy_civ::unit::{spawn_unit, Unit, UnitType};
 
 mod client;
+mod foreign;
+mod scenario;
 
-pub const MAP_RADIUS: u32 = 10;
+use foreign::{DiploAct, Foreign};
+use scenario::NewGame;
+
 pub const PLAYER: u32 = 0;
 pub const BARBARIANS: u32 = 99;
 /// Aggressive computer players leave neighbours they are not at war with alone until this turn.
@@ -40,9 +44,23 @@ const CITY_NAMES: [&str; 10] = [
     "Silverkeep", "Windmere", "Thornwall",
 ];
 
+/// Start menu or a game in progress.
+#[derive(States, Default, Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum AppState {
+    #[default]
+    Menu,
+    Playing,
+}
+
 #[derive(Resource)]
 pub struct MapData {
     pub layout: HexLayout,
+    /// Every tile of the map.
+    pub cells: HashSet<Hex>,
+    pub water: HashSet<Hex>,
+    /// World-space bounding box of the tile centres.
+    pub min: Vec2,
+    pub max: Vec2,
 }
 
 #[derive(Resource)]
@@ -53,6 +71,26 @@ pub struct GameState {
     pub government: Government,
     pub victory: Option<String>,
     pub score: Score,
+    pub start_year: i32,
+    pub years_per_turn: i32,
+    /// Name of the player's civilization, shown in the status bar.
+    pub title: String,
+}
+
+impl Default for GameState {
+    fn default() -> Self {
+        Self {
+            turn: 1,
+            gold: 0,
+            gold_per_turn: 0,
+            government: Government::Despotism,
+            victory: None,
+            score: Score::default(),
+            start_year: -4000,
+            years_per_turn: 40,
+            title: String::new(),
+        }
+    }
 }
 
 #[derive(Resource, Default)]
@@ -96,7 +134,10 @@ pub enum Action {
     FoundCity,
     Skip,
     Deselect,
-    SetTreaty(u32, Treaty),
+    /// A request to another leader, made in the foreign advisor window.
+    Diplo(u32, DiploAct),
+    /// The player's answer to a pending proposal.
+    AnswerOffer(bool),
     TradeRoute,
     Save,
     SetProduction(ProductionItem),
@@ -136,14 +177,8 @@ fn main() {
                 }),
         )
         .insert_resource(ClearColor(Color::srgb(0.07, 0.065, 0.055)))
-        .insert_resource(GameState {
-            turn: 1,
-            gold: 0,
-            gold_per_turn: 0,
-            government: Government::Despotism,
-            victory: None,
-            score: Score::default(),
-        })
+        .init_state::<AppState>()
+        .init_resource::<GameState>()
         .insert_resource(Dirty { map: true, ui: true })
         .init_resource::<TechState>()
         .init_resource::<Selection>()
@@ -155,16 +190,19 @@ fn main() {
         .init_resource::<BarbarianState>()
         .init_resource::<TradeRoutes>()
         .init_resource::<SpaceRace>()
+        .init_resource::<Foreign>()
         .add_event::<Action>()
         .add_event::<MapClick>()
         .add_event::<Burst>()
         .add_plugins(client::ClientPlugin)
-        .add_systems(Startup, setup_world)
+        .add_systems(OnEnter(AppState::Playing), setup_world)
+        .add_systems(OnExit(AppState::Playing), cleanup_world)
         .add_systems(
             Update,
             (handle_map_click, apply_actions, process_turn)
                 .chain()
-                .in_set(GameLogic),
+                .in_set(GameLogic)
+                .run_if(in_state(AppState::Playing)),
         )
         .run();
 }
@@ -173,79 +211,154 @@ fn main() {
 #[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct GameLogic;
 
-/// Smooth pseudo-random field in [0, 1] built from a few sine waves.
-struct Field {
-    waves: Vec<(f32, f32, f32, f32)>,
-}
-
-impl Field {
-    fn new(rng: &mut impl Rng, base_freq: f32) -> Self {
-        let waves = (0..5)
-            .map(|i| {
-                let freq = base_freq * (1.0 + i as f32 * 0.55);
-                let angle = rng.gen_range(0.0..std::f32::consts::TAU);
-                (angle.cos() * freq, angle.sin() * freq, rng.gen_range(0.0..std::f32::consts::TAU), 1.0 / (1.0 + i as f32 * 0.5))
-            })
-            .collect();
-        Self { waves }
-    }
-
-    fn at(&self, p: Vec2) -> f32 {
-        let total: f32 = self.waves.iter().map(|w| w.3).sum();
-        let v: f32 = self.waves.iter().map(|(fx, fy, phase, amp)| (p.x * fx + p.y * fy + phase).sin() * amp).sum();
-        0.5 + 0.5 * v / total
+fn terrain_from(code: char) -> Terrain {
+    match code {
+        'g' => Terrain::Grassland,
+        'p' => Terrain::Plains,
+        'd' => Terrain::Desert,
+        'f' => Terrain::Forest,
+        'h' => Terrain::Hills,
+        'm' => Terrain::Mountain,
+        _ => Terrain::Water,
     }
 }
 
-fn setup_world(mut commands: Commands, mut fog: ResMut<FogOfWar>, mut log: ResMut<GameLog>) {
+/// Builds the world for the game chosen in the start menu.
+#[allow(clippy::too_many_arguments)]
+fn setup_world(
+    mut commands: Commands,
+    new_game: Res<NewGame>,
+    mut state: ResMut<GameState>,
+    mut tech: ResMut<TechState>,
+    mut civs: ResMut<Civilizations>,
+    mut fog: ResMut<FogOfWar>,
+    mut diplomacy: ResMut<Diplomacy>,
+    mut foreign: ResMut<Foreign>,
+    mut log: ResMut<GameLog>,
+    mut dirty: ResMut<Dirty>,
+    mut camera: Query<(&mut Transform, &mut OrthographicProjection), With<Camera2d>>,
+) {
+    let (scenario, player) = if new_game.scenario.rows.is_empty() {
+        scenario::generate_random(&new_game.scenario, new_game.civ)
+    } else {
+        (new_game.scenario.clone(), new_game.civ)
+    };
+    // The player's civilization always has id 0.
+    let mut defs = scenario.civs.clone();
+    let player = player.min(defs.len().saturating_sub(1));
+    defs.swap(0, player);
+
     let layout = HexLayout::flat().with_hex_size(client::map::HEX_SIZE);
     let mut rng = rand::thread_rng();
-
-    let starts = [(Hex::ZERO, PLAYER), (Hex::new(7, -4), 1), (Hex::new(-6, 6), 2)];
-    let height = Field::new(&mut rng, 0.006);
-    let moisture = Field::new(&mut rng, 0.008);
-
-    for hex in shapes::hexagon(Hex::ZERO, MAP_RADIUS) {
-        let pos = layout.hex_to_world_pos(hex);
-        let edge = hex.distance_to(Hex::ZERO) as f32 / MAP_RADIUS as f32;
-        // Continents in the middle, ocean towards the rim.
-        let h = height.at(pos) + rng.gen_range(-0.04..0.04) - edge.powi(3) * 0.38;
-        let m = moisture.at(pos) + rng.gen_range(-0.05..0.05);
-        let near_start = starts.iter().any(|(s, _)| s.distance_to(hex) <= 1);
-        let terrain = if near_start {
-            if hex.x.rem_euclid(2) == 0 { Terrain::Grassland } else { Terrain::Plains }
-        } else if h < 0.34 {
-            Terrain::Water
-        } else if h > 0.78 {
-            Terrain::Mountain
-        } else if h > 0.66 {
-            Terrain::Hills
-        } else if m < 0.3 {
-            Terrain::Desert
-        } else if m > 0.62 {
-            Terrain::Forest
-        } else if m > 0.46 {
-            Terrain::Grassland
-        } else {
-            Terrain::Plains
-        };
-        let resource = random_resource(&mut rng, terrain);
-        commands.spawn(HexTile { coord: hex, terrain, improvements: vec![], resource });
+    let mut map = MapData { layout, cells: HashSet::new(), water: HashSet::new(), min: Vec2::splat(f32::MAX), max: Vec2::splat(f32::MIN) };
+    for (row, line) in scenario.rows.iter().enumerate() {
+        for (col, code) in line.chars().enumerate() {
+            let hex = scenario::offset_to_hex(col as i32, row as i32);
+            let terrain = terrain_from(code);
+            let pos = map.layout.hex_to_world_pos(hex);
+            map.min = map.min.min(pos);
+            map.max = map.max.max(pos);
+            map.cells.insert(hex);
+            if terrain == Terrain::Water {
+                map.water.insert(hex);
+            }
+            commands.spawn(HexTile { coord: hex, terrain, improvements: vec![], resource: random_resource(&mut rng, terrain) });
+        }
     }
 
-    spawn_city(&mut commands, starts[0].0, "Aurelia".into(), 1, PLAYER, true);
-    spawn_unit(&mut commands, Hex::new(0, 1), UnitType::Settler, PLAYER);
-    spawn_unit(&mut commands, Hex::new(1, 0), UnitType::Worker, PLAYER);
-    spawn_unit(&mut commands, Hex::new(-1, 0), UnitType::Warrior, PLAYER);
+    civs.players = defs
+        .iter()
+        .enumerate()
+        .map(|(id, def)| bevy_civ::ai::Civ {
+            id: id as u32,
+            name: def.name.clone(),
+            is_human: id == 0,
+            gold: def.gold,
+            tech: TechState::knowing(&def.techs),
+            aggression: def.aggression,
+            leader: def.leader.clone(),
+            adjective: def.adjective.clone(),
+            portrait: def.portrait,
+            city_names: def.city_names.clone(),
+        })
+        .collect();
+    *tech = TechState::knowing(&defs[0].techs);
 
-    spawn_city(&mut commands, starts[1].0, "Rome".into(), 1, 1, true);
-    spawn_unit(&mut commands, starts[1].0 + Hex::new(0, 1), UnitType::Legion, 1);
-    spawn_city(&mut commands, starts[2].0, "Thebes".into(), 1, 2, true);
-    spawn_unit(&mut commands, starts[2].0 + Hex::new(1, 0), UnitType::WarChariot, 2);
+    for (id, def) in defs.iter().enumerate() {
+        let owner = id as u32;
+        for city in &def.cities {
+            let hex = scenario::offset_to_hex(city.col, city.row);
+            spawn_city(&mut commands, hex, city.name.clone(), city.pop.max(1), owner, city.capital);
+            if owner == PLAYER {
+                fog.reveal(hex, 3);
+            }
+        }
+        for unit in &def.units {
+            let Some(kind) = UnitType::ALL.into_iter().find(|u| u.name() == unit.kind) else { continue };
+            let hex = scenario::offset_to_hex(unit.col, unit.row);
+            spawn_unit(&mut commands, hex, kind, owner);
+            if owner == PLAYER {
+                fog.reveal(hex, 2);
+            }
+        }
+    }
 
-    fog.reveal(Hex::ZERO, 3);
-    commands.insert_resource(MapData { layout });
-    log.push("Your people settle at Aurelia. Lead them well.");
+    let id_of = |name: &str| defs.iter().position(|d| d.name == name).map(|i| i as u32);
+    for (a, b) in &scenario.wars {
+        if let (Some(a), Some(b)) = (id_of(a), id_of(b)) {
+            diplomacy.set_treaty(a, b, Treaty::War);
+            foreign.since.insert((a.min(b), a.max(b)), 1);
+        }
+    }
+
+    if scenario.known {
+        foreign.met = (1..defs.len() as u32).collect();
+    }
+
+    *state = GameState {
+        gold: defs[0].gold,
+        start_year: scenario.start_year,
+        years_per_turn: scenario.years_per_turn,
+        title: defs[0].name.trim_start_matches("the ").to_string(),
+        ..default()
+    };
+
+    if let Ok((mut transform, mut projection)) = camera.get_single_mut() {
+        let home = defs[0].cities.first().map(|c| map.layout.hex_to_world_pos(scenario::offset_to_hex(c.col, c.row))).unwrap_or(Vec2::ZERO);
+        transform.translation = home.extend(transform.translation.z);
+        projection.scale = 1.0;
+    }
+    commands.insert_resource(map);
+    dirty.map = true;
+    dirty.ui = true;
+    log.push(format!("{}: you lead {} as {}.", scenario.name, defs[0].name, defs[0].leader));
+}
+
+/// Removes the finished game so a new one can start from the menu.
+fn cleanup_world(
+    mut commands: Commands,
+    entities: Query<Entity, Or<(With<HexTile>, With<Unit>, With<City>, With<client::map::Decor>, With<client::map::PathDot>, With<client::actors::BurstFx>)>>,
+    parents: Query<&Parent>,
+) {
+    for entity in &entities {
+        // Children (flags, labels, bases) go with their parents.
+        if parents.get(entity).is_err() {
+            commands.entity(entity).despawn_recursive();
+        }
+    }
+    commands.insert_resource(GameState::default());
+    commands.insert_resource(TechState::default());
+    commands.insert_resource(Selection::default());
+    commands.insert_resource(GameLog::default());
+    commands.insert_resource(PathPreview::default());
+    commands.insert_resource(Civilizations::default());
+    commands.insert_resource(FogOfWar::default());
+    commands.insert_resource(Diplomacy::default());
+    commands.insert_resource(BarbarianState::default());
+    commands.insert_resource(TradeRoutes::default());
+    commands.insert_resource(SpaceRace::default());
+    commands.insert_resource(Foreign::default());
+    commands.insert_resource(Dirty { map: true, ui: true });
 }
 
 fn handle_map_click(
@@ -255,6 +368,8 @@ fn handle_map_click(
     mut cities: Query<(Entity, &mut City)>,
     tiles: Query<&HexTile>,
     state: Res<GameState>,
+    map: Res<MapData>,
+    tech: Res<TechState>,
     mut fog: ResMut<FogOfWar>,
     mut diplomacy: ResMut<Diplomacy>,
     mut log: ResMut<GameLog>,
@@ -342,8 +457,9 @@ fn handle_map_click(
             log.push(format!("{} has no moves left this turn.", unit.unit_type.name()));
             continue;
         }
-        let Some(route) = find_path(unit.position, hex, tiles.iter().map(|t| (t.coord, t.terrain))) else {
-            log.push("There is no route to that tile.");
+        let sail = tech.researched.contains(&Tech::Seafaring);
+        let Some(route) = find_path(unit.position, hex, tiles.iter().map(|t| (t.coord, t.terrain)), sail) else {
+            log.push(if sail { "There is no route to that tile." } else { "There is no route to that tile. Crossing water needs Seafaring." });
             continue;
         };
         dirty.map = true;
@@ -351,7 +467,15 @@ fn handle_map_click(
         let enemy = snapshot.iter().find(|u| u.1 == hex && u.2 != unit.owner).copied();
         // Stop next to a defended tile; the last step is the attack itself.
         let walk = if enemy.is_some() { &route[..route.len() - 1] } else { &route[..] };
-        move_along_path(&mut unit.position, &mut unit.movement_left, walk);
+        for next in walk.iter().skip(1) {
+            if unit.movement_left == 0 {
+                break;
+            }
+            // Boarding or leaving a boat takes the rest of the turn.
+            let boarding = map.water.contains(&unit.position) != map.water.contains(next);
+            unit.position = *next;
+            unit.movement_left = if boarding { 0 } else { unit.movement_left - 1 };
+        }
         path.0 = route.clone();
 
         if let Some((enemy_entity, _, enemy_owner, enemy_type)) = enemy {
@@ -412,12 +536,12 @@ fn apply_actions(
     mut units: Query<&mut Unit>,
     mut cities: Query<&mut City>,
     mut tiles: Query<&mut HexTile>,
-    state: Res<GameState>,
+    mut state: ResMut<GameState>,
     mut tech: ResMut<TechState>,
-    mut diplomacy: ResMut<Diplomacy>,
+    (mut diplomacy, mut foreign): (ResMut<Diplomacy>, ResMut<Foreign>),
     mut trade: ResMut<TradeRoutes>,
     mut fog: ResMut<FogOfWar>,
-    civs: Res<Civilizations>,
+    mut civs: ResMut<Civilizations>,
     mut log: ResMut<GameLog>,
     mut dirty: ResMut<Dirty>,
     mut path: ResMut<PathPreview>,
@@ -475,8 +599,16 @@ fn apply_actions(
                     continue;
                 }
                 let count = cities.iter().filter(|c| c.owner == PLAYER).count();
-                let name = CITY_NAMES[(count.max(1) - 1) % CITY_NAMES.len()];
-                let city = spawn_city(&mut commands, here, name.into(), 1, PLAYER, false);
+                let taken: Vec<&str> = cities.iter().map(|c| c.name.as_str()).collect();
+                let own_names = civs.players.first().map(|c| c.city_names.clone()).unwrap_or_default();
+                let name = own_names
+                    .iter()
+                    .map(String::as_str)
+                    .chain(CITY_NAMES)
+                    .find(|n| !taken.contains(n))
+                    .map(str::to_string)
+                    .unwrap_or_else(|| format!("Colony {}", count + 1));
+                let city = spawn_city(&mut commands, here, name.clone(), 1, PLAYER, false);
                 commands.entity(entity).despawn_recursive();
                 selection.unit = None;
                 selection.city = Some(city);
@@ -488,15 +620,13 @@ fn apply_actions(
                     unit.movement_left = 0;
                 }
             }
-            Action::SetTreaty(civ, treaty) => {
-                let name = civs.players.iter().find(|c| c.id == *civ).map(|c| c.name.clone()).unwrap_or_default();
-                diplomacy.set_treaty(PLAYER, *civ, *treaty);
-                log.push(match treaty {
-                    Treaty::Peace => format!("Peace is agreed with {name}."),
-                    Treaty::Alliance => format!("An alliance is formed with {name}."),
-                    Treaty::War => format!("War is declared on {name}!"),
-                    Treaty::None => format!("Treaties with {name} are dissolved."),
-                });
+            Action::Diplo(civ, act) => {
+                let mut ctx = foreign::Ctx { diplomacy: &mut diplomacy, foreign: &mut foreign, civs: &mut civs, state: &mut state, tech: &mut tech, log: &mut log };
+                foreign::player_act(&mut ctx, *civ, *act);
+            }
+            Action::AnswerOffer(accept) => {
+                let mut ctx = foreign::Ctx { diplomacy: &mut diplomacy, foreign: &mut foreign, civs: &mut civs, state: &mut state, tech: &mut tech, log: &mut log };
+                foreign::answer_offer(&mut ctx, *accept);
             }
             Action::TradeRoute => {
                 let own: Vec<Hex> = cities.iter().filter(|c| c.owner == PLAYER).map(|c| c.position).collect();
@@ -551,8 +681,8 @@ fn process_turn(
     mut civs: ResMut<Civilizations>,
     mut fog: ResMut<FogOfWar>,
     mut barbarians: ResMut<BarbarianState>,
-    mut diplomacy: ResMut<Diplomacy>,
-    trade: Res<TradeRoutes>,
+    (mut diplomacy, mut foreign): (ResMut<Diplomacy>, ResMut<Foreign>),
+    (trade, map): (Res<TradeRoutes>, Res<MapData>),
     mut space: ResMut<SpaceRace>,
     (mut log, mut dirty, mut path): (ResMut<GameLog>, ResMut<Dirty>, ResMut<PathPreview>),
     mut bursts: EventWriter<Burst>,
@@ -566,6 +696,7 @@ fn process_turn(
     path.0.clear();
     state.turn += 1;
 
+    let mut rng = rand::thread_rng();
     let gov = state.government;
     let mut total_science = 0;
     let mut total_gold = 0i32;
@@ -613,6 +744,20 @@ fn process_turn(
                         *army_sizes.entry(city.owner).or_default() += 1;
                         if mine {
                             log.push(format!("{} trains a {}.", city.name, ut.name()));
+                            // Once the army outgrows what the government supports for free, a city left on
+                            // its default order turns to the cheapest building it can construct.
+                            let supported = gov.free_unit_support() as usize * capitals.len().max(1);
+                            if ut == UnitType::Warrior && army_sizes.get(&PLAYER).copied().unwrap_or(0) > supported + 2 {
+                                let next = Building::ALL
+                                    .into_iter()
+                                    .filter(|b| !b.is_wonder() && !buildings.buildings.contains(b))
+                                    .filter(|b| b.required_tech().is_none_or(|t| tech.researched.contains(&t)))
+                                    .min_by_key(|b| b.cost());
+                                if let Some(building) = next {
+                                    log.push(format!("{} starts building a {}.", city.name, building.name()));
+                                    city.production_queue = Some(ProductionItem::Building(building));
+                                }
+                            }
                         } else if let Some(civ) = civs.players.iter().find(|c| c.id == city.owner) {
                             // Computer players field the strongest unit their technology and resources allow.
                             let best = UnitType::ALL
@@ -621,7 +766,11 @@ fn process_turn(
                                 .filter(|u| u.required_tech().is_none_or(|t| civ.tech.researched.contains(&t)))
                                 .filter(|u| u.required_resource().is_none_or(|req| tiles.iter().any(|t| t.resource == Some(req))))
                                 .max_by_key(|u| (u.stats().0 + u.stats().1, u.stats().2));
-                            if let Some(best) = best {
+                            // Small empires send out settlers now and then.
+                            let wants_settler = city.population >= 2 && rng.gen_bool(0.2);
+                            if wants_settler {
+                                city.production_queue = Some(ProductionItem::Unit(UnitType::Settler));
+                            } else if let Some(best) = best {
                                 city.production_queue = Some(ProductionItem::Unit(best));
                             }
                         }
@@ -645,7 +794,7 @@ fn process_turn(
         }
     }
 
-    total_gold += trade.total_gold() as i32;
+    total_gold += trade.total_gold() as i32 + foreign.pacts.len() as i32 * foreign::PACT_INCOME;
     total_science += trade.total_science();
 
     let free_support = gov.free_unit_support() * player_cities.max(1);
@@ -667,33 +816,25 @@ fn process_turn(
             }
         }
         if unit.build_turns_left.is_none() {
-            unit.movement_left = unit.unit_type.stats().2;
+            // Boats make steady progress whatever they carry.
+            unit.movement_left = if map.water.contains(&unit.position) { 3 } else { unit.unit_type.stats().2 };
         }
     }
 
     let city_owners: Vec<(Hex, u32)> = cities.iter().map(|(c, _, _)| (c.position, c.owner)).collect();
 
     // --- Computer players and barbarians move, attack and capture -----------------------------
-    // Barbarians fight everyone; a civilization attacks those it is at war with, and an
-    // aggressive one also attacks anyone it has no peace treaty with once the early game is over.
-    let turn = state.turn;
-    let aggression: HashMap<u32, f32> = civs.players.iter().map(|c| (c.id, c.aggression)).collect();
+    // Barbarians fight everyone; civilizations fight those they are at war with.
     let treaties = diplomacy.treaties.clone();
     let hostile = move |a: u32, b: u32| {
         if a == b {
             return false;
         }
-        if a == BARBARIANS || b == BARBARIANS {
-            return true;
-        }
-        match treaties.get(&(a.min(b), a.max(b))).copied().unwrap_or(Treaty::None) {
-            Treaty::War => true,
-            Treaty::Peace | Treaty::Alliance => false,
-            Treaty::None => turn >= AI_GRACE_TURNS && aggression.get(&a).copied().unwrap_or(0.5) > 0.6,
-        }
+        a == BARBARIANS || b == BARBARIANS || treaties.get(&(a.min(b), a.max(b))).copied() == Some(Treaty::War)
     };
     let attacks = process_ai_turn(&mut civs, &mut units, &city_owners, &tiles, &hostile, &mut commands);
-    let civ_name = |owner: u32| client::owner_name(owner, &civs).replace("Your", "Our");
+    let names: HashMap<u32, String> = civs.players.iter().map(|c| (c.id, c.adjective.clone())).collect();
+    let civ_name = |owner: u32| names.get(&owner).cloned().unwrap_or_else(|| "Barbarian".to_string());
 
     let mut dead: HashSet<Entity> = HashSet::new();
     for attack in attacks {
@@ -715,7 +856,8 @@ fn process_turn(
         };
         if d_owner == PLAYER && a_owner != BARBARIANS && diplomacy.get_treaty(PLAYER, a_owner) != Treaty::War {
             diplomacy.set_treaty(PLAYER, a_owner, Treaty::War);
-            log.push(format!("{} declares war on us!", civ_name(a_owner)));
+            log.push(format!("The {} attack means war!", civ_name(a_owner)));
+            foreign.since.insert((PLAYER, a_owner), state.turn);
         }
         let terrain = defence_terrain(tiles.iter().find(|t| t.coord == attack.target).map(|t| t.terrain), city_owners.iter().any(|(p, _)| *p == attack.target));
         if fog.visible.contains(&attack.target) {
@@ -765,6 +907,23 @@ fn process_turn(
     }
     let player_cities = cities.iter().filter(|(c, _, _)| c.owner == PLAYER).count();
 
+    // --- Diplomacy -----------------------------------------------------------------------------
+    let city_owners: Vec<(Hex, u32)> = cities.iter().map(|(c, _, _)| (c.position, c.owner)).collect();
+    let unit_owners: Vec<(Hex, u32)> = units.iter().filter(|(e, _)| !dead.contains(e)).map(|(_, u)| (u.position, u.owner)).collect();
+    foreign.strength.clear();
+    for (entity, unit) in units.iter() {
+        if !dead.contains(&entity) {
+            *foreign.strength.entry(unit.owner).or_default() += bevy_civ::ai::unit_strength(unit);
+        }
+    }
+    for (_, owner) in &city_owners {
+        *foreign.strength.entry(*owner).or_default() += 2.0;
+    }
+    {
+        let mut ctx = foreign::Ctx { diplomacy: &mut diplomacy, foreign: &mut foreign, civs: &mut civs, state: &mut state, tech: &mut tech, log: &mut log };
+        foreign::turn(&mut ctx, &fog, &unit_owners, &city_owners);
+    }
+
     let all_positions: Vec<Hex> = units.iter().filter(|(e, _)| !dead.contains(e)).map(|(_, u)| u.position).collect();
     process_barbarians(&mut barbarians, &mut commands, &tiles, &all_positions);
 
@@ -783,20 +942,24 @@ fn process_turn(
         }
     }
 
-    if space.can_build(&tech) && space.progress < 4 {
+    // The space race opens with Democracy; a new stage is completed every ten turns after that.
+    if tech.researched.contains(&Tech::Democracy) && space.progress < 4 && state.turn % 10 == 0 {
         let next = [SpaceComponent::Thrusters, SpaceComponent::LifeSupport, SpaceComponent::Habitation, SpaceComponent::SolarPanels][space.progress as usize].clone();
+        log.push(format!("Our spaceship gains its {} ({}/4).", next.name(), space.progress + 1));
         space.add_component(next);
     }
 
     state.score = Score::calculate(cities.iter().map(|(c, b, _)| (c, b)), &tech);
 
-    if player_cities >= 5 {
+    let total_cities = cities.iter().count();
+    let rivals_remain = cities.iter().any(|(c, _, _)| c.owner != PLAYER && c.owner != BARBARIANS);
+    if player_cities == 0 {
+        state.victory = Some("Your civilization has fallen.".into());
+    } else if !rivals_remain {
+        state.victory = Some("Conquest Victory!".into());
+    } else if player_cities >= 5 && player_cities * 3 >= total_cities * 2 {
         state.victory = Some("Domination Victory!".into());
-    } else if tech.researched.contains(&Tech::Democracy) {
-        state.victory = Some("Cultural Victory!".into());
     } else if space.is_complete() {
         state.victory = Some("Space Race Victory!".into());
-    } else if player_cities == 0 {
-        state.victory = Some("Your civilization has fallen.".into());
     }
 }

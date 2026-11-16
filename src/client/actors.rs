@@ -15,6 +15,8 @@ const UNIT_SIZE: f32 = 76.0;
 /// Feet of the figure inside its 128px frame, relative to the frame centre.
 const UNIT_ANCHOR: Anchor = Anchor::Custom(Vec2::new(0.0, -0.39));
 const UNIT_OFFSET: Vec2 = Vec2::new(0.0, -10.0);
+/// Row of the transport boat in the unit atlas.
+const BOAT_ROW: usize = 19;
 const CITY_OFFSET: Vec2 = Vec2::new(0.0, -8.0);
 
 #[derive(Component)]
@@ -100,7 +102,9 @@ pub fn animate_units(
         let speed = if moving { 11.0 } else if unit.build_turns_left.is_some() { 7.0 } else { 3.5 };
         let frame = (time.elapsed_secs() * speed + view.phase) as usize % 4;
         if let Some(atlas) = sprite.texture_atlas.as_mut() {
-            atlas.index = unit_row(unit.unit_type) * 4 + frame;
+            // Land units are shown as a transport boat while at sea.
+            let row = if map.water.contains(&unit.position) { BOAT_ROW } else { unit_row(unit.unit_type) };
+            atlas.index = row * 4 + frame;
         }
         let shown = unit.owner == PLAYER || fog.visible.contains(&unit.position);
         *visibility = if shown { Visibility::Inherited } else { Visibility::Hidden };

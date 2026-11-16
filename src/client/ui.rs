@@ -20,7 +20,9 @@ use bevy_civ::unit::{Unit, UnitType};
 use super::actors::unit_row;
 use super::map::Hovered;
 use super::{icon, owner_color, owner_name, Art};
-use crate::{Action, Dirty, GameLog, GameState, MapData, Selection, BARBARIANS, PLAYER};
+use crate::foreign::{self, DiploAct, Foreign, OfferKind};
+use crate::scenario::{self, NewGame, Scenario};
+use crate::{Action, AppState, Dirty, GameLog, GameState, MapData, Selection, BARBARIANS, PLAYER};
 
 const CREAM: Color = Color::srgb(0.94, 0.9, 0.81);
 const GOLD: Color = Color::srgb(0.95, 0.83, 0.52);
@@ -30,7 +32,7 @@ const INK_SOFT: Color = Color::srgb(0.36, 0.27, 0.18);
 const BRONZE: Color = Color::srgb(0.86, 0.68, 0.36);
 const GREEN: Color = Color::srgb(0.56, 0.8, 0.42);
 const MM: u32 = 176;
-const MM_SCALE: f32 = 0.094;
+const RED: Color = Color::srgb(0.9, 0.45, 0.38);
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Modal {
@@ -41,6 +43,15 @@ pub enum Modal {
 #[derive(Resource, Default)]
 pub struct UiState {
     pub modal: Option<Modal>,
+    /// The civilization shown in the foreign advisor window.
+    pub diplo_target: Option<u32>,
+}
+
+/// What the start menu is showing.
+#[derive(Resource, Default)]
+pub struct MenuState {
+    pub catalog: Vec<Scenario>,
+    pub scenario: Option<usize>,
 }
 
 #[derive(Clone)]
@@ -48,6 +59,11 @@ pub enum Command {
     Game(Action),
     Toggle(Modal),
     CloseModal,
+    SelectCiv(u32),
+    PickScenario(usize),
+    PickCiv(usize),
+    BackToScenarios,
+    QuitToMenu,
 }
 
 #[derive(Component)]
@@ -56,6 +72,7 @@ pub struct ButtonCommand(Command);
 pub struct ButtonTint(Color);
 #[derive(Component, Clone, Copy)]
 pub enum StatText {
+    Title,
     Turn,
     Gold,
     Science,
@@ -69,6 +86,8 @@ pub struct UnitPanel;
 pub struct CityPanel;
 #[derive(Component)]
 pub struct ModalRoot;
+#[derive(Component)]
+pub struct MenuRoot;
 #[derive(Component)]
 pub struct TileInfoText;
 #[derive(Component)]
@@ -158,9 +177,16 @@ fn stat(parent: &mut ChildBuilder, art: &Art, index: usize, text: impl Into<Stri
     });
 }
 
-pub fn year_label(turn: u32) -> String {
-    let year = -4000 + (turn as i32 - 1) * 40;
+pub fn year_label(state: &GameState) -> String {
+    let year = state.start_year + (state.turn as i32 - 1) * state.years_per_turn;
     if year < 0 { format!("{} BC", -year) } else { format!("{} AD", year.max(1)) }
+}
+
+fn portrait(art: &Art, index: usize, size: f32) -> impl Bundle {
+    (
+        Node { width: Val::Px(size), height: Val::Px(size), flex_shrink: 0.0, ..default() },
+        ImageNode { image: art.leaders.clone(), texture_atlas: Some(art.atlas(&art.leaders_layout, index.min(16))), ..default() },
+    )
 }
 
 // ---- static layout -----------------------------------------------------------------------------
@@ -185,7 +211,7 @@ pub fn setup_ui(mut commands: Commands, art: Res<Art>, mut images: ResMut<Assets
             },
         ))
         .with_children(|bar| {
-            bar.spawn(label(&art.font_title, "BEVY CIV", 20.0, GOLD));
+            bar.spawn((label(&art.font_title, "", 20.0, GOLD), StatText::Title));
             for (index, kind) in [
                 (icon::TURN, StatText::Turn),
                 (icon::GOLD, StatText::Gold),
@@ -203,6 +229,7 @@ pub fn setup_ui(mut commands: Commands, art: Res<Art>, mut images: ResMut<Assets
             button(bar, &art, "Science (Q)", Command::Toggle(Modal::Science), BRONZE, 15.0);
             button(bar, &art, "Diplomacy (E)", Command::Toggle(Modal::Diplomacy), BRONZE, 15.0);
             button(bar, &art, "Save", Command::Game(Action::Save), BRONZE, 15.0);
+            button(bar, &art, "Menu", Command::QuitToMenu, BRONZE, 15.0);
         });
 
     // Message log stacked on the unit panel (bottom left)
@@ -326,7 +353,8 @@ pub fn setup_ui(mut commands: Commands, art: Res<Art>, mut images: ResMut<Assets
 pub fn rebuild_panels(
     mut dirty: ResMut<Dirty>,
     selection: Res<Selection>,
-    ui: Res<UiState>,
+    mut ui: ResMut<UiState>,
+    foreign: Res<Foreign>,
     art: Res<Art>,
     state: Res<GameState>,
     tech: Res<TechState>,
@@ -339,7 +367,7 @@ pub fn rebuild_panels(
     mut modal_root: Query<(Entity, &mut Node), (With<ModalRoot>, Without<CityPanel>)>,
     mut commands: Commands,
 ) {
-    if !(dirty.ui || selection.is_changed() || ui.is_changed()) {
+    if !(dirty.ui || selection.is_changed() || ui.is_changed() || foreign.is_changed()) {
         return;
     }
     dirty.ui = false;
@@ -457,68 +485,176 @@ pub fn rebuild_panels(
         });
     }
 
-    // --- advisors ---
+    // --- advisors and messages from other leaders ---
+    let rivals: Vec<&bevy_civ::ai::Civ> = civs.players.iter().filter(|c| !c.is_human && !foreign.gone.contains(&c.id)).collect();
+    let known: Vec<&bevy_civ::ai::Civ> = rivals.iter().copied().filter(|c| foreign.met.contains(&c.id)).collect();
+    if ui.modal == Some(Modal::Diplomacy) && !ui.diplo_target.is_some_and(|t| known.iter().any(|c| c.id == t)) {
+        let first = known.first().map(|c| c.id);
+        if ui.diplo_target != first {
+            ui.diplo_target = first;
+        }
+    }
     if let Ok((root, mut node)) = modal_root.get_single_mut() {
-        node.display = if ui.modal.is_some() { Display::Flex } else { Display::None };
+        node.display = if ui.modal.is_some() || foreign.offer.is_some() { Display::Flex } else { Display::None };
         commands.entity(root).despawn_descendants().with_children(|p| {
-            let Some(modal) = ui.modal else { return };
-            p.spawn(panel(
-                &art.parchment,
-                Node { width: Val::Px(580.0), max_width: Val::Percent(94.0), padding: UiRect::all(Val::Px(26.0)), flex_direction: FlexDirection::Column, row_gap: Val::Px(10.0), ..default() },
-            ))
-            .with_children(|w| match modal {
-                Modal::Science => {
-                    w.spawn(label(&art.font_title, "Science Advisor", 26.0, INK));
-                    match tech.current {
-                        Some(current) => {
-                            let left = (current.cost().saturating_sub(tech.progress) as f32 / tech.science_per_turn.max(1) as f32).ceil();
-                            w.spawn(label(&art.font_bold, format!("Researching {}  -  {}/{} beakers, about {} turns", current.name(), tech.progress, current.cost(), left), 16.0, INK));
-                            bar(w, tech.progress as f32 / current.cost() as f32, Color::srgb(0.25, 0.6, 0.9));
-                        }
-                        None => {
-                            w.spawn(label(&art.font_bold, "Our scholars are idle. Choose a field of study.", 16.0, INK));
-                        }
+            let window = |width: f32| {
+                panel(
+                    &art.parchment,
+                    Node { width: Val::Px(width), max_width: Val::Percent(96.0), padding: UiRect::all(Val::Px(26.0)), flex_direction: FlexDirection::Column, row_gap: Val::Px(10.0), ..default() },
+                )
+            };
+            // A waiting proposal takes priority over the advisors.
+            if let Some(offer) = &foreign.offer {
+                let Some(civ) = civs.players.iter().find(|c| c.id == offer.from) else { return };
+                p.spawn(window(560.0)).with_children(|w| {
+                    w.spawn(Node { align_items: AlignItems::Center, column_gap: Val::Px(16.0), ..default() }).with_children(|r| {
+                        r.spawn(portrait(art, civ.portrait, 104.0));
+                        r.spawn(column(6.0)).with_children(|c| {
+                            c.spawn(label(&art.font_title, format!("{} of {}", civ.leader, civ.name), 22.0, INK));
+                            c.spawn(label(&art.font_bold, format!("\"{}\"", offer.text), 17.0, INK_SOFT));
+                        });
+                    });
+                    let detail = match &offer.kind {
+                        OfferKind::Tribute(amount) => format!("They demand {amount} gold. We have {}.", state.gold),
+                        OfferKind::TechSwap { give, get } => format!("We would learn {} and teach them {}.", get.name(), give.name()),
+                        OfferKind::JoinWar(target) => format!("Accepting means declaring war on {}.", civs.players.iter().find(|c| c.id == *target).map(|c| c.name.as_str()).unwrap_or("them")),
+                        OfferKind::Peace => "Accepting ends the war.".to_string(),
+                        OfferKind::Notice => String::new(),
+                    };
+                    if !detail.is_empty() {
+                        w.spawn(label(&art.font_body, detail, 15.0, INK));
                     }
-                    w.spawn(label(&art.font_title, "Choose research", 16.0, INK_SOFT));
-                    w.spawn(row(6.0)).with_children(|r| {
-                        for t in Tech::ALL.into_iter().filter(|t| tech.can_research(*t)) {
-                            let tint = if tech.current == Some(t) { GREEN } else { BRONZE };
-                            button(r, art, format!("{} ({})", t.name(), t.cost()), Command::Game(Action::Research(t)), tint, 14.0);
+                    w.spawn(row(8.0)).with_children(|r| {
+                        if offer.kind == OfferKind::Notice {
+                            button(r, art, "Very well", Command::Game(Action::AnswerOffer(true)), BRONZE, 15.0);
+                        } else {
+                            button(r, art, "Accept", Command::Game(Action::AnswerOffer(true)), GREEN, 15.0);
+                            button(r, art, "Refuse", Command::Game(Action::AnswerOffer(false)), RED, 15.0);
                         }
                     });
-                    let known: Vec<&str> = Tech::ALL.iter().filter(|t| tech.researched.contains(t)).map(|t| t.name()).collect();
-                    w.spawn(label(&art.font_body, format!("Known: {}", if known.is_empty() { "nothing yet".into() } else { known.join(", ") }), 15.0, INK_SOFT));
-                    w.spawn(row(6.0)).with_children(|r| button(r, art, "Close (Esc)", Command::CloseModal, BRONZE, 14.0));
-                }
-                Modal::Diplomacy => {
-                    w.spawn(label(&art.font_title, "Foreign Advisor", 26.0, INK));
-                    w.spawn(label(&art.font_body, format!("We are governed as a {}.", state.government.name()), 15.0, INK_SOFT));
-                    for civ in civs.players.iter().filter(|c| !c.is_human) {
-                        let treaty = diplomacy.get_treaty(PLAYER, civ.id);
-                        let attitude = diplomacy.get_attitude(PLAYER, civ.id);
-                        let mood = match attitude {
-                            i32::MIN..=-20 => "hostile",
-                            -19..=-1 => "wary",
-                            0..=14 => "neutral",
-                            _ => "friendly",
-                        };
-                        w.spawn(Node { align_items: AlignItems::Center, column_gap: Val::Px(8.0), ..default() }).with_children(|r| {
-                            r.spawn((Node { width: Val::Px(16.0), height: Val::Px(16.0), ..default() }, BackgroundColor(owner_color(civ.id)), BorderRadius::all(Val::Px(8.0))));
-                            r.spawn(label(&art.font_bold, format!("{}  -  {mood} ({attitude}), treaty: {:?}", civ.name.replace("AI ", ""), treaty), 16.0, INK));
-                        });
+                });
+                return;
+            }
+            let Some(modal) = ui.modal else { return };
+            match modal {
+                Modal::Science => {
+                    p.spawn(window(580.0)).with_children(|w| {
+                        w.spawn(label(&art.font_title, "Science Advisor", 26.0, INK));
+                        match tech.current {
+                            Some(current) => {
+                                let cost = tech.cost_of(current);
+                                let left = (cost.saturating_sub(tech.progress) as f32 / tech.science_per_turn.max(1) as f32).ceil();
+                                w.spawn(label(&art.font_bold, format!("Researching {}  -  {}/{} beakers, about {} turns", current.name(), tech.progress, cost, left), 16.0, INK));
+                                bar(w, tech.progress as f32 / cost as f32, Color::srgb(0.25, 0.6, 0.9));
+                            }
+                            None => {
+                                w.spawn(label(&art.font_bold, "Our scholars are idle. Choose a field of study.", 16.0, INK));
+                            }
+                        }
+                        w.spawn(label(&art.font_title, "Choose research", 16.0, INK_SOFT));
                         w.spawn(row(6.0)).with_children(|r| {
-                            for (text, t) in [("Offer peace", Treaty::Peace), ("Propose alliance", Treaty::Alliance), ("Declare war", Treaty::War)] {
-                                let tint = if treaty == t { GREEN } else { BRONZE };
-                                button(r, art, text, Command::Game(Action::SetTreaty(civ.id, t)), tint, 14.0);
+                            for t in Tech::ALL.into_iter().filter(|t| tech.can_research(*t)) {
+                                let tint = if tech.current == Some(t) { GREEN } else { BRONZE };
+                                button(r, art, format!("{} ({})", t.name(), tech.cost_of(t)), Command::Game(Action::Research(t)), tint, 14.0);
                             }
                         });
-                    }
-                    w.spawn(row(6.0)).with_children(|r| {
-                        button(r, art, "Link cities by trade (T)", Command::Game(Action::TradeRoute), BRONZE, 14.0);
-                        button(r, art, "Close (Esc)", Command::CloseModal, BRONZE, 14.0);
+                        let learned: Vec<&str> = Tech::ALL.iter().filter(|t| tech.researched.contains(t)).map(|t| t.name()).collect();
+                        w.spawn(label(&art.font_body, format!("Known: {}", if learned.is_empty() { "nothing yet".into() } else { learned.join(", ") }), 15.0, INK_SOFT));
+                        w.spawn(row(6.0)).with_children(|r| button(r, art, "Close (Esc)", Command::CloseModal, BRONZE, 14.0));
                     });
                 }
-            });
+                Modal::Diplomacy => {
+                    p.spawn(window(760.0)).with_children(|w| {
+                        w.spawn(label(&art.font_title, "Foreign Advisor", 26.0, INK));
+                        let unknown = rivals.len() - known.len();
+                        if known.is_empty() {
+                            w.spawn(label(&art.font_bold, "We have not met any other people yet. Explore to find them.", 16.0, INK));
+                        }
+                        // Everyone we know, as a strip of faces.
+                        w.spawn(row(6.0)).with_children(|r| {
+                            for civ in &known {
+                                let at_war = diplomacy.get_treaty(PLAYER, civ.id) == Treaty::War;
+                                let tint = if ui.diplo_target == Some(civ.id) { GREEN } else if at_war { RED } else { BRONZE };
+                                r.spawn((
+                                    Button,
+                                    Node { padding: UiRect::axes(Val::Px(8.0), Val::Px(5.0)), align_items: AlignItems::Center, column_gap: Val::Px(6.0), ..default() },
+                                    ImageNode { image: art.button.clone(), image_mode: sliced(14.0), color: tint, ..default() },
+                                    ButtonTint(tint),
+                                    ButtonCommand(Command::SelectCiv(civ.id)),
+                                ))
+                                .with_children(|b| {
+                                    b.spawn(portrait(art, civ.portrait, 34.0));
+                                    b.spawn(label(&art.font_bold, civ.name.trim_start_matches("the ").to_string(), 14.0, INK));
+                                });
+                            }
+                        });
+                        if unknown > 0 {
+                            w.spawn(label(&art.font_body, format!("{unknown} other peoples are still unknown to us."), 14.0, INK_SOFT));
+                        }
+                        if let Some(civ) = ui.diplo_target.and_then(|t| known.iter().find(|c| c.id == t)) {
+                            let treaty = diplomacy.get_treaty(PLAYER, civ.id);
+                            let attitude = diplomacy.get_attitude(PLAYER, civ.id);
+                            let age = foreign.treaty_age(PLAYER, civ.id, state.turn);
+                            let ours = foreign.strength.get(&PLAYER).copied().unwrap_or(1.0).max(1.0);
+                            let theirs = foreign.strength.get(&civ.id).copied().unwrap_or(1.0).max(1.0);
+                            let power = match theirs / ours {
+                                r if r > 1.8 => "far stronger than us",
+                                r if r > 1.2 => "stronger than us",
+                                r if r > 0.8 => "our equal in arms",
+                                r if r > 0.5 => "weaker than us",
+                                _ => "far weaker than us",
+                            };
+                            let standing = match treaty {
+                                Treaty::War => format!("At war for {age} turns"),
+                                Treaty::Peace => format!("Peace treaty ({age} turns)"),
+                                Treaty::Alliance => format!("Allied ({age} turns)"),
+                                Treaty::None => "No treaty".to_string(),
+                            };
+                            let pact = if foreign.pacts.contains(&civ.id) { "  -  trade agreement" } else { "" };
+                            w.spawn(Node { align_items: AlignItems::Center, column_gap: Val::Px(16.0), ..default() }).with_children(|r| {
+                                r.spawn(portrait(art, civ.portrait, 104.0));
+                                r.spawn(Node { flex_direction: FlexDirection::Column, row_gap: Val::Px(5.0), flex_grow: 1.0, ..default() }).with_children(|c| {
+                                    c.spawn(label(&art.font_title, format!("{} of {}", civ.leader, civ.name), 22.0, INK));
+                                    c.spawn(label(&art.font_bold, format!("{} ({:+})  -  {standing}{pact}", foreign::mood(attitude), attitude), 16.0, INK));
+                                    bar(c, (attitude + 100) as f32 / 200.0, if attitude < -14 { Color::srgb(0.8, 0.25, 0.2) } else if attitude < 15 { Color::srgb(0.85, 0.7, 0.25) } else { Color::srgb(0.35, 0.7, 0.3) });
+                                    c.spawn(label(&art.font_body, format!("{} gold in their treasury; {power}.", civ.gold), 15.0, INK_SOFT));
+                                    if let Some(words) = foreign.reply.get(&civ.id) {
+                                        c.spawn(label(&art.font_bold, format!("\"{words}\""), 16.0, INK_SOFT));
+                                    }
+                                });
+                            });
+                            let feuds: Vec<&str> = known.iter().filter(|o| o.id != civ.id && diplomacy.get_treaty(civ.id, o.id) == Treaty::War).map(|o| o.name.as_str()).collect();
+                            if !feuds.is_empty() {
+                                w.spawn(label(&art.font_body, format!("They are at war with {}.", feuds.join(", ")), 15.0, INK_SOFT));
+                            }
+                            w.spawn(row(6.0)).with_children(|r| {
+                                let ask = |act: DiploAct| Command::Game(Action::Diplo(civ.id, act));
+                                if treaty == Treaty::War {
+                                    button(r, art, "Propose peace", ask(DiploAct::Peace), GREEN, 14.0);
+                                } else {
+                                    if treaty != Treaty::Alliance {
+                                        button(r, art, "Propose alliance", ask(DiploAct::Alliance), BRONZE, 14.0);
+                                    }
+                                    if treaty == Treaty::None {
+                                        button(r, art, "Sign peace treaty", ask(DiploAct::Peace), BRONZE, 14.0);
+                                    }
+                                    if !foreign.pacts.contains(&civ.id) {
+                                        button(r, art, "Trade agreement", ask(DiploAct::TradePact), BRONZE, 14.0);
+                                    }
+                                    button(r, art, "Exchange technology", ask(DiploAct::TechTrade), BRONZE, 14.0);
+                                    button(r, art, "Declare war", ask(DiploAct::War), RED, 14.0);
+                                }
+                                button(r, art, format!("Gift {} gold", foreign::GIFT), ask(DiploAct::Gift), BRONZE, 14.0);
+                                button(r, art, "Demand tribute", ask(DiploAct::Demand), BRONZE, 14.0);
+                            });
+                        }
+                        w.spawn(row(6.0)).with_children(|r| {
+                            button(r, art, "Link our cities by trade (T)", Command::Game(Action::TradeRoute), BRONZE, 14.0);
+                            button(r, art, "Close (Esc)", Command::CloseModal, BRONZE, 14.0);
+                        });
+                    });
+                }
+            }
         });
     }
 }
@@ -533,10 +669,11 @@ pub fn update_top_bar(
     let population: u32 = cities.iter().filter(|c| c.owner == PLAYER).map(|c| c.population).sum();
     for (kind, mut text) in &mut stats {
         let value = match kind {
-            StatText::Turn => format!("Turn {}  -  {}", state.turn, year_label(state.turn)),
+            StatText::Title => state.title.to_uppercase(),
+            StatText::Turn => format!("Turn {}  -  {}", state.turn, year_label(&state)),
             StatText::Gold => format!("{} ({:+})", state.gold, state.gold_per_turn),
             StatText::Science => match tech.current {
-                Some(t) => format!("{} {}/{}", t.name(), tech.progress, t.cost()),
+                Some(t) => format!("{} {}/{}", t.name(), tech.progress, tech.cost_of(t)),
                 None => "No research".into(),
             },
             StatText::Population => population.to_string(),
@@ -601,6 +738,9 @@ pub fn button_actions(
     buttons: Query<(&Interaction, &ButtonCommand), Changed<Interaction>>,
     mut actions: EventWriter<Action>,
     mut ui: ResMut<UiState>,
+    mut menu: ResMut<MenuState>,
+    mut next: ResMut<NextState<AppState>>,
+    mut commands: Commands,
 ) {
     for (interaction, command) in &buttons {
         if *interaction != Interaction::Pressed {
@@ -612,8 +752,115 @@ pub fn button_actions(
             }
             Command::Toggle(modal) => ui.modal = if ui.modal == Some(*modal) { None } else { Some(*modal) },
             Command::CloseModal => ui.modal = None,
+            Command::SelectCiv(civ) => ui.diplo_target = Some(*civ),
+            Command::PickScenario(index) => menu.scenario = Some(*index),
+            Command::BackToScenarios => menu.scenario = None,
+            Command::PickCiv(civ) => {
+                if let Some(scenario) = menu.scenario.and_then(|i| menu.catalog.get(i)) {
+                    commands.insert_resource(NewGame { scenario: scenario.clone(), civ: *civ });
+                    next.set(AppState::Playing);
+                }
+            }
+            Command::QuitToMenu => {
+                ui.modal = None;
+                ui.diplo_target = None;
+                menu.scenario = None;
+                next.set(AppState::Menu);
+            }
         }
     }
+}
+
+// ---- start menu --------------------------------------------------------------------------------
+
+pub fn setup_menu(mut commands: Commands, mut menu: ResMut<MenuState>) {
+    menu.catalog = scenario::catalog();
+    commands.spawn((
+        MenuRoot,
+        Node {
+            position_type: PositionType::Absolute,
+            left: Val::Px(0.0),
+            right: Val::Px(0.0),
+            top: Val::Px(0.0),
+            bottom: Val::Px(0.0),
+            justify_content: JustifyContent::Center,
+            align_items: AlignItems::Center,
+            ..default()
+        },
+        BackgroundColor(Color::srgb(0.07, 0.065, 0.055)),
+        GlobalZIndex(50),
+        Interaction::None,
+        FocusPolicy::Block,
+    ));
+}
+
+pub fn rebuild_menu(
+    menu: Res<MenuState>,
+    state: Res<State<AppState>>,
+    art: Res<Art>,
+    mut root: Query<(Entity, &mut Node), With<MenuRoot>>,
+    mut commands: Commands,
+) {
+    if !(menu.is_changed() || state.is_changed()) {
+        return;
+    }
+    let Ok((root, mut node)) = root.get_single_mut() else { return };
+    node.display = if *state.get() == AppState::Menu { Display::Flex } else { Display::None };
+    let art = &*art;
+    commands.entity(root).despawn_descendants().with_children(|p| {
+        if *state.get() != AppState::Menu {
+            return;
+        }
+        p.spawn(panel(
+            &art.parchment,
+            Node { width: Val::Px(760.0), max_width: Val::Percent(96.0), padding: UiRect::all(Val::Px(30.0)), flex_direction: FlexDirection::Column, row_gap: Val::Px(12.0), ..default() },
+        ))
+        .with_children(|w| {
+            w.spawn(label(&art.font_title, "BEVY CIV", 46.0, INK));
+            match menu.scenario.and_then(|i| menu.catalog.get(i)) {
+                None => {
+                    w.spawn(label(&art.font_body, "Choose a world to rule.", 18.0, INK_SOFT));
+                    for (index, scenario) in menu.catalog.iter().enumerate() {
+                        w.spawn((
+                            Button,
+                            Node { padding: UiRect::axes(Val::Px(18.0), Val::Px(12.0)), flex_direction: FlexDirection::Column, row_gap: Val::Px(4.0), ..default() },
+                            ImageNode { image: art.button.clone(), image_mode: sliced(14.0), color: BRONZE, ..default() },
+                            ButtonTint(BRONZE),
+                            ButtonCommand(Command::PickScenario(index)),
+                        ))
+                        .with_children(|b| {
+                            b.spawn(label(&art.font_title, scenario.name.clone(), 21.0, INK));
+                            b.spawn(label(&art.font_body, scenario.blurb.clone(), 15.0, INK));
+                        });
+                    }
+                }
+                Some(scenario) => {
+                    w.spawn(label(&art.font_title, scenario.name.clone(), 24.0, INK));
+                    w.spawn(label(&art.font_body, scenario.blurb.clone(), 16.0, INK_SOFT));
+                    w.spawn(label(&art.font_title, "Choose your people", 17.0, INK_SOFT));
+                    w.spawn(row(8.0)).with_children(|r| {
+                        for (index, civ) in scenario.civs.iter().enumerate() {
+                            r.spawn((
+                                Button,
+                                Node { width: Val::Px(220.0), padding: UiRect::axes(Val::Px(10.0), Val::Px(7.0)), align_items: AlignItems::Center, column_gap: Val::Px(10.0), ..default() },
+                                ImageNode { image: art.button.clone(), image_mode: sliced(14.0), color: BRONZE, ..default() },
+                                ButtonTint(BRONZE),
+                                ButtonCommand(Command::PickCiv(index)),
+                            ))
+                            .with_children(|b| {
+                                b.spawn(portrait(art, civ.portrait, 46.0));
+                                b.spawn(column(1.0)).with_children(|c| {
+                                    c.spawn(label(&art.font_bold, civ.name.trim_start_matches("the ").to_string(), 16.0, INK));
+                                    c.spawn(label(&art.font_body, civ.leader.clone(), 14.0, INK));
+                                });
+                            });
+                        }
+                    });
+                    w.spawn(row(6.0)).with_children(|r| button(r, art, "Back", Command::BackToScenarios, BRONZE, 15.0));
+                }
+            }
+        });
+    });
 }
 
 pub fn button_visuals(mut buttons: Query<(&Interaction, &ButtonTint, &mut ImageNode), Changed<Interaction>>) {
@@ -627,6 +874,12 @@ pub fn button_visuals(mut buttons: Query<(&Interaction, &ButtonTint, &mut ImageN
 }
 
 // ---- minimap -----------------------------------------------------------------------------------
+
+/// World-to-minimap scale and the world point shown at the minimap's centre.
+fn minimap_view(map: &MapData) -> (f32, Vec2) {
+    let span = (map.max - map.min + Vec2::splat(120.0)).max(Vec2::splat(1.0));
+    ((MM as f32 / span.x).min(MM as f32 / span.y), (map.min + map.max) / 2.0)
+}
 
 fn minimap_color(terrain: Terrain) -> [u8; 3] {
     match terrain {
@@ -665,7 +918,9 @@ pub fn update_minimap(
     for px in data.chunks_exact_mut(4) {
         px.copy_from_slice(&[14, 12, 10, 255]);
     }
-    let to_px = |world: Vec2| ((size as f32 / 2.0 + world.x * MM_SCALE) as i32, (size as f32 / 2.0 - world.y * MM_SCALE) as i32);
+    let (scale, centre) = minimap_view(&map);
+    let to_px = |world: Vec2| ((size as f32 / 2.0 + (world.x - centre.x) * scale) as i32, (size as f32 / 2.0 - (world.y - centre.y) * scale) as i32);
+    let (tile_w, tile_h) = (((72.0 * scale) / 2.0).ceil() as i32, ((83.0 * scale) / 2.0).ceil() as i32);
     let mut fill = |cx: i32, cy: i32, half_w: i32, half_h: i32, color: [u8; 3]| {
         for y in (cy - half_h).max(0)..=(cy + half_h).min(size - 1) {
             for x in (cx - half_w).max(0)..=(cx + half_w).min(size - 1) {
@@ -680,7 +935,7 @@ pub fn update_minimap(
         if fog.explored.contains(&tile.coord) && !fog.visible.contains(&tile.coord) {
             color = color.map(|c| (c as f32 * 0.6) as u8);
         }
-        fill(x, y, 3, 4, color);
+        fill(x, y, tile_w, tile_h, color);
     }
     let rgb = |owner: u32| {
         let c = owner_color(owner).to_srgba();
@@ -692,8 +947,8 @@ pub fn update_minimap(
     }
     for city in cities.iter().filter(|c| fog.explored.contains(&c.position)) {
         let (x, y) = to_px(map.layout.hex_to_world_pos(city.position));
-        fill(x, y, 4, 4, [255, 255, 255]);
-        fill(x, y, 3, 3, rgb(city.owner));
+        fill(x, y, tile_w + 2, tile_w + 2, [255, 255, 255]);
+        fill(x, y, tile_w + 1, tile_w + 1, rgb(city.owner));
     }
     // Outline of what the camera currently shows.
     if let (Ok((transform, projection)), Ok(window)) = (camera.get_single(), windows.get_single()) {
@@ -712,6 +967,7 @@ pub fn update_minimap(
 /// Clicking (or dragging on) the minimap moves the camera there.
 pub fn minimap_click(
     minimap: Query<(&Interaction, &RelativeCursorPosition), With<MinimapNode>>,
+    map: Res<MapData>,
     mut camera: Query<&mut Transform, With<Camera2d>>,
 ) {
     let (Ok((interaction, cursor)), Ok(mut transform)) = (minimap.get_single(), camera.get_single_mut()) else { return };
@@ -719,7 +975,8 @@ pub fn minimap_click(
         return;
     }
     if let Some(pos) = cursor.normalized {
-        let world = Vec2::new(pos.x - 0.5, 0.5 - pos.y) * MM as f32 / MM_SCALE;
+        let (scale, centre) = minimap_view(&map);
+        let world = centre + Vec2::new(pos.x - 0.5, 0.5 - pos.y) * MM as f32 / scale;
         transform.translation.x = world.x;
         transform.translation.y = world.y;
     }

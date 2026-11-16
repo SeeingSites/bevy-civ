@@ -31,6 +31,8 @@ pub struct Art {
     pub panel: Handle<Image>,
     pub parchment: Handle<Image>,
     pub button: Handle<Image>,
+    pub leaders: Handle<Image>,
+    pub leaders_layout: Handle<TextureAtlasLayout>,
     pub font_title: Handle<Font>,
     pub font_body: Handle<Font>,
     pub font_bold: Handle<Font>,
@@ -82,7 +84,7 @@ fn load_art(mut commands: Commands, assets: Res<AssetServer>, mut layouts: ResMu
         resources: assets.load("sprites/resources.png"),
         resources_layout: grid(96, 96, 5, 1),
         units: assets.load("sprites/units.png"),
-        units_layout: grid(128, 128, 4, 19),
+        units_layout: grid(128, 128, 4, 20),
         cities: assets.load("sprites/cities.png"),
         cities_layout: grid(192, 192, 4, 1),
         flag: assets.load("sprites/flag.png"),
@@ -94,6 +96,8 @@ fn load_art(mut commands: Commands, assets: Res<AssetServer>, mut layouts: ResMu
         panel: assets.load("sprites/panel.png"),
         parchment: assets.load("sprites/parchment.png"),
         button: assets.load("sprites/button.png"),
+        leaders: assets.load("sprites/leaders.png"),
+        leaders_layout: grid(128, 128, 17, 1),
         font_title: assets.load("fonts/Cinzel.ttf"),
         font_body: assets.load("fonts/AlegreyaSans-Medium.ttf"),
         font_bold: assets.load("fonts/AlegreyaSans-Bold.ttf"),
@@ -107,15 +111,24 @@ pub fn owner_color(owner: u32) -> Color {
         1 => Color::srgb(0.86, 0.2, 0.18),
         2 => Color::srgb(0.95, 0.76, 0.16),
         3 => Color::srgb(0.25, 0.75, 0.4),
+        4 => Color::srgb(0.62, 0.36, 0.86),
+        5 => Color::srgb(0.95, 0.5, 0.15),
+        6 => Color::srgb(0.2, 0.78, 0.8),
+        7 => Color::srgb(0.93, 0.45, 0.72),
+        8 => Color::srgb(0.55, 0.75, 0.2),
+        9 => Color::srgb(0.6, 0.42, 0.25),
+        10 => Color::srgb(0.85, 0.85, 0.9),
+        11 => Color::srgb(0.1, 0.4, 0.45),
         _ => Color::srgb(0.32, 0.3, 0.3),
     }
 }
 
+/// "Your", "Roman", "Barbarian": how an owner's units and cities are described.
 pub fn owner_name(owner: u32, civs: &bevy_civ::ai::Civilizations) -> String {
     match owner {
         crate::PLAYER => "Your".into(),
         crate::BARBARIANS => "Barbarian".into(),
-        id => civs.players.iter().find(|c| c.id == id).map(|c| c.name.replace("AI ", "")).unwrap_or_else(|| "Unknown".into()),
+        id => civs.players.iter().find(|c| c.id == id).map(|c| c.adjective.clone()).unwrap_or_else(|| "Unknown".into()),
     }
 }
 
@@ -123,16 +136,21 @@ pub struct ClientPlugin;
 
 impl Plugin for ClientPlugin {
     fn build(&self, app: &mut App) {
+        let playing = in_state(crate::AppState::Playing);
         app.init_resource::<map::Hovered>()
             .init_resource::<input::Pointer>()
             .init_resource::<ui::UiState>()
+            .init_resource::<ui::MenuState>()
             .add_systems(PreStartup, load_art)
-            .add_systems(Startup, (map::setup_map_view, ui::setup_ui))
+            .add_systems(Startup, (map::setup_map_view, ui::setup_ui, ui::setup_menu))
+            .add_systems(Update, (ui::button_actions, ui::rebuild_menu, ui::button_visuals, ui::fit_ui_scale).chain().before(GameLogic))
             .add_systems(
                 Update,
-                (input::pointer_input, input::keyboard_input, ui::button_actions, ui::minimap_click)
+                (input::pointer_input, input::keyboard_input, ui::minimap_click)
                     .chain()
-                    .before(GameLogic),
+                    .after(ui::button_actions)
+                    .before(GameLogic)
+                    .run_if(playing.clone()),
             )
             .add_systems(
                 Update,
@@ -153,12 +171,11 @@ impl Plugin for ClientPlugin {
                     ui::update_top_bar,
                     ui::update_tile_info,
                     ui::update_log,
-                    ui::button_visuals,
                     ui::update_minimap,
-                    ui::fit_ui_scale,
                 )
                     .chain()
-                    .after(GameLogic),
+                    .after(GameLogic)
+                    .run_if(playing),
             );
     }
 }

@@ -14,16 +14,18 @@ pub fn terrain_cost(terrain: Terrain) -> Option<u32> {
 }
 
 /// Find a path from start to end using A*, respecting terrain costs.
+/// With `sail`, water can be crossed (slowly); otherwise it is impassable.
 /// Returns the path (including start) or None if unreachable.
 pub fn find_path(
     start: Hex,
     end: Hex,
     tiles: impl Iterator<Item = (Hex, Terrain)>,
+    sail: bool,
 ) -> Option<Vec<Hex>> {
     let tile_map: std::collections::HashMap<Hex, Terrain> = tiles.collect();
 
     a_star(start, end, |_, to| {
-        tile_map.get(&to).and_then(|t| terrain_cost(*t))
+        tile_map.get(&to).and_then(|t| if sail && *t == Terrain::Water { Some(3) } else { terrain_cost(*t) })
     })
 }
 
