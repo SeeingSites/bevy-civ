@@ -48,6 +48,8 @@ pub enum Modal {
     Trade,
     Empire,
     Help,
+    /// Save, sound, and leaving the game.
+    Game,
 }
 
 /// Pages of the empire advisor.
@@ -216,6 +218,8 @@ fn building_effect(building: &Building) -> String {
 pub struct MenuState {
     pub catalog: Vec<Scenario>,
     pub scenario: Option<usize>,
+    /// A message for the player (e.g. why a file could not be loaded).
+    pub notice: Option<String>,
 }
 
 #[derive(Clone)]
@@ -233,6 +237,10 @@ pub enum Command {
     EmpireTab(EmpireTab),
     HelpTopic(HelpTopic),
     ToggleGroupMove,
+    /// Start menu: carry on from the automatic save.
+    Continue,
+    /// Start menu: load a saved game file.
+    LoadFile,
 }
 
 #[derive(Component)]
@@ -501,11 +509,7 @@ pub fn setup_ui(mut commands: Commands, art: Res<Art>, mut images: ResMut<Assets
             button(bar, &art, "Trade (G)", Command::Toggle(Modal::Trade), BRONZE, 14.0);
             button(bar, &art, "Empire (Y)", Command::Toggle(Modal::Empire), BRONZE, 14.0);
             button(bar, &art, "Help (F1)", Command::Toggle(Modal::Help), BRONZE, 14.0);
-            if SoundSettings::AVAILABLE {
-                sound_button(bar, &art);
-            }
-            button(bar, &art, "Save", Command::Game(Action::Save), BRONZE, 14.0);
-            button(bar, &art, "Menu", Command::QuitToMenu, BRONZE, 14.0);
+            button(bar, &art, "Game", Command::Toggle(Modal::Game), BRONZE, 14.0);
         });
 
     // Message log stacked on the unit panel (bottom left)
@@ -1201,6 +1205,21 @@ pub fn rebuild_panels(
                         w.spawn(row(6.0)).with_children(|r| button(r, art, "Close (Esc)", Command::CloseModal, BRONZE, 14.0));
                     });
                 }
+                Modal::Game => {
+                    p.spawn(window(420.0)).with_children(|w| {
+                        w.spawn(label(&art.font_title, "Game", 26.0, INK));
+                        w.spawn(label(&art.font_body, format!("Turn {}. The game also saves itself at the end of every turn; Continue on the start menu picks it up.", state.turn), 14.0, INK_SOFT));
+                        w.spawn(Node { flex_direction: FlexDirection::Column, row_gap: Val::Px(8.0), ..default() }).with_children(|c| {
+                            c.spawn(Node::default()).with_children(|r| button(r, art, "Save to a file (F2)", Command::Game(Action::Save), GREEN, 15.0));
+                            if SoundSettings::AVAILABLE {
+                                c.spawn(Node::default()).with_children(|r| sound_button(r, art));
+                            }
+                            c.spawn(Node::default()).with_children(|r| button(r, art, "Encyclopedia (F1)", Command::Toggle(Modal::Help), BRONZE, 15.0));
+                            c.spawn(Node::default()).with_children(|r| button(r, art, "Quit to the start menu", Command::QuitToMenu, Color::srgb(0.9, 0.6, 0.5), 15.0));
+                        });
+                        w.spawn(row(6.0)).with_children(|r| button(r, art, "Close (Esc)", Command::CloseModal, BRONZE, 14.0));
+                    });
+                }
                 Modal::Help => {
                     p.spawn(window(800.0)).with_children(|w| {
                         w.spawn(label(&art.font_title, "Encyclopedia", 26.0, INK));
@@ -1602,6 +1621,18 @@ pub fn button_actions(
             Command::SelectCiv(civ) => ui.diplo_target = Some(*civ),
             Command::PickScenario(index) => menu.scenario = Some(*index),
             Command::BackToScenarios => menu.scenario = None,
+            Command::Continue => match crate::savegame::autosave().map(|json| crate::savegame::SaveGame::parse(&json)) {
+                Some(Ok(game)) => {
+                    commands.insert_resource(crate::savegame::PendingLoad(game));
+                    next.set(AppState::Playing);
+                }
+                Some(Err(e)) => menu.notice = Some(e),
+                None => menu.notice = Some("There is no saved game to continue.".into()),
+            },
+            Command::LoadFile => {
+                crate::savegame::pick_file();
+                menu.notice = Some("Choose a saved game file (a .json file saved from Bevy Civ)...".into());
+            }
             Command::PickCiv(civ) => {
                 if let Some(scenario) = menu.scenario.and_then(|i| menu.catalog.get(i)) {
                     commands.insert_resource(NewGame { scenario: scenario.clone(), civ: *civ });
@@ -1619,6 +1650,19 @@ pub fn button_actions(
 }
 
 // ---- start menu --------------------------------------------------------------------------------
+
+/// Picks up a saved game file the player chose and starts it.
+pub fn poll_import(mut menu: ResMut<MenuState>, mut next: ResMut<NextState<AppState>>, mut commands: Commands) {
+    let Some(json) = crate::savegame::take_import() else { return };
+    match crate::savegame::SaveGame::parse(&json) {
+        Ok(game) => {
+            menu.notice = None;
+            commands.insert_resource(crate::savegame::PendingLoad(game));
+            next.set(AppState::Playing);
+        }
+        Err(e) => menu.notice = Some(e),
+    }
+}
 
 pub fn setup_menu(mut commands: Commands, mut menu: ResMut<MenuState>) {
     menu.catalog = scenario::catalog();
@@ -1666,7 +1710,17 @@ pub fn rebuild_menu(
             w.spawn(label(&art.font_title, "BEVY CIV", 46.0, INK));
             match menu.scenario.and_then(|i| menu.catalog.get(i)) {
                 None => {
-                    w.spawn(label(&art.font_body, "Choose a world to rule.", 18.0, INK_SOFT));
+                    // Carry on, or load a game saved as a file (yours, or one someone sent you).
+                    w.spawn(row(8.0)).with_children(|r| {
+                        if crate::savegame::autosave().is_some() {
+                            button(r, art, "Continue your last game", Command::Continue, GREEN, 16.0);
+                        }
+                        button(r, art, "Load a saved game file...", Command::LoadFile, BRONZE, 16.0);
+                    });
+                    if let Some(notice) = &menu.notice {
+                        w.spawn(label(&art.font_bold, notice.clone(), 15.0, INK));
+                    }
+                    w.spawn(label(&art.font_body, "Or choose a world to rule.", 18.0, INK_SOFT));
                     for (index, scenario) in menu.catalog.iter().enumerate() {
                         w.spawn((
                             Button,

@@ -2,7 +2,7 @@ use bevy::prelude::*;
 use hexx::Hex;
 use rand::Rng;
 
-#[derive(Component)]
+#[derive(Component, Clone, serde::Serialize, serde::Deserialize)]
 pub struct HexTile {
     pub coord: Hex,
     pub terrain: Terrain,
@@ -10,7 +10,7 @@ pub struct HexTile {
     pub resource: Option<Resource>,
 }
 
-#[derive(Clone, Copy, PartialEq, Debug)]
+#[derive(Clone, Copy, PartialEq, Debug, serde::Serialize, serde::Deserialize)]
 pub enum Terrain {
     Water,
     Grassland,
@@ -21,7 +21,7 @@ pub enum Terrain {
     Forest,
 }
 
-#[derive(Clone, Copy, PartialEq, Debug)]
+#[derive(Clone, Copy, PartialEq, Debug, serde::Serialize, serde::Deserialize)]
 pub enum Improvement {
     Farm,
     Mine,
@@ -44,7 +44,7 @@ pub enum ResourceKind {
     Bonus,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, serde::Serialize, serde::Deserialize)]
 pub enum Resource {
     Horses,
     Iron,

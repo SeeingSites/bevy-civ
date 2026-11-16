@@ -8,12 +8,12 @@ use crate::pathfinding::{find_path, find_route, land_step, road_network, zoc_blo
 use crate::unit::{Domain, AIR_RANGE};
 use rand::Rng;
 
-#[derive(Resource)]
+#[derive(Resource, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Civilizations {
     pub players: Vec<Civ>,
 }
 
-#[derive(Clone)]
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub struct Civ {
     pub id: u32,
     pub name: String,

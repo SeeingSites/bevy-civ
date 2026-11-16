@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum Building {
     Granary,
     Barracks,
@@ -256,7 +256,7 @@ impl Building {
 }
 
 /// Which wonders stand in the world, and where: each can be built only once.
-#[derive(Resource, Default, Clone, Debug)]
+#[derive(Resource, Default, Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct WorldWonders {
     pub built: std::collections::HashMap<Building, (u32, String)>,
 }

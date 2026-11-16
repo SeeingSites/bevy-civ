@@ -21,7 +21,6 @@ use bevy_civ::fog::FogOfWar;
 use bevy_civ::government::Government;
 use bevy_civ::pathfinding::{find_path, find_route, land_step, road_network, turns_along, Road, StepCost, Travel};
 use bevy_civ::unit::{Domain, AIR_RANGE};
-use bevy_civ::save::{save_game, SaveData};
 use bevy_civ::score::Score;
 use bevy_civ::space::SpaceRace;
 use bevy_civ::tech::{Tech, TechState};
@@ -32,6 +31,7 @@ use bevy_civ::unit::{spawn_unit, Unit, UnitType};
 mod client;
 mod foreign;
 mod governor;
+mod savegame;
 mod scenario;
 mod supply;
 
@@ -85,7 +85,7 @@ pub struct MapData {
     pub max: Vec2,
 }
 
-#[derive(Resource)]
+#[derive(Resource, Clone, serde::Serialize, serde::Deserialize)]
 pub struct GameState {
     pub turn: u32,
     pub gold: i32,
@@ -428,7 +428,15 @@ fn main() {
         .add_event::<MapClick>()
         .add_event::<Burst>()
         .add_plugins(client::ClientPlugin)
-        .add_systems(OnEnter(AppState::Playing), setup_world)
+        .add_event::<savegame::SaveRequest>()
+        .add_systems(
+            OnEnter(AppState::Playing),
+            (
+                setup_world.run_if(not(resource_exists::<savegame::PendingLoad>)),
+                savegame::restore_world.run_if(resource_exists::<savegame::PendingLoad>),
+            ),
+        )
+        .add_systems(Update, savegame::write_save.after(GameLogic).run_if(in_state(AppState::Playing)))
         .add_systems(OnExit(AppState::Playing), cleanup_world)
         .add_systems(
             Update,
@@ -1156,7 +1164,7 @@ fn apply_actions(
     mut log: ResMut<GameLog>,
     mut dirty: ResMut<Dirty>,
     (mut cycle, supplies, mut map, mut end_turn, mut focus): (ResMut<Cycle>, Res<Supplies>, ResMut<MapData>, EventWriter<EndTurnNow>, EventWriter<Focus>),
-    (unit_entities, mut sounds, mut wonders, mut great, mut spies, homes, walled, mut taken, automated, rivers): (
+    (unit_entities, mut sounds, mut wonders, mut great, mut spies, homes, walled, mut taken, automated, rivers, mut saves): (
         Query<Entity, With<Unit>>,
         EventWriter<Sfx>,
         ResMut<WorldWonders>,
@@ -1167,6 +1175,7 @@ fn apply_actions(
         ResMut<JustCaptured>,
         Query<Entity, With<Automated>>,
         Res<Rivers>,
+        EventWriter<savegame::SaveRequest>,
     ),
     mut commands: Commands,
 ) {
@@ -1684,17 +1693,7 @@ fn apply_actions(
             }
 
             Action::Save => {
-                let saved = save_game(&SaveData {
-                    turn: state.turn,
-                    gold: state.gold,
-                    science: tech.science_per_turn as i32,
-                    government: state.government.name().to_string(),
-                    score: state.score.total,
-                    player_cities: cities.iter().filter(|c| c.owner == PLAYER).count() as u32,
-                    researched_techs: tech.researched.len() as u32,
-                    mode: "single".into(),
-                });
-                log.push(if saved { "Game saved." } else { "The game could not be saved." });
+                saves.send(savegame::SaveRequest { download: true });
             }
             Action::SetProduction(item) => {
                 let Some(mut city) = selection.city.and_then(|e| cities.get_mut(e).ok()) else { continue };
@@ -1753,13 +1752,14 @@ fn process_turn(
     (mut space, mut wonders, mut great, mut spies): (ResMut<SpaceRace>, ResMut<WorldWonders>, ResMut<GreatPeople>, ResMut<Espionage>),
     (mut log, mut dirty, mut cycle): (ResMut<GameLog>, ResMut<Dirty>, ResMut<Cycle>),
     mut bursts: EventWriter<Burst>,
-    (homes, mut history, mut culture, mut golden, mut taken, rivers): (
+    (homes, mut history, mut culture, mut golden, mut taken, rivers, mut saves): (
         Query<&HomeCity>,
         ResMut<History>,
         ResMut<CultureLedger>,
         ResMut<GoldenAges>,
         ResMut<JustCaptured>,
         Res<Rivers>,
+        EventWriter<savegame::SaveRequest>,
     ),
     mut commands: Commands,
 ) {
@@ -2664,6 +2664,8 @@ fn process_turn(
         }
     }
 
+    // The automatic save, every turn.
+    saves.send(savegame::SaveRequest { download: false });
     state.score = Score::calculate(cities.iter().map(|(c, b, _)| (c, b)), &tech);
     history.scores.push((state.turn, PLAYER, state.score.total));
     for civ in civs.players.iter().filter(|c| !c.is_human) {
@@ -2813,6 +2815,7 @@ mod tests {
             .add_event::<EndTurnNow>()
             .add_event::<Sfx>()
             .add_event::<Focus>()
+            .add_event::<savegame::SaveRequest>()
             .insert_resource(plain_map())
             .insert_resource(Dirty { map: false, ui: false })
             .init_resource::<Selection>()

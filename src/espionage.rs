@@ -13,7 +13,7 @@ use hexx::Hex;
 use crate::tech::{Tech, TechState};
 
 /// What a diplomat can do at a foreign city.
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, serde::Serialize, serde::Deserialize)]
 pub enum Mission {
     Embassy,
     StealTech,
@@ -79,11 +79,12 @@ pub fn stolen_gold(treasury: i32) -> i32 {
 }
 
 /// Embassies and cities in unrest.
-#[derive(Resource, Default, Clone, Debug)]
+#[derive(Resource, Default, Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct Espionage {
     /// (from, to): `from` has an embassy with `to`.
     pub embassies: HashSet<(u32, u32)>,
     /// Turns of unrest left, by city tile.
+    #[serde(with = "crate::save::pairs")]
     pub unrest: HashMap<Hex, u32>,
 }
 

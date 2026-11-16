@@ -1,7 +1,7 @@
 use bevy::prelude::*;
 use std::collections::HashSet;
 
-#[derive(Resource, Clone)]
+#[derive(Resource, Clone, serde::Serialize, serde::Deserialize)]
 pub struct TechState {
     pub researched: HashSet<Tech>,
     pub current: Option<Tech>,
@@ -9,7 +9,7 @@ pub struct TechState {
     pub science_per_turn: u32,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, serde::Serialize, serde::Deserialize)]
 pub enum Tech {
     // Ancient
     Pottery,

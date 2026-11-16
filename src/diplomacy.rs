@@ -1,13 +1,15 @@
 use bevy::prelude::*;
 use std::collections::HashMap;
 
-#[derive(Resource)]
+#[derive(Resource, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Diplomacy {
+    #[serde(with = "crate::save::pairs")]
     pub relations: HashMap<(u32, u32), i32>,
+    #[serde(with = "crate::save::pairs")]
     pub treaties: HashMap<(u32, u32), Treaty>,
 }
 
-#[derive(Clone, Copy, PartialEq, Debug)]
+#[derive(Clone, Copy, PartialEq, Debug, serde::Serialize, serde::Deserialize)]
 pub enum Treaty {
     None,
     Peace,

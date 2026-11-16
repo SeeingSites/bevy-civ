@@ -4,7 +4,7 @@ use crate::building::CityBuildings;
 use crate::diplomacy::Happiness;
 use crate::government::Government;
 
-#[derive(Component)]
+#[derive(Component, Clone, serde::Serialize, serde::Deserialize)]
 pub struct City {
     pub name: String,
     pub population: u32,
@@ -17,7 +17,7 @@ pub struct City {
     pub is_capital: bool,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum Specialist {
     Entertainer,   // +2 luxury
     TaxCollector,  // +3 gold
@@ -34,7 +34,7 @@ pub enum Growth {
     Starved,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum ProductionItem {
     Unit(crate::unit::UnitType),
     Building(crate::building::Building),

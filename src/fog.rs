@@ -2,7 +2,7 @@ use bevy::prelude::*;
 use hexx::Hex;
 use std::collections::HashSet;
 
-#[derive(Resource)]
+#[derive(Resource, Clone, serde::Serialize, serde::Deserialize)]
 pub struct FogOfWar {
     pub explored: HashSet<Hex>,
     pub visible: HashSet<Hex>,

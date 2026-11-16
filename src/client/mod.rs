@@ -146,6 +146,7 @@ impl Plugin for ClientPlugin {
             .add_systems(PreStartup, load_art)
             .add_systems(Startup, (map::setup_map_view, ui::setup_ui, ui::setup_menu))
             .add_systems(Update, (ui::button_actions, ui::rebuild_menu, ui::button_visuals, ui::fit_ui_scale, ui::update_sound_button).chain().before(GameLogic))
+            .add_systems(Update, ui::poll_import.run_if(in_state(crate::AppState::Menu)))
             .add_systems(
                 Update,
                 (input::pointer_input, input::keyboard_input, ui::minimap_click)

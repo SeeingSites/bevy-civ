@@ -2,7 +2,7 @@ use bevy::prelude::*;
 use hexx::Hex;
 use crate::terrain::{Improvement, Resource};
 
-#[derive(Component)]
+#[derive(Component, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Unit {
     pub unit_type: UnitType,
     pub movement_left: u32,
@@ -23,7 +23,7 @@ pub struct Unit {
 #[derive(Component)]
 pub struct Selected;
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, serde::Serialize, serde::Deserialize)]
 pub enum UnitType {
     Settler,
     Worker,

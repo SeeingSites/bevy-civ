@@ -90,15 +90,17 @@ pub fn pick_kind(points: &Points, rng: &mut impl Rng) -> UnitType {
 }
 
 /// Every civilization's progress towards its next great people.
-#[derive(Resource, Default, Clone, Debug)]
+#[derive(Resource, Default, Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct GreatPeople {
     /// Points gathered by each city, by its tile.
+    #[serde(with = "crate::save::pairs")]
     pub city: HashMap<Hex, Points>,
     /// Great people born so far, by civilization (raises the next threshold).
     pub born: HashMap<u32, u32>,
     /// General points from battles won, by civilization.
     pub general: HashMap<u32, u32>,
     /// Masterpieces made by great artists, by city tile.
+    #[serde(with = "crate::save::pairs")]
     pub masterpieces: HashMap<Hex, u32>,
 }
 
