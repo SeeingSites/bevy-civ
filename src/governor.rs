@@ -49,6 +49,8 @@ pub struct CivView<'a> {
     pub wonder_elsewhere: bool,
     /// Spaceship parts its ship still needs.
     pub space_parts: &'a [Building],
+    /// Free land for new cities lies within reach of its cities.
+    pub room_to_expand: bool,
 }
 
 /// Largest army a computer player keeps.
@@ -130,7 +132,9 @@ pub fn choose(city: &CityView, civ: &CivView, supplies: &Supplies, rng: &mut imp
             }
         }
     }
-    if civ.settlers == 0 && civ.cities < 6 && city.population >= 3 && rng.gen_bool(0.35) {
+    // Expand while there is room: a settler at a time for a small empire, more for a big one.
+    let settlers_wanted = 1 + civ.cities / 6;
+    if civ.room_to_expand && civ.settlers < settlers_wanted && civ.cities < 24 && city.population >= 3 && rng.gen_bool(0.5) {
         return unit(UnitType::Settler);
     }
     // Caravans carry shields to a wonder going up elsewhere, or open trade routes.
@@ -192,7 +196,7 @@ mod tests {
     }
 
     fn civ(tech: &TechState) -> CivView<'_> {
-        CivView { tech, aggression: 0.4, cities: 2, workers: 1, settlers: 1, military: 3, navy: 0, air: 0, road_work: 0, cut_off: 0, at_war: false, wonders_taken: &NO_WONDERS, caravans: 2, diplomats: 1, wonder_elsewhere: false, space_parts: &[] }
+        CivView { tech, aggression: 0.4, cities: 2, workers: 1, settlers: 1, military: 3, navy: 0, air: 0, road_work: 0, cut_off: 0, at_war: false, wonders_taken: &NO_WONDERS, caravans: 2, diplomats: 1, wonder_elsewhere: false, space_parts: &[], room_to_expand: true }
     }
 
     fn knowing(techs: &[Tech]) -> TechState {
