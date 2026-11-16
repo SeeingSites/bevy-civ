@@ -173,7 +173,7 @@ pub fn keyboard_input(
         (KeyCode::Space, Action::SkipOrEnd),
         (KeyCode::KeyN, Action::NextUnit),
         (KeyCode::Tab, Action::CycleStack),
-        (KeyCode::KeyU, Action::UseGreatPerson),
+        (KeyCode::KeyU, Action::UseUnit),
         (KeyCode::KeyH, Action::Fortify),
         (KeyCode::Enter, Action::EndTurn),
         (KeyCode::KeyF, Action::Build(Improvement::Farm)),

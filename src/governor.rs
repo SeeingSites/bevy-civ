@@ -43,6 +43,10 @@ pub struct CivView<'a> {
     pub at_war: bool,
     /// Wonders already standing somewhere in the world.
     pub wonders_taken: &'a std::collections::HashSet<Building>,
+    pub caravans: usize,
+    pub diplomats: usize,
+    /// Another city of this civilization is building a wonder (caravans can help it).
+    pub wonder_elsewhere: bool,
 }
 
 /// Largest army a computer player keeps.
@@ -126,6 +130,15 @@ pub fn choose(city: &CityView, civ: &CivView, supplies: &Supplies, rng: &mut imp
     if civ.settlers == 0 && civ.cities < 6 && city.population >= 3 && rng.gen_bool(0.35) {
         return unit(UnitType::Settler);
     }
+    // Caravans carry shields to a wonder going up elsewhere, or open trade routes.
+    let caravan_wanted = civ.wonder_elsewhere || (civ.cities >= 2 && rng.gen_bool(0.2));
+    if civ.caravans < 2 && city.population >= 4 && caravan_wanted && can_train(UnitType::Caravan, city, civ, supplies) {
+        return unit(UnitType::Caravan);
+    }
+    // One diplomat to open embassies and spy, once the civilization has a few cities.
+    if civ.diplomats == 0 && civ.cities >= 3 && rng.gen_bool(0.3) && can_train(UnitType::Diplomat, city, civ, supplies) {
+        return unit(UnitType::Diplomat);
+    }
 
     let wish = [
         (Building::Walls, city.threatened || civ.at_war),
@@ -167,7 +180,7 @@ mod tests {
     }
 
     fn civ(tech: &TechState) -> CivView<'_> {
-        CivView { tech, aggression: 0.4, cities: 2, workers: 1, settlers: 1, military: 3, navy: 0, air: 0, road_work: 0, cut_off: 0, at_war: false, wonders_taken: &NO_WONDERS }
+        CivView { tech, aggression: 0.4, cities: 2, workers: 1, settlers: 1, military: 3, navy: 0, air: 0, road_work: 0, cut_off: 0, at_war: false, wonders_taken: &NO_WONDERS, caravans: 2, diplomats: 1, wonder_elsewhere: false }
     }
 
     fn knowing(techs: &[Tech]) -> TechState {
@@ -219,6 +232,17 @@ mod tests {
         assert_eq!(choose(&view, &civ(&tech), &Supplies::default(), &mut rand::thread_rng()), ProductionItem::Building(Building::Granary));
         let grown = CityView { built: vec![Building::Granary], ..city() };
         assert_eq!(choose(&grown, &civ(&tech), &Supplies::default(), &mut rand::thread_rng()), ProductionItem::Building(Building::Library));
+    }
+
+    #[test]
+    fn caravans_go_to_help_a_wonder_elsewhere() {
+        let tech = knowing(&[Tech::Pottery, Tech::Writing]);
+        let view = CityView { population: 5, ..city() };
+        let helping = CivView { caravans: 0, wonder_elsewhere: true, ..civ(&tech) };
+        assert_eq!(choose(&view, &helping, &Supplies::default(), &mut rand::thread_rng()), ProductionItem::Unit(UnitType::Caravan));
+        // A small city does not spare one.
+        let small = CityView { population: 2, ..city() };
+        assert_ne!(choose(&small, &helping, &Supplies::default(), &mut rand::thread_rng()), ProductionItem::Unit(UnitType::Caravan));
     }
 
     #[test]

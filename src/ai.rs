@@ -181,6 +181,11 @@ pub fn process_ai_turn(
         let aggression = civ.map(|c| c.aggression).unwrap_or(0.8);
         let can_sail = civ.is_some_and(|c| c.tech.researched.contains(&Tech::Seafaring));
 
+        // Caravans and diplomats are sent on their errands by the caller (see `main.rs`).
+        if matches!(unit.unit_type, UnitType::Caravan | UnitType::Diplomat) {
+            continue;
+        }
+
         // Great general: march with the nearest army of its own (it never attacks).
         if unit.unit_type.is_great_person() {
             let here = unit.position;

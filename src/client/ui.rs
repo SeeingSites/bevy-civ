@@ -11,6 +11,8 @@ use bevy::ui::{FocusPolicy, RelativeCursorPosition};
 use bevy_civ::ai::Civilizations;
 use bevy_civ::building::{Building, CityBuildings, WorldWonders};
 use bevy_civ::great::{self, GreatPeople};
+use bevy_civ::espionage::{self, Espionage, Mission};
+use bevy_civ::trade::TradeRoutes;
 use bevy_civ::city::{City, ProductionItem};
 use bevy_civ::diplomacy::{Diplomacy, Happiness, Treaty};
 use bevy_civ::fog::FogOfWar;
@@ -533,7 +535,15 @@ pub fn rebuild_panels(
     tech: Res<TechState>,
     civs: Res<Civilizations>,
     diplomacy: Res<Diplomacy>,
-    (units, tiles, unit_entities, wonders, great): (Query<&Unit>, Query<&HexTile>, Query<Entity, With<Unit>>, Res<WorldWonders>, Res<GreatPeople>),
+    (units, tiles, unit_entities, wonders, great, spies, trade): (
+        Query<&Unit>,
+        Query<&HexTile>,
+        Query<Entity, With<Unit>>,
+        Res<WorldWonders>,
+        Res<GreatPeople>,
+        Res<Espionage>,
+        Res<TradeRoutes>,
+    ),
     cities: Query<(&City, &CityBuildings, &Happiness)>,
     unit_panel: Query<Entity, With<UnitPanel>>,
     mut city_panel: Query<(Entity, &mut Node), (With<CityPanel>, Without<ModalRoot>)>,
@@ -592,6 +602,33 @@ pub fn rebuild_panels(
             if unit.unit_type.is_great_person() {
                 p.spawn(label(&art.font_bold, great::ability(unit.unit_type), 14.0, GOLD));
             }
+            if mine && unit.unit_type == UnitType::Caravan {
+                p.spawn(label(&art.font_body, "In another of your cities, or next to a foreign one: T opens a trade route from its home city. In one of your cities building a wonder: U adds its shields.", 13.0, MUTED));
+            }
+            // A diplomat next to (or in) a foreign city: its missions, with their odds.
+            if mine && unit.unit_type == UnitType::Diplomat {
+                let target = crate::spy_target(unit.position, cities.iter().map(|(c, _, _)| (c.position, c.owner)));
+                match target.and_then(|(at, owner)| cities.iter().find(|(c, _, _)| c.position == at && c.owner == owner)) {
+                    Some((city, buildings, _)) => {
+                        p.spawn(label(&art.font_bold, format!("At {} ({}):", city.name, owner_name(city.owner, &civs)), 14.0, GOLD));
+                        let walls = buildings.has(Building::Walls);
+                        p.spawn(Node { flex_wrap: FlexWrap::Wrap, column_gap: Val::Px(5.0), row_gap: Val::Px(5.0), ..default() }).with_children(|grid| {
+                            for mission in Mission::ALL {
+                                if mission == Mission::Embassy && spies.has_embassy(PLAYER, city.owner) {
+                                    continue;
+                                }
+                                let odds = (mission.odds(walls) * 100.0).round() as u32;
+                                let tint = if mission.is_covert() { Color::srgb(0.95, 0.72, 0.6) } else { Color::srgb(0.66, 0.9, 0.52) };
+                                production_button(grid, art, mission.name(), format!("{odds}%: {}", mission.describe()), Command::Game(Action::Spy(mission)), tint);
+                            }
+                        });
+                        p.spawn(label(&art.font_body, "The diplomat is spent either way. If caught, they will not forget it.", 12.0, MUTED));
+                    }
+                    None => {
+                        p.spawn(label(&art.font_body, "Move next to a foreign city to open an embassy, steal technology, sabotage, steal gold or incite unrest.", 13.0, MUTED));
+                    }
+                }
+            }
             // Several of the player's units on one tile: say so, and list them to pick from.
             if mine {
                 let stack = crate::own_stack(unit.position, unit_entities.iter(), |e| units.get(e).ok().map(|u| (u.position, u.owner)));
@@ -633,8 +670,12 @@ pub fn rebuild_panels(
                         button(r, art, if rail { "Railroad (R)" } else { "Road (R)" }, Command::Game(Action::Build(Improvement::Road)), BRONZE, 15.0);
                         button(r, art, "Clear (X)", Command::Game(Action::Transform), BRONZE, 15.0);
                     }
+                    if unit.unit_type == UnitType::Caravan {
+                        button(r, art, "Trade Route (T)", Command::Game(Action::TradeRoute), GREEN, 15.0);
+                        button(r, art, "Help Wonder (U)", Command::Game(Action::UseUnit), GREEN, 15.0);
+                    }
                     if unit.unit_type.is_great_person() && unit.unit_type != UnitType::GreatGeneral {
-                        button(r, art, "Use (U)", Command::Game(Action::UseGreatPerson), GREEN, 15.0);
+                        button(r, art, "Use (U)", Command::Game(Action::UseUnit), GREEN, 15.0);
                     }
                     if !unit.fortified {
                         let text = if unit.unit_type.is_military() { "Fortify (H)" } else { "Sleep (H)" };
@@ -668,6 +709,13 @@ pub fn rebuild_panels(
             if !garrison.is_empty() {
                 let units_here = if garrison.len() == 1 { "1 of your units is".to_string() } else { format!("{} of your units are", garrison.len()) };
                 p.spawn(label(&art.font_bold, format!("{units_here} here - press Tab or click the city again to pick one."), 14.0, GOLD));
+            }
+            if let Some(turns) = spies.unrest.get(&city.position) {
+                p.spawn(label(&art.font_bold, format!("In unrest: no growth or production for {turns} more turns."), 14.0, RED));
+            }
+            let routes = trade.at(city.position);
+            if routes > 0 {
+                p.spawn(label(&art.font_body, format!("Trade routes: {routes} of {}", bevy_civ::trade::MAX_ROUTES_PER_CITY), 14.0, CREAM));
             }
             let dist = capital.map(|c| city.position.distance_to(c) as u32).unwrap_or(0);
             let gov = state.government;
@@ -960,6 +1008,22 @@ pub fn rebuild_panels(
                             }
                         }
                         w.spawn(label(&art.font_body, "Buy and sell resources with other leaders in the foreign advisor (E).", 14.0, INK_SOFT));
+                        // Trade routes opened by our caravans (and foreign ones that end in our cities).
+                        let city_name = |h: hexx::Hex| cities.iter().find(|(c, _, _)| c.position == h).map(|(c, _, _)| c.name.clone()).unwrap_or_default();
+                        let ours: Vec<_> = trade.routes.iter().filter(|r| r.owner == PLAYER || r.partner == PLAYER).collect();
+                        let (gold, science) = trade.income(PLAYER);
+                        w.spawn(label(&art.font_title, format!("Trade routes: +{gold} gold, +{science} science a turn"), 17.0, INK));
+                        if ours.is_empty() {
+                            w.spawn(label(&art.font_body, "None yet. Train a Caravan, move it into another city (yours at least 6 tiles away, or a foreign city at peace) and press T. Longer routes between bigger cities pay more; foreign ones half again as much.", 14.0, INK_SOFT));
+                        }
+                        for route in ours {
+                            let text = if route.owner == PLAYER {
+                                format!("{} - {}: +{} gold, +{} science", city_name(route.from), city_name(route.to), route.gold_per_turn, route.science_per_turn)
+                            } else {
+                                format!("{} - {} (their caravan): +{} gold", city_name(route.from), city_name(route.to), route.gold_per_turn / 2)
+                            };
+                            w.spawn(label(&art.font_body, text, 14.0, INK));
+                        }
                         w.spawn(row(6.0)).with_children(|r| button(r, art, "Close (Esc)", Command::CloseModal, BRONZE, 14.0));
                     });
                 }
@@ -1018,6 +1082,17 @@ pub fn rebuild_panels(
                                     c.spawn(label(&art.font_bold, format!("{} ({:+})  -  {standing}{pact}", foreign::mood(attitude), attitude), 16.0, INK));
                                     bar(c, (attitude + 100) as f32 / 200.0, if attitude < -14 { Color::srgb(0.8, 0.25, 0.2) } else if attitude < 15 { Color::srgb(0.85, 0.7, 0.25) } else { Color::srgb(0.35, 0.7, 0.3) });
                                     c.spawn(label(&art.font_body, format!("{} gold in their treasury; {power}.", civ.gold), 15.0, INK_SOFT));
+                                    let embassy = if spies.has_embassy(PLAYER, civ.id) {
+                                        let lacking = espionage::stealable(&tech, &civ.tech).len();
+                                        format!(
+                                            "Embassy: they know {} technologies ({lacking} we lack) and are researching {}.",
+                                            civ.tech.researched.len(),
+                                            civ.tech.current.map(|t| t.name()).unwrap_or("nothing")
+                                        )
+                                    } else {
+                                        "No embassy: a Diplomat at one of their cities can open one.".to_string()
+                                    };
+                                    c.spawn(label(&art.font_body, embassy, 14.0, INK_SOFT));
                                     if let Some(words) = foreign.reply.get(&civ.id) {
                                         c.spawn(label(&art.font_bold, format!("\"{words}\""), 16.0, INK_SOFT));
                                     }
@@ -1080,7 +1155,6 @@ pub fn rebuild_panels(
                             }
                         }
                         w.spawn(row(6.0)).with_children(|r| {
-                            button(r, art, "Link our cities by trade (T)", Command::Game(Action::TradeRoute), BRONZE, 14.0);
                             button(r, art, "Close (Esc)", Command::CloseModal, BRONZE, 14.0);
                         });
                     });
