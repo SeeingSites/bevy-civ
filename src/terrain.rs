@@ -2,7 +2,7 @@ use bevy::prelude::*;
 use hexx::Hex;
 use rand::Rng;
 
-#[derive(Component)]
+#[derive(Component, Clone, serde::Serialize, serde::Deserialize)]
 pub struct HexTile {
     pub coord: Hex,
     pub terrain: Terrain,
@@ -10,7 +10,7 @@ pub struct HexTile {
     pub resource: Option<Resource>,
 }
 
-#[derive(Clone, Copy, PartialEq, Debug)]
+#[derive(Clone, Copy, PartialEq, Debug, serde::Serialize, serde::Deserialize)]
 pub enum Terrain {
     Water,
     Grassland,
@@ -21,13 +21,16 @@ pub enum Terrain {
     Forest,
 }
 
-#[derive(Clone, Copy, PartialEq, Debug)]
+#[derive(Clone, Copy, PartialEq, Debug, serde::Serialize, serde::Deserialize)]
 pub enum Improvement {
     Farm,
     Mine,
     Road,
     /// Built over a road once Steam Power is known: movement along it is free.
     Railroad,
+    /// Left by industry: the tile yields nothing until a worker cleans it up (a "build" of this
+    /// removes it).
+    Pollution,
 }
 
 /// What a resource is good for.
@@ -41,7 +44,7 @@ pub enum ResourceKind {
     Bonus,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, serde::Serialize, serde::Deserialize)]
 pub enum Resource {
     Horses,
     Iron,
@@ -217,6 +220,10 @@ impl HexTile {
     /// A road or a railroad (a railroad is built over a road and works as one too).
     pub fn has_road(&self) -> bool {
         self.improvements.contains(&Improvement::Road) || self.has_railroad()
+    }
+
+    pub fn is_polluted(&self) -> bool {
+        self.improvements.contains(&Improvement::Pollution)
     }
 
     pub fn has_railroad(&self) -> bool {

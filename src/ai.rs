@@ -4,16 +4,16 @@ use crate::unit::{Unit, UnitType};
 use crate::terrain::{HexTile, Improvement, Terrain};
 use std::collections::HashMap;
 use crate::tech::{Tech, TechState};
-use crate::pathfinding::{find_path, find_route, road_network, step_cost, StepCost, Travel};
+use crate::pathfinding::{find_path, find_route, land_step, road_network, zoc_blocks, StepCost, Travel};
 use crate::unit::{Domain, AIR_RANGE};
 use rand::Rng;
 
-#[derive(Resource)]
+#[derive(Resource, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Civilizations {
     pub players: Vec<Civ>,
 }
 
-#[derive(Clone)]
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub struct Civ {
     pub id: u32,
     pub name: String,
@@ -27,6 +27,7 @@ pub struct Civ {
     pub portrait: usize,
     /// Names for cities this civilization founds later.
     pub city_names: Vec<String>,
+    pub government: crate::government::Government,
 }
 
 impl Default for Civilizations {
@@ -65,6 +66,17 @@ fn appeal(tech: Tech) -> (f32, f32) {
         Tech::SteamPower => (2.5, 3.0),
         Tech::Industrialization => (2.0, 4.0),
         Tech::Refining => (3.0, 2.5),
+        Tech::TheRepublic => (0.5, 3.0),
+        Tech::Theology => (0.5, 2.5),
+        Tech::Fundamentalism => (3.0, 0.5),
+        Tech::Communism => (2.5, 1.5),
+        Tech::Sanitation => (0.5, 3.0),
+        Tech::Electricity => (1.5, 3.0),
+        Tech::Computers => (2.0, 4.0),
+        Tech::Rocketry => (3.5, 3.0),
+        Tech::SpaceFlight => (1.0, 5.0),
+        Tech::Plastics => (1.0, 5.0),
+        Tech::Superconductors => (1.0, 5.0),
     }
 }
 
@@ -132,6 +144,8 @@ pub fn process_ai_turn(
     let land_set: std::collections::HashSet<Hex> = land.iter().filter(|(_, t)| *t != Terrain::Water).map(|(c, _)| *c).collect();
     let is_land = |hex: Hex| land_set.contains(&hex);
     let roads = road_network(tiles.iter(), city_positions.iter().map(|(p, _)| *p));
+    let terrain_at: HashMap<Hex, Terrain> = land.iter().copied().collect();
+    let polluted: std::collections::HashSet<Hex> = tiles.iter().filter(|t| t.is_polluted()).map(|t| t.coord).collect();
     let features: HashMap<Hex, (Terrain, bool, bool)> = tiles
         .iter()
         .map(|t| (t.coord, (t.terrain, t.improvements.contains(&Improvement::Farm), t.improvements.contains(&Improvement::Mine))))
@@ -199,7 +213,7 @@ pub fn process_ai_turn(
                     if !unit.can_move() || occupied.get(&next).is_some_and(|(other, _)| *other != owner) {
                         break;
                     }
-                    let cost = step_cost(unit.position, next, &roads, true);
+                    let cost = land_step(unit.position, next, terrain_at.get(&next).copied(), &roads, true);
                     unit.step(next, cost);
                 }
             }
@@ -275,6 +289,11 @@ pub fn process_ai_turn(
                         continue;
                     }
                 }
+            }
+            // Pollution is cleaned up where the worker stands.
+            if polluted.contains(&here) && owns(here, owner) {
+                unit.start_build(Improvement::Pollution);
+                continue;
             }
             // No road work: farm the flat land and mine the hills inside the borders.
             let on_city = city_positions.iter().any(|(p, _)| *p == here);
@@ -400,9 +419,11 @@ pub fn process_ai_turn(
 
         if let Some(target) = goal {
             let travel = if can_sail { Travel::Amphibious } else { Travel::Land };
+            let enemy_armies: std::collections::HashSet<Hex> =
+                unit_snapshots.iter().filter(|(_, other, strength)| hostile(owner, *other) && *strength > 0.0).map(|(pos, _, _)| *pos).collect();
             if let Some(path) = find_route(here, target, land.iter().copied(), &roads, travel) {
                 for next in path.into_iter().skip(1) {
-                    if !unit.can_move() {
+                    if !unit.can_move() || zoc_blocks(unit.position, next, &enemy_armies) {
                         break;
                     }
                     let boarding = is_land(unit.position) != is_land(next);
@@ -417,7 +438,7 @@ pub fn process_ai_turn(
                         }
                         _ => {
                             // Roads speed the march; boarding or leaving a boat takes the rest of the turn.
-                            let cost = if boarding { StepCost::EndsTurn } else { step_cost(unit.position, next, &roads, true) };
+                            let cost = if boarding { StepCost::EndsTurn } else { land_step(unit.position, next, terrain_at.get(&next).copied(), &roads, true) };
                             unit.step(next, cost);
                         }
                     }
@@ -477,6 +498,7 @@ mod tests {
             adjective: String::new(),
             portrait: 0,
             city_names: vec![],
+            government: crate::government::Government::Despotism,
         }
     }
 
@@ -487,7 +509,7 @@ mod tests {
         }
         world.insert_resource(Civilizations { players: vec![rival()] });
         let worker = world
-            .spawn(Unit { unit_type: UnitType::Worker, movement_left: 1, owner: 1, position: Hex::ZERO, build_turns_left: None, current_build: None, fortified: false, road_credit: 0 })
+            .spawn(Unit { unit_type: UnitType::Worker, movement_left: 1, owner: 1, position: Hex::ZERO, build_turns_left: None, current_build: None, fortified: false, road_credit: 0, hp: 3, level: 0 })
             .id();
         (world, worker)
     }
@@ -566,7 +588,7 @@ mod tests {
 
     fn soldier(world: &mut World, kind: UnitType, owner: u32, q: i32) -> Entity {
         world
-            .spawn(Unit { unit_type: kind, movement_left: 1, owner, position: Hex::new(q, 0), build_turns_left: None, current_build: None, fortified: false, road_credit: 0 })
+            .spawn(Unit { unit_type: kind, movement_left: 1, owner, position: Hex::new(q, 0), build_turns_left: None, current_build: None, fortified: false, road_credit: 0, hp: 3, level: 0 })
             .id()
     }
 

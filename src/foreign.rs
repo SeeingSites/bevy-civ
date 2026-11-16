@@ -21,7 +21,7 @@ pub const PACT_INCOME: i32 = 2;
 pub const DEAL_TURNS: u32 = 20;
 
 /// A running exchange of resources and gold with another civilization.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct Deal {
     pub civ: u32,
     /// What the player sends.
@@ -34,7 +34,7 @@ pub struct Deal {
 }
 
 /// A resource one computer player sells to another.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct AiDeal {
     pub seller: u32,
     pub buyer: u32,
@@ -44,7 +44,7 @@ pub struct AiDeal {
 }
 
 /// A resource trade the player proposes.
-#[derive(Clone, Copy, PartialEq, Debug)]
+#[derive(Clone, Copy, PartialEq, Debug, serde::Serialize, serde::Deserialize)]
 pub enum TradeAsk {
     Buy(Good),
     Sell(Good),
@@ -57,7 +57,7 @@ pub fn price(good: Good) -> i32 {
 }
 
 /// Something the player can ask of another leader.
-#[derive(Clone, Copy, PartialEq, Debug)]
+#[derive(Clone, Copy, PartialEq, Debug, serde::Serialize, serde::Deserialize)]
 pub enum DiploAct {
     Peace,
     Alliance,
@@ -68,7 +68,7 @@ pub enum DiploAct {
     TechTrade,
 }
 
-#[derive(Clone, PartialEq, Debug)]
+#[derive(Clone, PartialEq, Debug, serde::Serialize, serde::Deserialize)]
 pub enum OfferKind {
     /// Just news; nothing to decide.
     Notice,
@@ -83,14 +83,14 @@ pub enum OfferKind {
 }
 
 /// A message from another leader waiting for the player's answer.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct Offer {
     pub from: u32,
     pub kind: OfferKind,
     pub text: String,
 }
 
-#[derive(Resource, Default)]
+#[derive(Resource, Default, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Foreign {
     /// Civilizations the player has made contact with.
     pub met: HashSet<u32>,
@@ -99,6 +99,7 @@ pub struct Foreign {
     /// Each leader's latest words to the player.
     pub reply: HashMap<u32, String>,
     /// Turn on which the current treaty between two civilizations began.
+    #[serde(with = "bevy_civ::save::pairs")]
     pub since: HashMap<(u32, u32), u32>,
     /// Civilizations with a trade agreement with the player.
     pub pacts: HashSet<u32>,
@@ -782,6 +783,7 @@ mod tests {
             adjective: "Rival".into(),
             portrait: 0,
             city_names: vec![],
+            government: bevy_civ::government::Government::Despotism,
         }
     }
 

@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum Building {
     Granary,
     Barracks,
@@ -12,6 +12,15 @@ pub enum Building {
     Bank,
     Factory,
     Harbor,
+    Temple,
+    Courthouse,
+    Colosseum,
+    Cathedral,
+    SewerSystem,
+    // Spaceship parts: each goes to its civilization's ship, not into the city
+    SpaceStructure,
+    SpaceComponent,
+    SpaceModule,
     // Wonders
     Pyramids,
     GreatLibrary,
@@ -22,9 +31,11 @@ pub enum Building {
 }
 
 impl Building {
-    pub const ALL: [Building; 16] = [
+    pub const ALL: [Building; 24] = [
         Building::Granary, Building::Barracks, Building::Library, Building::Marketplace, Building::Walls,
-        Building::Aqueduct, Building::University, Building::Bank, Building::Factory, Building::Harbor, Building::Pyramids,
+        Building::Aqueduct, Building::University, Building::Bank, Building::Factory, Building::Harbor,
+        Building::Temple, Building::Courthouse, Building::Colosseum, Building::Cathedral, Building::SewerSystem,
+        Building::SpaceStructure, Building::SpaceComponent, Building::SpaceModule, Building::Pyramids,
         Building::GreatLibrary, Building::HangingGardens, Building::Colossus, Building::Oracle,
         Building::GreatLighthouse,
     ];
@@ -41,6 +52,14 @@ impl Building {
             Building::Bank => "Bank",
             Building::Factory => "Factory",
             Building::Harbor => "Harbor",
+            Building::Temple => "Temple",
+            Building::Courthouse => "Courthouse",
+            Building::Colosseum => "Colosseum",
+            Building::Cathedral => "Cathedral",
+            Building::SewerSystem => "Sewer System",
+            Building::SpaceStructure => "Space Structure",
+            Building::SpaceComponent => "Space Component",
+            Building::SpaceModule => "Space Module",
             Building::Pyramids => "Pyramids",
             Building::GreatLibrary => "Great Library",
             Building::HangingGardens => "Hanging Gardens",
@@ -62,6 +81,14 @@ impl Building {
             Building::Bank => 120,
             Building::Factory => 150,
             Building::Harbor => 60,
+            Building::Temple => 30,
+            Building::Courthouse => 50,
+            Building::Colosseum => 70,
+            Building::Cathedral => 100,
+            Building::SewerSystem => 100,
+            Building::SpaceStructure => 160,
+            Building::SpaceComponent => 200,
+            Building::SpaceModule => 240,
             Building::Pyramids => 200,
             Building::GreatLibrary => 250,
             Building::HangingGardens => 180,
@@ -83,6 +110,14 @@ impl Building {
             Building::Bank => Some(crate::tech::Tech::Currency),
             Building::Factory => Some(crate::tech::Tech::Industrialization),
             Building::Harbor => Some(crate::tech::Tech::Seafaring),
+            Building::Temple => Some(crate::tech::Tech::Mysticism),
+            Building::Courthouse => Some(crate::tech::Tech::CodeOfLaws),
+            Building::Colosseum => Some(crate::tech::Tech::Construction),
+            Building::Cathedral => Some(crate::tech::Tech::Theology),
+            Building::SewerSystem => Some(crate::tech::Tech::Sanitation),
+            Building::SpaceStructure => Some(crate::tech::Tech::SpaceFlight),
+            Building::SpaceComponent => Some(crate::tech::Tech::Plastics),
+            Building::SpaceModule => Some(crate::tech::Tech::Superconductors),
             Building::Pyramids => Some(crate::tech::Tech::Masonry),
             Building::GreatLibrary => Some(crate::tech::Tech::Writing),
             Building::HangingGardens => Some(crate::tech::Tech::Monarchy),
@@ -98,7 +133,60 @@ impl Building {
         match self {
             Building::Factory => &[Resource::Coal, Resource::Iron],
             Building::Colossus => &[Resource::Iron],
+            Building::SpaceComponent => &[Resource::Oil],
+            Building::SpaceModule => &[Resource::Rubber],
             _ => &[],
+        }
+    }
+
+    /// A part for its civilization's spaceship: buildable again and again, and only in a city with a Factory.
+    pub fn is_spaceship_part(&self) -> bool {
+        matches!(self, Building::SpaceStructure | Building::SpaceComponent | Building::SpaceModule)
+    }
+
+    /// Citizens this building makes content in its city.
+    pub fn content(&self) -> u32 {
+        match self {
+            Building::Temple => 2,
+            Building::Colosseum | Building::Cathedral => 3,
+            _ => 0,
+        }
+    }
+
+    /// The largest a city can grow without (and with) the buildings that supply water. A river beside
+    /// the city counts as an aqueduct.
+    pub fn size_limit(buildings: &[Building], fresh_water: bool) -> u32 {
+        if buildings.contains(&Building::SewerSystem) {
+            u32::MAX
+        } else if buildings.contains(&Building::Aqueduct) || fresh_water {
+            16
+        } else {
+            8
+        }
+    }
+
+    /// What a regular building does, in a few words (wonders use `wonder_effect`).
+    pub fn effect(&self) -> &'static str {
+        match self {
+            Building::Granary => "+2 food",
+            Building::Barracks => "+1 shields",
+            Building::Library => "+2 science",
+            Building::Marketplace => "+2 gold, luxuries count double",
+            Building::Walls => "doubles defence against land attacks",
+            Building::Aqueduct => "lets the city grow past size 8 (to 16)",
+            Building::University => "+4 science",
+            Building::Bank => "+4 gold",
+            Building::Factory => "+3 shields; needed for spaceship parts",
+            Building::Harbor => "+1 food; links coasts",
+            Building::Temple => "+2 content",
+            Building::Courthouse => "halves corruption",
+            Building::Colosseum => "+3 content",
+            Building::Cathedral => "+3 content",
+            Building::SewerSystem => "lets the city grow past size 16",
+            Building::SpaceStructure => "spaceship part (4 needed)",
+            Building::SpaceComponent => "spaceship part (2 needed)",
+            Building::SpaceModule => "spaceship part (2 needed)",
+            _ => self.wonder_effect(),
         }
     }
 
@@ -168,7 +256,7 @@ impl Building {
 }
 
 /// Which wonders stand in the world, and where: each can be built only once.
-#[derive(Resource, Default, Clone, Debug)]
+#[derive(Resource, Default, Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct WorldWonders {
     pub built: std::collections::HashMap<Building, (u32, String)>,
 }

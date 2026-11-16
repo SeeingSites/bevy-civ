@@ -12,7 +12,7 @@ use bevy_civ::terrain::{HexTile, Improvement, Terrain};
 use bevy_civ::unit::Unit;
 
 use super::{overlay, owner_color, Art};
-use crate::{Dirty, MapData, PathPreview, Selection, CITY_RADIUS, PLAYER};
+use crate::{Dirty, MapData, PathPreview, Selection, PLAYER};
 
 pub const HEX_SIZE: f32 = 48.0;
 /// On-screen size of one overlay frame (a full hexagon).
@@ -96,6 +96,7 @@ pub fn refresh_map(
     fog: Res<FogOfWar>,
     clock: Res<WaterClock>,
     (tech, supplies): (Res<TechState>, Res<crate::supply::Supplies>),
+    rivers: Res<crate::Rivers>,
     mut tiles: Query<(&HexTile, &mut Sprite)>,
     cities: Query<&City>,
     decor: Query<Entity, With<Decor>>,
@@ -112,16 +113,8 @@ pub fn refresh_map(
     let info: HashMap<Hex, (Terrain, bool)> = tiles.iter().map(|(t, _)| (t.coord, (t.terrain, t.has_road()))).collect();
     let rails: HashSet<Hex> = tiles.iter().filter(|(t, _)| t.has_railroad()).map(|(t, _)| t.coord).collect();
     let city_at: HashMap<Hex, u32> = cities.iter().map(|c| (c.position, c.owner)).collect();
-    // Each tile belongs to the nearest city within reach.
-    let mut territory: HashMap<Hex, (u32, i32)> = HashMap::new();
-    for city in &cities {
-        for hex in hexx::shapes::hexagon(city.position, CITY_RADIUS as u32) {
-            let dist = hex.distance_to(city.position);
-            if info.contains_key(&hex) && territory.get(&hex).is_none_or(|(_, d)| dist < *d) {
-                territory.insert(hex, (city.owner, dist));
-            }
-        }
-    }
+    // Borders as the supply network worked them out (each city's reach grows with its culture).
+    let territory: HashMap<Hex, (u32, Hex)> = supplies.territory.clone();
 
     for (tile, mut sprite) in &mut tiles {
         let hex = tile.coord;
@@ -188,6 +181,18 @@ pub fn refresh_map(
                 }
             }
             overlay_at(overlay::ROAD_HUB, None, if rail { iron } else { tint }, 0.009);
+        }
+        // Rivers: a blue channel towards the next and previous tiles of each river.
+        if rivers.tiles.contains(&hex) {
+            for path in rivers.paths.iter().filter(|p| p.contains(&hex)) {
+                let i = path.iter().position(|h| *h == hex).unwrap_or(0);
+                for n in [i.checked_sub(1).and_then(|j| path.get(j)), path.get(i + 1)].into_iter().flatten() {
+                    overlay_at(overlay::ROAD, Some(*n), Color::srgb(0.32, 0.6, 0.95).mix(&tint, 0.15), 0.007);
+                }
+            }
+        }
+        if tile.is_polluted() {
+            overlay_at(overlay::BASE, None, Color::srgba(0.25, 0.2, 0.12, 0.7), 0.012);
         }
         if tile.improvements.contains(&Improvement::Mine) {
             overlay_at(overlay::MINE, None, tint, 0.01);

@@ -2,45 +2,32 @@
 
 Cross-platform Civilization-inspired 4X (hex grid) in Rust + Bevy.
 
-Core systems from Civ 2/3 implemented modularly. Goal: exceed FreeCiv. **All major systems complete.**
+Turn-based, Civilization-style empire building on a hex map, playable in the browser.
 
 ## Current Features
-- Hex map with terrain, yields, improvements, and resources
-- Luxury resources give happiness bonuses
-- Strategic resource unit gating
-- Workers build Farm / Mine / Road / terrain transform
-- Cities with production, growth, building effects, and specialists
-- Happiness system with civil disorder
-- Units with pathfinding, combat, and selection (expanded unit roster)
-- Unique units with special abilities
-- Tech tree with prerequisites
-- Full governments with production/science modifiers, corruption, free unit support, and upkeep
-- Corruption based on distance from capital
-- Unit upkeep
-- Advanced war AI (aggression-based attack/retreat, targets cities, uses A* pathfinding)
-- Computer players and barbarians attack units and capture undefended cities; civilizations fight those they are at war with, and units inside a city defend as if on hills
-- AI that researches, founds cities, and improves tiles
-- Fog of war and diplomacy treaties (Peace / Alliance / War)
-- Victory conditions (Domination / Democracy / Space Race / Culture)
-- Score system
-- Barbarians
-- City capture
-- Trade routes opened by caravans (gold + science); caravans also help build wonders
-- Sprite-based map: textured terrain, animated water, shores, borders, roads, farms and mines
-- Animated units, cities that grow visually, fog of war, minimap
-- Interface with status bar, unit and city panels, science and foreign advisors, message log
-- World wonders (one per world) and great people (generals, merchants, scientists, artists, engineers)
-- Save / load (expanded)
-- Culture and borders (per-turn generation from population + buildings)
-- Great Leaders (elite victories → armies)
-- **Naval units** (Galley through Battleship + Transport) with cargo load/unload and naval combat
-- **Air units** (Fighter, Bomber, Helicopter, Jet Fighter, Stealth Bomber) with fuel, air combat, and bombing damage
-- Espionage by diplomats (embassies, steal tech, sabotage, steal gold, incite unrest)
-- Economy (inflation, building maintenance, trade gold, government modifiers)
-- **Religion** (Polytheism / Monotheism / Philosophy) with happiness bonuses and science modifiers applied per city
-- Unit promotions (Veteran, Elite, Combat I/II, Mobility, Siege) — applied in combat + XP awards
-- Turn integration (`src/turn.rs`) — helpers to run culture, economy, and promotion-aware combat
-- Hotseat multiplayer scaffolding
+- Hex map with terrain, rivers, resources, roads, railroads, farms, mines and pollution
+- Hills and forest cost 2 moves, mountains 3; roads triple movement and railroads make it free
+- Cities that grow (up to 8, 16 with an Aqueduct or a river, beyond with a Sewer System), can
+  starve, and need happy citizens: disorder stops growth, production, science and taxes
+- Specialists (entertainers, tax collectors, scientists) and corruption by distance
+- Strategic and luxury resources joined to cities by roads and harbours, and traded with leaders
+- 38 technologies from Pottery to Superconductors, shown as a tree by era
+- Six governments chosen in a revolution (with anarchy): Despotism to Democracy, Communism and
+  Fundamentalism; martial law where it applies
+- Combat in rounds with hit points, veterans and elites, retreat, walls, fortification, river and
+  terrain defence, artillery bombardment, great generals, zone of control and unit upgrades
+- Ships and aircraft, troops crossing the sea in boats
+- World wonders (one per world) with real effects, golden ages
+- Great people: generals, merchants, scientists, artists, engineers
+- Culture that widens borders and can win over restless cities
+- Caravans (trade routes, help with wonders) and diplomats (embassies and espionage)
+- Diplomacy: treaties, attitude and reputation, tribute, tech exchange, resource deals
+- Computer players that research, expand, build, trade, spy, race for wonders and the stars
+- Victory by conquest, domination, culture, space race, or score at turn 400
+- Multi-turn orders, route preview, worker automation, stack moves, raze or keep captured cities
+- Advisors (science, foreign, trade, empire: government, cities, military, score) and an encyclopedia
+- Saved games: automatic every turn, and as files that anyone can load
+- Sound effects (can be switched off)
 - Headless game simulator for balance evaluation
 
 ## Maps and scenarios
@@ -209,12 +196,44 @@ Computer players follow the same rules as you and are run by three pieces of cod
 - **H** — fortify (or put a non-military unit to sleep) so it is no longer asked for orders
 - **Enter** or the **End Turn** button — end the turn now
 - **B** — settler founds a city
-- **F / M / R / X** — worker builds Farm / Mine / Road (Railroad on a road, with Steam Power) / clears terrain
-- **Q** — science advisor (choose research), **E** — foreign advisor (treaties, resource deals), **G** — trade advisor (resources)
-- **U** — use the selected great person
-- **T** — the selected caravan opens a trade route, **F2** — save
-- **V** or the **Sound** button — switch sound effects on or off (remembered between games)
+- **F / M / R / X** — worker builds Farm / Mine / Road (Railroad on a road, with Steam Power) /
+  clears terrain or cleans pollution; **K** — automate the worker
+- **Shift-click** — move the whole stack (or switch on *Move together* in the unit panel)
+- **Q** — science advisor (research and the tech tree), **E** — foreign advisor (treaties, resource
+  deals), **G** — trade advisor (resources and trade routes), **Y** — empire advisor (government,
+  cities, military, score), **F1** — encyclopedia
+- **U** — use the selected great person, or add a caravan's shields to a wonder
+- **T** — the selected caravan opens a trade route
+- **F2** — save the game as a file (the **Game** button also has sound and quitting)
+- **V** — switch sound effects on or off (remembered between games)
 - **Esc** — close a window or deselect
+
+Units also have buttons for upgrading (in a city, for gold), bombarding (artillery, warships,
+bombers) and diplomats' missions. Cities waiting for a project are brought up before the turn ends.
+
+## Saving and loading
+The game saves itself at the end of every turn; **Continue your last game** on the start menu picks
+it up. **F2** (or *Save to a file* in the Game menu) downloads the whole game as a `.json` file.
+Anyone can open it with **Load a saved game file...** on the start menu - send it to a friend, or
+keep it as a backup. On the desktop the files are `autosave.json` and `savegame.json` in the
+working directory.
+
+## Rules in brief
+- **Happiness**: five citizens are content; the rest are unhappy until calmed by temples (+2),
+  colosseums and cathedrals (+3), wonders, masterpieces, entertainers or martial law (troops in the
+  city under Despotism, Monarchy and Communism). Each luxury the city can reach makes one citizen
+  happy. Disorder (more unhappy than happy) stops the city.
+- **Culture**: temples, libraries, colosseums, cathedrals, universities, wonders and the palace earn
+  culture. Borders reach 2 tiles, 3 from 100 culture and 4 from 1,000. A city in disorder within 5
+  tiles of a civilization with twice its owner's culture may defect.
+- **Golden age**: a civilization's first wonder brings 10 turns of +50% shields and extra gold.
+- **Rivers**: +1 gold per river tile in a city's land, +25% defence, and fresh water.
+- **Pollution**: big industrial cities spoil tiles, which yield nothing until cleaned.
+- **Combat**: 3 hit points (4 veteran, 5 elite); winners may be promoted, Barracks train veterans,
+  wounds heal while resting (fully in a city). Faster attackers retreat rather than die.
+- **Space race**: research Space Flight, Plastics and Superconductors; cities with a Factory build 4
+  structures, 2 components and 2 modules; the ship arrives 12 turns after launch unless the capital
+  falls.
 
 Every order also has a button, so the game is playable with a mouse or touch screen alone.
 City production is chosen from the city panel, whose tabs split **Units**, **Buildings** and
@@ -265,7 +284,6 @@ npm run deploy   # build + wrangler deploy (needs `wrangler login` or an API tok
 `.github/workflows/deploy.yml` builds on every PR and deploys on every push to `main`. It needs two
 repository secrets: `CLOUDFLARE_API_TOKEN` (the "Edit Cloudflare Workers" token template) and
 `CLOUDFLARE_ACCOUNT_ID`. The game is then live at `https://bevy-civ.<your-subdomain>.workers.dev`.
-In the browser, **S** saves to localStorage.
 
 ## License
 MIT OR Apache-2.0

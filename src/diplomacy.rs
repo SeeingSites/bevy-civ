@@ -1,13 +1,15 @@
 use bevy::prelude::*;
 use std::collections::HashMap;
 
-#[derive(Resource)]
+#[derive(Resource, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Diplomacy {
+    #[serde(with = "crate::save::pairs")]
     pub relations: HashMap<(u32, u32), i32>,
+    #[serde(with = "crate::save::pairs")]
     pub treaties: HashMap<(u32, u32), Treaty>,
 }
 
-#[derive(Clone, Copy, PartialEq, Debug)]
+#[derive(Clone, Copy, PartialEq, Debug, serde::Serialize, serde::Deserialize)]
 pub enum Treaty {
     None,
     Peace,
@@ -57,25 +59,48 @@ pub struct Happiness {
     pub unhappy: u32,
 }
 
+/// Citizens content without help; the rest of a bigger city are unhappy.
+pub const BASE_CONTENT: u32 = 5;
+
 impl Happiness {
     pub fn new(population: u32) -> Self {
-        let happy = 1;
-        let unhappy = if population > 4 { population - 4 } else { 0 };
-        let content = population.saturating_sub(happy + unhappy);
-        Self { happy, content, unhappy }
+        let mut happiness = Self { happy: 0, content: 0, unhappy: 0 };
+        happiness.update(population, 0, 0);
+        happiness
     }
 
     pub fn is_content(&self) -> bool {
         self.unhappy == 0
     }
 
+    /// A city falls into disorder when its unhappy citizens outnumber its happy ones.
     pub fn in_disorder(&self) -> bool {
-        self.unhappy > self.happy + self.content
+        self.unhappy > self.happy
     }
 
-    pub fn update(&mut self, population: u32, luxury_bonus: u32) {
-        self.happy = 1 + luxury_bonus;
-        self.unhappy = if population > 5 { (population - 5) / 2 } else { 0 };
-        self.content = population.saturating_sub(self.happy + self.unhappy);
+    /// `calm` makes unhappy citizens content (temples, wonders, martial law, entertainers);
+    /// `joy` makes content citizens happy (luxuries).
+    pub fn update(&mut self, population: u32, calm: u32, joy: u32) {
+        let unhappy = population.saturating_sub(BASE_CONTENT).saturating_sub(calm);
+        let happy = joy.min(population - unhappy);
+        self.unhappy = unhappy;
+        self.happy = happy;
+        self.content = population - unhappy - happy;
+    }
+}
+
+#[cfg(test)]
+mod happiness_tests {
+    use super::*;
+
+    #[test]
+    fn big_cities_need_temples_or_luxuries() {
+        let mut h = Happiness::new(5);
+        assert!(!h.in_disorder());
+        h.update(8, 0, 0);
+        assert!(h.in_disorder());
+        h.update(8, 2, 1); // a temple and a luxury
+        assert_eq!((h.happy, h.content, h.unhappy), (1, 6, 1));
+        assert!(!h.in_disorder());
     }
 }

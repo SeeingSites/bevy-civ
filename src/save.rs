@@ -74,3 +74,25 @@ pub fn write_setting(key: &str, value: &str) -> bool {
 pub fn read_setting(key: &str) -> Option<String> {
     storage::read(key)
 }
+
+/// Serialises a map whose keys are not strings (tiles, pairs of ids) as a list of pairs, which JSON
+/// can hold. Use with `#[serde(with = "crate::save::pairs")]`.
+pub mod pairs {
+    use std::collections::HashMap;
+    use std::hash::Hash;
+
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    pub fn serialize<K: Serialize, V: Serialize, S: Serializer>(map: &HashMap<K, V>, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_seq(map.iter())
+    }
+
+    pub fn deserialize<'de, K, V, D>(deserializer: D) -> Result<HashMap<K, V>, D::Error>
+    where
+        K: Deserialize<'de> + Eq + Hash,
+        V: Deserialize<'de>,
+        D: Deserializer<'de>,
+    {
+        Ok(Vec::<(K, V)>::deserialize(deserializer)?.into_iter().collect())
+    }
+}

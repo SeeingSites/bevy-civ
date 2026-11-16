@@ -3,7 +3,7 @@ use crate::unit::{UnitType, spawn_unit};
 use crate::terrain::HexTile;
 use rand::Rng;
 
-#[derive(Resource, Default)]
+#[derive(Resource, Default, Clone, serde::Serialize, serde::Deserialize)]
 pub struct BarbarianState {
     pub spawn_timer: u32,
 }

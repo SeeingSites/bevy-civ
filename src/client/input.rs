@@ -37,8 +37,11 @@ pub fn pointer_input(
     mut hovered: ResMut<Hovered>,
     mut clicks: EventWriter<MapClick>,
     mut camera: Query<(&Camera, &GlobalTransform, &mut Transform, &mut OrthographicProjection), With<Camera2d>>,
+    ui: Res<UiState>,
 ) {
     let Ok(window) = windows.get_single() else { return };
+    // Shift (or the "move together" switch) orders the whole stack.
+    let group = ui.group_move || keys.any_pressed([KeyCode::ShiftLeft, KeyCode::ShiftRight]);
     let Ok((cam, cam_global, mut cam_transform, mut projection)) = camera.get_single_mut() else { return };
     let over_ui = interactions.iter().any(|i| *i != Interaction::None);
     let to_hex = |screen: Vec2| cam.viewport_to_world_2d(cam_global, screen).ok().map(|w| map.layout.world_pos_to_hex(w));
@@ -78,7 +81,7 @@ pub fn pointer_input(
         if let Some(touch) = touches.iter_just_released().next() {
             if pointer.press.take().is_some() && !pointer.dragging {
                 if let Some(hex) = to_hex(touch.position()) {
-                    clicks.send(MapClick { hex, secondary: false });
+                    clicks.send(MapClick { hex, secondary: false, group });
                 }
             }
             pointer.dragging = false;
@@ -94,7 +97,7 @@ pub fn pointer_input(
             }
             if mouse.just_pressed(MouseButton::Right) && !over_ui {
                 if let Some(hex) = to_hex(cursor) {
-                    clicks.send(MapClick { hex, secondary: true });
+                    clicks.send(MapClick { hex, secondary: true, group });
                 }
             }
             let dragging_left = mouse.pressed(MouseButton::Left) && pointer.press.is_some();
@@ -107,7 +110,7 @@ pub fn pointer_input(
             if mouse.just_released(MouseButton::Left) {
                 if pointer.press.take().is_some() && !pointer.dragging {
                     if let Some(hex) = to_hex(cursor) {
-                        clicks.send(MapClick { hex, secondary: false });
+                        clicks.send(MapClick { hex, secondary: false, group });
                     }
                 }
                 pointer.dragging = false;
@@ -174,6 +177,7 @@ pub fn keyboard_input(
         (KeyCode::KeyN, Action::NextUnit),
         (KeyCode::Tab, Action::CycleStack),
         (KeyCode::KeyU, Action::UseUnit),
+        (KeyCode::KeyK, Action::Automate),
         (KeyCode::KeyH, Action::Fortify),
         (KeyCode::Enter, Action::EndTurn),
         (KeyCode::KeyF, Action::Build(Improvement::Farm)),
@@ -201,6 +205,12 @@ pub fn keyboard_input(
     }
     if keys.just_pressed(KeyCode::KeyG) {
         toggle(Modal::Trade, &mut ui);
+    }
+    if keys.just_pressed(KeyCode::KeyY) {
+        toggle(Modal::Empire, &mut ui);
+    }
+    if keys.just_pressed(KeyCode::F1) {
+        toggle(Modal::Help, &mut ui);
     }
     if keys.just_pressed(KeyCode::KeyV) && SoundSettings::AVAILABLE {
         sound.toggle();

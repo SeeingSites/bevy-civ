@@ -14,12 +14,12 @@ pub const MIN_DOMESTIC_DISTANCE: i32 = 6;
 /// Routes a city can have, counting both ends.
 pub const MAX_ROUTES_PER_CITY: usize = 3;
 
-#[derive(Resource, Default, Clone, Debug)]
+#[derive(Resource, Default, Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct TradeRoutes {
     pub routes: Vec<TradeRoute>,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct TradeRoute {
     pub from: Hex,
     pub to: Hex,

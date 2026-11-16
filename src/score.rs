@@ -3,7 +3,7 @@ use crate::city::City;
 use crate::tech::TechState;
 use crate::building::CityBuildings;
 
-#[derive(Resource, Default)]
+#[derive(Resource, Default, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Score {
     pub population: u32,
     pub techs: u32,
