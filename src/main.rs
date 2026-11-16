@@ -277,6 +277,10 @@ pub enum Action {
     Upgrade,
     /// Burn the selected city, taken this turn, to the ground.
     Raze,
+    /// Buy the rest of the selected city's project with gold (not wonders).
+    Hurry,
+    /// Rush the selected city's project with citizens' labour (Despotism and Communism).
+    Rush,
     /// K: the selected worker looks after the land by itself (again to take it back).
     Automate,
     /// Make one of the selected city's workers a specialist of this kind (true), or send one back (false).
@@ -870,7 +874,7 @@ fn handle_map_click(
                 let enemy_type = defending_as(enemy_type, hex, &map);
                 let led = |at: Hex, owner: u32| snapshot.iter().any(|u| u.1 == at && u.2 == owner && u.3 == UnitType::GreatGeneral);
                 let (d_hp, d_level, dug_in) = vitals.get(&enemy_entity).copied().unwrap_or((3, 0, false));
-                let walls = city_here.is_some_and(|(e, _)| walls_of.get(e).is_ok_and(|b| b.has(Building::Walls)));
+                let walls = city_here.is_some_and(|(e, owner)| walls_of.get(e).is_ok_and(|b| b.has(Building::Walls)) || wonders.walls_everywhere(owner));
                 let outcome = combat::fight(
                     Side { kind: unit.unit_type, hp: unit.hp, level: unit.level, led: led(unit.position, PLAYER) },
                     Side { kind: enemy_type, hp: d_hp, level: d_level, led: led(hex, enemy_owner) },
@@ -1434,6 +1438,11 @@ fn apply_actions(
                 if !government.available(&tech) || *government == state.government || state.anarchy_turns > 0 {
                     continue;
                 }
+                if wonders.owns(PLAYER, Building::Liberty) {
+                    state.government = *government;
+                    log.push(format!("The Statue of Liberty spares us anarchy: we are now a {}.", government.name()));
+                    continue;
+                }
                 state.government = Government::Anarchy;
                 state.anarchy_turns = Government::REVOLUTION_TURNS;
                 state.pending_government = Some(*government);
@@ -1465,6 +1474,42 @@ fn apply_actions(
                     log.push("The worker will look after our land by itself from next turn (K again to take it back).");
                     cycle.advance = true;
                 }
+            }
+            Action::Hurry | Action::Rush => {
+                let Some(mut city) = selection.city.and_then(|e| cities.get_mut(e).ok()) else { continue };
+                if city.owner != PLAYER {
+                    continue;
+                }
+                let Some(item) = city.production_queue.clone() else { continue };
+                if !city.can_hurry() {
+                    log.push(if matches!(item, ProductionItem::Building(b) if b.is_wonder()) {
+                        "Wonders cannot be bought; caravans and great engineers can help build them."
+                    } else {
+                        "There is nothing left to hurry."
+                    });
+                    continue;
+                }
+                if *action == Action::Hurry {
+                    let Some(cost) = city.hurry_cost() else { continue };
+                    if state.gold < cost {
+                        log.push(format!("Finishing the {} costs {cost} gold; we have {}.", item.name(), state.gold));
+                        continue;
+                    }
+                    state.gold -= cost;
+                    log.push(format!("We pay {cost} gold: {} completes its {} at the end of the turn.", city.name, item.name()));
+                } else {
+                    let Some(citizens) = city.rush_citizens(state.government) else {
+                        log.push("Only Despotism and Communism can rush work with citizens, and the city must keep one.");
+                        continue;
+                    };
+                    city.population -= citizens;
+                    city.food_storage = city.food_storage.min(city.food_to_grow());
+                    while city.specialists.len() as u32 > city.population {
+                        city.specialists.pop();
+                    }
+                    log.push(format!("{citizens} citizens of {} are worked to the bone: its {} is done at the end of the turn.", city.name, item.name()));
+                }
+                city.production_progress = item.cost();
             }
             Action::Raze => {
                 let Some(entity) = selection.city else { continue };
@@ -1726,7 +1771,10 @@ fn apply_actions(
                     continue;
                 };
                 let city_name = cities.iter().find(|c| c.position == at).map(|c| c.name.clone()).unwrap_or_default();
-                let city_walls: HashSet<Hex> = walled.iter().filter(|(_, b)| b.has(Building::Walls)).filter_map(|(e, _)| cities.get(e).ok().map(|c| c.position)).collect();
+                let city_walls: HashSet<Hex> = walled
+                    .iter()
+                    .filter_map(|(e, b)| cities.get(e).ok().filter(|c| b.has(Building::Walls) || wonders.walls_everywhere(c.owner)).map(|c| c.position))
+                    .collect();
                 let Some(civ_index) = civs.players.iter().position(|c| c.id == victim) else { continue };
                 let civ_name = civs.players[civ_index].name.trim_start_matches("the ").to_string();
                 if *mission == Mission::Embassy {
@@ -1919,9 +1967,13 @@ fn process_turn(
         } else {
             let preferred = Government::preferred(&civ.tech, civ.aggression);
             if preferred != civ.government {
-                civ.government = Government::Anarchy;
-                civ.anarchy = Government::REVOLUTION_TURNS;
-                civ.pending_government = Some(preferred);
+                if wonders.owns(civ.id, Building::Liberty) {
+                    civ.government = preferred;
+                } else {
+                    civ.government = Government::Anarchy;
+                    civ.anarchy = Government::REVOLUTION_TURNS;
+                    civ.pending_government = Some(preferred);
+                }
             }
         }
         governments.insert(civ.id, civ.government);
@@ -2048,6 +2100,8 @@ fn process_turn(
             + city.luxury_from_specialists()
             + garrison.min(gov.martial_law())
             + gov.content_bonus()
+            + if wonders.owns(owner, Building::Mausoleum) { buildings.buildings.iter().filter(|b| matches!(b, Building::Temple | Building::Walls)).count() as u32 } else { 0 }
+            + if buildings.has(Building::Shakespeare) { city.population } else { 0 }
             + if mine { state.difficulty.player_content() } else { 0 };
         let joy = supply::luxury_happiness(supplies.luxuries(city.position), has_market);
         happiness.update(city.population, calm, joy);
@@ -2120,6 +2174,10 @@ fn process_turn(
             let extra = (base * (factor - 1.0)).round() as i32;
             city.production_progress = (city.production_progress as i32 + extra).max(0) as u32;
         }
+        // The Hoover Dam powers every city of its owner: a quarter more shields.
+        if !idle && wonders.owns(owner, Building::HooverDam) {
+            city.production_progress += city.production_per_turn(&buildings, gov, dist) / 4;
+        }
         // A golden age adds half again to every city's shields.
         if !idle && golden.active(owner) {
             city.production_progress += city.production_per_turn(&buildings, gov, dist) / 2;
@@ -2138,7 +2196,7 @@ fn process_turn(
                         let trained = spawn_unit(&mut commands, city.position, ut, city.owner);
                         commands.entity(trained).insert(HomeCity(city.position));
                         // Barracks train veterans.
-                        if ut.is_military() && buildings.has(Building::Barracks) {
+                        if ut.is_military() && (buildings.has(Building::Barracks) || wonders.owns(city.owner, Building::SunTzu)) {
                             commands.queue(move |world: &mut World| {
                                 if let Some(mut unit) = world.get_mut::<Unit>(trained) {
                                     unit.promote();
@@ -2175,6 +2233,23 @@ fn process_turn(
                 }
                 ProductionItem::Building(b) if b.is_wonder() => {
                     if wonders.complete(b, city.owner, &city.name) {
+                        // Wonders that act once, when completed.
+                        match b {
+                            Building::Darwin => {
+                                for _ in 0..2 {
+                                    let learned = if mine { tech.discover() } else { civs.players.iter_mut().find(|c| c.id == city.owner).and_then(|c| c.tech.discover()) };
+                                    if let (true, Some(learned)) = (mine, learned) {
+                                        log.push(format!("Darwin's Voyage reveals {}!", learned.name()));
+                                    }
+                                }
+                            }
+                            Building::Apollo if mine => {
+                                let all: Vec<Hex> = map.cells.iter().copied().collect();
+                                fog.explored.extend(all);
+                                log.push("The Apollo Program shows us the whole world.");
+                            }
+                            _ => {}
+                        }
                         if golden.begin(city.owner) && (mine || foreign.met.contains(&city.owner)) {
                             let who = if mine { "Our".to_string() } else { civs.players.iter().find(|c| c.id == city.owner).map(|c| format!("The {} people's", c.adjective)).unwrap_or_default() };
                             log.push(format!("{who} first wonder begins a golden age: half again as many shields, and more gold, for {GOLDEN_AGE_TURNS} turns."));
@@ -2224,7 +2299,7 @@ fn process_turn(
         }
 
         // Culture accrues whatever the city's mood.
-        culture.add(city.position, culture_rules::per_turn(&buildings.buildings, city.is_capital));
+        culture.add(city.position, culture_rules::per_turn(&buildings.buildings, city.is_capital) + if wonders.owns(owner, Building::Eiffel) { 2 } else { 0 });
 
         // Great-person points; a birth appears in the city. Computer players put theirs to work at once.
         if owner != BARBARIANS {
@@ -2289,6 +2364,23 @@ fn process_turn(
                 city.production_queue = Some(next);
             }
         }
+        // Adam Smith's Trading Company and the Internet reward the owner's markets and libraries.
+        let wonder_gold = if wonders.owns(owner, Building::AdamSmith) {
+            buildings.buildings.iter().filter(|b| matches!(b, Building::Marketplace | Building::Bank | Building::Harbor)).count() as i32
+        } else {
+            0
+        };
+        let wonder_science = if wonders.owns(owner, Building::Internet) && buildings.has(Building::Library) { 3 } else { 0 };
+        if !idle {
+            if mine {
+                total_gold += wonder_gold;
+                total_science += wonder_science;
+            } else if owner != BARBARIANS {
+                let income = ai_income.entry(owner).or_default();
+                income.0 += wonder_science;
+                income.1 += wonder_gold;
+            }
+        }
         if !mine && !idle {
             let income = ai_income.entry(owner).or_default();
             income.0 += city.science_per_turn(&buildings, gov, dist);
@@ -2321,7 +2413,7 @@ fn process_turn(
     }
     total_science += trade_science;
 
-    let free_support = gov.free_unit_support() * player_cities.max(1);
+    let free_support = gov.free_unit_support() * player_cities.max(1) + if wonders.owns(PLAYER, Building::StatueOfZeus) { player_cities } else { 0 };
     let military = units.iter().filter(|(_, u)| u.owner == PLAYER && u.unit_type.is_military()).count() as u32;
     if military > free_support {
         total_gold -= (military - free_support) as i32 * gov.unit_upkeep_food() as i32;
@@ -2330,6 +2422,37 @@ fn process_turn(
     state.gold = (state.gold + total_gold).max(0);
     tech.science_per_turn = total_science;
 
+    // Marco Polo's Embassy: an embassy with every civilization (and the player meets them all).
+    if let Some(&(owner, _)) = wonders.built.get(&Building::MarcoPolo) {
+        for civ in civs.players.iter().filter(|c| c.id != owner) {
+            spies.embassies.insert((owner, civ.id));
+            if owner == PLAYER && !civ.is_human {
+                foreign.met.insert(civ.id);
+            }
+        }
+    }
+    // Leonardo's Workshop: one obsolete unit of its owner is upgraded free each turn.
+    if let Some(&(owner, _)) = wonders.built.get(&Building::Leonardo) {
+        let known = |t: Option<Tech>| {
+            t.is_none_or(|t| if owner == PLAYER { tech.researched.contains(&t) } else { civs.players.iter().any(|c| c.id == owner && c.tech.researched.contains(&t)) })
+        };
+        let candidate = units
+            .iter()
+            .filter(|(_, u)| u.owner == owner && u.unit_type.upgrades_to().is_some_and(|to| known(to.required_tech())))
+            .map(|(e, _)| e)
+            .min_by_key(|e| e.index());
+        if let Some(entity) = candidate {
+            if let Ok((_, mut unit)) = units.get_mut(entity) {
+                if let Some(to) = unit.unit_type.upgrades_to() {
+                    if owner == PLAYER {
+                        log.push(format!("Leonardo's Workshop re-equips a {} as a {}.", unit.unit_type.name(), to.name()));
+                    }
+                    unit.unit_type = to;
+                    unit.hp = unit.max_hp();
+                }
+            }
+        }
+    }
     let home_cities: HashSet<(Hex, u32)> = cities.iter().map(|(c, _, _)| (c.position, c.owner)).collect();
     for (_, mut unit) in &mut units {
         if let Some(done) = unit.process_build() {
@@ -2459,7 +2582,7 @@ fn process_turn(
     let names: HashMap<u32, String> = civs.players.iter().map(|c| (c.id, c.adjective.clone())).collect();
     let civ_name = |owner: u32| names.get(&owner).cloned().unwrap_or_else(|| "Barbarian".to_string());
 
-    let walled_cities: HashSet<Hex> = cities.iter().filter(|(_, b, _)| b.has(Building::Walls)).map(|(c, _, _)| c.position).collect();
+    let walled_cities: HashSet<Hex> = cities.iter().filter(|(c, b, _)| b.has(Building::Walls) || wonders.walls_everywhere(c.owner)).map(|(c, _, _)| c.position).collect();
     let mut dead: HashSet<Entity> = HashSet::new();
     for attack in attacks {
         if dead.contains(&attack.attacker) {
@@ -2586,7 +2709,7 @@ fn process_turn(
         let land: Vec<(Hex, Terrain)> = tiles.iter().map(|t| (t.coord, t.terrain)).collect();
         let city_info: Vec<(Hex, u32, u32, String, bool)> = cities
             .iter()
-            .map(|(c, b, _)| (c.position, c.owner, c.population, c.name.clone(), b.has(Building::Walls)))
+            .map(|(c, b, _)| (c.position, c.owner, c.population, c.name.clone(), b.has(Building::Walls) || wonders.walls_everywhere(c.owner)))
             .collect();
         let roads = road_network(tiles.iter(), city_info.iter().map(|c| c.0));
         let sites: Vec<(Hex, u32)> = cities
@@ -3009,6 +3132,39 @@ mod tests {
         world.send_event(action);
         app.update();
         unit
+    }
+
+    #[test]
+    fn projects_can_be_bought_but_wonders_cannot() {
+        let mut app = order_app();
+        let mut cities = app.world_mut().query::<(Entity, &mut City)>();
+        let roma = cities.iter_mut(app.world_mut()).find(|(_, c)| c.name == "Roma").map(|(e, _)| e).unwrap();
+        let set = |app: &mut App, item: ProductionItem| {
+            let mut city = app.world_mut().get_mut::<City>(roma).unwrap();
+            city.production_queue = Some(item);
+            city.production_progress = 10;
+        };
+        app.world_mut().resource_mut::<Selection>().city = Some(roma);
+        app.world_mut().resource_mut::<GameState>().gold = 1000;
+
+        set(&mut app, ProductionItem::Building(Building::Temple));
+        let cost = app.world().get::<City>(roma).unwrap().hurry_cost().unwrap();
+        app.world_mut().send_event(Action::Hurry);
+        app.update();
+        assert_eq!(app.world().resource::<GameState>().gold, 1000 - cost);
+        assert_eq!(app.world().get::<City>(roma).unwrap().production_progress, Building::Temple.cost());
+
+        set(&mut app, ProductionItem::Building(Building::Pyramids));
+        app.world_mut().send_event(Action::Hurry);
+        app.update();
+        assert_eq!(app.world().get::<City>(roma).unwrap().production_progress, 10, "wonders cannot be bought");
+
+        // Despotism (the default) can rush with citizens.
+        set(&mut app, ProductionItem::Building(Building::Barracks));
+        app.world_mut().send_event(Action::Rush);
+        app.update();
+        let city = app.world().get::<City>(roma).unwrap();
+        assert_eq!((city.population, city.production_progress), (2, Building::Barracks.cost()));
     }
 
     #[test]

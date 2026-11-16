@@ -928,6 +928,24 @@ pub fn rebuild_panels(
                     let when = if left <= 1.0 { "done at the end of the turn".to_string() } else { format!("about {left} turns") };
                     p.spawn(label(&art.font_bold, format!("Building: {}  {}/{}  ({when})", item.name(), city.production_progress.min(item.cost()), item.cost()), 14.0, CREAM));
                     bar(p, city.production_progress as f32 / item.cost() as f32, Color::srgb(0.92, 0.62, 0.25));
+                    // Hurrying: gold for anything but wonders, or citizens under Despotism and Communism.
+                    if mine && city.shields_left() > 0 && left > 1.0 {
+                        p.spawn(row(6.0)).with_children(|r| {
+                            match city.hurry_cost() {
+                                Some(cost) => {
+                                    let tint = if state.gold >= cost { GREEN } else { GRAY };
+                                    button(r, art, format!("Buy now: {cost} gold"), Command::Game(Action::Hurry), tint, 13.0);
+                                    if let Some(citizens) = city.rush_citizens(state.government) {
+                                        let plural = if citizens == 1 { "citizen" } else { "citizens" };
+                                        button(r, art, format!("Rush: {citizens} {plural}"), Command::Game(Action::Rush), Color::srgb(0.9, 0.6, 0.5), 13.0);
+                                    }
+                                }
+                                None => {
+                                    r.spawn(label(&art.font_body, "Wonders cannot be bought: caravans (U) and great engineers help.", 12.0, MUTED));
+                                }
+                            }
+                        });
+                    }
                 }
                 None => {
                     p.spawn(label(&art.font_bold, "Building: nothing - choose something below", 14.0, RED));

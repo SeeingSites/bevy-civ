@@ -64,6 +64,41 @@ impl ProductionItem {
 }
 
 impl City {
+    /// Shields still needed to finish the current project.
+    pub fn shields_left(&self) -> u32 {
+        self.production_queue.as_ref().map(|i| i.cost().saturating_sub(self.production_progress)).unwrap_or(0)
+    }
+
+    /// Whether the current project can be hurried at all (wonders cannot: caravans and great engineers help those).
+    pub fn can_hurry(&self) -> bool {
+        match &self.production_queue {
+            Some(ProductionItem::Building(b)) => !b.is_wonder() && self.shields_left() > 0,
+            Some(ProductionItem::Unit(_)) => self.shields_left() > 0,
+            None => false,
+        }
+    }
+
+    /// Gold to buy the rest of the current project: two gold a shield plus a premium that grows with
+    /// what is missing, and double if nothing has been built of it yet.
+    pub fn hurry_cost(&self) -> Option<i32> {
+        if !self.can_hurry() {
+            return None;
+        }
+        let left = self.shields_left() as i32;
+        let gold = 2 * left + left * left / 20;
+        Some(if self.production_progress == 0 { gold * 2 } else { gold })
+    }
+
+    /// Citizens it takes to rush the current project under a government that allows it (one for
+    /// every 20 shields missing). The city must keep at least one.
+    pub fn rush_citizens(&self, gov: Government) -> Option<u32> {
+        if !self.can_hurry() || !gov.allows_forced_labour() {
+            return None;
+        }
+        let citizens = self.shields_left().div_ceil(20);
+        (citizens < self.population).then_some(citizens)
+    }
+
     /// Citizens working the land (specialists do not).
     pub fn workers(&self) -> u32 {
         self.population.saturating_sub(self.specialists.len() as u32)
@@ -212,4 +247,45 @@ pub fn spawn_city(
             Happiness::new(population),
         ))
         .id()
+}
+
+#[cfg(test)]
+mod hurry_tests {
+    use super::*;
+    use crate::building::Building;
+    use crate::unit::UnitType;
+
+    fn city(item: ProductionItem, progress: u32, population: u32) -> City {
+        City {
+            name: "Roma".into(),
+            population,
+            food_storage: 0,
+            production_progress: progress,
+            production_queue: Some(item),
+            position: Hex::ZERO,
+            owner: 0,
+            specialists: vec![],
+            is_capital: true,
+        }
+    }
+
+    #[test]
+    fn buying_costs_more_for_more_and_double_from_scratch() {
+        let temple = city(ProductionItem::Building(Building::Temple), 10, 5);
+        assert_eq!(temple.hurry_cost(), Some(2 * 20 + 20 * 20 / 20));
+        let fresh = city(ProductionItem::Building(Building::Temple), 0, 5);
+        assert_eq!(fresh.hurry_cost(), Some(2 * (2 * 30 + 30 * 30 / 20)));
+        assert_eq!(city(ProductionItem::Building(Building::Pyramids), 10, 5).hurry_cost(), None, "no buying wonders");
+        let units = city(ProductionItem::Unit(UnitType::Legion), 5, 5);
+        assert!(units.hurry_cost().is_some());
+    }
+
+    #[test]
+    fn rushing_takes_citizens_under_hard_governments_only() {
+        let barracks = city(ProductionItem::Building(Building::Barracks), 0, 4);
+        assert_eq!(barracks.rush_citizens(Government::Despotism), Some(2));
+        assert_eq!(barracks.rush_citizens(Government::Democracy), None);
+        let small = city(ProductionItem::Building(Building::Barracks), 0, 2);
+        assert_eq!(small.rush_citizens(Government::Despotism), None, "a city keeps one citizen");
+    }
 }

@@ -132,6 +132,11 @@ impl Government {
         }
     }
 
+    /// Despotism and Communism let a city rush its project by working citizens to death.
+    pub fn allows_forced_labour(&self) -> bool {
+        matches!(self, Government::Despotism | Government::Communism)
+    }
+
     /// Extra content citizens in every city.
     pub fn content_bonus(&self) -> u32 {
         match self {
