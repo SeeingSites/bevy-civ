@@ -17,6 +17,7 @@ pub enum Building {
     Colosseum,
     Cathedral,
     SewerSystem,
+    StockExchange,
     // Spaceship parts: each goes to its civilization's ship, not into the city
     SpaceStructure,
     SpaceComponent,
@@ -52,10 +53,10 @@ pub enum Building {
 }
 
 impl Building {
-    pub const ALL: [Building; 45] = [
+    pub const ALL: [Building; 46] = [
         Building::Granary, Building::Barracks, Building::Library, Building::Marketplace, Building::Walls,
         Building::Aqueduct, Building::University, Building::Bank, Building::Factory, Building::Harbor,
-        Building::Temple, Building::Courthouse, Building::Colosseum, Building::Cathedral, Building::SewerSystem,
+        Building::Temple, Building::Courthouse, Building::Colosseum, Building::Cathedral, Building::SewerSystem, Building::StockExchange,
         Building::SpaceStructure, Building::SpaceComponent, Building::SpaceModule, Building::Pyramids,
         Building::GreatLibrary, Building::HangingGardens, Building::Colossus, Building::Oracle,
         Building::GreatLighthouse, Building::GreatWall, Building::StatueOfZeus, Building::Mausoleum, Building::Copernicus, Building::SunTzu, Building::MarcoPolo, Building::KingRichards, Building::Michelangelo, Building::Leonardo, Building::Bach, Building::Magellan, Building::Newton, Building::AdamSmith, Building::Shakespeare, Building::Darwin, Building::Liberty, Building::HooverDam, Building::Eiffel, Building::Internet, Building::Apollo, Building::CureForCancer,
@@ -71,6 +72,7 @@ impl Building {
             Building::Aqueduct => "Aqueduct",
             Building::University => "University",
             Building::Bank => "Bank",
+            Building::StockExchange => "Stock Exchange",
             Building::Factory => "Factory",
             Building::Harbor => "Harbor",
             Building::Temple => "Temple",
@@ -121,6 +123,7 @@ impl Building {
             Building::Aqueduct => 80,
             Building::University => 100,
             Building::Bank => 120,
+            Building::StockExchange => 160,
             Building::Factory => 150,
             Building::Harbor => 60,
             Building::Temple => 30,
@@ -170,7 +173,8 @@ impl Building {
             Building::Walls => Some(crate::tech::Tech::Masonry),
             Building::Aqueduct => Some(crate::tech::Tech::Construction),
             Building::University => Some(crate::tech::Tech::Philosophy),
-            Building::Bank => Some(crate::tech::Tech::Currency),
+            Building::Bank => Some(crate::tech::Tech::Banking),
+            Building::StockExchange => Some(crate::tech::Tech::Economics),
             Building::Factory => Some(crate::tech::Tech::Industrialization),
             Building::Harbor => Some(crate::tech::Tech::Seafaring),
             Building::Temple => Some(crate::tech::Tech::Mysticism),
@@ -199,7 +203,7 @@ impl Building {
             Building::Bach => Some(crate::tech::Tech::PrintingPress),
             Building::Magellan => Some(crate::tech::Tech::Gunpowder),
             Building::Newton => Some(crate::tech::Tech::SteamPower),
-            Building::AdamSmith => Some(crate::tech::Tech::Industrialization),
+            Building::AdamSmith => Some(crate::tech::Tech::Economics),
             Building::Shakespeare => Some(crate::tech::Tech::Sanitation),
             Building::Darwin => Some(crate::tech::Tech::Electricity),
             Building::Liberty => Some(crate::tech::Tech::Democracy),
@@ -257,7 +261,8 @@ impl Building {
             Building::Walls => "doubles defence against land attacks",
             Building::Aqueduct => "lets the city grow past size 8 (to 16)",
             Building::University => "+4 science",
-            Building::Bank => "+4 gold",
+            Building::Bank => "+4 gold; interest on the treasury (needs a Marketplace)",
+            Building::StockExchange => "+3 gold, +50% gold here; more interest (needs a Bank)",
             Building::Factory => "+3 shields; needed for spaceship parts",
             Building::Harbor => "+1 food; links coasts",
             Building::Temple => "+2 content",
@@ -315,10 +320,29 @@ impl Building {
         match self {
             Building::Marketplace => 2,
             Building::Bank => 4,
+            Building::StockExchange => 3,
             Building::Colossus => 3,
             _ => 0,
         }
     }
+}
+
+impl Building {
+    /// A building the city must already have before it can build this one.
+    pub fn required_building(&self) -> Option<Building> {
+        match self {
+            Building::Bank => Some(Building::Marketplace),
+            Building::StockExchange => Some(Building::Bank),
+            _ => None,
+        }
+    }
+}
+
+/// Interest a civilization earns on its treasury each turn: 5% of its gold, up to 2 gold for each
+/// Bank and 3 more for each Stock Exchange it owns.
+pub fn interest(gold: i32, banks: u32, exchanges: u32) -> i32 {
+    let cap = (2 * banks + 3 * exchanges) as i32;
+    (gold.max(0) / 20).min(cap)
 }
 
 impl Building {
@@ -459,11 +483,38 @@ impl CityBuildings {
         self.buildings.iter().map(|b| b.production_bonus()).sum()
     }
 
+    /// Gold from the city's buildings; a Stock Exchange adds half again.
     pub fn total_gold_bonus(&self) -> u32 {
-        self.buildings.iter().map(|b| b.gold_bonus()).sum()
+        let sum: u32 = self.buildings.iter().map(|b| b.gold_bonus()).sum();
+        if self.buildings.contains(&Building::StockExchange) { sum * 3 / 2 } else { sum }
     }
 
     pub fn has_wonder(&self, wonder: Building) -> bool {
         self.buildings.iter().any(|b| *b == wonder && b.is_wonder())
+    }
+}
+
+#[cfg(test)]
+mod finance_tests {
+    use super::*;
+
+    #[test]
+    fn interest_is_five_percent_capped_by_banks_and_exchanges() {
+        assert_eq!(interest(1_000, 0, 0), 0, "no banks, no interest");
+        assert_eq!(interest(1_000, 3, 0), 6);
+        assert_eq!(interest(100, 3, 0), 5);
+        assert_eq!(interest(1_000, 3, 2), 12);
+        assert_eq!(interest(-50, 3, 2), 0);
+    }
+
+    #[test]
+    fn a_stock_exchange_adds_half_again_and_needs_a_bank() {
+        let city = CityBuildings { buildings: vec![Building::Marketplace, Building::Bank] };
+        assert_eq!(city.total_gold_bonus(), 6);
+        let city = CityBuildings { buildings: vec![Building::Marketplace, Building::Bank, Building::StockExchange] };
+        assert_eq!(city.total_gold_bonus(), (2 + 4 + 3) * 3 / 2);
+        assert_eq!(Building::StockExchange.required_building(), Some(Building::Bank));
+        assert_eq!(Building::Bank.required_building(), Some(Building::Marketplace));
+        assert_eq!(Building::Bank.required_tech(), Some(crate::tech::Tech::Banking));
     }
 }

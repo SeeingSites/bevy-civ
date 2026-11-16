@@ -69,6 +69,7 @@ pub fn can_build(building: &Building, city: &CityView, civ: &CivView, supplies: 
         && building.required_tech().is_none_or(|t| civ.tech.researched.contains(&t))
         && supplies.has(city.position, building.required_resources())
         && (*building != Building::Harbor || city.coastal)
+        && building.required_building().is_none_or(|b| city.built.contains(&b))
 }
 
 /// The unit that holds a city best.
@@ -166,6 +167,7 @@ pub fn choose(city: &CityView, civ: &CivView, supplies: &Supplies, rng: &mut imp
         (Building::SewerSystem, city.population >= 15),
         (Building::University, true),
         (Building::Bank, true),
+        (Building::StockExchange, city.population >= 8),
         (Building::Factory, true),
     ];
     if let Some((building, _)) = wish.into_iter().find(|(b, wanted)| *wanted && can_build(b, city, civ, supplies)) {

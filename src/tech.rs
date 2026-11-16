@@ -55,10 +55,13 @@ pub enum Tech {
     SpaceFlight,
     Plastics,
     Superconductors,
+    // Finance
+    Banking,
+    Economics,
 }
 
 impl Tech {
-    pub const ALL: [Tech; 38] = [
+    pub const ALL: [Tech; 40] = [
         Tech::Pottery, Tech::AnimalHusbandry, Tech::Mining, Tech::BronzeWorking, Tech::Masonry,
         Tech::Alphabet, Tech::TheWheel, Tech::Writing, Tech::CodeOfLaws, Tech::Mysticism, Tech::Seafaring,
         Tech::IronWorking, Tech::Mathematics, Tech::HorsebackRiding, Tech::Construction,
@@ -67,6 +70,7 @@ impl Tech {
         Tech::ReplaceableParts, Tech::MotorizedTransport,
         Tech::TheRepublic, Tech::Theology, Tech::Fundamentalism, Tech::Communism, Tech::Sanitation,
         Tech::Electricity, Tech::Computers, Tech::Rocketry, Tech::SpaceFlight, Tech::Plastics, Tech::Superconductors,
+        Tech::Banking, Tech::Economics,
     ];
 
     pub fn cost(&self) -> u32 {
@@ -94,6 +98,8 @@ impl Tech {
             Tech::SpaceFlight => 140,
             Tech::Plastics => 150,
             Tech::Superconductors => 160,
+            Tech::Banking => 45,
+            Tech::Economics => 75,
         }
     }
 
@@ -130,6 +136,8 @@ impl Tech {
             Tech::SpaceFlight => vec![Tech::Rocketry],
             Tech::Plastics => vec![Tech::SpaceFlight, Tech::Refining],
             Tech::Superconductors => vec![Tech::Plastics, Tech::Computers],
+            Tech::Banking => vec![Tech::Currency, Tech::TheRepublic],
+            Tech::Economics => vec![Tech::Banking, Tech::PrintingPress],
             _ => vec![],
         }
     }
@@ -174,6 +182,8 @@ impl Tech {
             Tech::SpaceFlight => "Space Flight",
             Tech::Plastics => "Plastics",
             Tech::Superconductors => "Superconductors",
+            Tech::Banking => "Banking",
+            Tech::Economics => "Economics",
         }
     }
 }
