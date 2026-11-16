@@ -6,6 +6,7 @@ use bevy::prelude::*;
 use bevy_civ::terrain::Improvement;
 
 use super::map::{Hovered, HEX_SIZE};
+use super::sfx::SoundSettings;
 use super::ui::{Modal, UiState};
 use crate::{Action, Focus, MapClick, MapData};
 
@@ -161,10 +162,17 @@ pub fn pointer_input(
     cam_transform.translation.y = cam_transform.translation.y.clamp(map.min.y - margin, map.max.y + margin);
 }
 
-pub fn keyboard_input(keys: Res<ButtonInput<KeyCode>>, mut actions: EventWriter<Action>, mut ui: ResMut<UiState>, mut dirty: ResMut<crate::Dirty>) {
+pub fn keyboard_input(
+    keys: Res<ButtonInput<KeyCode>>,
+    mut actions: EventWriter<Action>,
+    mut ui: ResMut<UiState>,
+    mut dirty: ResMut<crate::Dirty>,
+    mut sound: ResMut<SoundSettings>,
+) {
     let bindings = [
         (KeyCode::Space, Action::SkipOrEnd),
         (KeyCode::KeyN, Action::NextUnit),
+        (KeyCode::Tab, Action::CycleStack),
         (KeyCode::KeyH, Action::Fortify),
         (KeyCode::Enter, Action::EndTurn),
         (KeyCode::KeyF, Action::Build(Improvement::Farm)),
@@ -192,6 +200,9 @@ pub fn keyboard_input(keys: Res<ButtonInput<KeyCode>>, mut actions: EventWriter<
     }
     if keys.just_pressed(KeyCode::KeyG) {
         toggle(Modal::Trade, &mut ui);
+    }
+    if keys.just_pressed(KeyCode::KeyV) && SoundSettings::AVAILABLE {
+        sound.toggle();
     }
     if keys.just_pressed(KeyCode::Escape) {
         if ui.modal.take().is_none() {

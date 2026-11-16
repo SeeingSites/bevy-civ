@@ -12,6 +12,8 @@ pub struct Unit {
     pub current_build: Option<Improvement>,
     /// Dug in: skipped when cycling through units, and harder to dislodge.
     pub fortified: bool,
+    /// Thirds of a move left over from travelling on roads this turn.
+    pub road_credit: u32,
 }
 
 #[derive(Component)]
@@ -291,8 +293,44 @@ impl Unit {
         if self.unit_type.is_worker() {
             self.current_build = Some(improvement);
             self.build_turns_left = Some(3);
-            self.movement_left = 0;
+            self.end_move();
         }
+    }
+
+    /// What it can still move this turn.
+    pub fn budget(&self) -> crate::pathfinding::Budget {
+        crate::pathfinding::Budget { moves: self.movement_left, road_credit: self.road_credit }
+    }
+
+    /// Whether it can take another step this turn (part-moves left on a road count).
+    pub fn can_move(&self) -> bool {
+        self.budget().can_step()
+    }
+
+    /// Steps onto a neighbouring tile, paying for it.
+    pub fn step(&mut self, to: Hex, cost: crate::pathfinding::StepCost) {
+        self.spend(cost);
+        self.position = to;
+    }
+
+    /// Pays for an action that takes movement without moving (an attack).
+    pub fn spend(&mut self, cost: crate::pathfinding::StepCost) {
+        let mut budget = self.budget();
+        budget.spend(cost);
+        self.movement_left = budget.moves;
+        self.road_credit = budget.road_credit;
+    }
+
+    /// Gives up the rest of this turn's movement.
+    pub fn end_move(&mut self) {
+        self.movement_left = 0;
+        self.road_credit = 0;
+    }
+
+    /// Starts a turn with a full allowance.
+    pub fn refresh(&mut self, moves: u32) {
+        self.movement_left = moves;
+        self.road_credit = 0;
     }
 
     pub fn process_build(&mut self) -> Option<Improvement> {
@@ -322,6 +360,7 @@ pub fn spawn_unit(commands: &mut Commands, coord: Hex, unit_type: UnitType, owne
             build_turns_left: None,
             current_build: None,
             fortified: false,
+            road_credit: 0,
         })
         .id()
 }

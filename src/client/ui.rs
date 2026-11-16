@@ -19,6 +19,7 @@ use bevy_civ::unit::{Unit, UnitType};
 
 use super::actors::unit_row;
 use super::map::Hovered;
+use super::sfx::{Sfx, SoundSettings};
 use super::{icon, owner_color, owner_name, Art};
 use crate::foreign::{self, DiploAct, Foreign, OfferKind, TradeAsk};
 use crate::supply::Supplies;
@@ -67,6 +68,7 @@ pub enum Command {
     PickCiv(usize),
     BackToScenarios,
     QuitToMenu,
+    ToggleSound,
 }
 
 #[derive(Component)]
@@ -160,6 +162,56 @@ fn button(parent: &mut ChildBuilder, art: &Art, text: impl Into<String>, command
         });
 }
 
+/// Moves left, with the thirds of a move left over from road travel ("1⅔").
+fn moves_left(unit: &Unit) -> String {
+    let fraction = match unit.road_credit {
+        1 => "⅓",
+        2 => "⅔",
+        _ => "",
+    };
+    match (unit.movement_left, fraction) {
+        (0, f) if !f.is_empty() => f.to_string(),
+        (n, f) => format!("{n}{f}"),
+    }
+}
+
+/// Label of the in-game sound switch.
+#[derive(Component)]
+pub struct SoundLabel;
+
+fn sound_label(on: bool) -> &'static str {
+    if on { "Sound: On (V)" } else { "Sound: Off (V)" }
+}
+
+fn sound_button(parent: &mut ChildBuilder, art: &Art) {
+    parent
+        .spawn((
+            Button,
+            Node {
+                padding: UiRect::axes(Val::Px(14.0 * 0.8), Val::Px(14.0 * 0.42)),
+                justify_content: JustifyContent::Center,
+                align_items: AlignItems::Center,
+                ..default()
+            },
+            ImageNode { image: art.button.clone(), image_mode: sliced(14.0), color: BRONZE, ..default() },
+            ButtonTint(BRONZE),
+            ButtonCommand(Command::ToggleSound),
+        ))
+        .with_children(|b| {
+            b.spawn((label(&art.font_bold, sound_label(true), 14.0, INK), SoundLabel));
+        });
+}
+
+/// Keeps the sound switch's label in step with the setting (it can also change from the keyboard).
+pub fn update_sound_button(settings: Res<SoundSettings>, mut labels: Query<&mut Text, With<SoundLabel>>, added: Query<(), Added<SoundLabel>>) {
+    if !settings.is_changed() && added.is_empty() {
+        return;
+    }
+    for mut text in &mut labels {
+        text.0 = sound_label(settings.enabled).into();
+    }
+}
+
 fn bar(parent: &mut ChildBuilder, fraction: f32, color: Color) {
     parent
         .spawn((
@@ -245,6 +297,9 @@ pub fn setup_ui(mut commands: Commands, art: Res<Art>, mut images: ResMut<Assets
             button(bar, &art, "Science (Q)", Command::Toggle(Modal::Science), BRONZE, 14.0);
             button(bar, &art, "Diplomacy (E)", Command::Toggle(Modal::Diplomacy), BRONZE, 14.0);
             button(bar, &art, "Trade (G)", Command::Toggle(Modal::Trade), BRONZE, 14.0);
+            if SoundSettings::AVAILABLE {
+                sound_button(bar, &art);
+            }
             button(bar, &art, "Save", Command::Game(Action::Save), BRONZE, 14.0);
             button(bar, &art, "Menu", Command::QuitToMenu, BRONZE, 14.0);
         });
@@ -398,7 +453,7 @@ pub fn rebuild_panels(
     tech: Res<TechState>,
     civs: Res<Civilizations>,
     diplomacy: Res<Diplomacy>,
-    units: Query<&Unit>,
+    (units, tiles, unit_entities): (Query<&Unit>, Query<&HexTile>, Query<Entity, With<Unit>>),
     cities: Query<(&City, &CityBuildings, &Happiness)>,
     unit_panel: Query<Entity, With<UnitPanel>>,
     mut city_panel: Query<(Entity, &mut Node), (With<CityPanel>, Without<ModalRoot>)>,
@@ -418,7 +473,7 @@ pub fn rebuild_panels(
                 p.spawn(label(&art.font_title, "No unit selected", 17.0, GOLD));
                 p.spawn(label(
                     &art.font_body,
-                    "Click a unit or city to select it; click a tile (or right-click) to move.\nSpace skips a unit and moves to the next; Enter ends the turn.",
+                    "Click a unit or city to select it; click again (or Tab) for the next unit on that tile.\nClick a tile (or right-click) to move. Space skips a unit; Enter ends the turn.",
                     14.0,
                     MUTED,
                 ));
@@ -443,17 +498,46 @@ pub fn rebuild_panels(
                         (Some(job), Some(turns)) => format!("Building {:?} ({} turns)", job, turns),
                         _ if !mine => String::new(),
                         _ if unit.fortified => "Fortified".into(),
-                        _ if unit.movement_left == 0 => "No moves left".into(),
+                        _ if !unit.can_move() => "No moves left".into(),
                         _ => "Awaiting orders".into(),
                     };
                     c.spawn(label(&art.font_body, format!("{} unit  {}", owner_name(unit.owner, &civs), status), 14.0, owner_color(unit.owner).mix(&Color::WHITE, 0.55)));
                     c.spawn(row(12.0)).with_children(|s| {
                         stat(s, art, icon::ATTACK, attack.to_string(), CREAM);
                         stat(s, art, icon::DEFENSE, defense.to_string(), CREAM);
-                        stat(s, art, icon::MOVES, format!("{}/{}", unit.movement_left, moves), CREAM);
+                        stat(s, art, icon::MOVES, format!("{}/{}", moves_left(unit), moves), CREAM);
                     });
                 });
             });
+            // Several of the player's units on one tile: say so, and list them to pick from.
+            if mine {
+                let stack = crate::own_stack(unit.position, unit_entities.iter(), |e| units.get(e).ok().map(|u| (u.position, u.owner)));
+                if stack.len() > 1 {
+                    let index = selection.unit.and_then(|s| stack.iter().position(|e| *e == s)).unwrap_or(0);
+                    p.spawn(label(
+                        &art.font_bold,
+                        format!("Unit {} of {} on this tile - Tab or click the tile again for the next:", index + 1, stack.len()),
+                        14.0,
+                        GOLD,
+                    ));
+                    p.spawn(row(6.0)).with_children(|r| {
+                        for entity in &stack {
+                            let Ok(other) = units.get(*entity) else { continue };
+                            let state = if other.build_turns_left.is_some() {
+                                " (working)"
+                            } else if other.fortified {
+                                " (fortified)"
+                            } else if !other.can_move() {
+                                " (done)"
+                            } else {
+                                ""
+                            };
+                            let tint = if selection.unit == Some(*entity) { GREEN } else { BRONZE };
+                            button(r, art, format!("{}{}", other.unit_type.name(), state), Command::Game(Action::Select(*entity)), tint, 13.0);
+                        }
+                    });
+                }
+            }
             if mine {
                 p.spawn(row(6.0)).with_children(|r| {
                     if unit.unit_type == UnitType::Settler {
@@ -462,7 +546,8 @@ pub fn rebuild_panels(
                     if unit.unit_type.is_worker() && unit.build_turns_left.is_none() {
                         button(r, art, "Farm (F)", Command::Game(Action::Build(Improvement::Farm)), BRONZE, 15.0);
                         button(r, art, "Mine (M)", Command::Game(Action::Build(Improvement::Mine)), BRONZE, 15.0);
-                        button(r, art, "Road (R)", Command::Game(Action::Build(Improvement::Road)), BRONZE, 15.0);
+                        let rail = tiles.iter().any(|t| t.coord == unit.position && t.has_road() && !t.has_railroad()) && tech.researched.contains(&Tech::SteamPower);
+                        button(r, art, if rail { "Railroad (R)" } else { "Road (R)" }, Command::Game(Action::Build(Improvement::Road)), BRONZE, 15.0);
                         button(r, art, "Clear (X)", Command::Game(Action::Transform), BRONZE, 15.0);
                     }
                     if !unit.fortified {
@@ -492,6 +577,11 @@ pub fn rebuild_panels(
             p.spawn(label(&art.font_body, format!("{} {}  -  size {}", owner_name(city.owner, &civs), kind, city.population), 15.0, owner_color(city.owner).mix(&Color::WHITE, 0.55)));
             if !mine {
                 return;
+            }
+            let garrison = crate::own_stack(city.position, unit_entities.iter(), |e| units.get(e).ok().map(|u| (u.position, u.owner)));
+            if !garrison.is_empty() {
+                let units_here = if garrison.len() == 1 { "1 of your units is".to_string() } else { format!("{} of your units are", garrison.len()) };
+                p.spawn(label(&art.font_bold, format!("{units_here} here - press Tab or click the city again to pick one."), 14.0, GOLD));
             }
             let dist = capital.map(|c| city.position.distance_to(c) as u32).unwrap_or(0);
             let gov = state.government;
@@ -933,12 +1023,15 @@ pub fn button_actions(
     mut menu: ResMut<MenuState>,
     mut next: ResMut<NextState<AppState>>,
     mut commands: Commands,
+    (mut sounds, mut sound): (EventWriter<Sfx>, ResMut<SoundSettings>),
 ) {
     for (interaction, command) in &buttons {
         if *interaction != Interaction::Pressed {
             continue;
         }
+        sounds.send(Sfx::Click);
         match &command.0 {
+            Command::ToggleSound => sound.toggle(),
             Command::Game(action) => {
                 actions.send(action.clone());
             }

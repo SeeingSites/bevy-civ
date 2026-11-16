@@ -64,3 +64,13 @@ pub fn load_game() -> Option<SaveData> {
 pub fn save_exists() -> bool {
     storage::read(SAVE_KEY).is_some()
 }
+
+/// Writes a small text file of player preferences (next to the save, or in localStorage on the web).
+pub fn write_setting(key: &str, value: &str) -> bool {
+    storage::write(key, value)
+}
+
+/// Reads a preference written by [`write_setting`].
+pub fn read_setting(key: &str) -> Option<String> {
+    storage::read(key)
+}

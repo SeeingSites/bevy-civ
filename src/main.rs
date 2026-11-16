@@ -15,7 +15,7 @@ use bevy_civ::combat::resolve_combat;
 use bevy_civ::diplomacy::{Diplomacy, Happiness, Treaty};
 use bevy_civ::fog::FogOfWar;
 use bevy_civ::government::Government;
-use bevy_civ::pathfinding::{find_path, Travel};
+use bevy_civ::pathfinding::{find_path, find_route, road_network, step_cost, turns_along, Road, StepCost, Travel};
 use bevy_civ::unit::{Domain, AIR_RANGE};
 use bevy_civ::save::{save_game, SaveData};
 use bevy_civ::score::Score;
@@ -31,6 +31,7 @@ mod governor;
 mod scenario;
 mod supply;
 
+use client::sfx::Sfx;
 use foreign::{DiploAct, Foreign, TradeAsk};
 use supply::Supplies;
 use scenario::NewGame;
@@ -124,9 +125,22 @@ pub struct Dirty {
     pub ui: bool,
 }
 
-/// The route of the last move order, drawn as dots on the map.
-#[derive(Resource, Default)]
-pub struct PathPreview(pub Vec<Hex>);
+/// The route drawn on the map: to the hovered tile while one of the player's units is selected,
+/// otherwise the rest of the selected unit's standing order. Each step after the start carries the
+/// turn it is reached on (0 = this turn).
+#[derive(Resource, Default, PartialEq)]
+pub struct PathPreview {
+    pub start: Option<Hex>,
+    pub steps: Vec<(Hex, u32)>,
+}
+
+/// A destination the player sent a unit to: it keeps marching there on the following turns.
+#[derive(Component, Clone, Copy, PartialEq)]
+pub struct GoTo(pub Hex);
+
+/// The tiles a unit just walked through, so its figure can follow the road instead of cutting across.
+#[derive(Component, Default)]
+pub struct Trail(pub Vec<Hex>);
 
 /// A player order, from the keyboard or an interface button.
 #[derive(Event, Clone, Debug, PartialEq)]
@@ -150,6 +164,10 @@ pub enum Action {
     AnswerOffer(bool),
     TradeRoute,
     Save,
+    /// Pick one of the player's units (from the list of units sharing a tile).
+    Select(Entity),
+    /// Tab: the next of the player's units on the selected unit's or city's tile.
+    CycleStack,
     SetProduction(ProductionItem),
     Research(Tech),
 }
@@ -179,7 +197,7 @@ pub struct Cycle {
 
 /// A player unit that still expects orders this turn.
 pub fn needs_orders(unit: &Unit) -> bool {
-    unit.owner == PLAYER && unit.movement_left > 0 && unit.build_turns_left.is_none() && !unit.fortified
+    unit.owner == PLAYER && unit.can_move() && unit.build_turns_left.is_none() && !unit.fortified
 }
 
 /// Plays a combat effect on a tile.
@@ -234,7 +252,7 @@ fn main() {
         .add_systems(OnExit(AppState::Playing), cleanup_world)
         .add_systems(
             Update,
-            (handle_map_click, apply_actions, process_turn, advance_selection, refresh_supplies)
+            (handle_map_click, apply_actions, process_turn, continue_orders, advance_selection, preview_route, refresh_supplies)
                 .chain()
                 .in_set(GameLogic)
                 .run_if(in_state(AppState::Playing)),
@@ -372,7 +390,7 @@ fn setup_world(
 /// Removes the finished game so a new one can start from the menu.
 fn cleanup_world(
     mut commands: Commands,
-    entities: Query<Entity, Or<(With<HexTile>, With<Unit>, With<City>, With<client::map::Decor>, With<client::map::PathDot>, With<client::actors::BurstFx>)>>,
+    entities: Query<Entity, Or<(With<HexTile>, With<Unit>, With<City>, With<client::map::Decor>, With<client::map::PathDot>, With<client::actors::BurstFx>, With<client::actors::StackBadge>)>>,
     parents: Query<&Parent>,
 ) {
     for entity in &entities {
@@ -411,8 +429,8 @@ fn handle_map_click(
     mut diplomacy: ResMut<Diplomacy>,
     mut log: ResMut<GameLog>,
     mut dirty: ResMut<Dirty>,
-    (mut path, mut cycle): (ResMut<PathPreview>, ResMut<Cycle>),
-    mut bursts: EventWriter<Burst>,
+    mut cycle: ResMut<Cycle>,
+    (mut bursts, mut sounds): (EventWriter<Burst>, EventWriter<Sfx>),
     mut commands: Commands,
 ) {
     for click in clicks.read() {
@@ -425,7 +443,6 @@ fn handle_map_click(
             if !click.secondary {
                 selection.unit = None;
                 selection.city = None;
-                path.0.clear();
             }
             continue;
         };
@@ -448,7 +465,6 @@ fn handle_map_click(
             if click.secondary {
                 continue;
             }
-            path.0.clear();
             // Select: repeated clicks cycle through the city and the player's units on the tile.
             #[derive(PartialEq, Clone, Copy)]
             enum Pick {
@@ -469,10 +485,12 @@ fn handle_map_click(
                 Some(Pick::City(entity)) => {
                     selection.city = Some(*entity);
                     selection.unit = None;
+                    sounds.send(Sfx::Select);
                 }
                 Some(Pick::Unit(entity)) => {
                     selection.unit = Some(*entity);
                     selection.city = None;
+                    sounds.send(Sfx::Select);
                 }
                 None => {
                     selection.unit = None;
@@ -490,7 +508,7 @@ fn handle_map_click(
             log.push(format!("{} is busy building.", unit.unit_type.name()));
             continue;
         }
-        if unit.movement_left == 0 {
+        if !unit.can_move() {
             log.push(format!("{} has no moves left this turn.", unit.unit_type.name()));
             continue;
         }
@@ -510,13 +528,9 @@ fn handle_map_click(
             log.push(reason);
             continue;
         }
-        let travel = match domain {
-            Domain::Sea => Travel::Sea(&ports),
-            Domain::Air => Travel::Air,
-            Domain::Land if sail => Travel::Amphibious,
-            Domain::Land => Travel::Land,
-        };
-        let Some(route) = find_path(unit.position, hex, tiles.iter().map(|t| (t.coord, t.terrain)), travel) else {
+        let travel = player_travel(domain, sail, &ports);
+        let roads = road_network(tiles.iter(), cities.iter().map(|(_, c)| c.position));
+        let Some(route) = find_route(unit.position, hex, tiles.iter().map(|t| (t.coord, t.terrain)), &roads, travel) else {
             log.push(if sail || domain != Domain::Land { "There is no route to that tile." } else { "There is no route to that tile. Crossing water needs Seafaring." });
             continue;
         };
@@ -525,22 +539,24 @@ fn handle_map_click(
         cycle.advance = true;
 
         // Stop next to a defended tile; the last step is the attack itself.
-        let walk = if enemy.is_some() { &route[..route.len() - 1] } else { &route[..] };
-        for next in walk.iter().skip(1) {
-            if unit.movement_left == 0 {
-                break;
-            }
-            // Boarding or leaving a boat takes the rest of the turn (ships and aircraft are unaffected).
-            let boarding = domain == Domain::Land && map.water.contains(&unit.position) != map.water.contains(next);
-            unit.position = *next;
-            unit.movement_left = if boarding { 0 } else { unit.movement_left - 1 };
+        let approach = if enemy.is_some() { &route[..route.len() - 1] } else { &route[..] };
+        let mut trail = Vec::new();
+        walk(unit, approach, &map, &roads, &mut fog, &mut trail);
+        if !trail.is_empty() {
+            sounds.send(Sfx::moving(domain));
         }
-        path.0 = route.clone();
+        // Too far for one turn: the unit carries on next turn. A new order replaces the old one.
+        let short = trail.last().copied().unwrap_or(unit.position) != *approach.last().unwrap_or(&hex);
+        if short {
+            commands.entity(selected).insert((GoTo(hex), Trail(trail)));
+        } else {
+            commands.entity(selected).insert(Trail(trail)).remove::<GoTo>();
+        }
 
         if let Some((enemy_entity, _, enemy_owner, enemy_type)) = enemy {
             let adjacent = unit.position.distance_to(hex) == 1;
-            if adjacent && unit.movement_left > 0 && unit.unit_type.is_military() {
-                unit.movement_left -= 1;
+            if adjacent && unit.can_move() && unit.unit_type.is_military() {
+                unit.spend(StepCost::Full);
                 bursts.send(Burst(hex));
                 if enemy_owner != BARBARIANS && diplomacy.get_treaty(PLAYER, enemy_owner) != Treaty::War {
                     diplomacy.set_treaty(PLAYER, enemy_owner, Treaty::War);
@@ -559,7 +575,6 @@ fn handle_map_click(
                     log.push(format!("Defeat. Your {} was lost attacking a {}.", unit.unit_type.name(), enemy_type.name()));
                     commands.entity(selected).try_despawn_recursive();
                     selection.unit = None;
-                    path.0.clear();
                     continue;
                 }
             } else if !unit.unit_type.is_military() {
@@ -568,17 +583,179 @@ fn handle_map_click(
         }
 
         fog.reveal(unit.position, 2);
+        capture(unit, cities.iter_mut().map(|(_, c)| c), &mut log);
+    }
+}
 
-        if unit.unit_type.is_army() {
-            for (_, mut city) in &mut cities {
-                if city.position == unit.position && city.owner != PLAYER {
-                    city.owner = PLAYER;
-                    city.is_capital = false;
-                    log.push(format!("Your {} captured {}!", unit.unit_type.name(), city.name));
-                }
-            }
+/// An army standing in a foreign city takes it.
+fn capture<'a>(unit: &Unit, cities: impl Iterator<Item = Mut<'a, City>>, log: &mut GameLog) {
+    if !unit.unit_type.is_army() {
+        return;
+    }
+    for mut city in cities {
+        if city.position == unit.position && city.owner != PLAYER {
+            city.owner = PLAYER;
+            city.is_capital = false;
+            log.push(format!("Your {} captured {}!", unit.unit_type.name(), city.name));
         }
     }
+}
+
+/// The player's units on a tile, in the fixed order that Tab and the unit panel use.
+pub fn own_stack(at: Hex, entities: impl Iterator<Item = Entity>, place: impl Fn(Entity) -> Option<(Hex, u32)>) -> Vec<Entity> {
+    let mut stack: Vec<Entity> = entities.filter(|e| place(*e) == Some((at, PLAYER))).collect();
+    stack.sort_by_key(|e| e.index());
+    stack
+}
+
+/// How the player's units of a kind travel, given whether Seafaring is known and where the ports are.
+fn player_travel(domain: Domain, sail: bool, ports: &HashSet<Hex>) -> Travel<'_> {
+    match domain {
+        Domain::Sea => Travel::Sea(ports),
+        Domain::Air => Travel::Air,
+        Domain::Land if sail => Travel::Amphibious,
+        Domain::Land => Travel::Land,
+    }
+}
+
+/// Boarding or leaving a boat takes the rest of the turn (ships and aircraft are unaffected).
+fn ends_move(domain: Domain, from: Hex, to: Hex, map: &MapData) -> bool {
+    domain == Domain::Land && map.water.contains(&from) != map.water.contains(&to)
+}
+
+/// What a step costs: roads and railroads speed troops on foot; boarding a boat ends the turn.
+fn move_cost(domain: Domain, from: Hex, to: Hex, map: &MapData, roads: &HashMap<Hex, Road>) -> StepCost {
+    if ends_move(domain, from, to, map) {
+        StepCost::EndsTurn
+    } else {
+        step_cost(from, to, roads, domain == Domain::Land)
+    }
+}
+
+/// The moves a unit gets when a turn begins on `at`: boats make steady progress whatever they carry.
+fn moves_per_turn(unit_type: UnitType, at: Hex, map: &MapData) -> u32 {
+    if map.water.contains(&at) { 3 } else { unit_type.stats().2 }
+}
+
+/// Moves a unit along `route` (which starts where it stands) while it has moves left, revealing the
+/// land around each tile entered and adding it to `trail`.
+fn walk(unit: &mut Unit, route: &[Hex], map: &MapData, roads: &HashMap<Hex, Road>, fog: &mut FogOfWar, trail: &mut Vec<Hex>) {
+    for next in route.iter().skip(1) {
+        if !unit.can_move() {
+            break;
+        }
+        let cost = move_cost(unit.unit_type.domain(), unit.position, *next, map, roads);
+        unit.step(*next, cost);
+        if unit.owner == PLAYER {
+            fog.reveal(*next, 2);
+        }
+        trail.push(*next);
+    }
+}
+
+/// At the start of the player's turn, units with a standing order march on towards it. They stop
+/// next to anything foreign in their way (attacking stays the player's decision) and drop the order
+/// once they arrive or can no longer get there.
+#[allow(clippy::too_many_arguments)]
+fn continue_orders(
+    state: Res<GameState>,
+    mut last_turn: Local<u32>,
+    mut units: Query<(Entity, &mut Unit, Option<&GoTo>)>,
+    mut cities: Query<&mut City>,
+    tiles: Query<&HexTile>,
+    (map, tech): (Res<MapData>, Res<TechState>),
+    mut fog: ResMut<FogOfWar>,
+    mut log: ResMut<GameLog>,
+    mut dirty: ResMut<Dirty>,
+    mut commands: Commands,
+) {
+    if std::mem::replace(&mut *last_turn, state.turn) == state.turn || state.victory.is_some() {
+        return;
+    }
+    let foreign: HashSet<Hex> = units.iter().filter(|(_, u, _)| u.owner != PLAYER).map(|(_, u, _)| u.position).collect();
+    let ports: HashSet<Hex> = cities.iter().filter(|c| c.owner == PLAYER).map(|c| c.position).collect();
+    let land: Vec<(Hex, Terrain)> = tiles.iter().map(|t| (t.coord, t.terrain)).collect();
+    let roads = road_network(tiles.iter(), cities.iter().map(|c| c.position));
+    let sail = tech.researched.contains(&Tech::Seafaring);
+    let mut arrived = Vec::new();
+    for (entity, mut unit, order) in &mut units {
+        let Some(&GoTo(target)) = order else { continue };
+        if unit.owner != PLAYER || unit.build_turns_left.is_some() || unit.fortified || !unit.can_move() {
+            continue;
+        }
+        let name = unit.unit_type.name();
+        let travel = player_travel(unit.unit_type.domain(), sail, &ports);
+        let Some(route) = find_route(unit.position, target, land.iter().copied(), &roads, travel) else {
+            log.push(format!("Your {name} can no longer reach its destination."));
+            commands.entity(entity).remove::<GoTo>();
+            continue;
+        };
+        // Walk up to (not into) the first tile held by someone else.
+        let clear = route.iter().skip(1).position(|h| foreign.contains(h)).map_or(route.len(), |i| i + 1);
+        let mut trail = Vec::new();
+        walk(&mut unit, &route[..clear], &map, &roads, &mut fog, &mut trail);
+        capture(&unit, cities.iter_mut(), &mut log);
+        let blocked = clear < route.len() && unit.position == route[clear - 1];
+        if unit.position == target || blocked {
+            if blocked {
+                log.push(if route[clear] == target {
+                    format!("Your {name} has reached the enemy and awaits orders.")
+                } else {
+                    format!("Your {name} halts: the way ahead is held.")
+                });
+            }
+            arrived.push(entity);
+            commands.entity(entity).remove::<GoTo>();
+        }
+        commands.entity(entity).insert(Trail(trail));
+        dirty.map = true;
+    }
+    if !arrived.is_empty() {
+        dirty.ui = true;
+    }
+}
+
+/// Works out the route to show for the selected unit, re-planning only when something it depends on changed.
+#[allow(clippy::too_many_arguments)]
+fn preview_route(
+    selection: Res<Selection>,
+    hovered: Res<client::map::Hovered>,
+    units: Query<(&Unit, Option<&GoTo>)>,
+    cities: Query<&City>,
+    tiles: Query<&HexTile>,
+    (map, tech, fog): (Res<MapData>, Res<TechState>, Res<FogOfWar>),
+    mut path: ResMut<PathPreview>,
+    mut planned: Local<Option<(Hex, bevy_civ::pathfinding::Budget, Hex)>>,
+) {
+    let unit = selection.unit.and_then(|e| units.get(e).ok()).filter(|(u, _)| u.owner == PLAYER && u.build_turns_left.is_none());
+    let Some((unit, order)) = unit else {
+        *planned = None;
+        path.set_if_neq(PathPreview::default());
+        return;
+    };
+    // A click on the hovered tile would move there (not select something of the player's).
+    let own_there = |hex: Hex| units.iter().any(|(u, _)| u.position == hex && u.owner == PLAYER) || cities.iter().any(|c| c.position == hex && c.owner == PLAYER);
+    let hover = hovered.0.filter(|h| *h != unit.position && fog.explored.contains(h) && !own_there(*h));
+    let Some(target) = hover.or(order.map(|o| o.0)).filter(|t| *t != unit.position) else {
+        *planned = None;
+        path.set_if_neq(PathPreview::default());
+        return;
+    };
+    let key = (unit.position, unit.budget(), target);
+    if *planned == Some(key) {
+        return;
+    }
+    *planned = Some(key);
+    let ports: HashSet<Hex> = cities.iter().filter(|c| c.owner == PLAYER).map(|c| c.position).collect();
+    let travel = player_travel(unit.unit_type.domain(), tech.researched.contains(&Tech::Seafaring), &ports);
+    let roads = road_network(tiles.iter(), cities.iter().map(|c| c.position));
+    let Some(route) = find_route(unit.position, target, tiles.iter().map(|t| (t.coord, t.terrain)), &roads, travel) else {
+        path.set_if_neq(PathPreview::default());
+        return;
+    };
+    let domain = unit.unit_type.domain();
+    let turns = turns_along(&route, unit.budget(), |at| moves_per_turn(unit.unit_type, at, &map), |a, b| move_cost(domain, a, b, &map, &roads));
+    path.set_if_neq(PathPreview { start: Some(unit.position), steps: route[1..].iter().copied().zip(turns).collect() });
 }
 
 /// Troops caught in their transport boats cannot fight back.
@@ -619,7 +796,8 @@ fn apply_actions(
     mut civs: ResMut<Civilizations>,
     mut log: ResMut<GameLog>,
     mut dirty: ResMut<Dirty>,
-    (mut path, mut cycle, supplies, map, mut end_turn): (ResMut<PathPreview>, ResMut<Cycle>, Res<Supplies>, Res<MapData>, EventWriter<EndTurnNow>),
+    (mut cycle, supplies, map, mut end_turn): (ResMut<Cycle>, Res<Supplies>, Res<MapData>, EventWriter<EndTurnNow>),
+    (unit_entities, mut sounds): (Query<Entity, With<Unit>>, EventWriter<Sfx>),
     mut commands: Commands,
 ) {
     for action in actions.read() {
@@ -639,7 +817,7 @@ fn apply_actions(
                 let waiting = selected_unit.is_some_and(|e| units.get(e).is_ok_and(needs_orders));
                 if waiting {
                     if let Some(mut unit) = selected_unit.and_then(|e| units.get_mut(e).ok()) {
-                        unit.movement_left = 0;
+                        unit.end_move();
                     }
                     cycle.advance = true;
                 } else if units.iter().any(needs_orders) {
@@ -655,6 +833,9 @@ fn apply_actions(
                     unit.fortified = true;
                     cycle.advance = true;
                 }
+                if let Some(entity) = selected_unit {
+                    commands.entity(entity).remove::<GoTo>();
+                }
             }
             Action::Trade(civ, ask) => {
                 let mut ctx = foreign::Ctx { diplomacy: &mut diplomacy, foreign: &mut foreign, civs: &mut civs, state: &mut state, tech: &mut tech, log: &mut log };
@@ -663,30 +844,66 @@ fn apply_actions(
             Action::Deselect => {
                 selection.unit = None;
                 selection.city = None;
-                path.0.clear();
+            }
+            Action::Select(entity) => {
+                if units.get(*entity).is_ok_and(|u| u.owner == PLAYER) {
+                    selection.unit = Some(*entity);
+                    selection.city = None;
+                    sounds.send(Sfx::Select);
+                }
+            }
+            Action::CycleStack => {
+                let here = selected_unit
+                    .and_then(|e| units.get(e).ok().map(|u| u.position))
+                    .or_else(|| selection.city.and_then(|e| cities.get(e).ok().map(|c| c.position)));
+                let Some(here) = here else { continue };
+                let stack = own_stack(here, unit_entities.iter(), |e| units.get(e).ok().map(|u| (u.position, u.owner)));
+                let next = selected_unit.and_then(|e| stack.iter().position(|s| *s == e)).map_or(0, |i| (i + 1) % stack.len().max(1));
+                if let Some(entity) = stack.get(next) {
+                    selection.unit = Some(*entity);
+                    selection.city = None;
+                    sounds.send(Sfx::Select);
+                }
             }
             Action::Build(improvement) => {
                 let Some(mut unit) = selected_unit.and_then(|e| units.get_mut(e).ok()) else { continue };
-                if !unit.unit_type.is_worker() || unit.movement_left == 0 {
+                if !unit.unit_type.is_worker() || !unit.can_move() {
                     continue;
                 }
                 let Some(tile) = tiles.iter().find(|t| t.coord == unit.position) else { continue };
+                // Road work on a road lays a railroad, once Steam Power is known.
+                let improvement = &if *improvement == Improvement::Road && tile.has_road() {
+                    if tile.has_railroad() {
+                        log.push("A railroad already runs here.");
+                        continue;
+                    }
+                    if !tech.researched.contains(&Tech::SteamPower) {
+                        log.push("A road already runs here. Railroads need Steam Power.");
+                        continue;
+                    }
+                    Improvement::Railroad
+                } else {
+                    *improvement
+                };
                 if tile.terrain == Terrain::Water || tile.improvements.contains(improvement) {
                     log.push("That cannot be built here.");
                     continue;
                 }
                 unit.start_build(*improvement);
                 cycle.advance = true;
+                if let Some(entity) = selected_unit {
+                    commands.entity(entity).remove::<GoTo>();
+                }
                 log.push(format!("Worker begins a {:?} (3 turns).", improvement));
             }
             Action::Transform => {
                 let Some(mut unit) = selected_unit.and_then(|e| units.get_mut(e).ok()) else { continue };
-                if !unit.unit_type.is_worker() || unit.movement_left == 0 {
+                if !unit.unit_type.is_worker() || !unit.can_move() {
                     continue;
                 }
                 if let Some(mut tile) = tiles.iter_mut().find(|t| t.coord == unit.position) {
                     if tile.transform_terrain() {
-                        unit.movement_left = 0;
+                        unit.end_move();
                         cycle.advance = true;
                         log.push("The land is cleared into plains.");
                     } else {
@@ -726,7 +943,7 @@ fn apply_actions(
             }
             Action::Skip => {
                 if let Some(mut unit) = selected_unit.and_then(|e| units.get_mut(e).ok()) {
-                    unit.movement_left = 0;
+                    unit.end_move();
                     cycle.advance = true;
                 }
             }
@@ -806,7 +1023,7 @@ fn process_turn(
     (mut diplomacy, mut foreign): (ResMut<Diplomacy>, ResMut<Foreign>),
     (trade, map, supplies): (Res<TradeRoutes>, Res<MapData>, Res<Supplies>),
     mut space: ResMut<SpaceRace>,
-    (mut log, mut dirty, mut path, mut cycle): (ResMut<GameLog>, ResMut<Dirty>, ResMut<PathPreview>, ResMut<Cycle>),
+    (mut log, mut dirty, mut cycle): (ResMut<GameLog>, ResMut<Dirty>, ResMut<Cycle>),
     mut bursts: EventWriter<Burst>,
     mut commands: Commands,
 ) {
@@ -815,7 +1032,6 @@ fn process_turn(
     }
     dirty.map = true;
     dirty.ui = true;
-    path.0.clear();
     state.turn += 1;
 
     let mut rng = rand::thread_rng();
@@ -1071,8 +1287,8 @@ fn process_turn(
             }
         }
         if unit.build_turns_left.is_none() {
-            // Boats make steady progress whatever they carry.
-            unit.movement_left = if map.water.contains(&unit.position) { 3 } else { unit.unit_type.stats().2 };
+            let moves = moves_per_turn(unit.unit_type, unit.position, &map);
+            unit.refresh(moves);
         }
     }
 
@@ -1324,4 +1540,41 @@ fn refresh_supplies(
     let mut techs: HashMap<u32, HashSet<Tech>> = civs.players.iter().map(|c| (c.id, c.tech.researched.clone())).collect();
     techs.insert(PLAYER, tech.researched.clone());
     supply::recompute(&mut supplies, tiles.iter(), &nodes, &techs, &foreign.transfers());
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn plain_map() -> MapData {
+        MapData {
+            layout: HexLayout::flat(),
+            cells: HashSet::new(),
+            water: HashSet::new(),
+            min: Vec2::ZERO,
+            max: Vec2::ZERO,
+        }
+    }
+
+    fn legion(moves: u32) -> Unit {
+        Unit { unit_type: UnitType::Legion, movement_left: moves, owner: PLAYER, position: Hex::ZERO, build_turns_left: None, current_build: None, fortified: false, road_credit: 0 }
+    }
+
+    #[test]
+    fn units_march_three_times_as_far_on_roads_and_freely_on_rails() {
+        let route: Vec<Hex> = (0..=9).map(|q| Hex::new(q, 0)).collect();
+        let map = plain_map();
+        let mut fog = FogOfWar::default();
+        let walked = |roads: &HashMap<Hex, Road>, fog: &mut FogOfWar| {
+            let mut unit = legion(1);
+            let mut trail = Vec::new();
+            walk(&mut unit, &route, &map, roads, fog, &mut trail);
+            trail.len()
+        };
+        assert_eq!(walked(&HashMap::new(), &mut fog), 1);
+        let roads: HashMap<Hex, Road> = route.iter().map(|h| (*h, Road::Road)).collect();
+        assert_eq!(walked(&roads, &mut fog), 3);
+        let rails: HashMap<Hex, Road> = route.iter().map(|h| (*h, Road::Rail)).collect();
+        assert_eq!(walked(&rails, &mut fog), 9);
+    }
 }

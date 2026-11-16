@@ -3,7 +3,7 @@
 use bevy::prelude::*;
 use bevy::sprite::Anchor;
 use hexx::Hex;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use bevy_civ::city::City;
 use bevy_civ::fog::FogOfWar;
@@ -34,6 +34,9 @@ pub struct HoverMarker;
 pub struct SelectMarker;
 #[derive(Component)]
 pub struct PathDot;
+/// The bouncing arrow over the selected unit or city.
+#[derive(Component)]
+pub struct SelectArrow;
 #[derive(Resource)]
 pub struct WaterClock(Timer, usize);
 
@@ -69,6 +72,13 @@ pub fn setup_map_view(mut commands: Commands, art: Res<Art>) {
     };
     commands.spawn((HoverMarker, overlay_sprite(overlay::HOVER), Transform::from_xyz(0.0, 0.0, 4.0), Visibility::Hidden));
     commands.spawn((SelectMarker, overlay_sprite(overlay::SELECT), Transform::from_xyz(0.0, 0.0, 5.5), Visibility::Hidden));
+    let arrow = |color: Color| (Text2d::new("▼"), TextFont { font: art.font_bold.clone(), font_size: 80.0, ..default() }, TextColor(color));
+    commands
+        .spawn((SelectArrow, arrow(Color::srgb(1.0, 0.86, 0.3)), Transform::from_xyz(0.0, 0.0, 9.5), Visibility::Hidden))
+        .with_children(|parent| {
+            // A dark copy just behind it keeps the arrow readable on any terrain.
+            parent.spawn((arrow(Color::srgba(0.1, 0.06, 0.02, 0.85)), Transform::from_xyz(2.0, -3.0, -0.05).with_scale(Vec3::splat(1.15))));
+        });
 }
 
 pub fn attach_tile_views(mut commands: Commands, map: Res<MapData>, tiles: Query<(Entity, &HexTile), Added<HexTile>>) {
@@ -100,6 +110,7 @@ pub fn refresh_map(
     }
 
     let info: HashMap<Hex, (Terrain, bool)> = tiles.iter().map(|(t, _)| (t.coord, (t.terrain, t.has_road()))).collect();
+    let rails: HashSet<Hex> = tiles.iter().filter(|(t, _)| t.has_railroad()).map(|(t, _)| t.coord).collect();
     let city_at: HashMap<Hex, u32> = cities.iter().map(|c| (c.position, c.owner)).collect();
     // Each tile belongs to the nearest city within reach.
     let mut territory: HashMap<Hex, (u32, i32)> = HashMap::new();
@@ -166,12 +177,17 @@ pub fn refresh_map(
             overlay_at(overlay::FARM, None, tint, 0.006);
         }
         if tile.has_road() {
+            // Railroads are drawn as dark iron lines wherever they link up with another line or a city.
+            let rail = tile.has_railroad();
+            let shade = tint.to_srgba();
+            let iron = Color::srgb(shade.red * 0.42, shade.green * 0.36, shade.blue * 0.34);
             for n in neighbors {
                 if info.get(&n).is_some_and(|(_, road)| *road) || city_at.contains_key(&n) {
-                    overlay_at(overlay::ROAD, Some(n), tint, 0.008);
+                    let linked = rail && (rails.contains(&n) || city_at.contains_key(&n));
+                    overlay_at(overlay::ROAD, Some(n), if linked { iron } else { tint }, 0.008);
                 }
             }
-            overlay_at(overlay::ROAD_HUB, None, tint, 0.009);
+            overlay_at(overlay::ROAD_HUB, None, if rail { iron } else { tint }, 0.009);
         }
         if tile.improvements.contains(&Improvement::Mine) {
             overlay_at(overlay::MINE, None, tint, 0.01);
@@ -233,7 +249,26 @@ pub fn update_markers(
     cities: Query<&City>,
     mut hover: Query<(&mut Transform, &mut Visibility), (With<HoverMarker>, Without<SelectMarker>)>,
     mut select: Query<(&mut Transform, &mut Visibility, &mut Sprite), (With<SelectMarker>, Without<HoverMarker>)>,
+    mut arrow: Query<(&mut Transform, &mut Visibility, &mut TextColor), (With<SelectArrow>, Without<SelectMarker>, Without<HoverMarker>, Without<Unit>)>,
 ) {
+    // A bouncing arrow over the selected unit (or city), on top of everything, so it is always found.
+    if let Ok((mut transform, mut visibility, mut color)) = arrow.get_single_mut() {
+        let bounce = 7.0 * (time.elapsed_secs() * 4.5).sin().abs();
+        let over = if let Some((unit, unit_transform)) = selection.unit.and_then(|e| units.get(e).ok()) {
+            color.0 = if unit.owner == PLAYER { Color::srgb(1.0, 0.86, 0.3) } else { Color::srgb(1.0, 0.45, 0.35) };
+            Some(unit_transform.translation.truncate() + Vec2::new(0.0, 74.0))
+        } else {
+            color.0 = Color::srgb(1.0, 0.86, 0.3);
+            selection.city.and_then(|e| cities.get(e).ok()).map(|c| map.layout.hex_to_world_pos(c.position) + Vec2::new(0.0, 88.0))
+        };
+        match over {
+            Some(pos) => {
+                transform.translation = (pos + Vec2::new(0.0, bounce)).extend(9.5);
+                *visibility = Visibility::Inherited;
+            }
+            None => *visibility = Visibility::Hidden,
+        }
+    }
     if let Ok((mut transform, mut visibility)) = hover.get_single_mut() {
         match hovered.0 {
             Some(hex) => {
@@ -277,22 +312,51 @@ pub fn update_path_dots(
         return;
     }
     for entity in &dots {
-        commands.entity(entity).despawn();
+        commands.entity(entity).despawn_recursive();
     }
-    let last = path.0.len().saturating_sub(1);
-    for (i, hex) in path.0.iter().enumerate().skip(1) {
+    let Some(start) = path.start else { return };
+    let dot = |color: Color, scale: f32| Sprite {
+        image: art.overlays.clone(),
+        texture_atlas: Some(art.atlas(&art.overlays_layout, overlay::DOT)),
+        custom_size: Some(HEX_SPRITE * scale),
+        color,
+        ..default()
+    };
+    let multi_turn = path.steps.last().is_some_and(|(_, turn)| *turn > 0);
+    let mut from = map.layout.hex_to_world_pos(start);
+    for (i, (hex, turn)) in path.steps.iter().enumerate() {
         let pos = map.layout.hex_to_world_pos(*hex);
-        let (color, scale) = if i == last { (Color::srgb(1.0, 0.35, 0.3), 1.3) } else { (Color::srgb(1.0, 0.92, 0.4), 0.9) };
-        commands.spawn((
-            PathDot,
-            Sprite {
-                image: art.overlays.clone(),
-                texture_atlas: Some(art.atlas(&art.overlays_layout, overlay::DOT)),
-                custom_size: Some(HEX_SPRITE * scale),
-                color,
-                ..default()
-            },
-            Transform::from_xyz(pos.x, pos.y, 4.5),
-        ));
+        let last = i + 1 == path.steps.len();
+        // This turn's steps are bright; later turns fade so the reach of each turn reads at a glance.
+        let color = if last {
+            Color::srgb(1.0, 0.35, 0.3)
+        } else if *turn == 0 {
+            Color::srgb(1.0, 0.92, 0.4)
+        } else {
+            Color::srgba(0.95, 0.88, 0.62, 0.75)
+        };
+        // Small dots in between tiles trace the road itself.
+        for t in [0.33, 0.66] {
+            let between = from.lerp(pos, t);
+            commands.spawn((PathDot, dot(color.with_alpha(color.alpha() * 0.7), 0.45), Transform::from_xyz(between.x, between.y, 4.5)));
+        }
+        from = pos;
+        let turn_ends = path.steps.get(i + 1).is_none_or(|(_, next)| next != turn);
+        let marker = multi_turn && turn_ends;
+        commands.spawn((PathDot, dot(color, if last { 1.3 } else { 0.9 }), Transform::from_xyz(pos.x, pos.y, 4.5)));
+        // Where each turn's march ends, a badge with the number of turns it takes to get there, drawn
+        // above units and cities (and beside them) so it is never hidden.
+        if marker {
+            commands
+                .spawn((PathDot, dot(color.with_alpha(1.0), 1.7), Transform::from_xyz(pos.x + 24.0, pos.y - 20.0, 8.6)))
+                .with_children(|parent| {
+                    parent.spawn((
+                        Text2d::new((turn + 1).to_string()),
+                        TextFont { font: art.font_bold.clone(), font_size: 19.0, ..default() },
+                        TextColor(Color::srgb(0.12, 0.08, 0.05)),
+                        Transform::from_xyz(0.0, 1.0, 0.1),
+                    ));
+                });
+        }
     }
 }

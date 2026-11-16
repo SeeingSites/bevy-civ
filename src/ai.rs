@@ -4,7 +4,7 @@ use crate::unit::{Unit, UnitType};
 use crate::terrain::{HexTile, Improvement, Terrain};
 use std::collections::HashMap;
 use crate::tech::{Tech, TechState};
-use crate::pathfinding::{find_path, Travel};
+use crate::pathfinding::{find_path, find_route, road_network, step_cost, StepCost, Travel};
 use crate::unit::{Domain, AIR_RANGE};
 use rand::Rng;
 
@@ -131,11 +131,20 @@ pub fn process_ai_turn(
     let land: Vec<(Hex, Terrain)> = tiles.iter().map(|t| (t.coord, t.terrain)).collect();
     let land_set: std::collections::HashSet<Hex> = land.iter().filter(|(_, t)| *t != Terrain::Water).map(|(c, _)| *c).collect();
     let is_land = |hex: Hex| land_set.contains(&hex);
+    let roads = road_network(tiles.iter(), city_positions.iter().map(|(p, _)| *p));
     let features: HashMap<Hex, (Terrain, bool, bool)> = tiles
         .iter()
         .map(|t| (t.coord, (t.terrain, t.improvements.contains(&Improvement::Farm), t.improvements.contains(&Improvement::Mine))))
         .collect();
     let mut founded: Vec<Hex> = Vec::new();
+    // Roads that could carry a railroad (cities need none), and which of them a worker has already taken.
+    let city_tiles: std::collections::HashSet<Hex> = city_positions.iter().map(|(p, _)| *p).collect();
+    let unrailed: Vec<Hex> = tiles.iter().filter(|t| t.has_road() && !t.has_railroad() && !city_tiles.contains(&t.coord)).map(|t| t.coord).collect();
+    let mut rail_claimed: std::collections::HashSet<Hex> = units
+        .iter()
+        .filter(|(_, u)| u.current_build == Some(Improvement::Railroad))
+        .map(|(_, u)| u.position)
+        .collect();
 
     // The best defender standing in each city is its garrison and stays there.
     let mut holders: HashMap<Hex, (Entity, f32)> = HashMap::new();
@@ -219,6 +228,28 @@ pub fn process_ai_turn(
                     continue;
                 }
             }
+            // Once Steam Power is known, lay railroads over the roads inside the borders, nearest first.
+            let steam = civs.players.iter().any(|c| c.id == owner && c.tech.researched.contains(&Tech::SteamPower));
+            if steam {
+                if unrailed.contains(&here) && owns(here, owner) && rail_claimed.insert(here) {
+                    unit.start_build(Improvement::Railroad);
+                    continue;
+                }
+                let target = unrailed
+                    .iter()
+                    .copied()
+                    .filter(|h| owns(*h, owner) && !rail_claimed.contains(h) && here.distance_to(*h) <= 10)
+                    .min_by_key(|h| (here.distance_to(*h), h.x, h.y));
+                if let Some(target) = target {
+                    rail_claimed.insert(target);
+                    let step = find_route(here, target, land.iter().copied(), &roads, Travel::Land).and_then(|path| path.get(1).copied());
+                    if let Some(next) = step.filter(|n| !occupied.get(n).is_some_and(|(other, _)| *other != owner)) {
+                        unit.position = next;
+                        unit.end_move();
+                        continue;
+                    }
+                }
+            }
             // No road work: farm the flat land and mine the hills inside the borders.
             let on_city = city_positions.iter().any(|(p, _)| *p == here);
             if let Some((terrain, farm, mine)) = features.get(&here).copied().filter(|_| owns(here, owner) && !on_city) {
@@ -270,21 +301,20 @@ pub fn process_ai_turn(
             let Some(target) = prey.or(base.filter(|b| flying && *b != here)) else { continue };
             if let Some(path) = find_path(here, target, land.iter().copied(), travel) {
                 for next in path.into_iter().skip(1) {
-                    if unit.movement_left == 0 {
+                    if !unit.can_move() {
                         break;
                     }
                     if occupied.get(&next).is_some_and(|(other, _)| *other != owner) {
                         if Some(next) == prey {
                             attacks.push(AiAttack { attacker: entity, target: next });
-                            unit.movement_left = 0;
+                            unit.end_move();
                         }
                         break;
                     }
                     if !flying && is_land(next) && !ports.contains(&next) {
                         break;
                     }
-                    unit.position = next;
-                    unit.movement_left -= 1;
+                    unit.step(next, StepCost::Full);
                 }
             }
             continue;
@@ -344,9 +374,9 @@ pub fn process_ai_turn(
 
         if let Some(target) = goal {
             let travel = if can_sail { Travel::Amphibious } else { Travel::Land };
-            if let Some(path) = find_path(here, target, land.iter().copied(), travel) {
+            if let Some(path) = find_route(here, target, land.iter().copied(), &roads, travel) {
                 for next in path.into_iter().skip(1) {
-                    if unit.movement_left == 0 {
+                    if !unit.can_move() {
                         break;
                     }
                     let boarding = is_land(unit.position) != is_land(next);
@@ -355,14 +385,14 @@ pub fn process_ai_turn(
                             // Attack if the odds look acceptable; otherwise hold position.
                             if hostile(owner, *other) && (aggression > 0.6 || my_strength >= *strength) {
                                 attacks.push(AiAttack { attacker: entity, target: next });
-                                unit.movement_left = 0;
+                                unit.end_move();
                             }
                             break;
                         }
                         _ => {
-                            unit.position = next;
-                            // Boarding or leaving a boat takes the rest of the turn.
-                            unit.movement_left = if boarding { 0 } else { unit.movement_left - 1 };
+                            // Roads speed the march; boarding or leaving a boat takes the rest of the turn.
+                            let cost = if boarding { StepCost::EndsTurn } else { step_cost(unit.position, next, &roads, true) };
+                            unit.step(next, cost);
                         }
                     }
                 }
@@ -431,7 +461,7 @@ mod tests {
         }
         world.insert_resource(Civilizations { players: vec![rival()] });
         let worker = world
-            .spawn(Unit { unit_type: UnitType::Worker, movement_left: 1, owner: 1, position: Hex::ZERO, build_turns_left: None, current_build: None, fortified: false })
+            .spawn(Unit { unit_type: UnitType::Worker, movement_left: 1, owner: 1, position: Hex::ZERO, build_turns_left: None, current_build: None, fortified: false, road_credit: 0 })
             .id();
         (world, worker)
     }
@@ -455,9 +485,46 @@ mod tests {
         assert_eq!(unit.current_build, Some(Improvement::Road));
     }
 
+    #[test]
+    fn workers_lay_railroads_over_roads_once_steam_power_is_known() {
+        let (mut world, worker) = world_with_worker(Terrain::Plains);
+        // A road two tiles east, inside the borders; the worker stands off the road.
+        for mut tile in world.query::<&mut HexTile>().iter_mut(&mut world) {
+            if tile.coord == Hex::new(2, 0) {
+                tile.add_improvement(Improvement::Road);
+            }
+        }
+        world.get_mut::<Unit>(worker).unwrap().position = Hex::new(-1, 0);
+        world.insert_resource(Jobs(HashMap::new()));
+
+        // Without Steam Power it farms instead.
+        world.run_system_once(ai_phase).unwrap();
+        assert_eq!(world.get::<Unit>(worker).unwrap().current_build, Some(Improvement::Farm));
+
+        let reset = |world: &mut World| {
+            let mut unit = world.get_mut::<Unit>(worker).unwrap();
+            unit.current_build = None;
+            unit.build_turns_left = None;
+            unit.movement_left = 1;
+        };
+        reset(&mut world);
+        world.resource_mut::<Civilizations>().players[0].tech.researched.insert(Tech::SteamPower);
+        // Three turns to walk there, one to start work.
+        for _ in 0..4 {
+            world.run_system_once(ai_phase).unwrap();
+            if world.get::<Unit>(worker).unwrap().current_build.is_some() {
+                break;
+            }
+            world.get_mut::<Unit>(worker).unwrap().movement_left = 1;
+        }
+        let unit = world.get::<Unit>(worker).unwrap();
+        assert_eq!(unit.position, Hex::new(2, 0));
+        assert_eq!(unit.current_build, Some(Improvement::Railroad));
+    }
+
     fn soldier(world: &mut World, kind: UnitType, owner: u32, q: i32) -> Entity {
         world
-            .spawn(Unit { unit_type: kind, movement_left: 1, owner, position: Hex::new(q, 0), build_turns_left: None, current_build: None, fortified: false })
+            .spawn(Unit { unit_type: kind, movement_left: 1, owner, position: Hex::new(q, 0), build_turns_left: None, current_build: None, fortified: false, road_credit: 0 })
             .id()
     }
 

@@ -5,6 +5,7 @@ use bevy::prelude::*;
 pub mod actors;
 pub mod input;
 pub mod map;
+pub mod sfx;
 pub mod ui;
 
 use crate::GameLogic;
@@ -137,13 +138,14 @@ pub struct ClientPlugin;
 impl Plugin for ClientPlugin {
     fn build(&self, app: &mut App) {
         let playing = in_state(crate::AppState::Playing);
-        app.init_resource::<map::Hovered>()
+        app.add_plugins(sfx::SfxPlugin)
+            .init_resource::<map::Hovered>()
             .init_resource::<input::Pointer>()
             .init_resource::<ui::UiState>()
             .init_resource::<ui::MenuState>()
             .add_systems(PreStartup, load_art)
             .add_systems(Startup, (map::setup_map_view, ui::setup_ui, ui::setup_menu))
-            .add_systems(Update, (ui::button_actions, ui::rebuild_menu, ui::button_visuals, ui::fit_ui_scale).chain().before(GameLogic))
+            .add_systems(Update, (ui::button_actions, ui::rebuild_menu, ui::button_visuals, ui::fit_ui_scale, ui::update_sound_button).chain().before(GameLogic))
             .add_systems(
                 Update,
                 (input::pointer_input, input::keyboard_input, ui::minimap_click)
@@ -165,6 +167,7 @@ impl Plugin for ClientPlugin {
                     actors::animate_units,
                     actors::update_city_views,
                     actors::animate_flags,
+                    actors::update_stack_badges,
                     actors::spawn_bursts,
                     actors::animate_bursts,
                     ui::rebuild_panels,

@@ -15,6 +15,26 @@
 <body>
   <div id="game"><canvas id="bevy-canvas" tabindex="0"></canvas></div>
   <div id="status">Loading Bevy Civ…</div>
+  <script>
+    // Browsers start Web Audio suspended until the player interacts with the page, and the game
+    // creates its audio context at launch. Keep track of every context and resume it on the first
+    // click, tap or key press, so sound effects work without a reload.
+    (() => {
+      const Base = window.AudioContext || window.webkitAudioContext;
+      if (!Base) return;
+      const contexts = [];
+      window.AudioContext = class extends Base {
+        constructor(...args) {
+          super(...args);
+          contexts.push(this);
+        }
+      };
+      const resume = () => contexts.forEach((context) => context.state === "suspended" && context.resume());
+      for (const event of ["pointerdown", "touchend", "keydown"]) {
+        document.addEventListener(event, resume, { capture: true });
+      }
+    })();
+  </script>
   <script type="module">
     import init from "./bevy-civ.js";
 
