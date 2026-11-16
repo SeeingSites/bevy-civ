@@ -29,7 +29,7 @@ Core systems from Civ 2/3 implemented modularly. Goal: exceed FreeCiv. **All maj
 - Sprite-based map: textured terrain, animated water, shores, borders, roads, farms and mines
 - Animated units, cities that grow visually, fog of war, minimap
 - Interface with status bar, unit and city panels, science and foreign advisors, message log
-- Wonder effects
+- World wonders (one per world) and great people (generals, merchants, scientists, artists, engineers)
 - Save / load (expanded)
 - Culture and borders (per-turn generation from population + buildings)
 - Great Leaders (elite victories → armies)
@@ -101,6 +101,39 @@ on, propose technology swaps, ask you to join their wars, and declare war when r
 Breaking a treaty costs reputation with everyone, allies join each other's wars, and the other
 powers fight and make peace among themselves.
 
+## Wonders and great people
+Each **wonder** can be built only once in the world: when one civilization finishes it, everyone
+else's work on it stops (their shields go to the next project) and the news is announced.
+
+| Wonder | Effect |
+|---|---|
+| Pyramids | +3 shields in its city |
+| Great Library | +5 science in its city |
+| Hanging Gardens | +2 food in its city, +1 content citizen in every city |
+| Colossus | +3 gold in its city (needs Iron) |
+| Oracle | +2 content citizens in every city |
+| Great Lighthouse | +1 move for its owner's ships and troops at sea |
+
+A captured city's wonders change hands with it.
+
+**Great people** are born in cities. Every turn a city earns great-person points from its buildings
+(Marketplace, Harbor and Bank for merchants; Library and University for scientists; Aqueduct and
+Factory for engineers), its wonders, its specialists and, in the capital, the court (artists). When
+a city's points reach the threshold (40, then 30 more for each great person a civilization has had)
+one is born there, its kind drawn in proportion to the points; the city panel's Overview shows the
+progress. **Great generals** come from battle instead: every fourth victory, attacking or defending.
+Select a great person and press **U** (or its Use button):
+
+- **Great Scientist**: completes the current research at once.
+- **Great Merchant**: in a foreign city you are not at war with, a trade mission worth 100 gold plus
+  12 for each tile from your capital (up to 400).
+- **Great Engineer**: in one of your cities, finishes what it is building, wonders included.
+- **Great Artist**: in one of your cities, a masterpiece: +3 content citizens there for good.
+- **Great General**: needs no orders; troops on its tile attack and defend half again as hard.
+
+Computer players earn great people too: they use them at once, and their generals march with their
+armies.
+
 ## Ships and aircraft
 - **Warships** (Galley, Frigate, Ironclad, Destroyer, Battleship) are built in coastal cities. They
   sail on water and into your own cities, can attack units at sea or on the shore, and cannot take
@@ -150,12 +183,14 @@ Computer players follow the same rules as you and are run by three pieces of cod
 - **B** — settler founds a city
 - **F / M / R / X** — worker builds Farm / Mine / Road (Railroad on a road, with Steam Power) / clears terrain
 - **Q** — science advisor (choose research), **E** — foreign advisor (treaties, resource deals), **G** — trade advisor (resources)
+- **U** — use the selected great person
 - **T** — trade routes between your cities, **F2** — save
 - **V** or the **Sound** button — switch sound effects on or off (remembered between games)
 - **Esc** — close a window or deselect
 
 Every order also has a button, so the game is playable with a mouse or touch screen alone.
-City production is chosen from the city panel.
+City production is chosen from the city panel, whose tabs split **Units**, **Buildings** and
+**Wonders**; **Overview** lists what the city has built, its resources and its great-person progress.
 
 ## Art
 All sprites are original and generated from code: `tools/art/*.cjs` describe each sprite as SVG

@@ -9,7 +9,8 @@ use bevy::ui::widget::NodeImageMode;
 use bevy::ui::{FocusPolicy, RelativeCursorPosition};
 
 use bevy_civ::ai::Civilizations;
-use bevy_civ::building::{Building, CityBuildings};
+use bevy_civ::building::{Building, CityBuildings, WorldWonders};
+use bevy_civ::great::{self, GreatPeople};
 use bevy_civ::city::{City, ProductionItem};
 use bevy_civ::diplomacy::{Diplomacy, Happiness, Treaty};
 use bevy_civ::fog::FogOfWar;
@@ -250,6 +251,19 @@ pub fn update_sound_button(settings: Res<SoundSettings>, mut labels: Query<&mut 
     }
     for mut text in &mut labels {
         text.0 = sound_label(settings.enabled).into();
+    }
+}
+
+/// The wonders that already stand, and who holds them.
+fn wonders_of_the_world(p: &mut ChildBuilder, art: &Art, wonders: &WorldWonders, civs: &Civilizations) {
+    if wonders.built.is_empty() {
+        return;
+    }
+    let mut built: Vec<_> = wonders.built.iter().collect();
+    built.sort_by_key(|(w, _)| w.name());
+    p.spawn(label(&art.font_title, "Wonders of the world", 14.0, GOLD));
+    for (wonder, (owner, city)) in built {
+        p.spawn(label(&art.font_body, format!("{}: {} ({}) - {}", wonder.name(), city, owner_name(*owner, civs), wonder.wonder_effect()), 13.0, owner_color(*owner).mix(&Color::WHITE, 0.55)));
     }
 }
 
@@ -519,7 +533,7 @@ pub fn rebuild_panels(
     tech: Res<TechState>,
     civs: Res<Civilizations>,
     diplomacy: Res<Diplomacy>,
-    (units, tiles, unit_entities): (Query<&Unit>, Query<&HexTile>, Query<Entity, With<Unit>>),
+    (units, tiles, unit_entities, wonders, great): (Query<&Unit>, Query<&HexTile>, Query<Entity, With<Unit>>, Res<WorldWonders>, Res<GreatPeople>),
     cities: Query<(&City, &CityBuildings, &Happiness)>,
     unit_panel: Query<Entity, With<UnitPanel>>,
     mut city_panel: Query<(Entity, &mut Node), (With<CityPanel>, Without<ModalRoot>)>,
@@ -575,6 +589,9 @@ pub fn rebuild_panels(
                     });
                 });
             });
+            if unit.unit_type.is_great_person() {
+                p.spawn(label(&art.font_bold, great::ability(unit.unit_type), 14.0, GOLD));
+            }
             // Several of the player's units on one tile: say so, and list them to pick from.
             if mine {
                 let stack = crate::own_stack(unit.position, unit_entities.iter(), |e| units.get(e).ok().map(|u| (u.position, u.owner)));
@@ -615,6 +632,9 @@ pub fn rebuild_panels(
                         let rail = tiles.iter().any(|t| t.coord == unit.position && t.has_road() && !t.has_railroad()) && tech.researched.contains(&Tech::SteamPower);
                         button(r, art, if rail { "Railroad (R)" } else { "Road (R)" }, Command::Game(Action::Build(Improvement::Road)), BRONZE, 15.0);
                         button(r, art, "Clear (X)", Command::Game(Action::Transform), BRONZE, 15.0);
+                    }
+                    if unit.unit_type.is_great_person() && unit.unit_type != UnitType::GreatGeneral {
+                        button(r, art, "Use (U)", Command::Game(Action::UseGreatPerson), GREEN, 15.0);
                     }
                     if !unit.fortified {
                         let text = if unit.unit_type.is_military() { "Fortify (H)" } else { "Sleep (H)" };
@@ -667,7 +687,8 @@ pub fn rebuild_panels(
             match &city.production_queue {
                 Some(item) => {
                     let left = (item.cost().saturating_sub(city.production_progress) as f32 / production.max(1) as f32).ceil();
-                    p.spawn(label(&art.font_bold, format!("Building: {}  {}/{}  (about {} turns)", item.name(), city.production_progress, item.cost(), left), 14.0, CREAM));
+                    let when = if left <= 1.0 { "done at the end of the turn".to_string() } else { format!("about {left} turns") };
+                    p.spawn(label(&art.font_bold, format!("Building: {}  {}/{}  ({when})", item.name(), city.production_progress.min(item.cost()), item.cost()), 14.0, CREAM));
                     bar(p, city.production_progress as f32 / item.cost() as f32, Color::srgb(0.92, 0.62, 0.25));
                 }
                 None => {
@@ -693,19 +714,20 @@ pub fn rebuild_panels(
             let options: Vec<(ProductionItem, String)> = match ui.city_tab {
                 CityTab::Units => UnitType::ALL
                     .into_iter()
-                    .filter(|u| known(u.required_tech()) && (u.domain() != bevy_civ::unit::Domain::Sea || coastal))
+                    .filter(|u| u.is_trainable() && known(u.required_tech()) && (u.domain() != bevy_civ::unit::Domain::Sea || coastal))
                     .map(|u| {
                         let (attack, defense, moves) = u.stats();
                         (ProductionItem::Unit(u), format!("A{attack} D{defense} M{moves}"))
                     })
                     .collect(),
                 CityTab::Buildings | CityTab::Wonders => {
-                    let wonders = ui.city_tab == CityTab::Wonders;
+                    let wonder_tab = ui.city_tab == CityTab::Wonders;
                     Building::ALL
                         .into_iter()
-                        .filter(|b| b.is_wonder() == wonders && known(b.required_tech()) && !buildings.buildings.contains(b) && (*b != Building::Harbor || coastal))
+                        .filter(|b| b.is_wonder() == wonder_tab && known(b.required_tech()) && !buildings.buildings.contains(b) && (*b != Building::Harbor || coastal))
+                        .filter(|b| !wonders.is_taken(*b))
                         .map(|b| {
-                            let effect = building_effect(&b);
+                            let effect = if b.is_wonder() { b.wonder_effect().to_string() } else { building_effect(&b) };
                             (ProductionItem::Building(b), effect)
                         })
                         .collect()
@@ -720,6 +742,21 @@ pub fn rebuild_panels(
                 let list = |items: &[&Building]| if items.is_empty() { "none yet".to_string() } else { items.iter().map(|b| b.name()).collect::<Vec<_>>().join(", ") };
                 p.spawn(label(&art.font_body, format!("Buildings: {}", list(&plain)), 14.0, CREAM));
                 p.spawn(label(&art.font_body, format!("Wonders: {}", list(&wonders)), 14.0, CREAM));
+                // Progress towards the next great person, and what this city's points lean towards.
+                let earned = great::city_points(&buildings.buildings, &city.specialists, city.is_capital);
+                let per_turn: u32 = earned.iter().sum();
+                let kinds: Vec<String> = great::CITY_KINDS
+                    .iter()
+                    .zip(earned)
+                    .filter(|(_, n)| *n > 0)
+                    .map(|(k, n)| format!("{} +{n}", k.name().trim_start_matches("Great ")))
+                    .collect();
+                let pace = if per_turn == 0 { "none yet: libraries, markets, wonders and specialists earn them".to_string() } else { format!("+{per_turn} a turn ({})", kinds.join(", ")) };
+                p.spawn(label(&art.font_body, format!("Great people: {}/{} points, {pace}", great.progress(city.position), great.threshold(PLAYER)), 14.0, CREAM));
+                let masterpieces = great.masterpieces.get(&city.position).copied().unwrap_or(0);
+                if masterpieces > 0 {
+                    p.spawn(label(&art.font_body, format!("Masterpieces: {masterpieces} (+{} content)", masterpieces * 3), 14.0, CREAM));
+                }
                 // Resources this city can draw on through roads, harbours and trade.
                 let mut goods: Vec<Good> = supplies.city.get(&city.position).map(|set| set.iter().copied().collect()).unwrap_or_default();
                 goods.sort_by_key(|g| g.index());
@@ -733,10 +770,13 @@ pub fn rebuild_panels(
             }
             if options.is_empty() {
                 let none = match ui.city_tab {
-                    CityTab::Wonders => "No wonders available: research more, or every wonder you know is built here.",
+                    CityTab::Wonders => "No wonder can be started here now: research unlocks more, and each is built only once in the world.",
                     _ => "Nothing new to build here yet: research unlocks more.",
                 };
                 p.spawn(label(&art.font_body, none, 14.0, MUTED));
+                if ui.city_tab == CityTab::Wonders {
+                    wonders_of_the_world(p, art, &wonders, &civs);
+                }
                 return;
             }
             // What can be built first, then what still lacks a resource.
@@ -762,6 +802,9 @@ pub fn rebuild_panels(
                     production_button(grid, art, item.name(), second, Command::Game(Action::SetProduction(item.clone())), tint);
                 }
             });
+            if ui.city_tab == CityTab::Wonders {
+                wonders_of_the_world(p, art, &wonders, &civs);
+            }
         });
     }
 
@@ -894,7 +937,7 @@ pub fn rebuild_panels(
                         if let Some(capital) = capital {
                             let blocked: Vec<String> = UnitType::ALL
                                 .into_iter()
-                                .filter(|u| u.required_tech().is_none_or(|t| tech.researched.contains(&t)))
+                                .filter(|u| u.is_trainable() && u.required_tech().is_none_or(|t| tech.researched.contains(&t)))
                                 .filter_map(|u| {
                                     let missing = supplies.missing(capital, u.required_resources());
                                     (!missing.is_empty()).then(|| format!("{} ({})", u.name(), missing.iter().map(|g| g.name()).collect::<Vec<_>>().join(", ")))

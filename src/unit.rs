@@ -53,6 +53,12 @@ pub enum UnitType {
     // Air
     Fighter,
     Bomber,
+    // Great people: born in cities from great-person points, never trained
+    GreatGeneral,
+    GreatMerchant,
+    GreatScientist,
+    GreatArtist,
+    GreatEngineer,
 }
 
 /// Where a unit can go: over land (boarding a boat to cross water), on the sea, or through the air.
@@ -68,14 +74,29 @@ pub const AIR_RANGE: i32 = 8;
 
 impl UnitType {
     /// Every unit type, in declaration order (also the row order of the sprite atlas).
-    pub const ALL: [UnitType; 26] = [
+    pub const ALL: [UnitType; 31] = [
         UnitType::Settler, UnitType::Worker, UnitType::Warrior, UnitType::Spearman, UnitType::Archer,
         UnitType::Horseman, UnitType::Legion, UnitType::WarChariot, UnitType::Immortal, UnitType::Phalanx,
         UnitType::Catapult, UnitType::Knight, UnitType::Cannon, UnitType::Rifleman, UnitType::Cavalry,
         UnitType::Tank, UnitType::Artillery, UnitType::Diplomat, UnitType::Caravan, UnitType::Galley,
         UnitType::Frigate, UnitType::Ironclad, UnitType::Destroyer, UnitType::Battleship, UnitType::Fighter,
-        UnitType::Bomber,
+        UnitType::Bomber, UnitType::GreatGeneral, UnitType::GreatMerchant, UnitType::GreatScientist,
+        UnitType::GreatArtist, UnitType::GreatEngineer,
     ];
+
+    /// The five kinds of great person.
+    pub const GREAT_PEOPLE: [UnitType; 5] =
+        [UnitType::GreatGeneral, UnitType::GreatMerchant, UnitType::GreatScientist, UnitType::GreatArtist, UnitType::GreatEngineer];
+
+    /// Born in a city from great-person points rather than trained.
+    pub fn is_great_person(&self) -> bool {
+        Self::GREAT_PEOPLE.contains(self)
+    }
+
+    /// Whether a city can put this unit into production.
+    pub fn is_trainable(&self) -> bool {
+        !self.is_great_person()
+    }
 
     pub fn name(&self) -> &'static str {
         match self {
@@ -105,6 +126,11 @@ impl UnitType {
             UnitType::Battleship => "Battleship",
             UnitType::Fighter => "Fighter",
             UnitType::Bomber => "Bomber",
+            UnitType::GreatGeneral => "Great General",
+            UnitType::GreatMerchant => "Great Merchant",
+            UnitType::GreatScientist => "Great Scientist",
+            UnitType::GreatArtist => "Great Artist",
+            UnitType::GreatEngineer => "Great Engineer",
         }
     }
 
@@ -130,6 +156,7 @@ impl UnitType {
             UnitType::Ironclad => Some(Tech::SteamPower),
             UnitType::Destroyer => Some(Tech::Refining),
             UnitType::Battleship | UnitType::Fighter | UnitType::Bomber => Some(Tech::MotorizedTransport),
+            UnitType::GreatGeneral | UnitType::GreatMerchant | UnitType::GreatScientist | UnitType::GreatArtist | UnitType::GreatEngineer => None,
         }
     }
 
@@ -161,6 +188,7 @@ impl UnitType {
             UnitType::Battleship => (12, 10, 5),
             UnitType::Fighter => (6, 5, 8),
             UnitType::Bomber => (12, 2, 8),
+            UnitType::GreatGeneral | UnitType::GreatMerchant | UnitType::GreatScientist | UnitType::GreatArtist | UnitType::GreatEngineer => (0, 0, 2),
         }
     }
 
@@ -192,6 +220,8 @@ impl UnitType {
             UnitType::Battleship => 160,
             UnitType::Fighter => 90,
             UnitType::Bomber => 110,
+            // Never trained; this is only their value as a prize.
+            UnitType::GreatGeneral | UnitType::GreatMerchant | UnitType::GreatScientist | UnitType::GreatArtist | UnitType::GreatEngineer => 200,
         }
     }
 
@@ -219,6 +249,7 @@ impl UnitType {
             UnitType::Galley | UnitType::Frigate => Color::srgb(0.6, 0.45, 0.3),
             UnitType::Ironclad | UnitType::Destroyer | UnitType::Battleship => Color::srgb(0.5, 0.52, 0.56),
             UnitType::Fighter | UnitType::Bomber => Color::srgb(0.55, 0.6, 0.5),
+            UnitType::GreatGeneral | UnitType::GreatMerchant | UnitType::GreatScientist | UnitType::GreatArtist | UnitType::GreatEngineer => Color::srgb(0.95, 0.82, 0.35),
         }
     }
 
@@ -240,7 +271,7 @@ impl UnitType {
     }
 
     pub fn is_military(&self) -> bool {
-        !matches!(self, UnitType::Settler | UnitType::Worker | UnitType::Diplomat | UnitType::Caravan)
+        !matches!(self, UnitType::Settler | UnitType::Worker | UnitType::Diplomat | UnitType::Caravan) && !self.is_great_person()
     }
 
     /// Strategic resources a city must have access to before it can train this unit.

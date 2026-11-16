@@ -41,6 +41,8 @@ pub struct CivView<'a> {
     /// Cities not joined to the capital's network.
     pub cut_off: usize,
     pub at_war: bool,
+    /// Wonders already standing somewhere in the world.
+    pub wonders_taken: &'a std::collections::HashSet<Building>,
 }
 
 /// Largest army a computer player keeps.
@@ -49,11 +51,12 @@ pub fn army_cap(cities: usize) -> usize {
 }
 
 fn can_train(unit: UnitType, city: &CityView, civ: &CivView, supplies: &Supplies) -> bool {
-    unit.required_tech().is_none_or(|t| civ.tech.researched.contains(&t)) && supplies.has(city.position, unit.required_resources())
+    unit.is_trainable() && unit.required_tech().is_none_or(|t| civ.tech.researched.contains(&t)) && supplies.has(city.position, unit.required_resources())
 }
 
 pub fn can_build(building: &Building, city: &CityView, civ: &CivView, supplies: &Supplies) -> bool {
     !city.built.contains(building)
+        && !(building.is_wonder() && civ.wonders_taken.contains(building))
         && building.required_tech().is_none_or(|t| civ.tech.researched.contains(&t))
         && supplies.has(city.position, building.required_resources())
         && (*building != Building::Harbor || city.coastal)
@@ -153,6 +156,8 @@ pub fn choose(city: &CityView, civ: &CivView, supplies: &Supplies, rng: &mut imp
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    static NO_WONDERS: std::sync::LazyLock<std::collections::HashSet<Building>> = std::sync::LazyLock::new(Default::default);
     use bevy_civ::tech::Tech;
     use bevy_civ::terrain::Resource as Good;
     use std::collections::HashSet;
@@ -162,7 +167,7 @@ mod tests {
     }
 
     fn civ(tech: &TechState) -> CivView<'_> {
-        CivView { tech, aggression: 0.4, cities: 2, workers: 1, settlers: 1, military: 3, navy: 0, air: 0, road_work: 0, cut_off: 0, at_war: false }
+        CivView { tech, aggression: 0.4, cities: 2, workers: 1, settlers: 1, military: 3, navy: 0, air: 0, road_work: 0, cut_off: 0, at_war: false, wonders_taken: &NO_WONDERS }
     }
 
     fn knowing(techs: &[Tech]) -> TechState {
