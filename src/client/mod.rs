@@ -84,7 +84,7 @@ fn load_art(mut commands: Commands, assets: Res<AssetServer>, mut layouts: ResMu
         resources: assets.load("sprites/resources.png"),
         resources_layout: grid(96, 96, 18, 1),
         units: assets.load("sprites/units.png"),
-        units_layout: grid(128, 128, 4, 20),
+        units_layout: grid(128, 128, 4, 27),
         cities: assets.load("sprites/cities.png"),
         cities_layout: grid(192, 192, 4, 1),
         flag: assets.load("sprites/flag.png"),

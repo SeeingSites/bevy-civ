@@ -35,8 +35,10 @@ pub struct CityLabelBack;
 #[derive(Component)]
 pub struct BurstFx(Timer);
 
+/// Row of a unit type in the atlas; the transport boat sits between the land units and the rest.
 pub fn unit_row(unit_type: UnitType) -> usize {
-    UnitType::ALL.iter().position(|u| *u == unit_type).unwrap_or(0)
+    let index = UnitType::ALL.iter().position(|u| *u == unit_type).unwrap_or(0);
+    if index >= BOAT_ROW { index + 1 } else { index }
 }
 
 fn unit_z(y: f32) -> f32 {
@@ -103,7 +105,8 @@ pub fn animate_units(
         let frame = (time.elapsed_secs() * speed + view.phase) as usize % 4;
         if let Some(atlas) = sprite.texture_atlas.as_mut() {
             // Land units are shown as a transport boat while at sea.
-            let row = if map.water.contains(&unit.position) { BOAT_ROW } else { unit_row(unit.unit_type) };
+            let embarked = unit.unit_type.domain() == bevy_civ::unit::Domain::Land && map.water.contains(&unit.position);
+            let row = if embarked { BOAT_ROW } else { unit_row(unit.unit_type) };
             atlas.index = row * 4 + frame;
         }
         let shown = unit.owner == PLAYER || fog.visible.contains(&unit.position);

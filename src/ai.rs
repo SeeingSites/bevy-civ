@@ -4,7 +4,8 @@ use crate::unit::{Unit, UnitType};
 use crate::terrain::{HexTile, Improvement, Terrain};
 use std::collections::HashMap;
 use crate::tech::{Tech, TechState};
-use crate::pathfinding::find_path;
+use crate::pathfinding::{find_path, Travel};
+use crate::unit::{Domain, AIR_RANGE};
 use rand::Rng;
 
 #[derive(Resource)]
@@ -140,7 +141,7 @@ pub fn process_ai_turn(
     let mut holders: HashMap<Hex, (Entity, f32)> = HashMap::new();
     let mut field_armies: HashMap<u32, usize> = HashMap::new();
     for (entity, unit) in units.iter() {
-        if unit.owner == 0 || !unit.unit_type.is_military() {
+        if unit.owner == 0 || !unit.unit_type.is_army() {
             continue;
         }
         *field_armies.entry(unit.owner).or_default() += 1;
@@ -211,7 +212,7 @@ pub fn process_ai_turn(
             let nearest = jobs.iter().copied().enumerate().min_by_key(|(index, h)| (here.distance_to(*h), *index));
             if let Some((index, target)) = nearest {
                 jobs.remove(index);
-                let step = find_path(here, target, land.iter().copied(), false).and_then(|path| path.get(1).copied());
+                let step = find_path(here, target, land.iter().copied(), Travel::Land).and_then(|path| path.get(1).copied());
                 if let Some(next) = step.filter(|n| !occupied.get(n).is_some_and(|(other, _)| *other != owner)) {
                     unit.position = next;
                     unit.movement_left = 0;
@@ -247,6 +248,47 @@ pub fn process_ai_turn(
         }
 
         let here = unit.position;
+        // Ships and aircraft hunt enemies that come within reach and otherwise stay at their base.
+        if unit.unit_type.domain() != Domain::Land {
+            let flying = unit.unit_type.domain() == Domain::Air;
+            let ports: std::collections::HashSet<Hex> = city_positions.iter().filter(|(_, o)| *o == owner).map(|(p, _)| *p).collect();
+            let in_reach = |hex: Hex| {
+                if flying {
+                    ports.iter().any(|p| p.distance_to(hex) <= AIR_RANGE)
+                } else {
+                    // A ship can strike anything at sea or on the shore.
+                    !is_land(hex) || hex.all_neighbors().iter().any(|n| !is_land(*n))
+                }
+            };
+            let prey = unit_snapshots
+                .iter()
+                .filter(|(pos, other, _)| hostile(owner, *other) && here.distance_to(*pos) <= 7 && in_reach(*pos))
+                .min_by_key(|(pos, _, _)| here.distance_to(*pos))
+                .map(|(pos, _, _)| *pos);
+            let base = ports.iter().copied().min_by_key(|p| here.distance_to(*p));
+            let travel = if flying { Travel::Air } else { Travel::Sea(&ports) };
+            let Some(target) = prey.or(base.filter(|b| flying && *b != here)) else { continue };
+            if let Some(path) = find_path(here, target, land.iter().copied(), travel) {
+                for next in path.into_iter().skip(1) {
+                    if unit.movement_left == 0 {
+                        break;
+                    }
+                    if occupied.get(&next).is_some_and(|(other, _)| *other != owner) {
+                        if Some(next) == prey {
+                            attacks.push(AiAttack { attacker: entity, target: next });
+                            unit.movement_left = 0;
+                        }
+                        break;
+                    }
+                    if !flying && is_land(next) && !ports.contains(&next) {
+                        break;
+                    }
+                    unit.position = next;
+                    unit.movement_left -= 1;
+                }
+            }
+            continue;
+        }
         if garrison.contains(&entity) {
             unit.fortified = true;
             unit.movement_left = 0;
@@ -301,7 +343,8 @@ pub fn process_ai_turn(
         };
 
         if let Some(target) = goal {
-            if let Some(path) = find_path(here, target, land.iter().copied(), can_sail) {
+            let travel = if can_sail { Travel::Amphibious } else { Travel::Land };
+            if let Some(path) = find_path(here, target, land.iter().copied(), travel) {
                 for next in path.into_iter().skip(1) {
                     if unit.movement_left == 0 {
                         break;
@@ -464,6 +507,42 @@ mod tests {
         let warrior = soldier(&mut world, UnitType::Warrior, 1, -2);
         world.run_system_once(war_phase).unwrap();
         assert_eq!(world.get::<Unit>(warrior).unwrap().position, Hex::new(-1, 0));
+    }
+
+    #[test]
+    fn a_warship_attacks_troops_at_sea_but_stays_off_the_land() {
+        let mut world = World::new();
+        for q in -1..=6 {
+            let terrain = if (1..=4).contains(&q) { Terrain::Water } else { Terrain::Plains };
+            world.spawn(HexTile { coord: Hex::new(q, 0), terrain, improvements: vec![], resource: None });
+        }
+        world.insert_resource(Civilizations { players: vec![rival()] });
+        // The rival's port is at the origin; an enemy transport is two tiles out to sea.
+        let galley = soldier(&mut world, UnitType::Galley, 1, 0);
+        world.get_mut::<Unit>(galley).unwrap().movement_left = 3;
+        soldier(&mut world, UnitType::Warrior, 0, 2);
+        world.insert_resource(Jobs(HashMap::new()));
+        let attacks = world.run_system_once(naval_phase).unwrap();
+        assert_eq!(world.get::<Unit>(galley).unwrap().position, Hex::new(1, 0), "sails next to its prey");
+        assert_eq!(attacks, vec![Hex::new(2, 0)]);
+
+        // With nothing to hunt it stays in port rather than wandering inland.
+        let mut world = World::new();
+        for q in -1..=3 {
+            world.spawn(HexTile { coord: Hex::new(q, 0), terrain: if q >= 1 { Terrain::Water } else { Terrain::Plains }, improvements: vec![], resource: None });
+        }
+        world.insert_resource(Civilizations { players: vec![rival()] });
+        let galley = soldier(&mut world, UnitType::Galley, 1, 0);
+        world.run_system_once(naval_phase).unwrap();
+        assert_eq!(world.get::<Unit>(galley).unwrap().position, Hex::ZERO);
+    }
+
+    fn naval_phase(mut civs: ResMut<Civilizations>, mut units: Query<(Entity, &mut Unit)>, tiles: Query<&mut HexTile>, mut commands: Commands) -> Vec<Hex> {
+        let cities = [(Hex::ZERO, 1)];
+        process_ai_turn(&mut civs, &mut units, &cities, &tiles, &|a, b| a != b, &mut HashMap::new(), &|_, _| false, &mut commands)
+            .into_iter()
+            .map(|a| a.target)
+            .collect()
     }
 
     #[test]

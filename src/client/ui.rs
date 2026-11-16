@@ -527,8 +527,13 @@ pub fn rebuild_panels(
             p.spawn(label(&art.font_title, "Change production", 15.0, GOLD));
             p.spawn(row(5.0)).with_children(|r| {
                 let known = |t: Option<Tech>| t.is_none_or(|t| tech.researched.contains(&t));
-                let mut options: Vec<ProductionItem> = UnitType::ALL.into_iter().filter(|u| known(u.required_tech())).map(ProductionItem::Unit).collect();
                 let coastal = city.position.all_neighbors().iter().any(|n| map.water.contains(n));
+                // Ships and harbours need a coast.
+                let mut options: Vec<ProductionItem> = UnitType::ALL
+                    .into_iter()
+                    .filter(|u| known(u.required_tech()) && (u.domain() != bevy_civ::unit::Domain::Sea || coastal))
+                    .map(ProductionItem::Unit)
+                    .collect();
                 options.extend(
                     Building::ALL
                         .into_iter()

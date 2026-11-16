@@ -132,6 +132,22 @@ function camel(x, y, f) {
   return g + '</g>';
 }
 
+// ---- ships: a hull bobbing on the waterline -------------------------------------------------
+function ship(f, roll, inner) {
+  const bob = [0, -1.5, 0, 1.5][f];
+  const tilt = [-roll, 0, roll, 0][f];
+  const wave = [0, 4, 8, 4][f];
+  return wrap(
+    `<g transform="translate(0,${bob}) rotate(${tilt} 64 ${GROUND - 14})">${inner}</g>` +
+      `<path d="M${-4 + wave},${GROUND - 1} q8,-6 16,0 t16,0 t16,0 t16,0 t16,0 t16,0 t16,0 t16,0" fill="none" stroke="rgba(225,242,255,0.9)" stroke-width="3"/>` +
+      `<path d="M108,${GROUND - 8} q10,-2 14,6" fill="none" stroke="rgba(255,255,255,0.85)" stroke-width="2.5"/>`,
+  );
+}
+const smoke = (x, y, f) =>
+  `<g stroke="none" fill="rgba(70,70,76,${[0.75, 0.6, 0.45, 0.6][f]})"><circle cx="${x - f * 3}" cy="${y - f * 3}" r="${5 + f}"/><circle cx="${x - 8 - f * 4}" cy="${y - 9 - f * 4}" r="${4 + f}"/></g>`;
+const turret = (x, y, k) =>
+  `<path d="M${x - 9 * k},${y} v${-8 * k} h${16 * k} l${3 * k},${8 * k} Z" fill="#6b727d"/><path d="M${x + 6 * k},${y - 5 * k} h${16 * k}" stroke-width="${3.5 * k}"/><path d="M${x + 6 * k},${y - 5 * k} h${16 * k}" stroke="#4f5660" stroke-width="${1.6 * k}"/>`;
+
 // ---- the roster (order matches UnitType in src/unit.rs) ---------------------------------------
 const UNITS = [
   // Settler: traveller with staff and handcart
@@ -320,6 +336,86 @@ const UNITS = [
         `</g>` +
         `<path d="M8,${GROUND - 1} q8,-6 16,0 t16,0 t16,0 t16,0 t16,0 t16,0 t16,0" fill="none" stroke="rgba(220,240,255,0.9)" stroke-width="3"/>`,
     );
+  },
+  // ---- warships: drawn on the waterline with a bow wave ----
+  // Galley
+  (f) => {
+    const sweep = [-14, -4, 10, -2][f];
+    let oars = '';
+    for (let x = 34; x <= 84; x += 10) oars += `<path d="M${x},${GROUND - 20} l${sweep * 0.45},20" stroke-width="4"/><path d="M${x},${GROUND - 20} l${sweep * 0.45},20" stroke="#c9a06a" stroke-width="1.8"/>`;
+    return ship(f, 2,
+      `<path d="M60,${GROUND - 26} V${GROUND - 84}" stroke-width="5"/><path d="M60,${GROUND - 26} V${GROUND - 84}" stroke="${WOOD}" stroke-width="2.5"/>` +
+      `<path d="M40,${GROUND - 78} h40 q${4 + f % 2 * 2},18 0,34 h-40 q-${4 + f % 2 * 2},-16 0,-34 Z" fill="#efe6d0"/><path d="M40,${GROUND - 66} h40 M40,${GROUND - 54} h40" stroke="#b3261e" stroke-width="4"/>` +
+      `<path d="M12,${GROUND - 28} q6,-8 14,-6 h72 l18,-6 l-6,14 q-8,16 -24,18 h-52 q-16,-2 -22,-20 Z" fill="#8b5a2b"/><path d="M18,${GROUND - 22} h84" stroke="#c9973f" stroke-width="3"/>` +
+      `<path d="M112,${GROUND - 26} l10,3 l-10,4 Z" fill="${BRONZE}"/>` + oars);
+  },
+  // Frigate
+  (f) => {
+    const fl = [0, 2, 4, 2][f];
+    const mast = (x, h, w) => `<path d="M${x},${GROUND - 28} V${GROUND - h}" stroke-width="4.5"/><path d="M${x},${GROUND - 28} V${GROUND - h}" stroke="${WOOD}" stroke-width="2"/>` +
+      `<path d="M${x - w},${GROUND - h + 6} h${w * 2} q${3 + fl},${(h - 40) / 2} 0,${h - 44} h${-w * 2} q${3 + fl},${-(h - 44) / 2} 0,${-(h - 44)} Z" fill="#f3ecd8"/><path d="M${x - w},${GROUND - (h + 44) / 2 + 3} h${w * 2}" stroke="rgba(0,0,0,0.25)" stroke-width="1.5"/>`;
+    return ship(f, 2,
+      mast(36, 82, 13) + mast(62, 98, 16) + mast(88, 84, 13) +
+      `<path d="M62,${GROUND - 98} l${14 + fl},4 l-${14 + fl},5 Z" fill="#c8281c"/>` +
+      `<path d="M96,${GROUND - 34} L122,${GROUND - 44}" stroke-width="3"/>` +
+      `<path d="M10,${GROUND - 36} h18 v6 h74 l12,-6 l-6,18 q-6,16 -22,18 h-56 q-16,-2 -20,-36 Z" fill="#7a4a24"/>` +
+      `<path d="M16,${GROUND - 24} h92" stroke="#e8c14a" stroke-width="3"/>` +
+      [34, 50, 66, 82].map((x) => `<rect x="${x}" y="${GROUND - 18}" width="7" height="6" fill="#1d1611" stroke="none"/>`).join(''));
+  },
+  // Ironclad
+  (f) => ship(f, 1,
+    smoke(58, GROUND - 62, f) +
+    `<path d="M52,${GROUND - 34} v-24 h12 v24 Z" fill="#33363d"/><path d="M50,${GROUND - 58} h16" stroke-width="4"/>` +
+    `<path d="M30,${GROUND - 22} l8,-16 h46 l8,16 Z" fill="#59606b"/>` +
+    [44, 58, 72].map((x) => `<rect x="${x}" y="${GROUND - 32}" width="7" height="6" fill="#1d1611" stroke="none"/>`).join('') +
+    `<path d="M8,${GROUND - 22} h112 l-8,12 q-6,8 -18,10 h-64 q-14,-2 -22,-22 Z" fill="#3f454e"/><path d="M12,${GROUND - 18} h104" stroke="#8d93a0" stroke-width="2"/>` +
+    `<path d="M96,${GROUND - 22} v-22" stroke-width="3"/><path d="M96,${GROUND - 44} l12,3 l-12,4 Z" fill="#c8281c"/>`),
+  // Destroyer
+  (f) => ship(f, 1,
+    smoke(64, GROUND - 60, f) +
+    `<path d="M58,${GROUND - 30} v-26 h10 v26 Z" fill="#6b727d"/>` +
+    `<path d="M70,${GROUND - 30} v-18 h18 l4,18 Z" fill="#aab2bd"/><path d="M74,${GROUND - 42} h12" stroke="#1d1611" stroke-width="3"/>` +
+    `<path d="M79,${GROUND - 48} v-18 M72,${GROUND - 60} h14" stroke-width="2.5"/>` +
+    turret(30, GROUND - 28, 1) + turret(100, GROUND - 28, 1) +
+    `<path d="M4,${GROUND - 26} h106 l14,-6 l-10,20 q-6,10 -18,12 h-74 q-12,-2 -18,-26 Z" fill="#8a929d"/><path d="M8,${GROUND - 16} h106" stroke="#5a616b" stroke-width="2"/><path d="M8,${GROUND - 21} h108" stroke="#d5dbe2" stroke-width="1.6"/>`),
+  // Battleship
+  (f) => ship(f, 0,
+    smoke(52, GROUND - 74, f) + smoke(66, GROUND - 72, (f + 2) % 4) +
+    `<path d="M47,${GROUND - 34} v-34 h10 v34 Z M61,${GROUND - 34} v-32 h10 v32 Z" fill="#59606b"/>` +
+    `<path d="M72,${GROUND - 34} v-30 h16 l6,30 Z" fill="#aab2bd"/><path d="M76,${GROUND - 54} h12 M76,${GROUND - 46} h14" stroke="#1d1611" stroke-width="2.5"/>` +
+    `<path d="M80,${GROUND - 64} v-24 M72,${GROUND - 78} h16" stroke-width="2.5"/>` +
+    turret(22, GROUND - 30, 1.35) + turret(100, GROUND - 30, 1.35) + turret(38, GROUND - 38, 1.1) +
+    `<path d="M2,${GROUND - 30} h112 l12,-6 l-8,22 q-6,12 -20,14 h-76 q-14,-2 -20,-30 Z" fill="#7d8590"/><path d="M6,${GROUND - 16} h110" stroke="#4f5660" stroke-width="2.5"/><path d="M6,${GROUND - 24} h112" stroke="#d5dbe2" stroke-width="1.6"/>`),
+  // ---- aircraft: flying above their shadow ----
+  // Fighter
+  (f) => {
+    const bob = [0, -3, 0, 3][f];
+    return `<ellipse cx="64" cy="${GROUND + 2}" rx="${30 - Math.abs(bob)}" ry="5" fill="rgba(0,0,0,0.22)"/>` + wrap(
+      `<g transform="translate(0,${bob})">` +
+      `<path d="M14,54 l-4,-22 l12,2 l10,18 Z" fill="#6f7a4a"/>` +
+      `<path d="M14,52 C40,44 84,44 106,54 C112,58 112,64 104,66 C76,72 36,70 16,62 Z" fill="#7d8a55"/>` +
+      `<path d="M70,48 q10,-12 22,-2 q-6,6 -22,2 Z" fill="#bfe6f5"/>` +
+      `<path d="M40,60 l34,2 l-22,22 h-14 Z" fill="#5a6440"/>` +
+      `<circle cx="52" cy="57" r="6" fill="#f1ecdf"/><circle cx="52" cy="57" r="3" fill="#c8281c" stroke="none"/>` +
+      `<path d="M106,58 h8" stroke-width="4"/>` +
+      `<ellipse cx="116" cy="58" rx="3" ry="${[20, 14, 20, 12][f]}" fill="rgba(220,220,220,0.55)" stroke="rgba(29,22,17,0.5)" stroke-width="1.2"/>` +
+      `</g>`);
+  },
+  // Bomber
+  (f) => {
+    const bob = [0, -2, 0, 2][f];
+    return `<ellipse cx="64" cy="${GROUND + 2}" rx="${40 - Math.abs(bob)}" ry="6" fill="rgba(0,0,0,0.22)"/>` + wrap(
+      `<g transform="translate(0,${bob})">` +
+      `<path d="M8,50 l-2,-24 l12,2 l12,20 Z" fill="#59624a"/><path d="M4,46 h22" stroke-width="4"/><path d="M4,46 h22" stroke="#6b7655" stroke-width="2"/>` +
+      `<path d="M8,48 C36,40 92,40 112,50 C120,54 120,62 110,64 C80,72 34,70 12,60 Z" fill="#6b7655"/>` +
+      `<path d="M96,44 q12,0 20,8 q-10,4 -22,0 Z" fill="#bfe6f5"/><path d="M64,43 q8,-8 16,-1" fill="#bfe6f5"/>` +
+      `<path d="M30,56 l52,2 l-26,32 h-18 Z" fill="#4f5a3c"/>` +
+      `<rect x="54" y="62" width="30" height="13" rx="6" fill="#3f4636"/>` +
+      `<ellipse cx="88" cy="68" rx="2.6" ry="${[16, 10, 16, 9][f]}" fill="rgba(220,220,220,0.55)" stroke="rgba(29,22,17,0.5)" stroke-width="1.2"/>` +
+      `<circle cx="36" cy="54" r="6" fill="#f1ecdf"/><circle cx="36" cy="54" r="3" fill="#2a4f9a" stroke="none"/>` +
+      `<path d="M112,56 h8" stroke-width="4"/>` +
+      `<ellipse cx="121" cy="56" rx="2.6" ry="${[14, 9, 14, 8][f]}" fill="rgba(220,220,220,0.55)" stroke="rgba(29,22,17,0.5)" stroke-width="1.2"/>` +
+      `</g>`);
   },
 ];
 

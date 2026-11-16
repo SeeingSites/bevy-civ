@@ -42,15 +42,37 @@ pub enum UnitType {
     // Special
     Diplomat,
     Caravan,
+    // Naval
+    Galley,
+    Frigate,
+    Ironclad,
+    Destroyer,
+    Battleship,
+    // Air
+    Fighter,
+    Bomber,
 }
+
+/// Where a unit can go: over land (boarding a boat to cross water), on the sea, or through the air.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Domain {
+    Land,
+    Sea,
+    Air,
+}
+
+/// How far an aircraft may operate from the nearest city of its owner.
+pub const AIR_RANGE: i32 = 8;
 
 impl UnitType {
     /// Every unit type, in declaration order (also the row order of the sprite atlas).
-    pub const ALL: [UnitType; 19] = [
+    pub const ALL: [UnitType; 26] = [
         UnitType::Settler, UnitType::Worker, UnitType::Warrior, UnitType::Spearman, UnitType::Archer,
         UnitType::Horseman, UnitType::Legion, UnitType::WarChariot, UnitType::Immortal, UnitType::Phalanx,
         UnitType::Catapult, UnitType::Knight, UnitType::Cannon, UnitType::Rifleman, UnitType::Cavalry,
-        UnitType::Tank, UnitType::Artillery, UnitType::Diplomat, UnitType::Caravan,
+        UnitType::Tank, UnitType::Artillery, UnitType::Diplomat, UnitType::Caravan, UnitType::Galley,
+        UnitType::Frigate, UnitType::Ironclad, UnitType::Destroyer, UnitType::Battleship, UnitType::Fighter,
+        UnitType::Bomber,
     ];
 
     pub fn name(&self) -> &'static str {
@@ -74,6 +96,13 @@ impl UnitType {
             UnitType::Artillery => "Artillery",
             UnitType::Diplomat => "Diplomat",
             UnitType::Caravan => "Caravan",
+            UnitType::Galley => "Galley",
+            UnitType::Frigate => "Frigate",
+            UnitType::Ironclad => "Ironclad",
+            UnitType::Destroyer => "Destroyer",
+            UnitType::Battleship => "Battleship",
+            UnitType::Fighter => "Fighter",
+            UnitType::Bomber => "Bomber",
         }
     }
 
@@ -94,6 +123,11 @@ impl UnitType {
             UnitType::Tank => Some(Tech::MotorizedTransport),
             UnitType::Diplomat => Some(Tech::Writing),
             UnitType::Caravan => Some(Tech::Pottery),
+            UnitType::Galley => Some(Tech::Seafaring),
+            UnitType::Frigate => Some(Tech::Gunpowder),
+            UnitType::Ironclad => Some(Tech::SteamPower),
+            UnitType::Destroyer => Some(Tech::Refining),
+            UnitType::Battleship | UnitType::Fighter | UnitType::Bomber => Some(Tech::MotorizedTransport),
         }
     }
 
@@ -118,6 +152,13 @@ impl UnitType {
             UnitType::Artillery => (8, 2, 1),
             UnitType::Diplomat => (0, 0, 2),
             UnitType::Caravan => (0, 0, 1),
+            UnitType::Galley => (1, 1, 3),
+            UnitType::Frigate => (3, 2, 4),
+            UnitType::Ironclad => (5, 5, 4),
+            UnitType::Destroyer => (8, 6, 6),
+            UnitType::Battleship => (12, 10, 5),
+            UnitType::Fighter => (6, 5, 8),
+            UnitType::Bomber => (12, 2, 8),
         }
     }
 
@@ -142,6 +183,13 @@ impl UnitType {
             UnitType::Artillery => 80,
             UnitType::Diplomat => 30,
             UnitType::Caravan => 40,
+            UnitType::Galley => 30,
+            UnitType::Frigate => 50,
+            UnitType::Ironclad => 80,
+            UnitType::Destroyer => 110,
+            UnitType::Battleship => 160,
+            UnitType::Fighter => 90,
+            UnitType::Bomber => 110,
         }
     }
 
@@ -166,7 +214,23 @@ impl UnitType {
             UnitType::Artillery => Color::srgb(0.5, 0.4, 0.3),
             UnitType::Diplomat => Color::srgb(0.8, 0.8, 0.9),
             UnitType::Caravan => Color::srgb(0.9, 0.7, 0.4),
+            UnitType::Galley | UnitType::Frigate => Color::srgb(0.6, 0.45, 0.3),
+            UnitType::Ironclad | UnitType::Destroyer | UnitType::Battleship => Color::srgb(0.5, 0.52, 0.56),
+            UnitType::Fighter | UnitType::Bomber => Color::srgb(0.55, 0.6, 0.5),
         }
+    }
+
+    pub fn domain(&self) -> Domain {
+        match self {
+            UnitType::Galley | UnitType::Frigate | UnitType::Ironclad | UnitType::Destroyer | UnitType::Battleship => Domain::Sea,
+            UnitType::Fighter | UnitType::Bomber => Domain::Air,
+            _ => Domain::Land,
+        }
+    }
+
+    /// A military unit that fights on the ground: the only kind that holds or takes cities.
+    pub fn is_army(&self) -> bool {
+        self.is_military() && self.domain() == Domain::Land
     }
 
     pub fn is_worker(&self) -> bool {
@@ -186,7 +250,11 @@ impl UnitType {
             UnitType::Cannon => &[Resource::Iron, Resource::Saltpeter],
             UnitType::Rifleman => &[Resource::Saltpeter],
             UnitType::Cavalry => &[Resource::Horses, Resource::Saltpeter],
-            UnitType::Tank => &[Resource::Oil, Resource::Rubber],
+            UnitType::Tank | UnitType::Bomber => &[Resource::Oil, Resource::Rubber],
+            UnitType::Frigate => &[Resource::Iron, Resource::Saltpeter],
+            UnitType::Ironclad => &[Resource::Coal, Resource::Iron],
+            UnitType::Destroyer | UnitType::Fighter => &[Resource::Oil],
+            UnitType::Battleship => &[Resource::Oil, Resource::Iron],
             _ => &[],
         }
     }

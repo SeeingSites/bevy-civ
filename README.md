@@ -94,6 +94,15 @@ on, propose technology swaps, ask you to join their wars, and declare war when r
 Breaking a treaty costs reputation with everyone, allies join each other's wars, and the other
 powers fight and make peace among themselves.
 
+## Ships and aircraft
+- **Warships** (Galley, Frigate, Ironclad, Destroyer, Battleship) are built in coastal cities. They
+  sail on water and into your own cities, can attack units at sea or on the shore, and cannot take
+  cities. Troops crossing the sea in boats are defenceless against them, cannot attack from their
+  boats, and cannot attack ships.
+- **Aircraft** (Fighter, Bomber) fly over anything but must stay within eight tiles of one of your
+  cities. They attack like other units and cannot take cities.
+- Only land armies hold and capture cities.
+
 ## Computer players
 Computer players follow the same rules as you and are run by three pieces of code:
 
@@ -108,7 +117,12 @@ Computer players follow the same rules as you and are run by three pieces of cod
   its defender.
 - **Economy and diplomacy** (`src/main.rs`, `src/foreign.rs`): science and gold come from their own
   cities and buildings. Spare gold hurries production and is invested in research. Their merchants
-  propose resource deals: to buy what you can spare and sell what they can.
+  propose resource deals: to buy what you can spare and sell what they can. They also buy and
+  sell resources among themselves.
+- **Reaching cut-off cities**: a city with no land route to the capital is roaded to the nearest
+  coastal city of its owner, and coastal cities on both sides build Harbors to join the networks.
+- **Navy and air force**: at war, coastal cities add warships and industrial powers add aircraft;
+  both hunt enemies within reach and otherwise stay at their base.
 
 ## Controls
 - **Click / tap** a unit or city to select it (click again to cycle what is on the tile)

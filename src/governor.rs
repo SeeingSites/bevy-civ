@@ -6,7 +6,7 @@ use rand::Rng;
 use bevy_civ::building::Building;
 use bevy_civ::city::ProductionItem;
 use bevy_civ::tech::TechState;
-use bevy_civ::unit::UnitType;
+use bevy_civ::unit::{Domain, UnitType};
 
 use crate::supply::Supplies;
 
@@ -32,7 +32,10 @@ pub struct CivView<'a> {
     pub cities: usize,
     pub workers: usize,
     pub settlers: usize,
+    /// Land forces.
     pub military: usize,
+    pub navy: usize,
+    pub air: usize,
     /// Sources and cities still waiting for a road.
     pub road_work: usize,
     /// Cities not joined to the capital's network.
@@ -60,7 +63,7 @@ pub fn can_build(building: &Building, city: &CityView, civ: &CivView, supplies: 
 pub fn best_defender(city: &CityView, civ: &CivView, supplies: &Supplies) -> UnitType {
     UnitType::ALL
         .into_iter()
-        .filter(|u| u.is_military() && can_train(*u, city, civ, supplies))
+        .filter(|u| u.is_army() && can_train(*u, city, civ, supplies))
         .max_by(|a, b| {
             let score = |u: &UnitType| u.stats().1 as f32 * u.defense_bonus() + u.stats().0 as f32 * 0.1 - u.cost() as f32 * 0.001;
             score(a).total_cmp(&score(b))
@@ -72,7 +75,7 @@ pub fn best_defender(city: &CityView, civ: &CivView, supplies: &Supplies) -> Uni
 pub fn best_attacker(city: &CityView, civ: &CivView, supplies: &Supplies) -> UnitType {
     UnitType::ALL
         .into_iter()
-        .filter(|u| u.is_military() && can_train(*u, city, civ, supplies))
+        .filter(|u| u.is_army() && can_train(*u, city, civ, supplies))
         .max_by(|a, b| {
             let score = |u: &UnitType| u.stats().0 as f32 + u.stats().1 as f32 * 0.4 + u.stats().2 as f32 * 0.5;
             score(a).total_cmp(&score(b))
@@ -100,6 +103,22 @@ pub fn choose(city: &CityView, civ: &CivView, supplies: &Supplies, rng: &mut imp
     if civ.military < wanted_army {
         let offensive = civ.at_war || civ.aggression > 0.6;
         return unit(if offensive { best_attacker(city, civ, supplies) } else { best_defender(city, civ, supplies) });
+    }
+    // At war, a coastal city adds warships and an industrial power adds aircraft.
+    if civ.at_war {
+        let strongest = |domain: Domain| {
+            UnitType::ALL.into_iter().filter(|u| u.domain() == domain && can_train(*u, city, civ, supplies)).max_by_key(|u| u.stats().0 + u.stats().1)
+        };
+        if city.coastal && civ.navy < 2 {
+            if let Some(ship) = strongest(Domain::Sea) {
+                return unit(ship);
+            }
+        }
+        if civ.air < 2 {
+            if let Some(plane) = strongest(Domain::Air) {
+                return unit(plane);
+            }
+        }
     }
     if civ.settlers == 0 && civ.cities < 6 && city.population >= 3 && rng.gen_bool(0.35) {
         return unit(UnitType::Settler);
@@ -143,7 +162,7 @@ mod tests {
     }
 
     fn civ(tech: &TechState) -> CivView<'_> {
-        CivView { tech, aggression: 0.4, cities: 2, workers: 1, settlers: 1, military: 3, road_work: 0, cut_off: 0, at_war: false }
+        CivView { tech, aggression: 0.4, cities: 2, workers: 1, settlers: 1, military: 3, navy: 0, air: 0, road_work: 0, cut_off: 0, at_war: false }
     }
 
     fn knowing(techs: &[Tech]) -> TechState {
@@ -203,6 +222,16 @@ mod tests {
         let view = city();
         let at_war = CivView { at_war: true, ..civ(&tech) };
         assert!(matches!(choose(&view, &at_war, &Supplies::default(), &mut rand::thread_rng()), ProductionItem::Unit(u) if u.is_military()));
+    }
+
+    #[test]
+    fn a_coastal_city_at_war_builds_warships_once_the_army_is_ready() {
+        let tech = knowing(&[Tech::Pottery, Tech::Seafaring]);
+        let at_war = |coastal: bool| (CityView { coastal, ..city() }, CivView { at_war: true, military: 6, ..civ(&tech) });
+        let (port, state) = at_war(true);
+        assert_eq!(choose(&port, &state, &Supplies::default(), &mut rand::thread_rng()), ProductionItem::Unit(UnitType::Galley));
+        let (inland, state) = at_war(false);
+        assert!(!matches!(choose(&inland, &state, &Supplies::default(), &mut rand::thread_rng()), ProductionItem::Unit(u) if u.domain() == Domain::Sea));
     }
 
     #[test]

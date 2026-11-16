@@ -15,7 +15,8 @@ use bevy_civ::combat::resolve_combat;
 use bevy_civ::diplomacy::{Diplomacy, Happiness, Treaty};
 use bevy_civ::fog::FogOfWar;
 use bevy_civ::government::Government;
-use bevy_civ::pathfinding::find_path;
+use bevy_civ::pathfinding::{find_path, Travel};
+use bevy_civ::unit::{Domain, AIR_RANGE};
 use bevy_civ::save::{save_game, SaveData};
 use bevy_civ::score::Score;
 use bevy_civ::space::{SpaceComponent, SpaceRace};
@@ -494,23 +495,43 @@ fn handle_map_click(
             continue;
         }
         let sail = tech.researched.contains(&Tech::Seafaring);
-        let Some(route) = find_path(unit.position, hex, tiles.iter().map(|t| (t.coord, t.terrain)), sail) else {
-            log.push(if sail { "There is no route to that tile." } else { "There is no route to that tile. Crossing water needs Seafaring." });
+        let domain = unit.unit_type.domain();
+        let enemy = snapshot.iter().find(|u| u.1 == hex && u.2 != unit.owner).copied();
+        let ports: HashSet<Hex> = cities.iter().filter(|(_, c)| c.owner == PLAYER).map(|(_, c)| c.position).collect();
+        // Where each kind of unit may go.
+        let refusal = match domain {
+            Domain::Sea if enemy.is_none() && !map.water.contains(&hex) && !ports.contains(&hex) => Some("Ships can only enter water and your own coastal cities."),
+            Domain::Air if !ports.iter().any(|p| p.distance_to(hex) <= AIR_RANGE) => Some("That is beyond the range of our airfields."),
+            Domain::Land if enemy.is_some() && map.water.contains(&unit.position) => Some("Troops cannot attack from their boats; land them first."),
+            Domain::Land if enemy.is_some() && map.water.contains(&hex) => Some("Land units cannot attack ships at sea."),
+            _ => None,
+        };
+        if let Some(reason) = refusal {
+            log.push(reason);
+            continue;
+        }
+        let travel = match domain {
+            Domain::Sea => Travel::Sea(&ports),
+            Domain::Air => Travel::Air,
+            Domain::Land if sail => Travel::Amphibious,
+            Domain::Land => Travel::Land,
+        };
+        let Some(route) = find_path(unit.position, hex, tiles.iter().map(|t| (t.coord, t.terrain)), travel) else {
+            log.push(if sail || domain != Domain::Land { "There is no route to that tile." } else { "There is no route to that tile. Crossing water needs Seafaring." });
             continue;
         };
         dirty.map = true;
         unit.fortified = false;
         cycle.advance = true;
 
-        let enemy = snapshot.iter().find(|u| u.1 == hex && u.2 != unit.owner).copied();
         // Stop next to a defended tile; the last step is the attack itself.
         let walk = if enemy.is_some() { &route[..route.len() - 1] } else { &route[..] };
         for next in walk.iter().skip(1) {
             if unit.movement_left == 0 {
                 break;
             }
-            // Boarding or leaving a boat takes the rest of the turn.
-            let boarding = map.water.contains(&unit.position) != map.water.contains(next);
+            // Boarding or leaving a boat takes the rest of the turn (ships and aircraft are unaffected).
+            let boarding = domain == Domain::Land && map.water.contains(&unit.position) != map.water.contains(next);
             unit.position = *next;
             unit.movement_left = if boarding { 0 } else { unit.movement_left - 1 };
         }
@@ -526,11 +547,12 @@ fn handle_map_click(
                     log.push("Your attack means war!");
                 }
                 let terrain = defence_terrain(Some(terrain), city_here.is_some());
+                let enemy_type = defending_as(enemy_type, hex, &map);
                 if resolve_combat(unit.unit_type, enemy_type, terrain, None, None) {
                     log.push(format!("Victory! Your {} defeated the enemy {}.", unit.unit_type.name(), enemy_type.name()));
                     commands.entity(enemy_entity).try_despawn_recursive();
                     let more_defenders = snapshot.iter().any(|u| u.1 == hex && u.2 != PLAYER && u.0 != enemy_entity);
-                    if !more_defenders {
+                    if !more_defenders && may_enter(unit.unit_type, hex, &map, &ports) {
                         unit.position = hex;
                     }
                 } else {
@@ -547,7 +569,7 @@ fn handle_map_click(
 
         fog.reveal(unit.position, 2);
 
-        if unit.unit_type.is_military() {
+        if unit.unit_type.is_army() {
             for (_, mut city) in &mut cities {
                 if city.position == unit.position && city.owner != PLAYER {
                     city.owner = PLAYER;
@@ -556,6 +578,20 @@ fn handle_map_click(
                 }
             }
         }
+    }
+}
+
+/// Troops caught in their transport boats cannot fight back.
+fn defending_as(unit: UnitType, at: Hex, map: &MapData) -> UnitType {
+    if unit.domain() == Domain::Land && map.water.contains(&at) { UnitType::Worker } else { unit }
+}
+
+/// Whether a victorious attacker can move onto the tile it cleared.
+fn may_enter(unit: UnitType, tile: Hex, map: &MapData, own_cities: &HashSet<Hex>) -> bool {
+    match unit.domain() {
+        Domain::Land => true,
+        Domain::Sea => map.water.contains(&tile) || own_cities.contains(&tile),
+        Domain::Air => false,
     }
 }
 
@@ -733,8 +769,9 @@ fn apply_actions(
                 if city.owner != PLAYER {
                     continue;
                 }
-                if *item == ProductionItem::Building(Building::Harbor) && !city.position.all_neighbors().iter().any(|n| map.water.contains(n)) {
-                    log.push(format!("{} is not on the coast and cannot build a Harbor.", city.name));
+                let needs_coast = matches!(item, ProductionItem::Building(Building::Harbor)) || matches!(item, ProductionItem::Unit(u) if u.domain() == Domain::Sea);
+                if needs_coast && !city.position.all_neighbors().iter().any(|n| map.water.contains(n)) {
+                    log.push(format!("{} is not on the coast and cannot build a {}.", city.name, item.name()));
                     continue;
                 }
                 if missing.is_empty() {
@@ -791,9 +828,15 @@ fn process_turn(
         cities.iter().filter(|(c, _, _)| c.is_capital).map(|(c, _, _)| (c.owner, c.position)).collect();
     let mut army_sizes: HashMap<u32, usize> = HashMap::new();
     let mut worker_counts: HashMap<u32, usize> = HashMap::new();
+    let mut navy_sizes: HashMap<u32, usize> = HashMap::new();
+    let mut air_sizes: HashMap<u32, usize> = HashMap::new();
     for (_, unit) in units.iter() {
-        if unit.unit_type.is_military() {
+        if unit.unit_type.is_army() {
             *army_sizes.entry(unit.owner).or_default() += 1;
+        } else if unit.unit_type.domain() == Domain::Sea {
+            *navy_sizes.entry(unit.owner).or_default() += 1;
+        } else if unit.unit_type.domain() == Domain::Air {
+            *air_sizes.entry(unit.owner).or_default() += 1;
         } else if unit.unit_type.is_worker() {
             *worker_counts.entry(unit.owner).or_default() += 1;
         }
@@ -803,7 +846,7 @@ fn process_turn(
         *settler_counts.entry(unit.owner).or_default() += 1;
     }
     // Where every army stands, who is at war, and how much road work each computer player has left.
-    let armies: Vec<(Hex, u32)> = units.iter().filter(|(_, u)| u.unit_type.is_military()).map(|(_, u)| (u.position, u.owner)).collect();
+    let armies: Vec<(Hex, u32)> = units.iter().filter(|(_, u)| u.unit_type.is_army()).map(|(_, u)| (u.position, u.owner)).collect();
     let wars: HashSet<(u32, u32)> = diplomacy.treaties.iter().filter(|(_, t)| **t == Treaty::War).map(|(pair, _)| *pair).collect();
     let enemies = |a: u32, b: u32| a != b && (a == BARBARIANS || b == BARBARIANS || wars.contains(&(a.min(b), a.max(b))));
     let mut road_work: HashMap<u32, usize> = HashMap::new();
@@ -851,9 +894,9 @@ fn process_turn(
         if !mine && owner != BARBARIANS && !view.defended {
             if let Some(civ) = civs.players.iter_mut().find(|c| c.id == owner) {
                 // An empty city drops everything for a defender, and pays to hurry it when in danger.
-                let already = matches!(&city.production_queue, Some(ProductionItem::Unit(u)) if u.is_military());
+                let already = matches!(&city.production_queue, Some(ProductionItem::Unit(u)) if u.is_army());
                 if !already {
-                    let civ_view = governor::CivView { tech: &civ.tech, aggression: civ.aggression, cities: 1, workers: 1, settlers: 1, military: 0, road_work: 0, cut_off: 0, at_war: true };
+                    let civ_view = governor::CivView { tech: &civ.tech, aggression: civ.aggression, cities: 1, workers: 1, settlers: 1, military: 0, navy: 0, air: 0, road_work: 0, cut_off: 0, at_war: true };
                     city.production_queue = Some(ProductionItem::Unit(governor::best_defender(&view, &civ_view, &supplies)));
                 }
                 let remaining = city.production_queue.as_ref().map(|i| i.cost()).unwrap_or(0).saturating_sub(city.production_progress) as i32;
@@ -914,10 +957,10 @@ fn process_turn(
             match completed {
                 ProductionItem::Unit(ut) => {
                     // Keep computer players from flooding the map.
-                    let at_cap = !mine && ut.is_military() && army_sizes.get(&city.owner).copied().unwrap_or(0) >= governor::army_cap(city_counts.get(&city.owner).copied().unwrap_or(1));
+                    let at_cap = !mine && ut.is_army() && army_sizes.get(&city.owner).copied().unwrap_or(0) >= governor::army_cap(city_counts.get(&city.owner).copied().unwrap_or(1));
                     if !at_cap {
                         spawn_unit(&mut commands, city.position, ut, city.owner);
-                        if ut.is_military() {
+                        if ut.is_army() {
                             *army_sizes.entry(city.owner).or_default() += 1;
                             just_trained = true;
                         }
@@ -961,6 +1004,8 @@ fn process_turn(
                     workers: worker_counts.get(&owner).copied().unwrap_or(0),
                     settlers: settler_counts.get(&owner).copied().unwrap_or(0),
                     military: army_sizes.get(&owner).copied().unwrap_or(0),
+                    navy: navy_sizes.get(&owner).copied().unwrap_or(0),
+                    air: air_sizes.get(&owner).copied().unwrap_or(0),
                     road_work: road_work.get(&owner).copied().unwrap_or(0),
                     cut_off: cut_off.get(&owner).copied().unwrap_or(0),
                     at_war: wars.iter().any(|(a, b)| *a == owner || *b == owner),
@@ -972,6 +1017,8 @@ fn process_turn(
                 match &next {
                     ProductionItem::Unit(UnitType::Worker) => *worker_counts.entry(owner).or_default() += 1,
                     ProductionItem::Unit(UnitType::Settler) => *settler_counts.entry(owner).or_default() += 1,
+                    ProductionItem::Unit(u) if u.domain() == Domain::Sea => *navy_sizes.entry(owner).or_default() += 1,
+                    ProductionItem::Unit(u) if u.domain() == Domain::Air => *air_sizes.entry(owner).or_default() += 1,
                     _ => {}
                 }
                 city.production_queue = Some(next);
@@ -1062,7 +1109,7 @@ fn process_turn(
                 .into_iter()
                 .filter(|p| p.distance_to(*city) <= 14 && (supplies.linked.contains(p) || coastal(p)))
                 .take(4)
-                .find(|p| find_path(*p, *city, land.iter().copied(), false).is_some());
+                .find(|p| find_path(*p, *city, land.iter().copied(), Travel::Land).is_some());
             if let Some(hub) = reachable {
                 routes.push((*owner, hub, *city));
             }
@@ -1070,7 +1117,7 @@ fn process_turn(
         // Nearest goals first, so short useful roads are finished before long ones.
         routes.sort_by_key(|(_, from, to)| from.distance_to(*to));
         for (owner, from, to) in routes {
-            if let Some(route) = find_path(from, to, land.iter().copied(), false) {
+            if let Some(route) = find_path(from, to, land.iter().copied(), Travel::Land) {
                 let jobs = road_jobs.entry(owner).or_default();
                 for step in route {
                     if !done.contains(&step) && !jobs.contains(&step) {
@@ -1097,9 +1144,13 @@ fn process_turn(
             .filter(|(e, u)| u.position == attack.target && u.owner != a_owner && !dead.contains(e))
             .max_by_key(|(_, u)| u.unit_type.stats().1)
             .map(|(e, u)| (e, u.unit_type, u.owner, u.fortified));
+        let own_cities: HashSet<Hex> = city_owners.iter().filter(|(_, o)| *o == a_owner).map(|(p, _)| *p).collect();
+        let can_enter = may_enter(a_type, attack.target, &map, &own_cities);
         let Some((d_entity, d_type, d_owner, dug_in)) = defender else {
-            if let Ok((_, mut attacker)) = units.get_mut(attack.attacker) {
-                attacker.position = attack.target;
+            if can_enter {
+                if let Ok((_, mut attacker)) = units.get_mut(attack.attacker) {
+                    attacker.position = attack.target;
+                }
             }
             continue;
         };
@@ -1112,14 +1163,14 @@ fn process_turn(
         if fog.visible.contains(&attack.target) {
             bursts.send(Burst(attack.target));
         }
-        if resolve_combat(a_type, d_type, terrain, None, None) {
+        if resolve_combat(a_type, defending_as(d_type, attack.target, &map), terrain, None, None) {
             dead.insert(d_entity);
             commands.entity(d_entity).try_despawn_recursive();
             if d_owner == PLAYER {
                 log.push(format!("Our {} was destroyed by a {} {}.", d_type.name(), civ_name(a_owner), a_type.name()));
             }
             let still_defended = units.iter().any(|(e, u)| u.position == attack.target && u.owner != a_owner && !dead.contains(&e));
-            if !still_defended {
+            if !still_defended && can_enter {
                 if let Ok((_, mut attacker)) = units.get_mut(attack.attacker) {
                     attacker.position = attack.target;
                 }
@@ -1135,11 +1186,11 @@ fn process_turn(
 
     // An enemy military unit standing in an undefended city takes it.
     for (mut city, _, _) in &mut cities {
-        let defended = units.iter().any(|(e, u)| !dead.contains(&e) && u.position == city.position && u.owner == city.owner);
+        let defended = units.iter().any(|(e, u)| !dead.contains(&e) && u.position == city.position && u.owner == city.owner && u.unit_type.is_army());
         let occupier = units
             .iter()
             .find(|(e, u)| {
-                !dead.contains(e) && u.position == city.position && u.owner != PLAYER && u.owner != city.owner && u.unit_type.is_military() && hostile(u.owner, city.owner)
+                !dead.contains(e) && u.position == city.position && u.owner != PLAYER && u.owner != city.owner && u.unit_type.is_army() && hostile(u.owner, city.owner)
             })
             .map(|(_, u)| u.owner);
         if let Some(new_owner) = occupier.filter(|_| !defended) {
