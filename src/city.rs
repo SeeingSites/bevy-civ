@@ -18,7 +18,13 @@ pub struct City {
     /// Turns its people still resist a conqueror: the city produces nothing until they settle.
     #[serde(default)]
     pub resistance: u32,
+    /// Projects to take up, in order, after the current one.
+    #[serde(default)]
+    pub queue: Vec<ProductionItem>,
 }
+
+/// Most projects a city can have waiting.
+pub const QUEUE_LIMIT: usize = 6;
 
 /// Turns a captured city resists its new owner: longer for a big city (a garrison of two or more
 /// land units shortens it).
@@ -251,6 +257,7 @@ pub fn spawn_city(
                 specialists: vec![],
                 is_capital,
                 resistance: 0,
+                queue: Vec::new(),
             },
             Name::new(name),
             CityBuildings { buildings: vec![] },
@@ -277,6 +284,7 @@ mod hurry_tests {
             specialists: vec![],
             is_capital: true,
             resistance: 0,
+            queue: Vec::new(),
         }
     }
 

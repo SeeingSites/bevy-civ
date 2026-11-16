@@ -31,6 +31,8 @@ pub enum Improvement {
     /// Left by industry: the tile yields nothing until a worker cleans it up (a "build" of this
     /// removes it).
     Pollution,
+    /// A fortress: troops in it defend as if behind city walls.
+    Fortress,
 }
 
 /// What a resource is good for.
@@ -101,6 +103,22 @@ impl Terrain {
             Terrain::Hills => Some(Terrain::Plains),
             _ => None,
         }
+    }
+}
+
+/// What a pillager wrecks first: the railroad, then a fortress, mine or farm, and the road last.
+pub fn pillage_target(improvements: &[Improvement]) -> Option<Improvement> {
+    [Improvement::Railroad, Improvement::Fortress, Improvement::Mine, Improvement::Farm, Improvement::Road].into_iter().find(|i| improvements.contains(i))
+}
+
+pub fn improvement_name(improvement: Improvement) -> &'static str {
+    match improvement {
+        Improvement::Farm => "farm",
+        Improvement::Mine => "mine",
+        Improvement::Road => "road",
+        Improvement::Railroad => "railroad",
+        Improvement::Pollution => "pollution",
+        Improvement::Fortress => "fortress",
     }
 }
 
@@ -271,4 +289,17 @@ pub fn random_resource(rng: &mut impl Rng, terrain: Terrain) -> Option<Resource>
         Terrain::Mountain => (17, &[Iron, Gold, Gems, Coal, Iron]),
     };
     (rng.gen_range(0..100) < chance).then(|| options[rng.gen_range(0..options.len())])
+}
+
+#[cfg(test)]
+mod pillage_tests {
+    use super::*;
+
+    #[test]
+    fn pillagers_wreck_rails_and_works_before_roads() {
+        assert_eq!(pillage_target(&[Improvement::Road, Improvement::Farm]), Some(Improvement::Farm));
+        assert_eq!(pillage_target(&[Improvement::Road, Improvement::Railroad, Improvement::Mine]), Some(Improvement::Railroad));
+        assert_eq!(pillage_target(&[Improvement::Road]), Some(Improvement::Road));
+        assert_eq!(pillage_target(&[Improvement::Pollution]), None);
+    }
 }

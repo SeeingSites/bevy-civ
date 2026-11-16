@@ -12,6 +12,7 @@ use bevy_civ::barbarians::{process_barbarians, BarbarianState};
 use bevy_civ::building::{Building, CityBuildings, WorldWonders};
 use bevy_civ::city::{spawn_city, City, Growth, ProductionItem};
 use bevy_civ::combat::{self, Ground, Outcome, Side};
+use bevy_civ::villages::{Find, Villages};
 use bevy_civ::religion::{Faith, Religions};
 use bevy_civ::great::{self, GreatPeople};
 use bevy_civ::culture::{self as culture_rules, CultureLedger};
@@ -313,6 +314,12 @@ pub enum Action {
     Upgrade,
     /// Burn the selected city, taken this turn, to the ground.
     Raze,
+    /// Add a project to the end of the selected city's build queue.
+    QueueProduction(ProductionItem),
+    /// Take the project at this place out of the selected city's build queue.
+    Unqueue(usize),
+    /// The selected unit wrecks the best improvement on its tile (enemy land only).
+    Pillage,
     /// Set the share of commerce going to science and to luxury (percent; taxes take the rest).
     SetRates(u32, u32),
     /// Buy the rest of the selected city's project with gold (not wonders).
@@ -555,7 +562,7 @@ fn main() {
         .add_systems(OnExit(AppState::Playing), cleanup_world)
         .add_systems(
             Update,
-            (handle_map_click, apply_actions, process_turn, religion_turn, continue_orders, automate_workers, advance_selection, preview_route, refresh_supplies)
+            (handle_map_click, apply_actions, process_turn, religion_turn, continue_orders, visit_villages, automate_workers, advance_selection, preview_route, refresh_supplies)
                 .chain()
                 .in_set(GameLogic)
                 .run_if(in_state(AppState::Playing)),
@@ -568,6 +575,7 @@ pub fn init_game(app: &mut App) {
     app
         .init_resource::<GameState>()
         .init_resource::<Religions>()
+        .init_resource::<Villages>()
         .insert_resource(Dirty { map: true, ui: true })
         .init_resource::<TechState>()
         .init_resource::<Selection>()
@@ -731,6 +739,15 @@ fn setup_world(
         projection.scale = 1.0;
     }
     commands.insert_resource(Rivers::generate(&map.terrain, &mut rng));
+    // Tribal villages, clear of every people's starting cities and units.
+    let starts: Vec<Hex> = defs
+        .iter()
+        .flat_map(|d| d.cities.iter().map(|c| (c.col, c.row)).chain(d.units.iter().map(|u| (u.col, u.row))))
+        .map(|(col, row)| scenario::offset_to_hex(col, row))
+        .collect();
+    let mut land: Vec<Hex> = map.cells.iter().copied().filter(|h| !map.water.contains(h)).collect();
+    land.sort_by_key(|h| (h.x, h.y));
+    commands.insert_resource(Villages { sites: bevy_civ::villages::place(&land, &starts, &mut rng) });
     commands.insert_resource(map);
     dirty.map = true;
     dirty.ui = true;
@@ -876,7 +893,24 @@ fn handle_map_click(
         let sail = tech.researched.contains(&Tech::Seafaring);
         let domain = unit.unit_type.domain();
         // The strongest defender on the tile meets an attack.
-        let enemy = snapshot.iter().filter(|u| u.1 == hex && u.2 != unit.owner).max_by_key(|u| u.3.stats().1 * 10 + vitals.get(&u.0).map_or(0, |v| v.0)).copied();
+        // Units of a people who grant us passage are not in the way: we share the tile.
+        let enemy = snapshot
+            .iter()
+            .filter(|u| u.1 == hex && u.2 != unit.owner && (u.2 == BARBARIANS || !diplomacy.has_passage(PLAYER, u.2)))
+            .max_by_key(|u| u.3.stats().1 * 10 + vitals.get(&u.0).map_or(0, |v| v.0))
+            .copied();
+        // Walking into the units of a people at peace with us would be war: that takes a declaration.
+        if let Some((_, _, owner, _)) = enemy {
+            if owner != BARBARIANS && matches!(diplomacy.get_treaty(PLAYER, owner), Treaty::Peace | Treaty::Alliance) {
+                log.push("We are at peace with them: attacking means war, so declare it first (Diplomacy), or ask for a right of passage to share their tiles.");
+                continue;
+            }
+        }
+        // Nor may we walk into the city of a people we are not at war with.
+        if enemy.is_none() && city_here.is_some_and(|(_, o)| o != PLAYER && o != BARBARIANS && diplomacy.get_treaty(PLAYER, o) != Treaty::War) {
+            log.push("That is the city of a people we are not at war with: a right of passage lets us through their lands, but not into their cities.");
+            continue;
+        }
         let ports: HashSet<Hex> = cities.iter().filter(|(_, c)| c.owner == PLAYER).map(|(_, c)| c.position).collect();
         // Where each kind of unit may go.
         let refusal = match domain {
@@ -932,7 +966,8 @@ fn handle_map_click(
                 let enemy_type = defending_as(enemy_type, hex, &map);
                 let led = |at: Hex, owner: u32| snapshot.iter().any(|u| u.1 == at && u.2 == owner && u.3 == UnitType::GreatGeneral);
                 let (d_hp, d_level, dug_in) = vitals.get(&enemy_entity).copied().unwrap_or((3, 0, false));
-                let walls = city_here.is_some_and(|(e, owner)| walls_of.get(e).is_ok_and(|b| b.has(Building::Walls)) || wonders.walls_everywhere(owner));
+                let walls = city_here.is_some_and(|(e, owner)| walls_of.get(e).is_ok_and(|b| b.has(Building::Walls)) || wonders.walls_everywhere(owner))
+                    || tiles.iter().any(|t| t.coord == hex && t.improvements.contains(&Improvement::Fortress));
                 let coast_fort = city_here.is_some_and(|(e, _)| walls_of.get(e).is_ok_and(|b| b.has(Building::CoastalFortress)));
                 let outcome = combat::fight(
                     Side { kind: unit.unit_type, hp: unit.hp, level: unit.level, led: led(unit.position, PLAYER) },
@@ -1792,6 +1827,16 @@ fn apply_actions(
                     log.push("That cannot be built here.");
                     continue;
                 }
+                if *improvement == Improvement::Fortress {
+                    if !tech.researched.contains(&Tech::Construction) {
+                        log.push("Fortresses need Construction.");
+                        continue;
+                    }
+                    if cities.iter().any(|c| c.position == tile.coord) {
+                        log.push("A city has walls for that; fortresses are built in the field.");
+                        continue;
+                    }
+                }
                 unit.start_build(*improvement);
                 let (who, turns) = (unit.unit_type.name(), unit.unit_type.build_turns());
                 cycle.advance = true;
@@ -1992,6 +2037,65 @@ fn apply_actions(
 
             Action::Save => {
                 saves.send(savegame::SaveRequest { download: true });
+            }
+            Action::QueueProduction(item) => {
+                let Some(mut city) = selection.city.and_then(|e| cities.get_mut(e).ok()) else { continue };
+                if city.owner != PLAYER {
+                    continue;
+                }
+                if city.production_queue.is_none() {
+                    city.production_queue = Some(item.clone());
+                } else if city.queue.len() >= bevy_civ::city::QUEUE_LIMIT {
+                    log.push(format!("{}'s build queue is full ({} projects).", city.name, bevy_civ::city::QUEUE_LIMIT));
+                } else if matches!(item, ProductionItem::Building(_)) && (city.queue.contains(item) || city.production_queue.as_ref() == Some(item)) {
+                    log.push(format!("The {} is already on order in {}.", item.name(), city.name));
+                } else {
+                    city.queue.push(item.clone());
+                }
+            }
+            Action::Unqueue(index) => {
+                let Some(mut city) = selection.city.and_then(|e| cities.get_mut(e).ok()) else { continue };
+                if city.owner == PLAYER && *index < city.queue.len() {
+                    city.queue.remove(*index);
+                }
+            }
+            Action::Pillage => {
+                let Some(entity) = selected_unit else { continue };
+                let Ok(unit) = units.get(entity) else { continue };
+                if !unit.unit_type.is_army() || !unit.can_move() {
+                    log.push("Only troops with moves left can pillage.");
+                    continue;
+                }
+                let here = unit.position;
+                if cities.iter().any(|c| c.position == here) {
+                    log.push("Cities cannot be pillaged; capture them instead.");
+                    continue;
+                }
+                let owner = supplies.territory.get(&here).map(|(o, _)| *o);
+                match owner {
+                    Some(PLAYER) => {
+                        log.push("We will not pillage our own land.");
+                        continue;
+                    }
+                    Some(o) if o != BARBARIANS && diplomacy.get_treaty(PLAYER, o) != Treaty::War => {
+                        log.push("Pillaging their land would break the peace: declare war first.");
+                        continue;
+                    }
+                    _ => {}
+                }
+                let Some(mut tile) = tiles.iter_mut().find(|t| t.coord == here) else { continue };
+                let Some(target) = bevy_civ::terrain::pillage_target(&tile.improvements) else {
+                    log.push("There is nothing here to pillage.");
+                    continue;
+                };
+                tile.improvements.retain(|i| *i != target);
+                state.gold += 5;
+                if let Ok(mut unit) = units.get_mut(entity) {
+                    unit.end_move();
+                }
+                log.push(format!("Our troops wreck the {} here and carry off 5 gold.", bevy_civ::terrain::improvement_name(target)));
+                cycle.advance = true;
+                sounds.send(Sfx::Battle);
             }
             Action::SetProduction(item) => {
                 let Some(mut city) = selection.city.and_then(|e| cities.get_mut(e).ok()) else { continue };
@@ -2419,6 +2523,8 @@ fn process_turn(
             }
         }
         let finished = if idle { None } else { city.process_production(&buildings, gov, dist) };
+        let finished_unit = matches!(finished, Some(ProductionItem::Unit(_)));
+        let finished_any = finished.is_some();
         if let Some(completed) = finished {
             needs_orders = true;
             match completed {
@@ -2498,7 +2604,7 @@ fn process_turn(
                         }
                         let builder = civs.players.iter().find(|c| c.id == city.owner).map(|c| c.name.clone()).unwrap_or_else(|| "A people".into());
                         log.push(if mine {
-                            format!("{} completes the {}! ({}) Choose its next project.", city.name, b.name(), b.wonder_effect())
+                            format!("{} completes the {}! ({}) {}", city.name, b.name(), b.wonder_effect(), next_hint(&city))
                         } else {
                             format!("Wonder of the world: {} completed the {} in {}.", builder, b.name(), city.name)
                         });
@@ -2514,9 +2620,29 @@ fn process_turn(
                 }
                 ProductionItem::Building(b) => {
                     if mine {
-                        log.push(format!("{} completes the {}. Choose its next project.", city.name, b.name()));
+                        log.push(format!("{} completes the {}. {}", city.name, b.name(), next_hint(&city)));
                     }
                     buildings.buildings.push(b);
+                }
+            }
+        }
+
+        // The build queue: a finished building (or a unit, when more is queued) makes way for the next
+        // project in line that can still be built here.
+        if finished_any && !city.queue.is_empty() && (city.production_queue.is_none() || finished_unit) {
+            city.production_queue = None;
+            while !city.queue.is_empty() {
+                let next = city.queue.remove(0);
+                let possible = match &next {
+                    ProductionItem::Building(b) => !buildings.has(*b) && !(b.is_wonder() && wonders.is_taken(*b)),
+                    ProductionItem::Unit(_) => true,
+                };
+                if possible {
+                    if mine {
+                        log.push(format!("{} starts on the {} from its build queue.", city.name, next.name()));
+                    }
+                    city.production_queue = Some(next);
+                    break;
                 }
             }
         }
@@ -2867,7 +2993,9 @@ fn process_turn(
     let names: HashMap<u32, String> = civs.players.iter().map(|c| (c.id, c.adjective.clone())).collect();
     let civ_name = |owner: u32| names.get(&owner).cloned().unwrap_or_else(|| "Barbarian".to_string());
 
-    let walled_cities: HashSet<Hex> = cities.iter().filter(|(c, b, _)| b.has(Building::Walls) || wonders.walls_everywhere(c.owner)).map(|(c, _, _)| c.position).collect();
+    let mut walled_cities: HashSet<Hex> = cities.iter().filter(|(c, b, _)| b.has(Building::Walls) || wonders.walls_everywhere(c.owner)).map(|(c, _, _)| c.position).collect();
+    // Fortresses in the field defend like walls.
+    walled_cities.extend(tiles.iter().filter(|t| t.improvements.contains(&Improvement::Fortress)).map(|t| t.coord));
     let forts: HashSet<Hex> = cities.iter().filter(|(_, b, _)| b.has(Building::CoastalFortress)).map(|(c, _, _)| c.position).collect();
     let mut dead: HashSet<Entity> = HashSet::new();
     for attack in attacks {
@@ -3010,6 +3138,29 @@ fn process_turn(
             wonders.transfer_city(&city.name, new_owner);
             city.production_progress = 0;
             city.production_queue = Some(ProductionItem::Unit(UnitType::Warrior));
+        }
+    }
+    // Computer troops standing on improved enemy land they are at war with sometimes pillage it.
+    {
+        let city_tiles: HashSet<Hex> = cities.iter().map(|(c, _, _)| c.position).collect();
+        let raiders: Vec<(u32, Hex)> = units
+            .iter()
+            .filter(|(e, u)| !dead.contains(e) && u.owner != PLAYER && u.unit_type.is_army() && !city_tiles.contains(&u.position))
+            .map(|(_, u)| (u.owner, u.position))
+            .collect();
+        for (owner, at) in raiders {
+            let Some(&(land_owner, home)) = supplies.territory.get(&at) else { continue };
+            let enemy = land_owner != owner && (owner == BARBARIANS || diplomacy.get_treaty(owner, land_owner) == Treaty::War);
+            if !enemy || !rng.gen_bool(0.25) {
+                continue;
+            }
+            let Some(mut tile) = tiles.iter_mut().find(|t| t.coord == at) else { continue };
+            let Some(target) = bevy_civ::terrain::pillage_target(&tile.improvements) else { continue };
+            tile.improvements.retain(|i| *i != target);
+            if land_owner == PLAYER {
+                let near = cities.iter().find(|(c, _, _)| c.position == home).map(|(c, _, _)| c.name.clone()).unwrap_or_default();
+                log.push(format!("{} raiders pillage the {} near {near}.", capitalised(&civ_name(owner)), bevy_civ::terrain::improvement_name(target)));
+            }
         }
     }
     // --- Computer players' caravans and diplomats --------------------------------------------
@@ -3419,6 +3570,112 @@ pub fn religion_turn(
     }
 }
 
+/// A unit walking into a tribal village: gold, knowledge, warriors who join, maps - or an ambush.
+#[allow(clippy::too_many_arguments)]
+pub fn visit_villages(
+    mut villages: ResMut<Villages>,
+    units: Query<&Unit>,
+    mut state: ResMut<GameState>,
+    mut tech: ResMut<TechState>,
+    mut civs: ResMut<Civilizations>,
+    mut fog: ResMut<FogOfWar>,
+    map: Res<MapData>,
+    (mut log, mut dirty): (ResMut<GameLog>, ResMut<Dirty>),
+    mut commands: Commands,
+) {
+    if villages.sites.is_empty() {
+        return;
+    }
+    let visits: Vec<(u32, Hex, UnitType)> = units
+        .iter()
+        .filter(|u| u.owner != BARBARIANS && u.unit_type.domain() == Domain::Land && villages.sites.contains(&u.position))
+        .map(|u| (u.owner, u.position, u.unit_type))
+        .collect();
+    let mut rng = rand::thread_rng();
+    for (owner, at, kind) in visits {
+        if !villages.sites.remove(&at) {
+            continue;
+        }
+        dirty.map = true;
+        let mine = owner == PLAYER;
+        let knows = |t: Tech| if mine { tech.researched.contains(&t) } else { civs.players.iter().any(|c| c.id == owner && c.tech.researched.contains(&t)) };
+        let soldier = if knows(Tech::Gunpowder) { UnitType::Musketman } else if knows(Tech::BronzeWorking) { UnitType::Spearman } else { UnitType::Warrior };
+        let raider = if knows(Tech::Gunpowder) { UnitType::Musketman } else if knows(Tech::IronWorking) { UnitType::Legion } else { UnitType::Archer };
+        let mut find = bevy_civ::villages::roll(kind == UnitType::Scout, &mut rng);
+        let open_land: Vec<Hex> = at.all_neighbors().into_iter().filter(|h| map.cells.contains(h) && !map.water.contains(h)).collect();
+        if find == Find::Hostile && open_land.is_empty() {
+            find = Find::Gold(25);
+        }
+        match find {
+            Find::Gold(gold) => {
+                if mine {
+                    state.gold += gold;
+                    log.push(format!("The villagers share their treasure: {gold} gold."));
+                } else if let Some(civ) = civs.players.iter_mut().find(|c| c.id == owner) {
+                    civ.gold += gold;
+                }
+            }
+            Find::Technology => {
+                let learned = if mine {
+                    let options: Vec<Tech> = Tech::ALL.into_iter().filter(|t| tech.can_research(*t)).collect();
+                    let pick = options.get(rng.gen_range(0..options.len().max(1))).copied();
+                    if let Some(t) = pick {
+                        tech.learn(t);
+                    }
+                    pick
+                } else {
+                    civs.players.iter_mut().find(|c| c.id == owner).and_then(|civ| {
+                        let options: Vec<Tech> = Tech::ALL.into_iter().filter(|t| civ.tech.can_research(*t)).collect();
+                        let pick = options.get(rng.gen_range(0..options.len().max(1))).copied();
+                        if let Some(t) = pick {
+                            civ.tech.learn(t);
+                        }
+                        pick
+                    })
+                };
+                match learned {
+                    Some(t) if mine => log.push(format!("The village elders teach us {}!", t.name())),
+                    None if mine => {
+                        state.gold += 50;
+                        log.push("The elders have nothing left to teach us, and give us 50 gold instead.");
+                    }
+                    _ => {}
+                }
+            }
+            Find::Warriors => {
+                spawn_unit(&mut commands, at, soldier, owner);
+                if mine {
+                    log.push(format!("Young warriors of the village join us: a {}.", soldier.name()));
+                }
+            }
+            Find::Maps => {
+                if mine {
+                    fog.explored.extend(hexx::shapes::hexagon(at, 7).filter(|h| map.cells.contains(h)));
+                    log.push("The villagers draw us maps of the lands around.");
+                } else if let Some(civ) = civs.players.iter_mut().find(|c| c.id == owner) {
+                    civ.gold += 30;
+                }
+            }
+            Find::Hostile => {
+                for hex in open_land.iter().take(2) {
+                    spawn_unit(&mut commands, *hex, raider, BARBARIANS);
+                }
+                if mine {
+                    log.push(format!("The villagers were hostile! {} tribesmen take up arms around us.", open_land.len().min(2)));
+                }
+            }
+        }
+    }
+}
+
+/// What a city does after finishing a building: the next project in its queue, or wait for orders.
+fn next_hint(city: &City) -> String {
+    match city.queue.first() {
+        Some(next) => format!("Next from its queue: {}.", next.name()),
+        None => "Choose its next project.".to_string(),
+    }
+}
+
 /// Rebuilds the resource network whenever the map, borders or deals may have changed.
 fn refresh_supplies(
     dirty: Res<Dirty>,
@@ -3512,6 +3769,7 @@ mod tests {
             .init_resource::<GreatPeople>()
             .init_resource::<Espionage>()
             .init_resource::<Religions>()
+            .init_resource::<Villages>()
             .init_resource::<JustCaptured>()
             .init_resource::<Rivers>()
             .add_systems(Update, apply_actions);

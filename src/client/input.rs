@@ -184,6 +184,8 @@ pub fn keyboard_input(
         (KeyCode::KeyM, Action::Build(Improvement::Mine)),
         (KeyCode::KeyR, Action::Build(Improvement::Road)),
         (KeyCode::KeyX, Action::Transform),
+        (KeyCode::KeyO, Action::Build(Improvement::Fortress)),
+        (KeyCode::KeyP, Action::Pillage),
         (KeyCode::KeyB, Action::FoundCity),
         (KeyCode::KeyT, Action::TradeRoute),
         (KeyCode::F2, Action::Save),

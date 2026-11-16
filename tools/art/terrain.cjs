@@ -223,7 +223,7 @@ const OW = 192;
 const OH = 168;
 const OX = 96;
 const OY = 84;
-const OVERLAYS = ['shore', 'border', 'farm', 'road', 'roadhub', 'hover', 'select', 'unknown', 'mine', 'dot', 'base', 'reach'];
+const OVERLAYS = ['shore', 'border', 'farm', 'road', 'roadhub', 'hover', 'select', 'unknown', 'mine', 'dot', 'base', 'reach', 'fort'];
 
 function overlayFrame(col) {
   const kind = OVERLAYS[col];
@@ -309,6 +309,15 @@ function overlayFrame(col) {
         `<g stroke="#3a2512" stroke-width="1.3" fill="#8b5a2b"><rect x="75" y="80" width="7" height="33"/><rect x="114" y="80" width="7" height="33"/><rect x="72" y="74" width="52" height="8"/></g>` +
         `<path d="M88,124 h26 M92,118 v10 M110,118 v10 M101,116 v12" stroke="#4a3520" stroke-width="2.2"/>` +
         `<path d="M132,112 l6,-9 l8,3 l4,6 Z M44,114 l5,-7 l8,2 l2,5 Z" fill="#a39988" stroke="#3f3a32" stroke-width="1.3"/>`
+      );
+    case 'fort':
+      // A squat star-shaped earthwork with a palisade and a flag.
+      return (
+        `<ellipse cx="96" cy="118" rx="56" ry="12" fill="rgba(0,0,0,0.3)"/>` +
+        `<path d="M40,116 L52,96 L74,92 L96,82 L118,92 L140,96 L152,116 Z" fill="#9c8c6c" stroke="#3f3a32" stroke-width="2"/>` +
+        `<path d="M52,100 h88" stroke="rgba(255,255,255,0.3)" stroke-width="3"/>` +
+        [58, 70, 82, 94, 106, 118, 130].map((x) => `<path d="M${x},96 v-12 l3,-4 l3,4 v12" fill="#8b5a2b" stroke="#3a2512" stroke-width="1.3"/>`).join('') +
+        `<path d="M96,80 V52" stroke="#3a2512" stroke-width="2.5"/><path d="M96,52 l18,5 l-18,6 Z" fill="#c8281c" stroke="#3a2512" stroke-width="1.3"/>`
       );
     case 'dot':
       return `<circle cx="${OX}" cy="${OY}" r="11" fill="#fff" stroke="rgba(0,0,0,0.55)" stroke-width="3"/>`;

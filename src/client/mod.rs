@@ -28,6 +28,7 @@ pub struct Art {
     pub flag: Handle<Image>,
     pub flag_layout: Handle<TextureAtlasLayout>,
     pub burst: Handle<Image>,
+    pub village: Handle<Image>,
     pub burst_layout: Handle<TextureAtlasLayout>,
     pub icons: Handle<Image>,
     pub icons_layout: Handle<TextureAtlasLayout>,
@@ -60,6 +61,7 @@ pub mod overlay {
     pub const MINE: usize = 8;
     pub const DOT: usize = 9;
     pub const BASE: usize = 10;
+    pub const FORT: usize = 12;
 }
 
 /// Frame indices in `icons.png`.
@@ -83,7 +85,7 @@ fn load_art(mut commands: Commands, assets: Res<AssetServer>, mut layouts: ResMu
         terrain: assets.load("sprites/terrain.png"),
         terrain_layout: grid(192, 224, 8, 7),
         overlays: assets.load("sprites/overlays.png"),
-        overlays_layout: grid(192, 168, 12, 1),
+        overlays_layout: grid(192, 168, 13, 1),
         resources: assets.load("sprites/resources.png"),
         resources_layout: grid(96, 96, 18, 1),
         units: assets.load("sprites/units.png"),
@@ -93,6 +95,7 @@ fn load_art(mut commands: Commands, assets: Res<AssetServer>, mut layouts: ResMu
         flag: assets.load("sprites/flag.png"),
         flag_layout: grid(64, 64, 4, 1),
         burst: assets.load("sprites/burst.png"),
+        village: assets.load("sprites/village.png"),
         burst_layout: grid(128, 128, 6, 1),
         icons: assets.load("sprites/icons.png"),
         icons_layout: grid(48, 48, 12, 1),
@@ -153,7 +156,7 @@ impl Plugin for ClientPlugin {
             .init_resource::<battles::BattleTheatre>()
             .add_systems(
                 Update,
-                (battles::queue_battles, battles::stage_battles, battles::animate_fallen, battles::animate_battle_text)
+                (battles::queue_battles, battles::stage_battles, battles::animate_fallen, battles::animate_battle_text, map::update_villages)
                     .chain()
                     .after(GameLogic)
                     .run_if(in_state(crate::AppState::Playing)),
