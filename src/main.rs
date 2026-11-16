@@ -907,10 +907,11 @@ fn handle_map_click(
                 let led = |at: Hex, owner: u32| snapshot.iter().any(|u| u.1 == at && u.2 == owner && u.3 == UnitType::GreatGeneral);
                 let (d_hp, d_level, dug_in) = vitals.get(&enemy_entity).copied().unwrap_or((3, 0, false));
                 let walls = city_here.is_some_and(|(e, owner)| walls_of.get(e).is_ok_and(|b| b.has(Building::Walls)) || wonders.walls_everywhere(owner));
+                let coast_fort = city_here.is_some_and(|(e, _)| walls_of.get(e).is_ok_and(|b| b.has(Building::CoastalFortress)));
                 let outcome = combat::fight(
                     Side { kind: unit.unit_type, hp: unit.hp, level: unit.level, led: led(unit.position, PLAYER) },
                     Side { kind: enemy_type, hp: d_hp, level: d_level, led: led(hex, enemy_owner) },
-                    Ground { terrain, fortified: dug_in, walls, river: rivers.tiles.contains(&hex) },
+                    Ground { terrain, fortified: dug_in, walls, river: rivers.tiles.contains(&hex), coast_fort },
                     &mut rand::thread_rng(),
                 );
                 // The defender's wounds (it is another entity, so the change is queued).
@@ -1136,7 +1137,7 @@ fn continue_orders(
             arrived.push(entity);
             commands.entity(entity).remove::<GoTo>();
         }
-        commands.entity(entity).insert(Trail(trail));
+        commands.entity(entity).try_insert(Trail(trail));
         dirty.map = true;
     }
     if !arrived.is_empty() {
@@ -1205,7 +1206,7 @@ fn automate_workers(
             let Some(route) = find_route(here, at, land.iter().copied(), &roads, Travel::Land) else { continue };
             let mut trail = Vec::new();
             walk(&mut unit, &route, &map, &roads, &HashSet::new(), &mut fog, &mut trail);
-            commands.entity(entity).insert(Trail(trail));
+            commands.entity(entity).try_insert(Trail(trail));
         }
         if unit.position == at && unit.can_move() {
             unit.start_build(improvement);
@@ -1662,7 +1663,7 @@ fn apply_actions(
                 let hp = combat::bombard(
                     Side { kind, hp: 3, level, led: false },
                     Side { kind: their_kind, hp: their_hp, level: their_level, led: false },
-                    Ground { terrain, fortified: dug_in, walls: false, river: rivers.tiles.contains(&at) },
+                    Ground { terrain, fortified: dug_in, walls: false, river: rivers.tiles.contains(&at), coast_fort: false },
                     &mut rand::thread_rng(),
                 );
                 if let Ok(mut victim) = units.get_mut(target) {
@@ -1713,11 +1714,12 @@ fn apply_actions(
                     continue;
                 }
                 unit.start_build(*improvement);
+                let (who, turns) = (unit.unit_type.name(), unit.unit_type.build_turns());
                 cycle.advance = true;
                 if let Some(entity) = selected_unit {
                     commands.entity(entity).remove::<GoTo>();
                 }
-                log.push(format!("Worker begins a {:?} (3 turns).", improvement));
+                log.push(format!("{who} begin a {:?} ({turns} turns).", improvement));
             }
             Action::Transform => {
                 let Some(mut unit) = selected_unit.and_then(|e| units.get_mut(e).ok()) else { continue };
@@ -1727,7 +1729,7 @@ fn apply_actions(
                 if tiles.iter().any(|t| t.coord == unit.position && t.is_polluted()) {
                     unit.start_build(Improvement::Pollution);
                     cycle.advance = true;
-                    log.push("Worker begins cleaning up the pollution (3 turns).");
+                    log.push(format!("{} begin cleaning up the pollution ({} turns).", unit.unit_type.name(), unit.unit_type.build_turns()));
                     continue;
                 }
                 if let Some(mut tile) = tiles.iter_mut().find(|t| t.coord == unit.position) {
@@ -1936,7 +1938,7 @@ fn apply_actions(
                         continue;
                     }
                 }
-                let needs_coast = matches!(item, ProductionItem::Building(Building::Harbor)) || matches!(item, ProductionItem::Unit(u) if u.domain() == Domain::Sea);
+                let needs_coast = matches!(item, ProductionItem::Building(b) if b.needs_coast()) || matches!(item, ProductionItem::Unit(u) if u.domain() == Domain::Sea);
                 if needs_coast && !city.position.all_neighbors().iter().any(|n| map.water.contains(n)) {
                     log.push(format!("{} is not on the coast and cannot build a {}.", city.name, item.name()));
                     continue;
@@ -2125,7 +2127,7 @@ fn process_turn(
         *city_counts.entry(city.owner).or_default() += 1;
         // Workers and settlers already on order count, so cities do not all train the same thing.
         match city.production_queue {
-            Some(ProductionItem::Unit(UnitType::Worker)) => *worker_counts.entry(city.owner).or_default() += 1,
+            Some(ProductionItem::Unit(UnitType::Worker | UnitType::Engineers)) => *worker_counts.entry(city.owner).or_default() += 1,
             Some(ProductionItem::Unit(UnitType::Settler)) => *settler_counts.entry(city.owner).or_default() += 1,
             _ => {}
         }
@@ -2300,9 +2302,10 @@ fn process_turn(
                     let at_cap = !mine && ut.is_army() && army_sizes.get(&city.owner).copied().unwrap_or(0) >= governor::army_cap(city_counts.get(&city.owner).copied().unwrap_or(1));
                     if !at_cap {
                         let trained = spawn_unit(&mut commands, city.position, ut, city.owner);
-                        commands.entity(trained).insert(HomeCity(city.position));
+                        commands.entity(trained).try_insert(HomeCity(city.position));
                         // Barracks train veterans.
-                        if ut.is_military() && (buildings.has(Building::Barracks) || wonders.owns(city.owner, Building::SunTzu)) {
+                        let veteran = if ut.domain() == Domain::Air { buildings.has(Building::Airport) } else { buildings.has(Building::Barracks) || wonders.owns(city.owner, Building::SunTzu) };
+                        if ut.is_military() && veteran {
                             commands.queue(move |world: &mut World| {
                                 if let Some(mut unit) = world.get_mut::<Unit>(trained) {
                                     unit.promote();
@@ -2386,7 +2389,9 @@ fn process_turn(
         }
 
         // Big industrial cities foul the land around them.
-        if buildings.has(Building::Factory) && city.population >= 10 && rng.gen_bool((0.04 + 0.01 * (city.population - 10) as f64).min(0.3)) {
+        // Mass Transit stops it; a Recycling Center halves it.
+        let pollution_odds = (0.04 + 0.01 * city.population.saturating_sub(10) as f64).min(0.3) * if buildings.has(Building::RecyclingCenter) { 0.5 } else { 1.0 };
+        if buildings.has(Building::Factory) && !buildings.has(Building::MassTransit) && city.population >= 10 && rng.gen_bool(pollution_odds) {
             let spoiled: Vec<Hex> = supplies
                 .territory
                 .iter()
@@ -2464,7 +2469,7 @@ fn process_turn(
                 let next = governor::choose(&view, &civ_view, &supplies, &mut rng);
                 // Count what is now on order so the civilization's other cities do not duplicate it.
                 match &next {
-                    ProductionItem::Unit(UnitType::Worker) => *worker_counts.entry(owner).or_default() += 1,
+                    ProductionItem::Unit(UnitType::Worker | UnitType::Engineers) => *worker_counts.entry(owner).or_default() += 1,
                     ProductionItem::Unit(UnitType::Settler) => *settler_counts.entry(owner).or_default() += 1,
                     ProductionItem::Unit(u) if u.domain() == Domain::Sea => *navy_sizes.entry(owner).or_default() += 1,
                     ProductionItem::Unit(u) if u.domain() == Domain::Air => *air_sizes.entry(owner).or_default() += 1,
@@ -2730,6 +2735,7 @@ fn process_turn(
     let civ_name = |owner: u32| names.get(&owner).cloned().unwrap_or_else(|| "Barbarian".to_string());
 
     let walled_cities: HashSet<Hex> = cities.iter().filter(|(c, b, _)| b.has(Building::Walls) || wonders.walls_everywhere(c.owner)).map(|(c, _, _)| c.position).collect();
+    let forts: HashSet<Hex> = cities.iter().filter(|(_, b, _)| b.has(Building::CoastalFortress)).map(|(c, _, _)| c.position).collect();
     let mut dead: HashSet<Entity> = HashSet::new();
     for attack in attacks {
         if dead.contains(&attack.attacker) {
@@ -2769,7 +2775,7 @@ fn process_turn(
         let outcome = combat::fight(
             Side { kind: a_type, hp: a_vitals.0, level: a_vitals.1, led: a_led },
             Side { kind: defending_as(d_type, attack.target, &map), hp: d_vitals.0, level: d_vitals.1, led: d_led },
-            Ground { terrain, fortified: dug_in, walls: walled_cities.contains(&attack.target), river: rivers.tiles.contains(&attack.target) },
+            Ground { terrain, fortified: dug_in, walls: walled_cities.contains(&attack.target), river: rivers.tiles.contains(&attack.target), coast_fort: forts.contains(&attack.target) },
             &mut rng,
         );
         // Hit points left after the fight, and a chance of promotion for the victor.
@@ -2910,7 +2916,7 @@ fn process_turn(
                     if let Ok((_, mut unit)) = units.get_mut(entity) {
                         let mut trail = Vec::new();
                         walk(&mut unit, &route[..stop.max(1)], &map, &roads, &HashSet::new(), &mut fog, &mut trail);
-                        commands.entity(entity).insert(Trail(trail));
+                        commands.entity(entity).try_insert(Trail(trail));
                     }
                 }
                 continue;

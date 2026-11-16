@@ -58,10 +58,21 @@ pub enum Tech {
     // Finance
     Banking,
     Economics,
+    Astronomy,
+    Chivalry,
+    Navigation,
+    TheoryOfGravity,
+    Medicine,
+    Steel,
+    Electronics,
+    Flight,
+    AdvancedFlight,
+    MassProduction,
+    Ecology,
 }
 
 impl Tech {
-    pub const ALL: [Tech; 40] = [
+    pub const ALL: [Tech; 51] = [
         Tech::Pottery, Tech::AnimalHusbandry, Tech::Mining, Tech::BronzeWorking, Tech::Masonry,
         Tech::Alphabet, Tech::TheWheel, Tech::Writing, Tech::CodeOfLaws, Tech::Mysticism, Tech::Seafaring,
         Tech::IronWorking, Tech::Mathematics, Tech::HorsebackRiding, Tech::Construction,
@@ -71,6 +82,7 @@ impl Tech {
         Tech::TheRepublic, Tech::Theology, Tech::Fundamentalism, Tech::Communism, Tech::Sanitation,
         Tech::Electricity, Tech::Computers, Tech::Rocketry, Tech::SpaceFlight, Tech::Plastics, Tech::Superconductors,
         Tech::Banking, Tech::Economics,
+        Tech::Astronomy, Tech::Chivalry, Tech::Navigation, Tech::TheoryOfGravity, Tech::Medicine, Tech::Steel, Tech::Electronics, Tech::Flight, Tech::AdvancedFlight, Tech::MassProduction, Tech::Ecology,
     ];
 
     pub fn cost(&self) -> u32 {
@@ -100,6 +112,17 @@ impl Tech {
             Tech::Superconductors => 160,
             Tech::Banking => 45,
             Tech::Economics => 75,
+            Tech::Astronomy => 35,
+            Tech::Chivalry => 35,
+            Tech::Navigation => 45,
+            Tech::TheoryOfGravity => 55,
+            Tech::Medicine => 50,
+            Tech::Steel => 90,
+            Tech::Electronics => 95,
+            Tech::Flight => 95,
+            Tech::AdvancedFlight => 115,
+            Tech::MassProduction => 110,
+            Tech::Ecology => 130,
         }
     }
 
@@ -131,13 +154,24 @@ impl Tech {
             Tech::Communism => vec![Tech::Philosophy, Tech::Industrialization],
             Tech::Sanitation => vec![Tech::Engineering, Tech::Industrialization],
             Tech::Electricity => vec![Tech::SteamPower, Tech::Mathematics],
-            Tech::Computers => vec![Tech::Electricity, Tech::ReplaceableParts],
-            Tech::Rocketry => vec![Tech::Computers, Tech::MotorizedTransport],
+            Tech::Computers => vec![Tech::Electronics, Tech::ReplaceableParts],
+            Tech::Rocketry => vec![Tech::Computers, Tech::AdvancedFlight],
             Tech::SpaceFlight => vec![Tech::Rocketry],
             Tech::Plastics => vec![Tech::SpaceFlight, Tech::Refining],
             Tech::Superconductors => vec![Tech::Plastics, Tech::Computers],
             Tech::Banking => vec![Tech::Currency, Tech::TheRepublic],
             Tech::Economics => vec![Tech::Banking, Tech::PrintingPress],
+            Tech::Astronomy => vec![Tech::Mysticism, Tech::Mathematics],
+            Tech::Chivalry => vec![Tech::Monarchy, Tech::HorsebackRiding],
+            Tech::Navigation => vec![Tech::Seafaring, Tech::Astronomy],
+            Tech::TheoryOfGravity => vec![Tech::Astronomy, Tech::PrintingPress],
+            Tech::Medicine => vec![Tech::Philosophy, Tech::Currency],
+            Tech::Steel => vec![Tech::Electricity, Tech::Industrialization],
+            Tech::Electronics => vec![Tech::Electricity, Tech::Engineering],
+            Tech::Flight => vec![Tech::Refining, Tech::TheoryOfGravity],
+            Tech::AdvancedFlight => vec![Tech::Flight, Tech::Electronics],
+            Tech::MassProduction => vec![Tech::MotorizedTransport, Tech::Economics],
+            Tech::Ecology => vec![Tech::Computers, Tech::Sanitation],
             _ => vec![],
         }
     }
@@ -184,6 +218,17 @@ impl Tech {
             Tech::Superconductors => "Superconductors",
             Tech::Banking => "Banking",
             Tech::Economics => "Economics",
+            Tech::Astronomy => "Astronomy",
+            Tech::Chivalry => "Chivalry",
+            Tech::Navigation => "Navigation",
+            Tech::TheoryOfGravity => "Theory of Gravity",
+            Tech::Medicine => "Medicine",
+            Tech::Steel => "Steel",
+            Tech::Electronics => "Electronics",
+            Tech::Flight => "Flight",
+            Tech::AdvancedFlight => "Advanced Flight",
+            Tech::MassProduction => "Mass Production",
+            Tech::Ecology => "Ecology",
         }
     }
 }
@@ -256,5 +301,49 @@ impl TechState {
         } else {
             None
         }
+    }
+}
+
+#[cfg(test)]
+mod tree_tests {
+    use super::*;
+
+    #[test]
+    fn every_prerequisite_comes_earlier_and_every_tech_is_reachable() {
+        for tech in Tech::ALL {
+            for pre in tech.prerequisites() {
+                assert!(pre.cost() <= tech.cost(), "{} needs {} which costs more", tech.name(), pre.name());
+            }
+        }
+        let mut known: HashSet<Tech> = HashSet::new();
+        loop {
+            let next: Vec<Tech> = Tech::ALL.into_iter().filter(|t| !known.contains(t) && t.prerequisites().iter().all(|p| known.contains(p))).collect();
+            if next.is_empty() {
+                break;
+            }
+            known.extend(next);
+        }
+        assert_eq!(known.len(), Tech::ALL.len());
+        let names: HashSet<&str> = Tech::ALL.iter().map(|t| t.name()).collect();
+        assert_eq!(names.len(), Tech::ALL.len(), "names are unique");
+    }
+
+    #[test]
+    fn every_tech_after_the_alphabet_unlocks_something() {
+        use crate::building::Building;
+        use crate::government::Government;
+        use crate::unit::UnitType;
+        let idle: Vec<&str> = Tech::ALL
+            .into_iter()
+            .filter(|t| *t != Tech::Alphabet)
+            .filter(|tech| {
+                !(UnitType::ALL.iter().any(|u| u.required_tech() == Some(*tech))
+                    || Building::ALL.iter().any(|b| b.required_tech() == Some(*tech))
+                    || Government::CHOICES.iter().any(|g| g.required_tech() == Some(*tech))
+                    || crate::terrain::Resource::ALL.iter().any(|r| r.reveal_tech() == Some(*tech)))
+            })
+            .map(|t| t.name())
+            .collect();
+        assert!(idle.is_empty(), "these unlock nothing: {idle:?}");
     }
 }

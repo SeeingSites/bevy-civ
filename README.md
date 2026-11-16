@@ -12,7 +12,7 @@ Turn-based, Civilization-style empire building on a hex map, playable in the bro
 - Specialists (entertainers, tax collectors, scientists) and corruption by distance
 - Science, luxury and tax rates, capped by your government
 - Strategic and luxury resources joined to cities by roads and harbours, and traded with leaders
-- 38 technologies from Pottery to Superconductors, shown as a tree by era
+- 51 technologies from Pottery to Superconductors, shown as a tree by era; every one unlocks something
 - Six governments chosen in a revolution (with anarchy): Despotism to Democracy, Communism and
   Fundamentalism; martial law where it applies
 - Combat in rounds with hit points, veterans and elites, retreat, walls, fortification, river and
@@ -275,6 +275,16 @@ working directory.
   in the Empire advisor's Government tab: science, luxury, and taxes for the rest. Every 2 luxury
   make a citizen happy. A government limits any one rate: Despotism 60%, Monarchy and Communism
   70%, Republic 80%, Democracy 100%, Fundamentalism 50%; Anarchy allows no science.
+- **Late buildings**: Observatory (Astronomy, +3 science), Research Lab (Computers, +6 science,
+  needs a University), Power Plant (Electronics, +4 shields, needs a Factory), Police Station
+  (Communism, +2 content), Supermarket (Sanitation, +3 food), Mass Transit (Mass Production, no
+  pollution), Recycling Center (Ecology, halves pollution), Coastal Fortress (Steel, doubles defence
+  against ships) and Airport (Flight, veteran aircraft).
+- **More units**: Scout (explorer, 2 moves), Longbowman (Monarchy), Knight (Chivalry), Galleon
+  (Navigation), Submarine (Electronics), Engineers (Steam Power: workers that move 2 and finish jobs
+  in 2 turns), Radar Artillery (Rocketry). Battleship needs Steel, Fighter Flight, Bomber Advanced
+  Flight; Copernicus needs Astronomy, Magellan Navigation, Newton Theory of Gravity, Shakespeare
+  Medicine and the Hoover Dam Electronics.
 - **Defenders**: Pikeman (Engineering, Iron), Musketman (Gunpowder, Saltpeter), Rifleman
   (Industrialization, Saltpeter), Infantry (Electricity), Mech. Infantry (Computers, Oil); Modern
   Armor (Plastics, Oil) follows the Tank. Older units upgrade along this line in a city for gold.

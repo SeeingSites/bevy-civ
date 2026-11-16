@@ -84,6 +84,17 @@ fn appeal(tech: Tech) -> (f32, f32) {
         Tech::Superconductors => (1.0, 5.0),
         Tech::Banking => (0.5, 3.5),
         Tech::Economics => (0.5, 3.5),
+        Tech::Astronomy => (0.5, 3.0),
+        Tech::Chivalry => (3.5, 0.5),
+        Tech::Navigation => (1.5, 3.0),
+        Tech::TheoryOfGravity => (0.5, 3.5),
+        Tech::Medicine => (0.5, 3.0),
+        Tech::Steel => (3.5, 2.0),
+        Tech::Electronics => (1.5, 3.5),
+        Tech::Flight => (3.5, 2.0),
+        Tech::AdvancedFlight => (4.0, 1.5),
+        Tech::MassProduction => (1.5, 3.5),
+        Tech::Ecology => (0.5, 3.0),
     }
 }
 

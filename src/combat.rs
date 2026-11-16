@@ -100,6 +100,8 @@ pub struct Ground {
     pub walls: bool,
     /// A river on the defender's tile (+25% defence).
     pub river: bool,
+    /// A Coastal Fortress (double defence against ships).
+    pub coast_fort: bool,
 }
 
 /// How a battle ended, with what each side has left.
@@ -131,6 +133,9 @@ pub fn strengths(attacker: &Side, defender: &Side, ground: &Ground) -> (f32, f32
         defence *= 1.25;
     }
     if ground.walls && attacker.kind.domain() == crate::unit::Domain::Land {
+        defence *= 2.0;
+    }
+    if ground.coast_fort && attacker.kind.domain() == crate::unit::Domain::Sea {
         defence *= 2.0;
     }
     attack = attack.max(0.0);
@@ -189,7 +194,7 @@ mod fight_tests {
     }
 
     fn open() -> Ground {
-        Ground { terrain: Terrain::Plains, fortified: false, walls: false, river: false }
+        Ground { terrain: Terrain::Plains, fortified: false, walls: false, river: false, coast_fort: false }
     }
 
     fn wins(attacker: Side, defender: Side, ground: Ground) -> u32 {
