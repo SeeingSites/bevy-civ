@@ -3,7 +3,7 @@
 use bevy::prelude::*;
 use bevy::sprite::Anchor;
 use hexx::Hex;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use bevy_civ::city::City;
 use bevy_civ::fog::FogOfWar;
@@ -100,6 +100,7 @@ pub fn refresh_map(
     }
 
     let info: HashMap<Hex, (Terrain, bool)> = tiles.iter().map(|(t, _)| (t.coord, (t.terrain, t.has_road()))).collect();
+    let rails: HashSet<Hex> = tiles.iter().filter(|(t, _)| t.has_railroad()).map(|(t, _)| t.coord).collect();
     let city_at: HashMap<Hex, u32> = cities.iter().map(|c| (c.position, c.owner)).collect();
     // Each tile belongs to the nearest city within reach.
     let mut territory: HashMap<Hex, (u32, i32)> = HashMap::new();
@@ -166,12 +167,17 @@ pub fn refresh_map(
             overlay_at(overlay::FARM, None, tint, 0.006);
         }
         if tile.has_road() {
+            // Railroads are drawn as dark iron lines wherever they link up with another line or a city.
+            let rail = tile.has_railroad();
+            let shade = tint.to_srgba();
+            let iron = Color::srgb(shade.red * 0.42, shade.green * 0.36, shade.blue * 0.34);
             for n in neighbors {
                 if info.get(&n).is_some_and(|(_, road)| *road) || city_at.contains_key(&n) {
-                    overlay_at(overlay::ROAD, Some(n), tint, 0.008);
+                    let linked = rail && (rails.contains(&n) || city_at.contains_key(&n));
+                    overlay_at(overlay::ROAD, Some(n), if linked { iron } else { tint }, 0.008);
                 }
             }
-            overlay_at(overlay::ROAD_HUB, None, tint, 0.009);
+            overlay_at(overlay::ROAD_HUB, None, if rail { iron } else { tint }, 0.009);
         }
         if tile.improvements.contains(&Improvement::Mine) {
             overlay_at(overlay::MINE, None, tint, 0.01);
@@ -308,18 +314,20 @@ pub fn update_path_dots(
         from = pos;
         let turn_ends = path.steps.get(i + 1).is_none_or(|(_, next)| next != turn);
         let marker = multi_turn && turn_ends;
-        let scale = if last || marker { 1.3 } else { 0.9 };
-        let mut entity = commands.spawn((PathDot, dot(color, scale), Transform::from_xyz(pos.x, pos.y, 4.5)));
-        // Where each turn's march ends, the number of turns it takes to get there.
+        commands.spawn((PathDot, dot(color, if last { 1.3 } else { 0.9 }), Transform::from_xyz(pos.x, pos.y, 4.5)));
+        // Where each turn's march ends, a badge with the number of turns it takes to get there, drawn
+        // above units and cities (and beside them) so it is never hidden.
         if marker {
-            entity.with_children(|parent| {
-                parent.spawn((
-                    Text2d::new((turn + 1).to_string()),
-                    TextFont { font: art.font_bold.clone(), font_size: 22.0, ..default() },
-                    TextColor(Color::srgb(0.12, 0.08, 0.05)),
-                    Transform::from_xyz(0.0, 1.0, 0.1),
-                ));
-            });
+            commands
+                .spawn((PathDot, dot(color.with_alpha(1.0), 1.7), Transform::from_xyz(pos.x + 24.0, pos.y - 20.0, 8.6)))
+                .with_children(|parent| {
+                    parent.spawn((
+                        Text2d::new((turn + 1).to_string()),
+                        TextFont { font: art.font_bold.clone(), font_size: 19.0, ..default() },
+                        TextColor(Color::srgb(0.12, 0.08, 0.05)),
+                        Transform::from_xyz(0.0, 1.0, 0.1),
+                    ));
+                });
         }
     }
 }

@@ -147,7 +147,7 @@ pub fn animate_units(
         let shown = unit.owner == PLAYER || fog.visible.contains(&unit.position);
         *visibility = if shown { Visibility::Inherited } else { Visibility::Hidden };
         // Units that have spent their moves get a faded disc.
-        let spent = unit.owner == PLAYER && unit.movement_left == 0;
+        let spent = unit.owner == PLAYER && !unit.can_move();
         for child in children.iter() {
             if let Ok(mut base) = bases.get_mut(*child) {
                 base.color = owner_color(unit.owner).with_alpha(if spent { 0.45 } else { 1.0 });

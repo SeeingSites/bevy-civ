@@ -26,6 +26,8 @@ pub enum Improvement {
     Farm,
     Mine,
     Road,
+    /// Built over a road once Steam Power is known: movement along it is free.
+    Railroad,
 }
 
 /// What a resource is good for.
@@ -116,7 +118,7 @@ impl Improvement {
 
     pub fn movement_cost_mod(&self) -> u32 {
         match self {
-            Improvement::Road => 0,
+            Improvement::Road | Improvement::Railroad => 0,
             _ => 1,
         }
     }
@@ -212,8 +214,13 @@ impl HexTile {
         self.terrain.production() + self.improvements.iter().map(|i| i.production_bonus()).sum::<u32>()
     }
 
+    /// A road or a railroad (a railroad is built over a road and works as one too).
     pub fn has_road(&self) -> bool {
-        self.improvements.contains(&Improvement::Road)
+        self.improvements.contains(&Improvement::Road) || self.has_railroad()
+    }
+
+    pub fn has_railroad(&self) -> bool {
+        self.improvements.contains(&Improvement::Railroad)
     }
 
     pub fn add_improvement(&mut self, imp: Improvement) {

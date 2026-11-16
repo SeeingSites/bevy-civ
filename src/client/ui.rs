@@ -162,6 +162,19 @@ fn button(parent: &mut ChildBuilder, art: &Art, text: impl Into<String>, command
         });
 }
 
+/// Moves left, with the thirds of a move left over from road travel ("1⅔").
+fn moves_left(unit: &Unit) -> String {
+    let fraction = match unit.road_credit {
+        1 => "⅓",
+        2 => "⅔",
+        _ => "",
+    };
+    match (unit.movement_left, fraction) {
+        (0, f) if !f.is_empty() => f.to_string(),
+        (n, f) => format!("{n}{f}"),
+    }
+}
+
 /// Label of the in-game sound switch.
 #[derive(Component)]
 pub struct SoundLabel;
@@ -440,7 +453,7 @@ pub fn rebuild_panels(
     tech: Res<TechState>,
     civs: Res<Civilizations>,
     diplomacy: Res<Diplomacy>,
-    units: Query<&Unit>,
+    (units, tiles): (Query<&Unit>, Query<&HexTile>),
     cities: Query<(&City, &CityBuildings, &Happiness)>,
     unit_panel: Query<Entity, With<UnitPanel>>,
     mut city_panel: Query<(Entity, &mut Node), (With<CityPanel>, Without<ModalRoot>)>,
@@ -485,14 +498,14 @@ pub fn rebuild_panels(
                         (Some(job), Some(turns)) => format!("Building {:?} ({} turns)", job, turns),
                         _ if !mine => String::new(),
                         _ if unit.fortified => "Fortified".into(),
-                        _ if unit.movement_left == 0 => "No moves left".into(),
+                        _ if !unit.can_move() => "No moves left".into(),
                         _ => "Awaiting orders".into(),
                     };
                     c.spawn(label(&art.font_body, format!("{} unit  {}", owner_name(unit.owner, &civs), status), 14.0, owner_color(unit.owner).mix(&Color::WHITE, 0.55)));
                     c.spawn(row(12.0)).with_children(|s| {
                         stat(s, art, icon::ATTACK, attack.to_string(), CREAM);
                         stat(s, art, icon::DEFENSE, defense.to_string(), CREAM);
-                        stat(s, art, icon::MOVES, format!("{}/{}", unit.movement_left, moves), CREAM);
+                        stat(s, art, icon::MOVES, format!("{}/{}", moves_left(unit), moves), CREAM);
                     });
                 });
             });
@@ -504,7 +517,8 @@ pub fn rebuild_panels(
                     if unit.unit_type.is_worker() && unit.build_turns_left.is_none() {
                         button(r, art, "Farm (F)", Command::Game(Action::Build(Improvement::Farm)), BRONZE, 15.0);
                         button(r, art, "Mine (M)", Command::Game(Action::Build(Improvement::Mine)), BRONZE, 15.0);
-                        button(r, art, "Road (R)", Command::Game(Action::Build(Improvement::Road)), BRONZE, 15.0);
+                        let rail = tiles.iter().any(|t| t.coord == unit.position && t.has_road() && !t.has_railroad()) && tech.researched.contains(&Tech::SteamPower);
+                        button(r, art, if rail { "Railroad (R)" } else { "Road (R)" }, Command::Game(Action::Build(Improvement::Road)), BRONZE, 15.0);
                         button(r, art, "Clear (X)", Command::Game(Action::Transform), BRONZE, 15.0);
                     }
                     if !unit.fortified {
