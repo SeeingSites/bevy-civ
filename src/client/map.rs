@@ -12,7 +12,7 @@ use bevy_civ::terrain::{HexTile, Improvement, Terrain};
 use bevy_civ::unit::Unit;
 
 use super::{overlay, owner_color, Art};
-use crate::{Dirty, MapData, PathPreview, Selection, CITY_RADIUS, PLAYER};
+use crate::{Dirty, MapData, PathPreview, Selection, PLAYER};
 
 pub const HEX_SIZE: f32 = 48.0;
 /// On-screen size of one overlay frame (a full hexagon).
@@ -112,16 +112,8 @@ pub fn refresh_map(
     let info: HashMap<Hex, (Terrain, bool)> = tiles.iter().map(|(t, _)| (t.coord, (t.terrain, t.has_road()))).collect();
     let rails: HashSet<Hex> = tiles.iter().filter(|(t, _)| t.has_railroad()).map(|(t, _)| t.coord).collect();
     let city_at: HashMap<Hex, u32> = cities.iter().map(|c| (c.position, c.owner)).collect();
-    // Each tile belongs to the nearest city within reach.
-    let mut territory: HashMap<Hex, (u32, i32)> = HashMap::new();
-    for city in &cities {
-        for hex in hexx::shapes::hexagon(city.position, CITY_RADIUS as u32) {
-            let dist = hex.distance_to(city.position);
-            if info.contains_key(&hex) && territory.get(&hex).is_none_or(|(_, d)| dist < *d) {
-                territory.insert(hex, (city.owner, dist));
-            }
-        }
-    }
+    // Borders as the supply network worked them out (each city's reach grows with its culture).
+    let territory: HashMap<Hex, (u32, Hex)> = supplies.territory.clone();
 
     for (tile, mut sprite) in &mut tiles {
         let hex = tile.coord;

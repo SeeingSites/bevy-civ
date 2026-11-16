@@ -12,7 +12,7 @@ use std::collections::{HashMap, HashSet};
 use bevy_civ::tech::Tech;
 use bevy_civ::terrain::{HexTile, Improvement, Resource as Good, ResourceKind};
 
-use crate::{CITY_RADIUS, PLAYER};
+use crate::PLAYER;
 
 /// A resource one civilization supplies to another: (seller, buyer, good).
 pub type Transfer = (u32, u32, Good);
@@ -45,6 +45,8 @@ pub struct CityNode {
     pub owner: u32,
     pub capital: bool,
     pub harbor: bool,
+    /// How far its borders reach (grows with culture).
+    pub radius: u32,
 }
 
 #[derive(Resource, Default)]
@@ -100,7 +102,7 @@ pub fn recompute<'a>(
     // Borders: every tile within reach of a city belongs to the nearest one.
     let mut claim: HashMap<Hex, (u32, Hex, i32)> = HashMap::new();
     for city in cities {
-        for hex in hexx::shapes::hexagon(city.position, CITY_RADIUS as u32) {
+        for hex in hexx::shapes::hexagon(city.position, city.radius) {
             let dist = hex.distance_to(city.position);
             if known.contains(&hex) && claim.get(&hex).is_none_or(|(_, _, d)| dist < *d) {
                 claim.insert(hex, (city.owner, city.position, dist));
@@ -235,7 +237,7 @@ mod tests {
     }
 
     fn city(q: i32, r: i32, owner: u32, capital: bool, harbor: bool) -> CityNode {
-        CityNode { position: Hex::new(q, r), owner, capital, harbor }
+        CityNode { position: Hex::new(q, r), owner, capital, harbor, radius: crate::CITY_RADIUS as u32 }
     }
 
     fn all_techs(owners: &[u32]) -> HashMap<u32, HashSet<Tech>> {

@@ -664,7 +664,7 @@ pub fn rebuild_panels(
         Res<TradeRoutes>,
     ),
     cities: Query<(&City, &CityBuildings, &Happiness)>,
-    (city_list, space, history): (Query<(Entity, &City)>, Res<bevy_civ::space::SpaceRace>, Res<crate::History>),
+    (city_list, space, history, culture): (Query<(Entity, &City)>, Res<bevy_civ::space::SpaceRace>, Res<crate::History>, Res<bevy_civ::culture::CultureLedger>),
     unit_panel: Query<Entity, With<UnitPanel>>,
     mut city_panel: Query<(Entity, &mut Node), (With<CityPanel>, Without<ModalRoot>)>,
     mut modal_root: Query<(Entity, &mut Node), (With<ModalRoot>, Without<CityPanel>)>,
@@ -937,6 +937,33 @@ pub fn rebuild_panels(
                     .collect();
                 let pace = if per_turn == 0 { "none yet: libraries, markets, wonders and specialists earn them".to_string() } else { format!("+{per_turn} a turn ({})", kinds.join(", ")) };
                 p.spawn(label(&art.font_body, format!("Great people: {}/{} points, {pace}", great.progress(city.position), great.threshold(PLAYER)), 14.0, CREAM));
+                // Culture and the reach of the city's borders.
+                let points = culture.of(city.position);
+                let next = match bevy_civ::culture::border_radius(points) {
+                    2 => " (borders widen at 100)",
+                    3 => " (borders widen at 1,000)",
+                    _ => "",
+                };
+                p.spawn(label(&art.font_body, format!("Culture: {points}, +{} a turn{next}", bevy_civ::culture::per_turn(&buildings.buildings, city.is_capital)), 14.0, CREAM));
+                // Citizens: workers on the land, and specialists who eat without farming.
+                use bevy_civ::city::Specialist;
+                let count = |kind: &Specialist| city.specialists.iter().filter(|s| *s == kind).count();
+                p.spawn(label(&art.font_body, format!("Citizens: {} working the land, {} specialists. Food {:+} a turn.", city.workers(), city.specialists.len(), city.food_balance(buildings)), 14.0, CREAM));
+                p.spawn(Node { flex_wrap: FlexWrap::Wrap, column_gap: Val::Px(5.0), row_gap: Val::Px(5.0), ..default() }).with_children(|grid| {
+                    for (kind, what) in [(Specialist::Entertainer, "+2 content"), (Specialist::TaxCollector, "+3 gold"), (Specialist::Scientist, "+3 science")] {
+                        let name = match kind {
+                            Specialist::Entertainer => "Entertainers",
+                            Specialist::TaxCollector => "Tax collectors",
+                            Specialist::Scientist => "Scientists",
+                        };
+                        production_button(grid, art, &format!("{name}: {} (+)", count(&kind)), format!("each {what}"), Command::Game(Action::Specialist(kind.clone(), true)), Color::srgb(0.96, 0.84, 0.6));
+                    }
+                    for kind in [Specialist::Entertainer, Specialist::TaxCollector, Specialist::Scientist] {
+                        if count(&kind) > 0 {
+                            production_button(grid, art, "Back to work (-)", format!("one fewer {}", match kind { Specialist::Entertainer => "entertainer", Specialist::TaxCollector => "tax collector", Specialist::Scientist => "scientist" }), Command::Game(Action::Specialist(kind.clone(), false)), Color::srgb(0.75, 0.85, 0.95));
+                        }
+                    }
+                });
                 let masterpieces = great.masterpieces.get(&city.position).copied().unwrap_or(0);
                 if masterpieces > 0 {
                     p.spawn(label(&art.font_body, format!("Masterpieces: {masterpieces} (+{} content)", masterpieces * 3), 14.0, CREAM));
@@ -1427,6 +1454,7 @@ pub fn rebuild_panels(
 
 pub fn update_top_bar(
     state: Res<GameState>,
+    golden: Res<crate::GoldenAges>,
     tech: Res<TechState>,
     cities: Query<&City>,
     mut stats: Query<(&StatText, &mut Text), Without<VictoryText>>,
@@ -1443,7 +1471,10 @@ pub fn update_top_bar(
                 None => "No research".into(),
             },
             StatText::Population => population.to_string(),
-            StatText::Government => state.government.name().to_string(),
+            StatText::Government => {
+                let golden = golden.turns_left.get(&PLAYER).map(|t| format!(" - golden age ({t})")).unwrap_or_default();
+                format!("{}{golden}", state.government.name())
+            }
             StatText::Score => state.score.total.to_string(),
         };
         if text.0 != value {

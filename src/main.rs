@@ -13,6 +13,7 @@ use bevy_civ::building::{Building, CityBuildings, WorldWonders};
 use bevy_civ::city::{spawn_city, City, Growth, ProductionItem};
 use bevy_civ::combat::{self, Ground, Outcome, Side};
 use bevy_civ::great::{self, GreatPeople};
+use bevy_civ::culture::{self as culture_rules, CultureLedger};
 use bevy_civ::espionage::{self, Espionage, Mission};
 use rand::Rng;
 use bevy_civ::diplomacy::{Diplomacy, Happiness, Treaty};
@@ -200,6 +201,8 @@ pub enum Action {
     SelectCity(Entity),
     /// The selected unit, in one of the player's cities, is re-equipped as its modern successor.
     Upgrade,
+    /// Make one of the selected city's workers a specialist of this kind (true), or send one back (false).
+    Specialist(bevy_civ::city::Specialist, bool),
     /// The selected artillery, ship or bomber fires on the strongest enemy next to it.
     Bombard,
     /// Tab: the next of the player's units on the selected unit's or city's tile.
@@ -234,6 +237,39 @@ pub struct Cycle {
 /// A player unit that still expects orders this turn.
 pub fn needs_orders(unit: &Unit) -> bool {
     unit.owner == PLAYER && unit.can_move() && unit.build_turns_left.is_none() && !unit.fortified
+}
+
+/// Golden ages: a civilization's first wonder starts one (once per game): +50% shields and +1 gold
+/// in every city for [`GOLDEN_AGE_TURNS`] turns.
+#[derive(Resource, Default, Clone, serde::Serialize, serde::Deserialize)]
+pub struct GoldenAges {
+    #[serde(with = "bevy_civ::save::pairs")]
+    pub turns_left: HashMap<u32, u32>,
+    pub had: HashSet<u32>,
+}
+
+pub const GOLDEN_AGE_TURNS: u32 = 10;
+
+impl GoldenAges {
+    pub fn active(&self, owner: u32) -> bool {
+        self.turns_left.get(&owner).is_some_and(|t| *t > 0)
+    }
+
+    /// Starts one if the civilization never had one. Returns whether it started.
+    pub fn begin(&mut self, owner: u32) -> bool {
+        if !self.had.insert(owner) {
+            return false;
+        }
+        self.turns_left.insert(owner, GOLDEN_AGE_TURNS);
+        true
+    }
+
+    pub fn tick(&mut self) {
+        self.turns_left.retain(|_, t| {
+            *t = t.saturating_sub(1);
+            *t > 0
+        });
+    }
 }
 
 /// Every civilization's score, turn by turn, for the score advisor.
@@ -293,6 +329,8 @@ fn main() {
         .init_resource::<GreatPeople>()
         .init_resource::<Espionage>()
         .init_resource::<History>()
+        .init_resource::<CultureLedger>()
+        .init_resource::<GoldenAges>()
         .add_event::<EndTurnNow>()
         .add_event::<Focus>()
         .add_event::<Action>()
@@ -469,6 +507,8 @@ fn cleanup_world(
     commands.insert_resource(GreatPeople::default());
     commands.insert_resource(Espionage::default());
     commands.insert_resource(History::default());
+    commands.insert_resource(CultureLedger::default());
+    commands.insert_resource(GoldenAges::default());
     commands.insert_resource(Cycle { advance: true, force: false });
     commands.insert_resource(Dirty { map: true, ui: true });
 }
@@ -1092,6 +1132,21 @@ fn apply_actions(
                     sounds.send(Sfx::Select);
                 }
             }
+            Action::Specialist(kind, add) => {
+                let Some(mut city) = selection.city.and_then(|e| cities.get_mut(e).ok()) else { continue };
+                if city.owner != PLAYER {
+                    continue;
+                }
+                if *add {
+                    if city.workers() == 0 {
+                        log.push("Everyone in this city is already a specialist.");
+                    } else {
+                        city.specialists.push(kind.clone());
+                    }
+                } else if let Some(i) = city.specialists.iter().position(|s| s == kind) {
+                    city.specialists.remove(i);
+                }
+            }
             Action::Upgrade => {
                 let Some(entity) = selected_unit else { continue };
                 let Ok(unit) = units.get(entity) else { continue };
@@ -1451,7 +1506,7 @@ fn process_turn(
     (mut space, mut wonders, mut great, mut spies): (ResMut<SpaceRace>, ResMut<WorldWonders>, ResMut<GreatPeople>, ResMut<Espionage>),
     (mut log, mut dirty, mut cycle): (ResMut<GameLog>, ResMut<Dirty>, ResMut<Cycle>),
     mut bursts: EventWriter<Burst>,
-    (homes, mut history): (Query<&HomeCity>, ResMut<History>),
+    (homes, mut history, mut culture, mut golden): (Query<&HomeCity>, ResMut<History>, ResMut<CultureLedger>, ResMut<GoldenAges>),
     mut commands: Commands,
 ) {
     if actions.read().count() == 0 || state.victory.is_some() {
@@ -1461,6 +1516,7 @@ fn process_turn(
     dirty.ui = true;
     state.turn += 1;
     spies.tick();
+    golden.tick();
     // Routes close when a city changes hands or their two owners are at war.
     {
         let owners: HashMap<Hex, u32> = cities.iter().map(|(c, _, _)| (c.position, c.owner)).collect();
@@ -1624,6 +1680,17 @@ fn process_turn(
             + gov.content_bonus();
         let joy = supply::luxury_happiness(supplies.luxuries(city.position), has_market);
         happiness.update(city.population, calm, joy);
+        // A computer player's governor turns workers into entertainers to end disorder, and back again.
+        if !mine && owner != BARBARIANS {
+            if happiness.in_disorder() && city.workers() > 1 {
+                city.add_specialist(bevy_civ::city::Specialist::Entertainer);
+                happiness.update(city.population, calm + 2, joy);
+            } else if happiness.unhappy == 0 && happiness.happy > 0 && city.specialists.contains(&bevy_civ::city::Specialist::Entertainer) {
+                if let Some(i) = city.specialists.iter().position(|s| *s == bevy_civ::city::Specialist::Entertainer) {
+                    city.specialists.remove(i);
+                }
+            }
+        }
         let disorder = happiness.in_disorder();
         if disorder && mine {
             log.push(format!(
@@ -1674,6 +1741,13 @@ fn process_turn(
             }
         }
 
+        // A golden age adds half again to every city's shields.
+        if !idle && golden.active(owner) {
+            city.production_progress += city.production_per_turn(&buildings, gov, dist) / 2;
+            if mine {
+                total_gold += 1;
+            }
+        }
         let finished = if idle { None } else { city.process_production(&buildings, gov, dist) };
         if let Some(completed) = finished {
             needs_orders = true;
@@ -1725,6 +1799,10 @@ fn process_turn(
                 }
                 ProductionItem::Building(b) if b.is_wonder() => {
                     if wonders.complete(b, city.owner, &city.name) {
+                        if golden.begin(city.owner) && (mine || foreign.met.contains(&city.owner)) {
+                            let who = if mine { "Our".to_string() } else { civs.players.iter().find(|c| c.id == city.owner).map(|c| format!("The {}'", c.adjective)).unwrap_or_default() };
+                            log.push(format!("{who} first wonder begins a golden age: half again as many shields, and more gold, for {GOLDEN_AGE_TURNS} turns."));
+                        }
                         let builder = civs.players.iter().find(|c| c.id == city.owner).map(|c| c.name.clone()).unwrap_or_else(|| "A people".into());
                         log.push(if mine {
                             format!("{} completes the {}! ({})", city.name, b.name(), b.wonder_effect())
@@ -1749,6 +1827,9 @@ fn process_turn(
                 }
             }
         }
+
+        // Culture accrues whatever the city's mood.
+        culture.add(city.position, culture_rules::per_turn(&buildings.buildings, city.is_capital));
 
         // Great-person points; a birth appears in the city. Computer players put theirs to work at once.
         if owner != BARBARIANS {
@@ -1871,6 +1952,51 @@ fn process_turn(
         if unit.build_turns_left.is_none() {
             let moves = moves_per_turn(unit.unit_type, unit.position, &map, wonders.sea_moves(unit.owner));
             unit.refresh(moves);
+        }
+    }
+
+    // A city in disorder near a far greater culture may defect to it, its garrison sent home.
+    {
+        let owners: Vec<(Hex, u32)> = cities.iter().map(|(c, _, _)| (c.position, c.owner)).collect();
+        let totals = culture.totals(owners.iter().copied());
+        let total = |owner: u32| totals.get(&owner).copied().unwrap_or(0);
+        let mut defections: Vec<(Hex, u32, u32)> = Vec::new();
+        for (city, _, happiness) in cities.iter() {
+            if city.is_capital || city.owner == BARBARIANS || !happiness.in_disorder() {
+                continue;
+            }
+            let tempter = owners
+                .iter()
+                .filter(|(at, owner)| {
+                    *owner != city.owner
+                        && *owner != BARBARIANS
+                        && at.distance_to(city.position) <= culture_rules::DEFECTION_REACH
+                        && total(*owner) >= 2 * total(city.owner).max(1)
+                        && culture.of(*at) > culture.of(city.position)
+                })
+                .min_by_key(|(at, _)| at.distance_to(city.position))
+                .map(|(_, owner)| *owner);
+            if let Some(new_owner) = tempter.filter(|_| rng.gen_bool(culture_rules::DEFECTION_CHANCE)) {
+                defections.push((city.position, city.owner, new_owner));
+            }
+        }
+        for (at, old_owner, new_owner) in defections {
+            let Some((mut city, _, _)) = cities.iter_mut().find(|(c, _, _)| c.position == at) else { continue };
+            let theirs = civs.players.iter().find(|c| c.id == new_owner).map(|c| c.adjective.clone()).unwrap_or_else(|| "our".into());
+            if old_owner == PLAYER {
+                log.push(format!("{} is drawn to {} culture and defects!", city.name, theirs));
+            } else if new_owner == PLAYER {
+                log.push(format!("{} admires our culture and joins us!", city.name));
+            }
+            city.owner = new_owner;
+            city.production_queue = None;
+            city.production_progress = 0;
+            wonders.transfer_city(&city.name, new_owner);
+            for (entity, unit) in units.iter() {
+                if unit.position == at && unit.owner == old_owner {
+                    commands.entity(entity).try_despawn_recursive();
+                }
+            }
         }
     }
 
@@ -2265,6 +2391,13 @@ fn process_turn(
         state.victory = Some("Conquest Victory!".into());
     } else if player_cities >= 5 && player_cities * 3 >= total_cities * 2 {
         state.victory = Some("Domination Victory!".into());
+    } else if let Some(winner) = culture_rules::cultural_winner(&culture.totals(cities.iter().map(|(c, _, _)| (c.position, c.owner)))) {
+        state.victory = Some(if winner == PLAYER {
+            "Cultural Victory! Our civilization is the envy of the world.".to_string()
+        } else {
+            let name = civs.players.iter().find(|c| c.id == winner).map(|c| c.name.clone()).unwrap_or_default();
+            format!("Defeat: {name} have won a cultural victory.")
+        });
     } else if let Some(winner) = space.arrived(state.turn) {
         state.victory = Some(if winner == PLAYER {
             "Space Race Victory! Our colonists have reached Alpha Centauri.".to_string()
@@ -2344,14 +2477,21 @@ fn refresh_supplies(
     civs: Res<Civilizations>,
     tiles: Query<&HexTile>,
     cities: Query<(&City, &CityBuildings)>,
+    culture: Res<CultureLedger>,
     mut supplies: ResMut<Supplies>,
 ) {
-    if !(dirty.map || foreign.is_changed() || tech.is_changed()) {
+    if !(dirty.map || foreign.is_changed() || tech.is_changed() || culture.is_changed()) {
         return;
     }
     let nodes: Vec<supply::CityNode> = cities
         .iter()
-        .map(|(c, b)| supply::CityNode { position: c.position, owner: c.owner, capital: c.is_capital, harbor: b.buildings.contains(&Building::Harbor) })
+        .map(|(c, b)| supply::CityNode {
+            position: c.position,
+            owner: c.owner,
+            capital: c.is_capital,
+            harbor: b.buildings.contains(&Building::Harbor),
+            radius: bevy_civ::culture::border_radius(culture.of(c.position)),
+        })
         .collect();
     let mut techs: HashMap<u32, HashSet<Tech>> = civs.players.iter().map(|c| (c.id, c.tech.researched.clone())).collect();
     techs.insert(PLAYER, tech.researched.clone());
