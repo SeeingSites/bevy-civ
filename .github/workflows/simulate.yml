@@ -46,3 +46,9 @@ jobs:
           GAMES="${{ github.event.inputs.games || '20' }}"
           MAX_TURNS="${{ github.event.inputs.max_turns || '100' }}"
           cargo run --release --bin simulate -- --games "$GAMES" --max-turns "$MAX_TURNS"
+
+      - name: Full games between computer players (real rules)
+        run: |
+          for scenario in rome discovery earth; do
+            cargo run --release --bin bevy-civ -- --autoplay "$scenario" 400
+          done

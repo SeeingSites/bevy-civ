@@ -133,8 +133,6 @@ impl Building {
         match self {
             Building::Factory => &[Resource::Coal, Resource::Iron],
             Building::Colossus => &[Resource::Iron],
-            Building::SpaceComponent => &[Resource::Oil],
-            Building::SpaceModule => &[Resource::Rubber],
             _ => &[],
         }
     }

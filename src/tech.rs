@@ -208,8 +208,15 @@ impl TechState {
     }
 
     /// Research cost of a technology right now: each discovery makes the next ones dearer.
+    /// Beakers to research `tech`: dearer the more is already known, and twice (Industrial) or three
+    /// times (Modern) as dear in the later eras, so the game's pace holds as cities grow.
     pub fn cost_of(&self, tech: Tech) -> u32 {
-        tech.cost() * (2 + self.researched.len() as u32) / 2
+        let era = match tech.cost() {
+            0..=45 => 1,
+            46..=95 => 2,
+            _ => 3,
+        };
+        tech.cost() * era * (2 + self.researched.len() as u32) / 2
     }
 
     pub fn can_research(&self, tech: Tech) -> bool {

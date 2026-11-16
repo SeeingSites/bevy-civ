@@ -213,6 +213,16 @@ bombers) and diplomats' missions. A city keeps training the same unit until you 
 when it finishes a building or wonder it announces it and waits for its next project, and such
 cities are brought up before the turn ends.
 
+## Starting a game
+Choose a world and your people, then the difficulty and the length of the game. Difficulty sets how
+fast the computer players build and learn (from 0.6x on Chieftain to 1.4x on Emperor); on Chieftain
+and Warlord your citizens are also easier to please. Games last 200, 300 or 400 turns; if nobody
+has won by the last turn, the highest score wins. When the game ends, a summary shows the final
+standing.
+
+Tips for new players appear the first time something happens (your first turn, first city, first
+contact, first disorder...). "No more tips" turns them off; the Game menu turns them back on.
+
 ## Saving and loading
 The game saves itself at the end of every turn; **Continue your last game** on the start menu picks
 it up. **F2** (or *Save to a file* in the Game menu) downloads the whole game as a `.json` file.
@@ -255,6 +265,13 @@ breaks out in sight, and on interface buttons. They are synthesised from code:
 Players switch sound off with **V** or the Sound button; the choice is saved in `sound.json` (or the
 browser's localStorage). To build without audio support at all (no ALSA needed on Linux), turn off
 the default `audio` feature: `cargo run --no-default-features --features full`.
+
+## Autoplay
+`cargo run --release -- --autoplay [rome|earth|discovery] [turns]` plays a whole game between
+computer players under the real rules, without a window, and prints a snapshot every 25 turns plus
+the milestones (eras, wonders, governments, spaceships) and how it ends. CI runs all three scenarios
+to 400 turns. Recent runs: Rome ends in a space race victory around turn 300, the Whole Earth around
+turn 355, and the Age of Discovery by culture around turn 210.
 
 ## Simulator
 Standalone pure-Rust simulator (no Bevy dependency):

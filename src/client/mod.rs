@@ -6,6 +6,7 @@ pub mod actors;
 pub mod input;
 pub mod map;
 pub mod sfx;
+pub mod tips;
 pub mod ui;
 
 use crate::GameLogic;
@@ -147,6 +148,8 @@ impl Plugin for ClientPlugin {
             .add_systems(Startup, (map::setup_map_view, ui::setup_ui, ui::setup_menu))
             .add_systems(Update, (ui::button_actions, ui::rebuild_menu, ui::button_visuals, ui::fit_ui_scale, ui::update_sound_button).chain().before(GameLogic))
             .add_systems(Update, ui::poll_import.run_if(in_state(crate::AppState::Menu)))
+            .init_resource::<tips::Tips>()
+            .add_systems(Update, (tips::queue_tips.run_if(in_state(crate::AppState::Playing)), tips::show_tip).chain().after(GameLogic))
             .add_systems(
                 Update,
                 (input::pointer_input, input::keyboard_input, ui::minimap_click)

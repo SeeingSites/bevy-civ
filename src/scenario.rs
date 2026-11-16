@@ -70,6 +70,9 @@ pub struct NewGame {
     pub scenario: Scenario,
     /// Index into `scenario.civs` of the civilization the player leads.
     pub civ: usize,
+    pub difficulty: crate::Difficulty,
+    /// The game ends on this turn if nobody has won.
+    pub last_turn: u32,
 }
 
 /// Map cell (column, row; row 0 is the northern edge) to its hex. Odd columns sit half a row lower.

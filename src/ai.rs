@@ -28,6 +28,11 @@ pub struct Civ {
     /// Names for cities this civilization founds later.
     pub city_names: Vec<String>,
     pub government: crate::government::Government,
+    /// Turns of anarchy left in a revolution, and the government it leads to.
+    #[serde(default)]
+    pub anarchy: u32,
+    #[serde(default)]
+    pub pending_government: Option<crate::government::Government>,
 }
 
 impl Default for Civilizations {
@@ -499,6 +504,8 @@ mod tests {
             portrait: 0,
             city_names: vec![],
             government: crate::government::Government::Despotism,
+            anarchy: 0,
+            pending_government: None,
         }
     }
 
