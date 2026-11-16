@@ -49,6 +49,46 @@ pub struct UiState {
     pub modal: Option<Modal>,
     /// The civilization shown in the foreign advisor window.
     pub diplo_target: Option<u32>,
+    /// The page of the city panel being shown (kept from city to city).
+    pub city_tab: CityTab,
+}
+
+/// Pages of the city panel.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub enum CityTab {
+    #[default]
+    Units,
+    Buildings,
+    Wonders,
+    Overview,
+}
+
+impl CityTab {
+    const ALL: [CityTab; 4] = [CityTab::Units, CityTab::Buildings, CityTab::Wonders, CityTab::Overview];
+
+    fn name(self) -> &'static str {
+        match self {
+            CityTab::Units => "Units",
+            CityTab::Buildings => "Buildings",
+            CityTab::Wonders => "Wonders",
+            CityTab::Overview => "Overview",
+        }
+    }
+}
+
+/// What a building adds to its city, e.g. "+2 food, +1 gold".
+fn building_effect(building: &Building) -> String {
+    [
+        (building.food_bonus(), "food"),
+        (building.production_bonus(), "shields"),
+        (building.science_bonus(), "science"),
+        (building.gold_bonus(), "gold"),
+    ]
+    .into_iter()
+    .filter(|(n, _)| *n > 0)
+    .map(|(n, what)| format!("+{n} {what}"))
+    .collect::<Vec<_>>()
+    .join(", ")
 }
 
 /// What the start menu is showing.
@@ -69,6 +109,7 @@ pub enum Command {
     BackToScenarios,
     QuitToMenu,
     ToggleSound,
+    CityTab(CityTab),
 }
 
 #[derive(Component)]
@@ -210,6 +251,31 @@ pub fn update_sound_button(settings: Res<SoundSettings>, mut labels: Query<&mut 
     for mut text in &mut labels {
         text.0 = sound_label(settings.enabled).into();
     }
+}
+
+/// A third-width button in the city panel: the name, and under it the details and build time.
+fn production_button(parent: &mut ChildBuilder, art: &Art, name: &str, detail: String, command: Command, tint: Color) {
+    parent
+        .spawn((
+            Button,
+            Node {
+                width: Val::Percent(32.0),
+                padding: UiRect::axes(Val::Px(7.0), Val::Px(3.0)),
+                border: UiRect::all(Val::Px(1.0)),
+                flex_direction: FlexDirection::Column,
+                ..default()
+            },
+            // A flat face (no bevel) keeps the small second line readable.
+            BackgroundColor(tint),
+            BorderColor(Color::srgba(0.1, 0.06, 0.02, 0.8)),
+            BorderRadius::all(Val::Px(5.0)),
+            ButtonTint(tint),
+            ButtonCommand(command),
+        ))
+        .with_children(|b| {
+            b.spawn(label(&art.font_bold, name, 13.0, INK));
+            b.spawn(label(&art.font_body, detail, 11.0, INK));
+        });
 }
 
 fn bar(parent: &mut ChildBuilder, fraction: f32, color: Color) {
@@ -598,56 +664,102 @@ pub fn rebuild_panels(
             let grow_in = (city.food_to_grow().saturating_sub(city.food_storage) as f32 / food.max(1) as f32).ceil();
             p.spawn(label(&art.font_body, format!("Growth: {}/{} food  (about {} turns)", city.food_storage, city.food_to_grow(), grow_in), 14.0, MUTED));
             bar(p, city.food_storage as f32 / city.food_to_grow() as f32, Color::srgb(0.45, 0.78, 0.35));
-            if let Some(item) = &city.production_queue {
-                let left = (item.cost().saturating_sub(city.production_progress) as f32 / production.max(1) as f32).ceil();
-                p.spawn(label(&art.font_body, format!("Building: {}  {}/{}  (about {} turns)", item.name(), city.production_progress, item.cost(), left), 14.0, MUTED));
-                bar(p, city.production_progress as f32 / item.cost() as f32, Color::srgb(0.92, 0.62, 0.25));
+            match &city.production_queue {
+                Some(item) => {
+                    let left = (item.cost().saturating_sub(city.production_progress) as f32 / production.max(1) as f32).ceil();
+                    p.spawn(label(&art.font_bold, format!("Building: {}  {}/{}  (about {} turns)", item.name(), city.production_progress, item.cost(), left), 14.0, CREAM));
+                    bar(p, city.production_progress as f32 / item.cost() as f32, Color::srgb(0.92, 0.62, 0.25));
+                }
+                None => {
+                    p.spawn(label(&art.font_bold, "Building: nothing - choose something below", 14.0, RED));
+                }
             }
-            let built = if buildings.buildings.is_empty() { "none yet".to_string() } else { buildings.buildings.iter().map(|b| b.name()).collect::<Vec<_>>().join(", ") };
-            p.spawn(label(&art.font_body, format!("Buildings: {built}"), 14.0, CREAM));
-            // Resources this city can draw on through roads, harbours and trade.
-            let mut goods: Vec<Good> = supplies.city.get(&city.position).map(|set| set.iter().copied().collect()).unwrap_or_default();
-            goods.sort_by_key(|g| g.index());
-            p.spawn(row(4.0)).with_children(|r| {
-                r.spawn(label(&art.font_body, if goods.is_empty() { "Resources: none connected" } else { "Resources:" }, 14.0, CREAM));
-                for good in &goods {
-                    r.spawn(good_icon(art, *good, 24.0));
+
+            // Tabs: what to build is split into units, buildings and wonders; the rest is on Overview.
+            p.spawn(Node { column_gap: Val::Px(4.0), margin: UiRect::top(Val::Px(4.0)), ..default() }).with_children(|r| {
+                for tab in CityTab::ALL {
+                    let tint = if ui.city_tab == tab { GOLD } else { Color::srgb(0.55, 0.5, 0.42) };
+                    button(r, art, tab.name(), Command::CityTab(tab), tint, 14.0);
                 }
             });
-            p.spawn(label(&art.font_title, "Change production", 15.0, GOLD));
-            p.spawn(row(5.0)).with_children(|r| {
-                let known = |t: Option<Tech>| t.is_none_or(|t| tech.researched.contains(&t));
-                let coastal = city.position.all_neighbors().iter().any(|n| map.water.contains(n));
-                // Ships and harbours need a coast.
-                let mut options: Vec<ProductionItem> = UnitType::ALL
+
+            let known = |t: Option<Tech>| t.is_none_or(|t| tech.researched.contains(&t));
+            let coastal = city.position.all_neighbors().iter().any(|n| map.water.contains(n));
+            let turns = |item: &ProductionItem| {
+                let done = if city.production_queue.as_ref() == Some(item) { city.production_progress } else { 0 };
+                (item.cost().saturating_sub(done) as f32 / production.max(1) as f32).ceil() as u32
+            };
+            // One entry per thing the city could build: (item, detail line).
+            let options: Vec<(ProductionItem, String)> = match ui.city_tab {
+                CityTab::Units => UnitType::ALL
                     .into_iter()
                     .filter(|u| known(u.required_tech()) && (u.domain() != bevy_civ::unit::Domain::Sea || coastal))
-                    .map(ProductionItem::Unit)
-                    .collect();
-                options.extend(
+                    .map(|u| {
+                        let (attack, defense, moves) = u.stats();
+                        (ProductionItem::Unit(u), format!("A{attack} D{defense} M{moves}"))
+                    })
+                    .collect(),
+                CityTab::Buildings | CityTab::Wonders => {
+                    let wonders = ui.city_tab == CityTab::Wonders;
                     Building::ALL
                         .into_iter()
-                        .filter(|b| known(b.required_tech()) && !buildings.buildings.contains(b) && (*b != Building::Harbor || coastal))
-                        .map(ProductionItem::Building),
-                );
-                for item in options {
-                    let current = city.production_queue.as_ref() == Some(&item);
+                        .filter(|b| b.is_wonder() == wonders && known(b.required_tech()) && !buildings.buildings.contains(b) && (*b != Building::Harbor || coastal))
+                        .map(|b| {
+                            let effect = building_effect(&b);
+                            (ProductionItem::Building(b), effect)
+                        })
+                        .collect()
+                }
+                CityTab::Overview => Vec::new(),
+            };
+
+            if ui.city_tab == CityTab::Overview {
+                let (mut wonders, mut plain): (Vec<&Building>, Vec<&Building>) = buildings.buildings.iter().partition(|b| b.is_wonder());
+                plain.sort_by_key(|b| b.name());
+                wonders.sort_by_key(|b| b.name());
+                let list = |items: &[&Building]| if items.is_empty() { "none yet".to_string() } else { items.iter().map(|b| b.name()).collect::<Vec<_>>().join(", ") };
+                p.spawn(label(&art.font_body, format!("Buildings: {}", list(&plain)), 14.0, CREAM));
+                p.spawn(label(&art.font_body, format!("Wonders: {}", list(&wonders)), 14.0, CREAM));
+                // Resources this city can draw on through roads, harbours and trade.
+                let mut goods: Vec<Good> = supplies.city.get(&city.position).map(|set| set.iter().copied().collect()).unwrap_or_default();
+                goods.sort_by_key(|g| g.index());
+                p.spawn(row(4.0)).with_children(|r| {
+                    r.spawn(label(&art.font_body, if goods.is_empty() { "Resources: none connected" } else { "Resources:" }, 14.0, CREAM));
+                    for good in &goods {
+                        r.spawn(good_icon(art, *good, 24.0));
+                    }
+                });
+                return;
+            }
+            if options.is_empty() {
+                let none = match ui.city_tab {
+                    CityTab::Wonders => "No wonders available: research more, or every wonder you know is built here.",
+                    _ => "Nothing new to build here yet: research unlocks more.",
+                };
+                p.spawn(label(&art.font_body, none, 14.0, MUTED));
+                return;
+            }
+            // What can be built first, then what still lacks a resource.
+            let (ready, blocked): (Vec<_>, Vec<_>) = options.into_iter().partition(|(item, _)| supplies.missing(city.position, item.required_resources()).is_empty());
+            p.spawn(Node { flex_wrap: FlexWrap::Wrap, column_gap: Val::Px(5.0), row_gap: Val::Px(5.0), ..default() }).with_children(|grid| {
+                for (item, detail) in ready.iter().chain(blocked.iter()) {
                     let missing = supplies.missing(city.position, item.required_resources());
+                    let current = city.production_queue.as_ref() == Some(item);
                     let tint = if !missing.is_empty() {
-                        GRAY
+                        Color::srgb(0.66, 0.64, 0.6)
                     } else if current {
-                        GREEN
-                    } else if matches!(item, ProductionItem::Building(_)) {
-                        Color::srgb(0.72, 0.78, 0.88)
+                        Color::srgb(0.66, 0.9, 0.52)
                     } else {
-                        BRONZE
+                        Color::srgb(0.96, 0.84, 0.6)
                     };
-                    let text = if missing.is_empty() {
-                        format!("{} {}", item.name(), item.cost())
+                    let second = if missing.is_empty() {
+                        let t = turns(item);
+                        let when = if t == 1 { "1 turn".to_string() } else { format!("{t} turns") };
+                        if detail.is_empty() { format!("{} - {when}", item.cost()) } else { format!("{detail} - {when}") }
                     } else {
-                        format!("{} - needs {}", item.name(), missing.iter().map(|g| g.name()).collect::<Vec<_>>().join(", "))
+                        format!("needs {}", missing.iter().map(|g| g.name()).collect::<Vec<_>>().join(", "))
                     };
-                    button(r, art, text, Command::Game(Action::SetProduction(item)), tint, 13.0);
+                    production_button(grid, art, item.name(), second, Command::Game(Action::SetProduction(item.clone())), tint);
                 }
             });
         });
@@ -1032,6 +1144,7 @@ pub fn button_actions(
         sounds.send(Sfx::Click);
         match &command.0 {
             Command::ToggleSound => sound.toggle(),
+            Command::CityTab(tab) => ui.city_tab = *tab,
             Command::Game(action) => {
                 actions.send(action.clone());
             }
@@ -1148,13 +1261,19 @@ pub fn rebuild_menu(
     });
 }
 
-pub fn button_visuals(mut buttons: Query<(&Interaction, &ButtonTint, &mut ImageNode), Changed<Interaction>>) {
-    for (interaction, tint, mut image) in &mut buttons {
-        image.color = match interaction {
+pub fn button_visuals(mut buttons: Query<(&Interaction, &ButtonTint, Option<&mut ImageNode>, Option<&mut BackgroundColor>), Changed<Interaction>>) {
+    for (interaction, tint, image, background) in &mut buttons {
+        let color = match interaction {
             Interaction::Pressed => tint.0.mix(&Color::BLACK, 0.25),
             Interaction::Hovered => tint.0.mix(&Color::WHITE, 0.35),
             Interaction::None => tint.0,
         };
+        // Textured buttons are tinted; flat ones (the city panel's) are filled.
+        if let Some(mut image) = image {
+            image.color = color;
+        } else if let Some(mut background) = background {
+            background.0 = color;
+        }
     }
 }
 
