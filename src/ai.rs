@@ -181,6 +181,32 @@ pub fn process_ai_turn(
         let aggression = civ.map(|c| c.aggression).unwrap_or(0.8);
         let can_sail = civ.is_some_and(|c| c.tech.researched.contains(&Tech::Seafaring));
 
+        // Caravans and diplomats are sent on their errands by the caller (see `main.rs`).
+        if matches!(unit.unit_type, UnitType::Caravan | UnitType::Diplomat) {
+            continue;
+        }
+
+        // Great general: march with the nearest army of its own (it never attacks).
+        if unit.unit_type.is_great_person() {
+            let here = unit.position;
+            let army = unit_snapshots
+                .iter()
+                .filter(|(pos, other, strength)| *other == owner && *strength > 0.0 && is_land(*pos))
+                .map(|(pos, _, _)| *pos)
+                .min_by_key(|pos| here.distance_to(*pos));
+            if let Some(path) = army.filter(|a| *a != here).and_then(|a| find_route(here, a, land.iter().copied(), &roads, Travel::Land)) {
+                for next in path.into_iter().skip(1) {
+                    if !unit.can_move() || occupied.get(&next).is_some_and(|(other, _)| *other != owner) {
+                        break;
+                    }
+                    let cost = step_cost(unit.position, next, &roads, true);
+                    unit.step(next, cost);
+                }
+            }
+            unit.end_move();
+            continue;
+        }
+
         // Settler: walk away from existing cities, then found a new one
         if unit.unit_type == UnitType::Settler {
             let here = unit.position;
@@ -520,6 +546,22 @@ mod tests {
         let unit = world.get::<Unit>(worker).unwrap();
         assert_eq!(unit.position, Hex::new(2, 0));
         assert_eq!(unit.current_build, Some(Improvement::Railroad));
+    }
+
+    #[test]
+    fn a_great_general_joins_the_nearest_army() {
+        let mut world = World::new();
+        for q in -4..=4 {
+            world.spawn(HexTile { coord: Hex::new(q, 0), terrain: Terrain::Plains, improvements: vec![], resource: None });
+        }
+        world.insert_resource(Civilizations { players: vec![rival()] });
+        world.insert_resource(Jobs(HashMap::new()));
+        let general = soldier(&mut world, UnitType::GreatGeneral, 1, -2);
+        world.get_mut::<Unit>(general).unwrap().movement_left = 2;
+        let legion = soldier(&mut world, UnitType::Legion, 1, 0);
+        world.get_mut::<Unit>(legion).unwrap().fortified = true;
+        world.run_system_once(ai_phase).unwrap();
+        assert_eq!(world.get::<Unit>(general).unwrap().position, world.get::<Unit>(legion).unwrap().position);
     }
 
     fn soldier(world: &mut World, kind: UnitType, owner: u32, q: i32) -> Entity {

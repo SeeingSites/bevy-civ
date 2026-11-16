@@ -12,11 +12,33 @@ pub fn resolve_combat(
     attacker_promos: Option<&UnitPromotions>,
     defender_promos: Option<&UnitPromotions>,
 ) -> bool {
+    resolve_led_combat(attacker, defender, defender_terrain, attacker_promos, defender_promos, false, false)
+}
+
+/// How much harder troops fight with a great general on their tile.
+pub const GENERAL_BONUS: f32 = 1.5;
+
+/// [`resolve_combat`], where either side may be led by a great general standing with it.
+pub fn resolve_led_combat(
+    attacker: UnitType,
+    defender: UnitType,
+    defender_terrain: Terrain,
+    attacker_promos: Option<&UnitPromotions>,
+    defender_promos: Option<&UnitPromotions>,
+    attacker_led: bool,
+    defender_led: bool,
+) -> bool {
     let (atk, _, _) = attacker.stats();
     let (_, def, _) = defender.stats();
 
     let mut atk_mod = (atk as f32) * attacker.attack_bonus(defender_terrain);
     let mut def_mod = (def as f32) * defender.defense_bonus();
+    if attacker_led {
+        atk_mod *= GENERAL_BONUS;
+    }
+    if defender_led {
+        def_mod *= GENERAL_BONUS;
+    }
 
     if let Some(p) = attacker_promos {
         atk_mod *= 1.0 + p.total_attack_bonus();

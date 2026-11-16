@@ -417,7 +417,33 @@ const UNITS = [
       `<ellipse cx="121" cy="56" rx="2.6" ry="${[14, 9, 14, 8][f]}" fill="rgba(220,220,220,0.55)" stroke="rgba(29,22,17,0.5)" stroke-width="1.2"/>` +
       `</g>`);
   },
+  // ---- Great people (not trainable: born in cities). A soft golden aura marks them out. ----
+  // Great General: crested helm, red cloak, sword raised
+  (f) => greatPerson(f, { tunic: '#8a1f1f', legs: '#5a3a2a', cape: '#c22d2d', head: head.crest(BRONZE, '#e8c14a'),
+    front: (bob) => limb(5, -42 + bob, 16, -60 + bob, SKIN, 4) + `<path d="M16,${-60 + bob} L24,${-84 + bob}" stroke-width="5"/><path d="M16,${-60 + bob} L24,${-84 + bob}" stroke="${STEEL}" stroke-width="2.5"/><path d="M11,${-62 + bob} h10" stroke-width="3"/>` }),
+  // Great Merchant: turban and fine robe, a heavy purse
+  (f) => greatPerson(f, { robe: true, tunic: '#2f6f8f', trim: '#e8c14a', sleeve: '#2f6f8f', head: head.turban('#e8c14a'), beard: '#3a2a1a',
+    front: (bob, sway) => armTo(14, -30)(bob) + `<g transform="rotate(${sway * 4} 15 ${-30 + bob})"><path d="M8,${-28 + bob} q7,-8 14,0 q4,12 -7,13 q-11,-1 -7,-13 Z" fill="#d9a83a"/><path d="M10,${-29 + bob} h10" stroke-width="2.2"/></g>` }),
+  // Great Scientist: scholar's robe, grey beard, a glowing flask
+  (f) => greatPerson(f, { robe: true, tunic: '#3b4a8a', trim: '#f1ecdf', sleeve: '#3b4a8a', head: head.hair('#c8c8cc'), beard: '#c8c8cc',
+    front: (bob) => armTo(15, -44)(bob) + `<path d="M12,${-58 + bob} h7 v6 l6,10 q1,4 -3,4 h-13 q-4,0 -3,-4 l6,-10 Z" fill="#dff3f7"/><path d="M8,${-41 + bob} q7,-5 15,0 l2,3 q-1,1 -3,1 h-13 q-2,0 -3,-1 Z" fill="#5fd38a" stroke="none"/>` }),
+  // Great Artist: beret, violet smock, palette and brush
+  (f) => greatPerson(f, { tunic: '#7a2a8f', legs: '#3a2f4a', head: head.cap('#c2185b'),
+    front: (bob, sway) => armTo(16, -38)(bob) + `<ellipse cx="18" cy="${-36 + bob}" rx="11" ry="7" fill="#c89b62"/><g stroke="none"><circle cx="13" cy="${-38 + bob}" r="2" fill="#d43c2c"/><circle cx="19" cy="${-40 + bob}" r="2" fill="#2a6fd4"/><circle cx="24" cy="${-36 + bob}" r="2" fill="#e8c14a"/><circle cx="16" cy="${-33 + bob}" r="2" fill="#3fae5a"/></g><path d="M22,${-46 + bob + sway} l9,-12" stroke-width="2.5"/>` }),
+  // Great Engineer: work coat, brass helmet, hammer over the shoulder
+  (f) => greatPerson(f, { tunic: '#8b5a2b', legs: '#4a3a2a', boots: '#3a2a1a', head: head.cap('#d9a441'),
+    front: (bob) => limb(5, -42 + bob, 14, -52 + bob, SKIN, 4) + `<path d="M14,${-52 + bob} L4,${-74 + bob}" stroke-width="5"/><path d="M14,${-52 + bob} L4,${-74 + bob}" stroke="${WOOD}" stroke-width="2.5"/><rect x="-6" y="${-82 + bob}" width="18" height="9" rx="2" fill="#7a8088" transform="rotate(-25 4 ${-78 + bob})"/>` }),
 ];
+
+/** A great person: a figure standing in a softly pulsing golden aura. */
+function greatPerson(f, o) {
+  const glow = [0.28, 0.36, 0.28, 0.2][f];
+  return (
+    `<ellipse cx="62" cy="${GROUND - 44}" rx="34" ry="48" fill="rgba(255,214,90,${glow})"/>` +
+    shadow(62, 24) +
+    wrap(human(60, GROUND, o, f))
+  );
+}
 
 module.exports = {
   units: () => sheet({ cols: 4, rows: UNITS.length, fw: FW, fh: FH, draw: (col, row) => UNITS[row](col) }),

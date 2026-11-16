@@ -169,6 +169,15 @@ impl TechState {
             && tech.prerequisites().iter().all(|p| self.researched.contains(p))
     }
 
+    /// A great scientist's discovery: the current research is completed at once. Returns what was learned.
+    pub fn discover(&mut self) -> Option<Tech> {
+        let current = self.current?;
+        self.researched.insert(current);
+        self.progress = 0;
+        self.current = Tech::ALL.into_iter().find(|t| self.can_research(*t));
+        Some(current)
+    }
+
     pub fn process_turn(&mut self) -> Option<Tech> {
         let Some(current) = self.current else { return None };
         self.progress += self.science_per_turn;
