@@ -82,7 +82,7 @@ fn load_art(mut commands: Commands, assets: Res<AssetServer>, mut layouts: ResMu
         overlays: assets.load("sprites/overlays.png"),
         overlays_layout: grid(192, 168, 12, 1),
         resources: assets.load("sprites/resources.png"),
-        resources_layout: grid(96, 96, 5, 1),
+        resources_layout: grid(96, 96, 18, 1),
         units: assets.load("sprites/units.png"),
         units_layout: grid(128, 128, 4, 20),
         cities: assets.load("sprites/cities.png"),
@@ -172,6 +172,7 @@ impl Plugin for ClientPlugin {
                     ui::update_tile_info,
                     ui::update_log,
                     ui::update_minimap,
+                    ui::update_turn_buttons,
                 )
                     .chain()
                     .after(GameLogic)

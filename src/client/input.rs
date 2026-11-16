@@ -7,7 +7,7 @@ use bevy_civ::terrain::Improvement;
 
 use super::map::{Hovered, HEX_SIZE};
 use super::ui::{Modal, UiState};
-use crate::{Action, MapClick, MapData};
+use crate::{Action, Focus, MapClick, MapData};
 
 const DRAG_THRESHOLD: f32 = 7.0;
 
@@ -18,6 +18,8 @@ pub struct Pointer {
     last: Vec2,
     dragging: bool,
     pinch: Option<f32>,
+    /// Where the camera is gliding to after a unit was auto-selected.
+    glide: Option<Vec2>,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -26,7 +28,7 @@ pub fn pointer_input(
     mouse: Res<ButtonInput<MouseButton>>,
     keys: Res<ButtonInput<KeyCode>>,
     touches: Res<Touches>,
-    mut wheel: EventReader<MouseWheel>,
+    (mut wheel, mut focus): (EventReader<MouseWheel>, EventReader<Focus>),
     windows: Query<&Window>,
     interactions: Query<&Interaction>,
     map: Res<MapData>,
@@ -135,6 +137,22 @@ pub fn pointer_input(
     if keys.any_pressed([KeyCode::KeyA, KeyCode::ArrowLeft]) { key_pan.x -= 1.0; }
     if keys.any_pressed([KeyCode::KeyD, KeyCode::ArrowRight]) { key_pan.x += 1.0; }
 
+    // Glide to a newly selected unit unless the player is steering the camera.
+    if let Some(Focus(hex)) = focus.read().last() {
+        pointer.glide = Some(map.layout.hex_to_world_pos(*hex));
+    }
+    if pan != Vec2::ZERO || key_pan != Vec2::ZERO {
+        pointer.glide = None;
+    }
+    if let Some(target) = pointer.glide {
+        let here = cam_transform.translation.truncate();
+        let step = (target - here) * (1.0 - (-9.0 * time.delta_secs()).exp());
+        cam_transform.translation += step.extend(0.0);
+        if here.distance(target) < 2.0 {
+            pointer.glide = None;
+        }
+    }
+
     projection.scale = (scale * zoom).clamp(0.45, 2.4);
     cam_transform.translation.x += -pan.x * scale + key_pan.x * 620.0 * scale * time.delta_secs();
     cam_transform.translation.y += pan.y * scale + key_pan.y * 620.0 * scale * time.delta_secs();
@@ -145,7 +163,9 @@ pub fn pointer_input(
 
 pub fn keyboard_input(keys: Res<ButtonInput<KeyCode>>, mut actions: EventWriter<Action>, mut ui: ResMut<UiState>, mut dirty: ResMut<crate::Dirty>) {
     let bindings = [
-        (KeyCode::Space, Action::EndTurn),
+        (KeyCode::Space, Action::SkipOrEnd),
+        (KeyCode::KeyN, Action::NextUnit),
+        (KeyCode::KeyH, Action::Fortify),
         (KeyCode::Enter, Action::EndTurn),
         (KeyCode::KeyF, Action::Build(Improvement::Farm)),
         (KeyCode::KeyM, Action::Build(Improvement::Mine)),
@@ -169,6 +189,9 @@ pub fn keyboard_input(keys: Res<ButtonInput<KeyCode>>, mut actions: EventWriter<
     }
     if keys.just_pressed(KeyCode::KeyE) {
         toggle(Modal::Diplomacy, &mut ui);
+    }
+    if keys.just_pressed(KeyCode::KeyG) {
+        toggle(Modal::Trade, &mut ui);
     }
     if keys.just_pressed(KeyCode::Escape) {
         if ui.modal.take().is_none() {

@@ -36,15 +36,22 @@ pub enum Tech {
     Gunpowder,
     PrintingPress,
     Democracy,
+    // Industrial
+    SteamPower,
+    Industrialization,
+    Refining,
+    ReplaceableParts,
+    MotorizedTransport,
 }
 
 impl Tech {
-    pub const ALL: [Tech; 22] = [
+    pub const ALL: [Tech; 27] = [
         Tech::Pottery, Tech::AnimalHusbandry, Tech::Mining, Tech::BronzeWorking, Tech::Masonry,
         Tech::Alphabet, Tech::TheWheel, Tech::Writing, Tech::CodeOfLaws, Tech::Mysticism, Tech::Seafaring,
         Tech::IronWorking, Tech::Mathematics, Tech::HorsebackRiding, Tech::Construction,
         Tech::Philosophy, Tech::Monarchy, Tech::Currency, Tech::Engineering, Tech::Gunpowder,
-        Tech::PrintingPress, Tech::Democracy,
+        Tech::PrintingPress, Tech::Democracy, Tech::SteamPower, Tech::Industrialization, Tech::Refining,
+        Tech::ReplaceableParts, Tech::MotorizedTransport,
     ];
 
     pub fn cost(&self) -> u32 {
@@ -57,6 +64,10 @@ impl Tech {
             Tech::Engineering => 40,
             Tech::Gunpowder | Tech::PrintingPress => 50,
             Tech::Democracy => 60,
+            Tech::SteamPower => 60,
+            Tech::Industrialization => 70,
+            Tech::Refining | Tech::ReplaceableParts => 80,
+            Tech::MotorizedTransport => 90,
         }
     }
 
@@ -77,6 +88,11 @@ impl Tech {
             Tech::Gunpowder => vec![Tech::IronWorking, Tech::Engineering],
             Tech::PrintingPress => vec![Tech::Writing],
             Tech::Democracy => vec![Tech::Philosophy, Tech::PrintingPress],
+            Tech::SteamPower => vec![Tech::Gunpowder],
+            Tech::Industrialization => vec![Tech::SteamPower, Tech::Currency],
+            Tech::Refining => vec![Tech::Industrialization],
+            Tech::ReplaceableParts => vec![Tech::Industrialization],
+            Tech::MotorizedTransport => vec![Tech::Refining, Tech::ReplaceableParts],
             _ => vec![],
         }
     }
@@ -105,6 +121,11 @@ impl Tech {
             Tech::Gunpowder => "Gunpowder",
             Tech::PrintingPress => "Printing Press",
             Tech::Democracy => "Democracy",
+            Tech::SteamPower => "Steam Power",
+            Tech::Industrialization => "Industrialization",
+            Tech::Refining => "Refining",
+            Tech::ReplaceableParts => "Replaceable Parts",
+            Tech::MotorizedTransport => "Motorized Transport",
         }
     }
 }

@@ -10,6 +10,8 @@ pub struct Unit {
     pub position: Hex,
     pub build_turns_left: Option<u32>,
     pub current_build: Option<Improvement>,
+    /// Dug in: skipped when cycling through units, and harder to dislodge.
+    pub fortified: bool,
 }
 
 #[derive(Component)]
@@ -88,7 +90,8 @@ impl UnitType {
             UnitType::Catapult => Some(Tech::Mathematics),
             UnitType::Knight => Some(Tech::HorsebackRiding),
             UnitType::Cannon | UnitType::Rifleman | UnitType::Cavalry => Some(Tech::Gunpowder),
-            UnitType::Tank | UnitType::Artillery => Some(Tech::Democracy),
+            UnitType::Artillery => Some(Tech::ReplaceableParts),
+            UnitType::Tank => Some(Tech::MotorizedTransport),
             UnitType::Diplomat => Some(Tech::Writing),
             UnitType::Caravan => Some(Tech::Pottery),
         }
@@ -174,11 +177,17 @@ impl UnitType {
         !matches!(self, UnitType::Settler | UnitType::Worker | UnitType::Diplomat | UnitType::Caravan)
     }
 
-    pub fn required_resource(&self) -> Option<Resource> {
+    /// Strategic resources a city must have access to before it can train this unit.
+    pub fn required_resources(&self) -> &'static [Resource] {
         match self {
-            UnitType::Horseman | UnitType::WarChariot | UnitType::Knight | UnitType::Cavalry => Some(Resource::Horses),
-            UnitType::Spearman | UnitType::Archer | UnitType::Legion | UnitType::Phalanx | UnitType::Rifleman => Some(Resource::Iron),
-            _ => None,
+            UnitType::Horseman | UnitType::WarChariot => &[Resource::Horses],
+            UnitType::Legion | UnitType::Immortal | UnitType::Artillery => &[Resource::Iron],
+            UnitType::Knight => &[Resource::Horses, Resource::Iron],
+            UnitType::Cannon => &[Resource::Iron, Resource::Saltpeter],
+            UnitType::Rifleman => &[Resource::Saltpeter],
+            UnitType::Cavalry => &[Resource::Horses, Resource::Saltpeter],
+            UnitType::Tank => &[Resource::Oil, Resource::Rubber],
+            _ => &[],
         }
     }
 
@@ -244,6 +253,7 @@ pub fn spawn_unit(commands: &mut Commands, coord: Hex, unit_type: UnitType, owne
             position: coord,
             build_turns_left: None,
             current_build: None,
+            fortified: false,
         })
         .id()
 }

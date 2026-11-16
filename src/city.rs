@@ -44,6 +44,13 @@ impl ProductionItem {
             ProductionItem::Building(b) => b.cost(),
         }
     }
+
+    pub fn required_resources(&self) -> &'static [crate::terrain::Resource] {
+        match self {
+            ProductionItem::Unit(u) => u.required_resources(),
+            ProductionItem::Building(b) => b.required_resources(),
+        }
+    }
 }
 
 impl City {

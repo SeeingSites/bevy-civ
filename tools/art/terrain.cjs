@@ -328,7 +328,7 @@ function overlayFrame(col) {
 }
 
 // ---------------------------------------------------------------------------------------------
-const RESOURCES = ['horses', 'iron', 'wine', 'spices', 'silk'];
+const RESOURCES = ['horses', 'iron', 'wine', 'spices', 'silk', 'saltpeter', 'coal', 'oil', 'rubber', 'furs', 'dyes', 'incense', 'ivory', 'gems', 'wheat', 'cattle', 'fish', 'gold'];
 
 function resourceFrame(col) {
   const plate =
@@ -381,6 +381,116 @@ function resourceFrame(col) {
         `<path d="M28,66 C42,58 62,70 74,62 L78,76 C66,84 44,72 32,80 Z" fill="#1d8580"/>` +
         `<ellipse cx="68" cy="34" rx="8" ry="11" transform="rotate(-22 68 34)" fill="#e8d7b0" stroke="#5b4630"/></g>` +
         `<path d="M26,40 C38,36 52,46 62,42 M30,52 C42,48 56,58 68,52" fill="none" stroke="rgba(200,255,250,0.6)" stroke-width="2.5" stroke-linecap="round"/>`
+      );
+    case 'saltpeter':
+      return (
+        plate +
+        `<g stroke="#4a4f55" stroke-width="2" stroke-linejoin="round">` +
+        `<path d="M18,80 l6,-20 l10,-6 l8,10 l2,16 Z" fill="#e9edf0"/><path d="M40,80 l4,-30 l12,-10 l10,14 l2,26 Z" fill="#f7f9fa"/><path d="M62,80 l6,-22 l10,-2 l6,14 l-2,10 Z" fill="#d9dfe4"/>` +
+        `<path d="M44,50 l12,-10 l-2,18 Z M24,60 l10,-6 l-2,12 Z" fill="#ffffff"/></g>` +
+        `<path d="M50,30 l2,-8 M58,34 l6,-6 M40,36 l-5,-5" stroke="#f6d36a" stroke-width="2.5" stroke-linecap="round"/>`
+      );
+    case 'coal':
+      return (
+        plate +
+        `<g stroke="#0c0c0e" stroke-width="2" stroke-linejoin="round">` +
+        `<path d="M16,78 l6,-18 l14,-6 l10,10 l-2,16 Z" fill="#2b2d33"/><path d="M40,80 l4,-24 l16,-8 l14,12 l2,20 Z" fill="#1d1f24"/><path d="M30,50 l12,-14 l14,4 l2,14 l-14,8 Z" fill="#33363d"/></g>` +
+        `<path d="M24,62 l10,-5 M46,58 l12,-6 M36,44 l8,-6 M62,66 l8,2" stroke="#8d93a0" stroke-width="2.4" stroke-linecap="round"/>`
+      );
+    case 'oil':
+      return (
+        plate +
+        `<g stroke="#17181c" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round">` +
+        `<path d="M30,80 L44,18 h8 L66,80 M36,58 h24 M40,40 h16 M36,58 l20,-18 M60,58 l-20,-18" fill="none" stroke="#6b4a2a" stroke-width="3.5"/>` +
+        `<path d="M22,82 h52" stroke-width="4"/>` +
+        `<path d="M70,42 q10,14 0,22 q-10,-8 0,-22 Z" fill="#17181c"/></g>` +
+        `<path d="M68,54 q-2,4 1,7" fill="none" stroke="#8d93a0" stroke-width="2" stroke-linecap="round"/>`
+      );
+    case 'rubber':
+      return (
+        plate +
+        `<g stroke="#1f2f1a" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round">` +
+        `<path d="M42,82 L44,34 h10 L56,82 Z" fill="#7a5a3a"/>` +
+        `<path d="M49,36 C24,34 18,14 30,10 C36,2 50,4 50,12 C56,2 72,6 70,16 C84,18 80,36 49,36 Z" fill="#3f8a3a"/>` +
+        `<path d="M44,50 l12,6 M44,60 l12,6" stroke="#f3efe2" stroke-width="3"/>` +
+        `<path d="M54,68 h14 l-2,12 h-10 Z" fill="#b9b3a4"/></g>` +
+        `<path d="M56,70 h10" stroke="#f7f4ea" stroke-width="3" stroke-linecap="round"/>`
+      );
+    case 'furs':
+      return (
+        plate +
+        `<path d="M48,14 C58,14 60,22 70,22 L82,18 L76,34 C80,44 78,54 84,66 L70,62 C66,74 58,80 48,82 C38,80 30,74 26,62 L12,66 C18,54 16,44 20,34 L14,18 L26,22 C36,22 38,14 48,14 Z" fill="#9a6a3c" stroke="#3d2614" stroke-width="2.4" stroke-linejoin="round"/>` +
+        `<path d="M48,24 C40,36 40,60 48,72 C56,60 56,36 48,24 Z" fill="#c9a06a" stroke="none"/>` +
+        `<path d="M30,36 l4,4 M62,36 l4,-4 M30,52 l5,2 M62,54 l5,-2 M42,30 l2,5 M54,30 l-2,5" stroke="#3d2614" stroke-width="2" stroke-linecap="round"/>`
+      );
+    case 'dyes':
+      return (
+        plate +
+        `<g stroke="#2b1a0e" stroke-width="2.2" stroke-linejoin="round">` +
+        [[26, 62, '#c8281c'], [48, 54, '#2a6fd0'], [70, 62, '#e3b341']].map(([x, y, c]) => `<path d="M${x - 14},${y} h28 l-3,20 h-22 Z" fill="#b98a5a"/><ellipse cx="${x}" cy="${y}" rx="14" ry="5.5" fill="${c}"/>`).join('') +
+        `</g><path d="M40,30 q8,-14 16,0 q-8,10 -16,0 Z" fill="#7a3ab0" stroke="#2b1a0e" stroke-width="2"/><path d="M48,40 v8" stroke="#7a3ab0" stroke-width="3" stroke-linecap="round"/>`
+      );
+    case 'incense':
+      return (
+        plate +
+        `<g stroke="#3a2512" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round">` +
+        `<path d="M30,60 h36 l-6,18 h-24 Z" fill="#c9973f"/><path d="M26,60 h44" stroke-width="4"/><path d="M38,78 l-4,6 M58,78 l4,6"/>` +
+        `<path d="M36,56 q12,-12 24,0 Z" fill="#8a5a2c"/></g>` +
+        `<path d="M48,44 C38,34 58,28 48,16 M40,40 C34,32 44,26 38,18 M58,42 C64,34 54,28 60,20" fill="none" stroke="rgba(235,235,240,0.9)" stroke-width="3.2" stroke-linecap="round"/>`
+      );
+    case 'ivory':
+      return (
+        plate +
+        `<g stroke="#5b4a2a" stroke-width="2.2" stroke-linejoin="round">` +
+        `<path d="M20,78 C16,48 30,22 56,14 C42,30 36,52 34,78 Z" fill="#f3ead2"/>` +
+        `<path d="M76,78 C80,48 66,22 40,14 C54,30 60,52 62,78 Z" fill="#e6dbbd"/></g>` +
+        `<path d="M26,66 C26,46 34,30 46,20" fill="none" stroke="rgba(255,255,255,0.8)" stroke-width="2.5" stroke-linecap="round"/>`
+      );
+    case 'gems':
+      return (
+        plate +
+        `<g stroke="#12303a" stroke-width="2.2" stroke-linejoin="round">` +
+        `<path d="M22,40 l12,-16 h28 l12,16 l-26,38 Z" fill="#35b6c9"/><path d="M22,40 h52 M34,24 l6,16 l8,-16 l8,16 l6,-16 M40,40 l8,38 l8,-38" fill="none"/>` +
+        `<path d="M34,24 l6,16 h-18 Z" fill="#8fe3ee"/><path d="M40,40 l8,-16 l8,16 Z" fill="#c9f4f8"/></g>` +
+        `<path d="M70,18 l3,7 l7,3 l-7,3 l-3,7 l-3,-7 l-7,-3 l7,-3 Z" fill="#fff"/>`
+      );
+    case 'wheat': {
+      let s = plate + `<path d="M30,80 h36" stroke="#8a6a2a" stroke-width="5" stroke-linecap="round"/>`;
+      for (const [x, lean] of [[36, -8], [48, 0], [60, 8]]) {
+        s += `<path d="M${x},80 L${x + lean},30" stroke="#b9861f" stroke-width="3" stroke-linecap="round"/>`;
+        for (let i = 0; i < 4; i++) {
+          const cx = x + lean * (1 - i * 0.14);
+          const cy = 30 + i * 9;
+          s += `<path d="M${cx},${cy + 6} q-8,-2 -8,-10 q8,2 8,10 Z M${cx},${cy + 6} q8,-2 8,-10 q-8,2 -8,10 Z" fill="#f2c94c" stroke="#8a6a2a" stroke-width="1.6"/>`;
+        }
+      }
+      return s + `<path d="M34,62 q14,6 28,0" fill="none" stroke="#b3261e" stroke-width="4" stroke-linecap="round"/>`;
+    }
+    case 'cattle':
+      return (
+        plate +
+        `<g stroke="#2b1a0e" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round">` +
+        `<path d="M26,78 v-18 M36,78 v-16 M58,78 v-16 M68,78 v-18" stroke-width="5" stroke="#5a4634"/>` +
+        `<path d="M18,46 C18,36 30,34 44,34 L62,34 C68,34 70,30 74,26 L84,30 L88,42 L82,46 L78,44 C78,54 74,62 64,62 L28,62 C20,62 18,54 18,46 Z" fill="#f3efe6"/>` +
+        `<path d="M32,36 q10,8 4,18 q-10,0 -12,-10 Z M52,44 q8,2 10,12 q-10,2 -12,-6 Z" fill="#3a2a22" stroke="none"/>` +
+        `<path d="M74,26 q-2,-8 4,-10 M82,28 q4,-6 0,-10" fill="none" stroke="#e8d7b0" stroke-width="3"/>` +
+        `<path d="M18,46 q-6,6 -4,16" fill="none"/></g><circle cx="80" cy="34" r="1.6" fill="#111"/>`
+      );
+    case 'fish':
+      return (
+        `<path d="M14,56 q34,-14 68,0" fill="none" stroke="rgba(255,255,255,0.65)" stroke-width="3" stroke-linecap="round"/>` +
+        `<g stroke="#12303a" stroke-width="2.2" stroke-linejoin="round">` +
+        `<path d="M22,46 C36,26 62,28 72,44 L86,32 L84,58 L72,48 C62,64 36,66 22,46 Z" fill="#7fc7d9"/>` +
+        `<path d="M40,34 q8,-10 16,-4 q-4,6 -16,4 Z M44,58 q6,8 14,4 q-4,-6 -14,-4 Z" fill="#4f9fb5"/></g>` +
+        `<circle cx="32" cy="44" r="2.6" fill="#12303a"/><path d="M42,40 q4,6 0,12 M50,40 q4,6 0,12 M58,41 q4,5 0,10" fill="none" stroke="#12303a" stroke-width="1.6"/>`
+      );
+    case 'gold':
+      return (
+        plate +
+        `<g stroke="#6b4a10" stroke-width="2.2" stroke-linejoin="round">` +
+        `<path d="M16,78 l8,-16 l14,-4 l8,10 l-2,10 Z" fill="#e3b341"/><path d="M44,80 l2,-20 l16,-8 l14,10 l2,18 Z" fill="#f2c94c"/><path d="M32,54 l10,-14 l14,2 l4,12 l-14,8 Z" fill="#ffd95a"/></g>` +
+        `<path d="M42,40 l6,-3 M52,58 l8,-4 M24,64 l6,-2" stroke="#fff6c8" stroke-width="2.6" stroke-linecap="round"/>` +
+        `<path d="M66,22 l2,6 l6,2 l-6,2 l-2,6 l-2,-6 l-6,-2 l6,-2 Z" fill="#fff"/>`
       );
   }
   return '';

@@ -9,11 +9,42 @@ use bevy_civ::ai::Civilizations;
 use bevy_civ::diplomacy::{Diplomacy, Treaty};
 use bevy_civ::fog::FogOfWar;
 use bevy_civ::tech::{Tech, TechState};
+use bevy_civ::terrain::Resource as Good;
+
+use crate::supply::Supplies;
 
 use crate::{GameLog, GameState, AI_GRACE_TURNS, BARBARIANS, PLAYER};
 
 pub const GIFT: i32 = 50;
 pub const PACT_INCOME: i32 = 2;
+/// How many turns a resource deal runs.
+pub const DEAL_TURNS: u32 = 20;
+
+/// A running exchange of resources and gold with another civilization.
+#[derive(Clone, Debug)]
+pub struct Deal {
+    pub civ: u32,
+    /// What the player sends.
+    pub export: Option<Good>,
+    /// What the player receives.
+    pub import: Option<Good>,
+    /// Gold the player receives each turn (negative: pays).
+    pub gold: i32,
+    pub ends: u32,
+}
+
+/// A resource trade the player proposes.
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub enum TradeAsk {
+    Buy(Good),
+    Sell(Good),
+    Cancel(usize),
+}
+
+/// Gold per turn a resource is worth.
+pub fn price(good: Good) -> i32 {
+    if good.is_strategic() { 5 } else { 3 }
+}
 
 /// Something the player can ask of another leader.
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -64,6 +95,7 @@ pub struct Foreign {
     pub cooldown: HashMap<u32, u32>,
     /// Military strength per civilization, refreshed every turn.
     pub strength: HashMap<u32, f32>,
+    pub deals: Vec<Deal>,
 }
 
 impl Foreign {
@@ -104,6 +136,11 @@ fn set_treaty(ctx: &mut Ctx, a: u32, b: u32, treaty: Treaty) {
         for (x, y) in [(a, b), (b, a)] {
             if x == PLAYER {
                 ctx.foreign.pacts.remove(&y);
+                let before = ctx.foreign.deals.len();
+                ctx.foreign.deals.retain(|d| d.civ != y);
+                if ctx.foreign.deals.len() < before {
+                    ctx.log.push("War ends our resource deals with them.");
+                }
             }
         }
     }
@@ -287,6 +324,98 @@ pub fn player_act(ctx: &mut Ctx, civ: u32, act: DiploAct) {
         }
     };
     ctx.foreign.reply.insert(civ, reply);
+}
+
+/// Handles a resource deal the player proposes in the foreign advisor window.
+pub fn player_trade(ctx: &mut Ctx, supplies: &Supplies, civ: u32, ask: TradeAsk) {
+    let Some(other) = ctx.civs.players.iter().find(|c| c.id == civ) else { return };
+    let (name, their_gold) = (other.name.clone(), other.gold);
+    let attitude = ctx.diplomacy.get_attitude(PLAYER, civ);
+    let at_war = ctx.diplomacy.get_treaty(PLAYER, civ) == Treaty::War;
+    let (ours, theirs) = (supplies.civ(PLAYER), supplies.civ(civ));
+    let ends = ctx.state.turn + DEAL_TURNS;
+
+    let reply: String = match ask {
+        TradeAsk::Cancel(index) => {
+            if index < ctx.foreign.deals.len() && ctx.foreign.deals[index].civ == civ {
+                ctx.foreign.deals.remove(index);
+                shift(ctx, civ, -3);
+                ctx.log.push(format!("We end a resource deal with {name}."));
+                "A pity. Our merchants will look elsewhere.".into()
+            } else {
+                return;
+            }
+        }
+        _ if at_war => "We do not trade with enemies.".into(),
+        TradeAsk::Buy(good) => {
+            let needed = if good.is_strategic() { 10 } else { -5 };
+            if ours.imports.contains(&good) {
+                format!("You already receive {} from abroad.", good.name())
+            } else if theirs.spare(good) == 0 {
+                format!("We have no {} to spare.", good.name())
+            } else if attitude < needed {
+                if good.is_strategic() { "We do not arm those we do not trust.".into() } else { "Not while relations are this poor.".into() }
+            } else if ctx.state.gold < price(good) {
+                format!("{} costs {} gold a turn. Your treasury is empty.", good.name(), price(good))
+            } else {
+                ctx.foreign.deals.push(Deal { civ, export: None, import: Some(good), gold: -price(good), ends });
+                ctx.log.push(format!("{name} will supply us with {} for {} gold a turn ({DEAL_TURNS} turns).", good.name(), price(good)));
+                format!("{} for {} gold a turn. Agreed.", good.name(), price(good))
+            }
+        }
+        TradeAsk::Sell(good) => {
+            let pays = price(good) - 1;
+            if ours.spare(good) == 0 {
+                format!("You have no {} to spare.", good.name())
+            } else if theirs.has(good) {
+                format!("We have all the {} we need.", good.name())
+            } else if attitude < -10 {
+                "We want nothing from you.".into()
+            } else if their_gold < pays * 4 {
+                "Our treasury cannot bear it just now.".into()
+            } else {
+                ctx.foreign.deals.push(Deal { civ, export: Some(good), import: None, gold: pays, ends });
+                shift(ctx, civ, 3);
+                ctx.log.push(format!("We will supply {name} with {} for {pays} gold a turn ({DEAL_TURNS} turns).", good.name()));
+                format!("We will pay {pays} gold a turn for your {}.", good.name())
+            }
+        }
+    };
+    ctx.foreign.reply.insert(civ, reply);
+}
+
+/// Settles running resource deals for the turn; returns the gold the player nets from them.
+pub fn settle_deals(ctx: &mut Ctx, supplies: &Supplies) -> i32 {
+    let turn = ctx.state.turn;
+    let ours = supplies.civ(PLAYER);
+    let mut income = 0;
+    let mut kept = Vec::new();
+    for deal in std::mem::take(&mut ctx.foreign.deals) {
+        let name = ctx.civs.players.iter().find(|c| c.id == deal.civ).map(|c| c.name.clone()).unwrap_or_default();
+        let what = deal.export.or(deal.import).map(|g| g.name()).unwrap_or("goods");
+        let their_gold = ctx.civs.players.iter().find(|c| c.id == deal.civ).map(|c| c.gold).unwrap_or(0);
+        let lost_source = deal.export.is_some_and(|g| ours.connected.get(&g).copied().unwrap_or(0) < ours.exports.get(&g).copied().unwrap_or(0));
+        let they_lost = deal.import.is_some_and(|g| supplies.civ(deal.civ).connected.get(&g).copied().unwrap_or(0) == 0);
+        if turn >= deal.ends {
+            ctx.log.push(format!("Our deal with {name} for {what} has run its course."));
+        } else if ctx.foreign.gone.contains(&deal.civ) || they_lost {
+            ctx.log.push(format!("{name} can no longer supply {what}."));
+        } else if lost_source {
+            ctx.log.push(format!("We can no longer supply {what} to {name}; the deal ends."));
+        } else if deal.gold < 0 && ctx.state.gold + income + deal.gold < 0 {
+            ctx.log.push(format!("We cannot pay {name} for {what}; the deal ends."));
+        } else if deal.gold > 0 && their_gold < deal.gold {
+            ctx.log.push(format!("{name} can no longer pay for {what}; the deal ends."));
+        } else {
+            income += deal.gold;
+            if let Some(other) = ctx.civs.players.iter_mut().find(|c| c.id == deal.civ) {
+                other.gold -= deal.gold;
+            }
+            kept.push(deal);
+        }
+    }
+    ctx.foreign.deals = kept;
+    income
 }
 
 /// Applies the player's answer to the pending offer.

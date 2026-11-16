@@ -7,7 +7,8 @@ use std::collections::HashMap;
 
 use bevy_civ::city::City;
 use bevy_civ::fog::FogOfWar;
-use bevy_civ::terrain::{HexTile, Improvement, Resource as TileResource, Terrain};
+use bevy_civ::tech::TechState;
+use bevy_civ::terrain::{HexTile, Improvement, Terrain};
 use bevy_civ::unit::Unit;
 
 use super::{overlay, owner_color, Art};
@@ -57,16 +58,6 @@ fn terrain_row(terrain: Terrain) -> usize {
     }
 }
 
-fn resource_index(resource: TileResource) -> usize {
-    match resource {
-        TileResource::Horses => 0,
-        TileResource::Iron => 1,
-        TileResource::Wine => 2,
-        TileResource::Spices => 3,
-        TileResource::Silk => 4,
-    }
-}
-
 pub fn setup_map_view(mut commands: Commands, art: Res<Art>) {
     commands.spawn(Camera2d);
     commands.insert_resource(WaterClock(Timer::from_seconds(0.16, TimerMode::Repeating), 0));
@@ -94,6 +85,7 @@ pub fn refresh_map(
     map: Res<MapData>,
     fog: Res<FogOfWar>,
     clock: Res<WaterClock>,
+    (tech, supplies): (Res<TechState>, Res<crate::supply::Supplies>),
     mut tiles: Query<(&HexTile, &mut Sprite)>,
     cities: Query<&City>,
     decor: Query<Entity, With<Decor>>,
@@ -191,12 +183,16 @@ pub fn refresh_map(
                 }
             }
         }
-        if let Some(resource) = tile.resource {
+        // Strategic resources stay hidden until the technology to use them is known.
+        let revealed = tile.resource.filter(|r| r.reveal_tech().is_none_or(|t| tech.researched.contains(&t)));
+        if let Some(resource) = revealed {
+            // A source inside our borders that no road reaches yet is shown washed out.
+            let tint = if supplies.unconnected.contains(&hex) { tint.with_alpha(0.55) } else { tint };
             commands.spawn((
                 Decor,
                 Sprite {
                     image: art.resources.clone(),
-                    texture_atlas: Some(art.atlas(&art.resources_layout, resource_index(resource))),
+                    texture_atlas: Some(art.atlas(&art.resources_layout, resource.index())),
                     custom_size: Some(Vec2::splat(34.0)),
                     color: tint,
                     ..default()

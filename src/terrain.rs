@@ -28,13 +28,37 @@ pub enum Improvement {
     Road,
 }
 
-#[derive(Clone, Copy, PartialEq, Debug)]
+/// What a resource is good for.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum ResourceKind {
+    /// Needed to build certain units and buildings.
+    Strategic,
+    /// Makes people content in every connected city.
+    Luxury,
+    /// Simply improves the yield of the city that owns the tile.
+    Bonus,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum Resource {
     Horses,
     Iron,
     Wine,
     Spices,
     Silk,
+    Saltpeter,
+    Coal,
+    Oil,
+    Rubber,
+    Furs,
+    Dyes,
+    Incense,
+    Ivory,
+    Gems,
+    Wheat,
+    Cattle,
+    Fish,
+    Gold,
 }
 
 impl Terrain {
@@ -99,6 +123,13 @@ impl Improvement {
 }
 
 impl Resource {
+    /// Every resource, in declaration order (also the frame order of the icon atlas).
+    pub const ALL: [Resource; 18] = [
+        Resource::Horses, Resource::Iron, Resource::Wine, Resource::Spices, Resource::Silk, Resource::Saltpeter,
+        Resource::Coal, Resource::Oil, Resource::Rubber, Resource::Furs, Resource::Dyes, Resource::Incense,
+        Resource::Ivory, Resource::Gems, Resource::Wheat, Resource::Cattle, Resource::Fish, Resource::Gold,
+    ];
+
     pub fn name(&self) -> &'static str {
         match self {
             Resource::Horses => "Horses",
@@ -106,19 +137,69 @@ impl Resource {
             Resource::Wine => "Wine",
             Resource::Spices => "Spices",
             Resource::Silk => "Silk",
+            Resource::Saltpeter => "Saltpeter",
+            Resource::Coal => "Coal",
+            Resource::Oil => "Oil",
+            Resource::Rubber => "Rubber",
+            Resource::Furs => "Furs",
+            Resource::Dyes => "Dyes",
+            Resource::Incense => "Incense",
+            Resource::Ivory => "Ivory",
+            Resource::Gems => "Gems",
+            Resource::Wheat => "Wheat",
+            Resource::Cattle => "Cattle",
+            Resource::Fish => "Fish",
+            Resource::Gold => "Gold",
+        }
+    }
+
+    pub fn index(&self) -> usize {
+        Resource::ALL.iter().position(|r| r == self).unwrap_or(0)
+    }
+
+    pub fn kind(&self) -> ResourceKind {
+        match self {
+            Resource::Horses | Resource::Iron | Resource::Saltpeter | Resource::Coal | Resource::Oil | Resource::Rubber => ResourceKind::Strategic,
+            Resource::Wheat | Resource::Cattle | Resource::Fish | Resource::Gold => ResourceKind::Bonus,
+            _ => ResourceKind::Luxury,
         }
     }
 
     pub fn is_strategic(&self) -> bool {
-        matches!(self, Resource::Horses | Resource::Iron)
+        self.kind() == ResourceKind::Strategic
     }
 
     pub fn is_luxury(&self) -> bool {
-        matches!(self, Resource::Wine | Resource::Spices | Resource::Silk)
+        self.kind() == ResourceKind::Luxury
     }
 
     pub fn happiness_bonus(&self) -> u32 {
         if self.is_luxury() { 1 } else { 0 }
+    }
+
+    /// Technology needed before the resource can be seen on the map and used.
+    pub fn reveal_tech(&self) -> Option<crate::tech::Tech> {
+        use crate::tech::Tech;
+        match self {
+            Resource::Horses => Some(Tech::AnimalHusbandry),
+            Resource::Iron => Some(Tech::IronWorking),
+            Resource::Saltpeter => Some(Tech::Gunpowder),
+            Resource::Coal => Some(Tech::SteamPower),
+            Resource::Oil => Some(Tech::Refining),
+            Resource::Rubber => Some(Tech::ReplaceableParts),
+            _ => None,
+        }
+    }
+
+    /// Extra (food, shields, gold) a bonus resource gives the city whose land it lies in.
+    pub fn bonus_yield(&self) -> (u32, u32, u32) {
+        match self {
+            Resource::Wheat => (2, 0, 0),
+            Resource::Cattle => (1, 1, 0),
+            Resource::Fish => (2, 0, 0),
+            Resource::Gold => (0, 0, 3),
+            _ => (0, 0, 0),
+        }
     }
 }
 
@@ -163,19 +244,17 @@ pub fn random_terrain(rng: &mut impl Rng) -> Terrain {
     }
 }
 
+/// Scatters resources according to the terrain they are found in.
 pub fn random_resource(rng: &mut impl Rng, terrain: Terrain) -> Option<Resource> {
-    if matches!(terrain, Terrain::Water) {
-        return None;
-    }
-    if rng.gen_range(0..100) < 12 {
-        Some(match rng.gen_range(0..5) {
-            0 => Resource::Horses,
-            1 => Resource::Iron,
-            2 => Resource::Wine,
-            3 => Resource::Spices,
-            _ => Resource::Silk,
-        })
-    } else {
-        None
-    }
+    use crate::terrain::Resource::*;
+    let (chance, options): (u32, &[Resource]) = match terrain {
+        Terrain::Water => (5, &[Fish]),
+        Terrain::Grassland => (13, &[Horses, Cattle, Wheat, Wine, Dyes, Cattle, Wheat]),
+        Terrain::Plains => (13, &[Horses, Wheat, Ivory, Oil, Cattle, Wheat, Wine]),
+        Terrain::Desert => (13, &[Saltpeter, Oil, Incense, Saltpeter, Oil, Gold]),
+        Terrain::Forest => (14, &[Rubber, Furs, Silk, Spices, Dyes, Coal, Furs, Spices]),
+        Terrain::Hills => (17, &[Iron, Coal, Saltpeter, Wine, Incense, Gems, Gold, Iron, Coal]),
+        Terrain::Mountain => (17, &[Iron, Gold, Gems, Coal, Iron]),
+    };
+    (rng.gen_range(0..100) < chance).then(|| options[rng.gen_range(0..options.len())])
 }

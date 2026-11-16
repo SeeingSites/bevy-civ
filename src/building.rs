@@ -11,6 +11,7 @@ pub enum Building {
     University,
     Bank,
     Factory,
+    Harbor,
     // Wonders
     Pyramids,
     GreatLibrary,
@@ -21,9 +22,9 @@ pub enum Building {
 }
 
 impl Building {
-    pub const ALL: [Building; 15] = [
+    pub const ALL: [Building; 16] = [
         Building::Granary, Building::Barracks, Building::Library, Building::Marketplace, Building::Walls,
-        Building::Aqueduct, Building::University, Building::Bank, Building::Factory, Building::Pyramids,
+        Building::Aqueduct, Building::University, Building::Bank, Building::Factory, Building::Harbor, Building::Pyramids,
         Building::GreatLibrary, Building::HangingGardens, Building::Colossus, Building::Oracle,
         Building::GreatLighthouse,
     ];
@@ -39,6 +40,7 @@ impl Building {
             Building::University => "University",
             Building::Bank => "Bank",
             Building::Factory => "Factory",
+            Building::Harbor => "Harbor",
             Building::Pyramids => "Pyramids",
             Building::GreatLibrary => "Great Library",
             Building::HangingGardens => "Hanging Gardens",
@@ -59,6 +61,7 @@ impl Building {
             Building::University => 100,
             Building::Bank => 120,
             Building::Factory => 150,
+            Building::Harbor => 60,
             Building::Pyramids => 200,
             Building::GreatLibrary => 250,
             Building::HangingGardens => 180,
@@ -78,13 +81,24 @@ impl Building {
             Building::Aqueduct => Some(crate::tech::Tech::Construction),
             Building::University => Some(crate::tech::Tech::Philosophy),
             Building::Bank => Some(crate::tech::Tech::Currency),
-            Building::Factory => Some(crate::tech::Tech::Engineering),
+            Building::Factory => Some(crate::tech::Tech::Industrialization),
+            Building::Harbor => Some(crate::tech::Tech::Seafaring),
             Building::Pyramids => Some(crate::tech::Tech::Masonry),
             Building::GreatLibrary => Some(crate::tech::Tech::Writing),
             Building::HangingGardens => Some(crate::tech::Tech::Monarchy),
             Building::Colossus => Some(crate::tech::Tech::BronzeWorking),
             Building::Oracle => Some(crate::tech::Tech::Mysticism),
             Building::GreatLighthouse => Some(crate::tech::Tech::Masonry),
+        }
+    }
+
+    /// Strategic resources a city must have access to before it can build this.
+    pub fn required_resources(&self) -> &'static [crate::terrain::Resource] {
+        use crate::terrain::Resource;
+        match self {
+            Building::Factory => &[Resource::Coal, Resource::Iron],
+            Building::Colossus => &[Resource::Iron],
+            _ => &[],
         }
     }
 
@@ -95,6 +109,7 @@ impl Building {
     pub fn food_bonus(&self) -> u32 {
         match self {
             Building::Granary => 2,
+            Building::Harbor => 1,
             Building::HangingGardens => 3,
             Building::Pyramids => 1, // half granary effect approximated
             _ => 0,

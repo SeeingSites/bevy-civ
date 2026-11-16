@@ -20,7 +20,9 @@ use bevy_civ::unit::{Unit, UnitType};
 use super::actors::unit_row;
 use super::map::Hovered;
 use super::{icon, owner_color, owner_name, Art};
-use crate::foreign::{self, DiploAct, Foreign, OfferKind};
+use crate::foreign::{self, DiploAct, Foreign, OfferKind, TradeAsk};
+use crate::supply::Supplies;
+use bevy_civ::terrain::{Resource as Good, ResourceKind};
 use crate::scenario::{self, NewGame, Scenario};
 use crate::{Action, AppState, Dirty, GameLog, GameState, MapData, Selection, BARBARIANS, PLAYER};
 
@@ -38,6 +40,7 @@ const RED: Color = Color::srgb(0.9, 0.45, 0.38);
 pub enum Modal {
     Science,
     Diplomacy,
+    Trade,
 }
 
 #[derive(Resource, Default)]
@@ -88,6 +91,10 @@ pub struct CityPanel;
 pub struct ModalRoot;
 #[derive(Component)]
 pub struct MenuRoot;
+#[derive(Component)]
+pub struct NextUnitLabel;
+#[derive(Component)]
+pub struct EndTurnButton;
 #[derive(Component)]
 pub struct TileInfoText;
 #[derive(Component)]
@@ -182,6 +189,15 @@ pub fn year_label(state: &GameState) -> String {
     if year < 0 { format!("{} BC", -year) } else { format!("{} AD", year.max(1)) }
 }
 
+fn good_icon(art: &Art, good: Good, size: f32) -> impl Bundle {
+    (
+        Node { width: Val::Px(size), height: Val::Px(size), flex_shrink: 0.0, ..default() },
+        ImageNode { image: art.resources.clone(), texture_atlas: Some(art.atlas(&art.resources_layout, good.index())), ..default() },
+    )
+}
+
+const GRAY: Color = Color::srgb(0.62, 0.6, 0.57);
+
 fn portrait(art: &Art, index: usize, size: f32) -> impl Bundle {
     (
         Node { width: Val::Px(size), height: Val::Px(size), flex_shrink: 0.0, ..default() },
@@ -204,7 +220,7 @@ pub fn setup_ui(mut commands: Commands, art: Res<Art>, mut images: ResMut<Assets
                 min_height: Val::Px(52.0),
                 padding: UiRect::axes(Val::Px(20.0), Val::Px(8.0)),
                 align_items: AlignItems::Center,
-                column_gap: Val::Px(20.0),
+                column_gap: Val::Px(13.0),
                 row_gap: Val::Px(4.0),
                 flex_wrap: FlexWrap::Wrap,
                 ..default()
@@ -226,10 +242,11 @@ pub fn setup_ui(mut commands: Commands, art: Res<Art>, mut images: ResMut<Assets
             }
             bar.spawn((label(&art.font_body, "", 16.0, MUTED), StatText::Government));
             bar.spawn(Node { flex_grow: 1.0, ..default() });
-            button(bar, &art, "Science (Q)", Command::Toggle(Modal::Science), BRONZE, 15.0);
-            button(bar, &art, "Diplomacy (E)", Command::Toggle(Modal::Diplomacy), BRONZE, 15.0);
-            button(bar, &art, "Save", Command::Game(Action::Save), BRONZE, 15.0);
-            button(bar, &art, "Menu", Command::QuitToMenu, BRONZE, 15.0);
+            button(bar, &art, "Science (Q)", Command::Toggle(Modal::Science), BRONZE, 14.0);
+            button(bar, &art, "Diplomacy (E)", Command::Toggle(Modal::Diplomacy), BRONZE, 14.0);
+            button(bar, &art, "Trade (G)", Command::Toggle(Modal::Trade), BRONZE, 14.0);
+            button(bar, &art, "Save", Command::Game(Action::Save), BRONZE, 14.0);
+            button(bar, &art, "Menu", Command::QuitToMenu, BRONZE, 14.0);
         });
 
     // Message log stacked on the unit panel (bottom left)
@@ -295,7 +312,28 @@ pub fn setup_ui(mut commands: Commands, art: Res<Art>, mut images: ResMut<Assets
                 ));
             });
             p.spawn((label(&art.font_body, "", 14.0, CREAM), TileInfoText, Node { height: Val::Px(38.0), ..default() }));
-            button(p, &art, "End Turn", Command::Game(Action::EndTurn), Color::srgb(0.62, 0.86, 0.45), 19.0);
+            // Cycle through the units that still need orders, then end the turn.
+            p.spawn((
+                Button,
+                Node { padding: UiRect::axes(Val::Px(10.0), Val::Px(7.0)), justify_content: JustifyContent::Center, ..default() },
+                ImageNode { image: art.button.clone(), image_mode: sliced(14.0), color: BRONZE, ..default() },
+                ButtonTint(BRONZE),
+                ButtonCommand(Command::Game(Action::NextUnit)),
+            ))
+            .with_children(|b| {
+                b.spawn((label(&art.font_bold, "Next Unit", 16.0, INK), NextUnitLabel));
+            });
+            p.spawn((
+                Button,
+                EndTurnButton,
+                Node { padding: UiRect::axes(Val::Px(10.0), Val::Px(8.0)), justify_content: JustifyContent::Center, ..default() },
+                ImageNode { image: art.button.clone(), image_mode: sliced(14.0), color: BRONZE, ..default() },
+                ButtonTint(BRONZE),
+                ButtonCommand(Command::Game(Action::EndTurn)),
+            ))
+            .with_children(|b| {
+                b.spawn(label(&art.font_bold, "End Turn", 19.0, INK));
+            });
         });
 
     // City panel (right)
@@ -307,7 +345,7 @@ pub fn setup_ui(mut commands: Commands, art: Res<Art>, mut images: ResMut<Assets
                 position_type: PositionType::Absolute,
                 right: Val::Px(10.0),
                 top: Val::Px(62.0),
-                width: Val::Px(330.0),
+                width: Val::Px(430.0),
                 max_width: Val::Percent(90.0),
                 padding: UiRect::all(Val::Px(18.0)),
                 flex_direction: FlexDirection::Column,
@@ -354,7 +392,7 @@ pub fn rebuild_panels(
     mut dirty: ResMut<Dirty>,
     selection: Res<Selection>,
     mut ui: ResMut<UiState>,
-    foreign: Res<Foreign>,
+    (foreign, supplies): (Res<Foreign>, Res<Supplies>),
     art: Res<Art>,
     state: Res<GameState>,
     tech: Res<TechState>,
@@ -367,7 +405,7 @@ pub fn rebuild_panels(
     mut modal_root: Query<(Entity, &mut Node), (With<ModalRoot>, Without<CityPanel>)>,
     mut commands: Commands,
 ) {
-    if !(dirty.ui || selection.is_changed() || ui.is_changed() || foreign.is_changed()) {
+    if !(dirty.ui || selection.is_changed() || ui.is_changed() || foreign.is_changed() || supplies.is_changed()) {
         return;
     }
     dirty.ui = false;
@@ -380,7 +418,7 @@ pub fn rebuild_panels(
                 p.spawn(label(&art.font_title, "No unit selected", 17.0, GOLD));
                 p.spawn(label(
                     &art.font_body,
-                    "Click a unit or city to select it. Click a tile (or right-click) to move.\nDrag to pan, scroll to zoom, Space ends the turn.",
+                    "Click a unit or city to select it; click a tile (or right-click) to move.\nSpace skips a unit and moves to the next; Enter ends the turn.",
                     14.0,
                     MUTED,
                 ));
@@ -404,6 +442,7 @@ pub fn rebuild_panels(
                     let status = match (unit.current_build, unit.build_turns_left) {
                         (Some(job), Some(turns)) => format!("Building {:?} ({} turns)", job, turns),
                         _ if !mine => String::new(),
+                        _ if unit.fortified => "Fortified".into(),
                         _ if unit.movement_left == 0 => "No moves left".into(),
                         _ => "Awaiting orders".into(),
                     };
@@ -426,7 +465,11 @@ pub fn rebuild_panels(
                         button(r, art, "Road (R)", Command::Game(Action::Build(Improvement::Road)), BRONZE, 15.0);
                         button(r, art, "Clear (X)", Command::Game(Action::Transform), BRONZE, 15.0);
                     }
-                    button(r, art, "Skip", Command::Game(Action::Skip), BRONZE, 15.0);
+                    if !unit.fortified {
+                        let text = if unit.unit_type.is_military() { "Fortify (H)" } else { "Sleep (H)" };
+                        button(r, art, text, Command::Game(Action::Fortify), BRONZE, 15.0);
+                    }
+                    button(r, art, "Skip (Space)", Command::Game(Action::Skip), BRONZE, 15.0);
                     button(r, art, "Done", Command::Game(Action::Deselect), BRONZE, 15.0);
                 });
             }
@@ -452,13 +495,14 @@ pub fn rebuild_panels(
             }
             let dist = capital.map(|c| city.position.distance_to(c) as u32).unwrap_or(0);
             let gov = state.government;
-            let food = city.food_per_turn(buildings, gov, dist);
-            let production = city.production_per_turn(buildings, gov, dist);
+            let (extra_food, extra_shields, extra_gold) = supplies.yields.get(&city.position).copied().unwrap_or_default();
+            let food = city.food_per_turn(buildings, gov, dist) + extra_food;
+            let production = city.production_per_turn(buildings, gov, dist) + extra_shields;
             p.spawn(row(14.0)).with_children(|r| {
                 stat(r, art, icon::FOOD, format!("+{food}"), CREAM);
                 stat(r, art, icon::PRODUCTION, format!("+{production}"), CREAM);
                 stat(r, art, icon::SCIENCE, format!("+{}", city.science_per_turn(buildings, gov, dist)), CREAM);
-                stat(r, art, icon::GOLD, format!("+{}", city.gold_per_turn(buildings) + 1), CREAM);
+                stat(r, art, icon::GOLD, format!("+{}", city.gold_per_turn(buildings) + 1 + extra_gold), CREAM);
                 stat(r, art, icon::HAPPY, format!("{} / {}", happiness.happy + happiness.content, happiness.unhappy), if happiness.in_disorder() { Color::srgb(1.0, 0.45, 0.4) } else { CREAM });
             });
             let grow_in = (city.food_to_grow().saturating_sub(city.food_storage) as f32 / food.max(1) as f32).ceil();
@@ -471,6 +515,15 @@ pub fn rebuild_panels(
             }
             let built = if buildings.buildings.is_empty() { "none yet".to_string() } else { buildings.buildings.iter().map(|b| b.name()).collect::<Vec<_>>().join(", ") };
             p.spawn(label(&art.font_body, format!("Buildings: {built}"), 14.0, CREAM));
+            // Resources this city can draw on through roads, harbours and trade.
+            let mut goods: Vec<Good> = supplies.city.get(&city.position).map(|set| set.iter().copied().collect()).unwrap_or_default();
+            goods.sort_by_key(|g| g.index());
+            p.spawn(row(4.0)).with_children(|r| {
+                r.spawn(label(&art.font_body, if goods.is_empty() { "Resources: none connected" } else { "Resources:" }, 14.0, CREAM));
+                for good in &goods {
+                    r.spawn(good_icon(art, *good, 24.0));
+                }
+            });
             p.spawn(label(&art.font_title, "Change production", 15.0, GOLD));
             p.spawn(row(5.0)).with_children(|r| {
                 let known = |t: Option<Tech>| t.is_none_or(|t| tech.researched.contains(&t));
@@ -478,8 +531,22 @@ pub fn rebuild_panels(
                 options.extend(Building::ALL.into_iter().filter(|b| known(b.required_tech()) && !buildings.buildings.contains(b)).map(ProductionItem::Building));
                 for item in options {
                     let current = city.production_queue.as_ref() == Some(&item);
-                    let tint = if current { GREEN } else if matches!(item, ProductionItem::Building(_)) { Color::srgb(0.72, 0.78, 0.88) } else { BRONZE };
-                    button(r, art, format!("{} {}", item.name(), item.cost()), Command::Game(Action::SetProduction(item)), tint, 13.0);
+                    let missing = supplies.missing(city.position, item.required_resources());
+                    let tint = if !missing.is_empty() {
+                        GRAY
+                    } else if current {
+                        GREEN
+                    } else if matches!(item, ProductionItem::Building(_)) {
+                        Color::srgb(0.72, 0.78, 0.88)
+                    } else {
+                        BRONZE
+                    };
+                    let text = if missing.is_empty() {
+                        format!("{} {}", item.name(), item.cost())
+                    } else {
+                        format!("{} - needs {}", item.name(), missing.iter().map(|g| g.name()).collect::<Vec<_>>().join(", "))
+                    };
+                    button(r, art, text, Command::Game(Action::SetProduction(item)), tint, 13.0);
                 }
             });
         });
@@ -560,6 +627,81 @@ pub fn rebuild_panels(
                         });
                         let learned: Vec<&str> = Tech::ALL.iter().filter(|t| tech.researched.contains(t)).map(|t| t.name()).collect();
                         w.spawn(label(&art.font_body, format!("Known: {}", if learned.is_empty() { "nothing yet".into() } else { learned.join(", ") }), 15.0, INK_SOFT));
+                        w.spawn(row(6.0)).with_children(|r| button(r, art, "Close (Esc)", Command::CloseModal, BRONZE, 14.0));
+                    });
+                }
+                Modal::Trade => {
+                    p.spawn(window(720.0)).with_children(|w| {
+                        w.spawn(label(&art.font_title, "Trade Advisor", 26.0, INK));
+                        w.spawn(label(
+                            &art.font_body,
+                            "A resource must lie inside our borders and be joined to a city by road (or by harbours) before that city can use it. Strategic resources are needed for units and buildings; each different luxury keeps one more citizen content in every connected city.",
+                            14.0,
+                            INK_SOFT,
+                        ));
+                        let ours = supplies.civ(PLAYER);
+                        let mut any = false;
+                        for (kind, title) in [(ResourceKind::Strategic, "Strategic resources"), (ResourceKind::Luxury, "Luxuries")] {
+                            let rows: Vec<Good> = Good::ALL
+                                .into_iter()
+                                .filter(|g| g.kind() == kind)
+                                .filter(|g| g.reveal_tech().is_none_or(|t| tech.researched.contains(&t)))
+                                .collect();
+                            w.spawn(label(&art.font_title, title, 16.0, INK_SOFT));
+                            w.spawn(row(10.0)).with_children(|r| {
+                                for good in rows {
+                                    let sources = ours.sources.get(&good).copied().unwrap_or(0);
+                                    let connected = ours.connected.get(&good).copied().unwrap_or(0);
+                                    let exported = ours.exports.get(&good).copied().unwrap_or(0);
+                                    let status = if ours.imports.contains(&good) {
+                                        "imported".to_string()
+                                    } else if connected > exported {
+                                        if ours.spare(good) > 0 { format!("{} connected, {} spare", connected, ours.spare(good)) } else { "connected".to_string() }
+                                    } else if sources > 0 {
+                                        "needs a road".to_string()
+                                    } else {
+                                        "none".to_string()
+                                    };
+                                    let color = if ours.has(good) { INK } else if sources > 0 { Color::srgb(0.7, 0.35, 0.1) } else { GRAY };
+                                    any |= sources > 0;
+                                    r.spawn(Node { width: Val::Px(200.0), align_items: AlignItems::Center, column_gap: Val::Px(6.0), ..default() }).with_children(|c| {
+                                        c.spawn(good_icon(art, good, 30.0));
+                                        c.spawn(label(&art.font_bold, format!("{}: {status}", good.name()), 14.0, color));
+                                    });
+                                }
+                            });
+                        }
+                        if !any {
+                            w.spawn(label(&art.font_body, "No resources lie inside our borders yet. Found cities near them.", 14.0, INK));
+                        }
+                        // What the lack of resources is holding back.
+                        let capital = cities.iter().find(|(c, _, _)| c.owner == PLAYER && c.is_capital).or(cities.iter().find(|(c, _, _)| c.owner == PLAYER)).map(|(c, _, _)| c.position);
+                        if let Some(capital) = capital {
+                            let blocked: Vec<String> = UnitType::ALL
+                                .into_iter()
+                                .filter(|u| u.required_tech().is_none_or(|t| tech.researched.contains(&t)))
+                                .filter_map(|u| {
+                                    let missing = supplies.missing(capital, u.required_resources());
+                                    (!missing.is_empty()).then(|| format!("{} ({})", u.name(), missing.iter().map(|g| g.name()).collect::<Vec<_>>().join(", ")))
+                                })
+                                .collect();
+                            if !blocked.is_empty() {
+                                w.spawn(label(&art.font_body, format!("Our capital cannot yet train: {}.", blocked.join("; ")), 14.0, INK));
+                            }
+                        }
+                        if !foreign.deals.is_empty() {
+                            w.spawn(label(&art.font_title, "Deals", 16.0, INK_SOFT));
+                            for deal in &foreign.deals {
+                                let partner = civs.players.iter().find(|c| c.id == deal.civ).map(|c| c.name.as_str()).unwrap_or("?");
+                                let text = match (deal.import, deal.export) {
+                                    (Some(good), _) => format!("{} from {partner} for {} gold a turn", good.name(), -deal.gold),
+                                    (_, Some(good)) => format!("{} to {partner} for {} gold a turn", good.name(), deal.gold),
+                                    _ => String::new(),
+                                };
+                                w.spawn(label(&art.font_body, format!("{text} ({} turns left)", deal.ends.saturating_sub(state.turn)), 14.0, INK));
+                            }
+                        }
+                        w.spawn(label(&art.font_body, "Buy and sell resources with other leaders in the foreign advisor (E).", 14.0, INK_SOFT));
                         w.spawn(row(6.0)).with_children(|r| button(r, art, "Close (Esc)", Command::CloseModal, BRONZE, 14.0));
                     });
                 }
@@ -648,6 +790,37 @@ pub fn rebuild_panels(
                                 button(r, art, "Demand tribute", ask(DiploAct::Demand), BRONZE, 14.0);
                             });
                         }
+                        if let Some(civ) = ui.diplo_target.and_then(|t| known.iter().find(|c| c.id == t)) {
+                            let (ours, theirs) = (supplies.civ(PLAYER), supplies.civ(civ.id));
+                            let tradeable = |g: &Good| g.kind() != ResourceKind::Bonus;
+                            let for_sale: Vec<Good> = Good::ALL.into_iter().filter(tradeable).filter(|g| theirs.spare(*g) > 0 && !ours.imports.contains(g)).collect();
+                            let wanted: Vec<Good> = Good::ALL.into_iter().filter(tradeable).filter(|g| ours.spare(*g) > 0 && !theirs.has(*g)).collect();
+                            w.spawn(label(&art.font_title, "Resource trade", 16.0, INK_SOFT));
+                            if for_sale.is_empty() && wanted.is_empty() && !foreign.deals.iter().any(|d| d.civ == civ.id) {
+                                w.spawn(label(&art.font_body, "Neither side has spare resources the other lacks. A second connected source of a resource can be sold.", 14.0, INK_SOFT));
+                            }
+                            w.spawn(row(6.0)).with_children(|r| {
+                                for good in for_sale {
+                                    r.spawn(good_icon(art, good, 26.0));
+                                    button(r, art, format!("Buy {} ({} gold/turn)", good.name(), foreign::price(good)), Command::Game(Action::Trade(civ.id, TradeAsk::Buy(good))), BRONZE, 13.0);
+                                }
+                                for good in wanted {
+                                    r.spawn(good_icon(art, good, 26.0));
+                                    button(r, art, format!("Sell {} (+{} gold/turn)", good.name(), foreign::price(good) - 1), Command::Game(Action::Trade(civ.id, TradeAsk::Sell(good))), GREEN, 13.0);
+                                }
+                            });
+                            for (index, deal) in foreign.deals.iter().enumerate().filter(|(_, d)| d.civ == civ.id) {
+                                w.spawn(row(8.0)).with_children(|r| {
+                                    let text = match (deal.import, deal.export) {
+                                        (Some(good), _) => format!("We buy {} for {} gold/turn", good.name(), -deal.gold),
+                                        (_, Some(good)) => format!("We sell {} for {} gold/turn", good.name(), deal.gold),
+                                        _ => String::new(),
+                                    };
+                                    r.spawn(label(&art.font_bold, format!("{text}  ({} turns left)", deal.ends.saturating_sub(state.turn)), 14.0, INK));
+                                    button(r, art, "Cancel", Command::Game(Action::Trade(civ.id, TradeAsk::Cancel(index))), RED, 12.0);
+                                });
+                            }
+                        }
                         w.spawn(row(6.0)).with_children(|r| {
                             button(r, art, "Link our cities by trade (T)", Command::Game(Action::TradeRoute), BRONZE, 14.0);
                             button(r, art, "Close (Esc)", Command::CloseModal, BRONZE, 14.0);
@@ -696,12 +869,18 @@ pub fn update_tile_info(
     hovered: Res<Hovered>,
     fog: Res<FogOfWar>,
     tiles: Query<&HexTile>,
+    (tech, supplies): (Res<TechState>, Res<Supplies>),
     mut info: Query<&mut Text, With<TileInfoText>>,
 ) {
     let Ok(mut text) = info.get_single_mut() else { return };
     let value = match hovered.0.and_then(|hex| tiles.iter().find(|t| t.coord == hex)) {
         Some(tile) if fog.explored.contains(&tile.coord) => {
-            let mut extras: Vec<String> = tile.resource.iter().map(|r| r.name().to_string()).collect();
+            let mut extras: Vec<String> = tile
+                .resource
+                .iter()
+                .filter(|r| r.reveal_tech().is_none_or(|t| tech.researched.contains(&t)))
+                .map(|r| if supplies.unconnected.contains(&tile.coord) { format!("{} (needs a road)", r.name()) } else { r.name().to_string() })
+                .collect();
             extras.extend(tile.improvements.iter().map(|i| format!("{:?}", i)));
             format!("{}  -  {} food, {} shields\n{}", tile.terrain.name(), tile.total_food(), tile.total_production(), extras.join(", "))
         }
@@ -979,5 +1158,29 @@ pub fn minimap_click(
         let world = centre + Vec2::new(pos.x - 0.5, 0.5 - pos.y) * MM as f32 / scale;
         transform.translation.x = world.x;
         transform.translation.y = world.y;
+    }
+}
+
+/// Keeps the turn buttons in step with how many units still wait for orders.
+pub fn update_turn_buttons(
+    units: Query<&Unit>,
+    mut label: Query<&mut Text, With<NextUnitLabel>>,
+    mut end: Query<(&Interaction, &mut ButtonTint, &mut ImageNode), With<EndTurnButton>>,
+) {
+    let waiting = units.iter().filter(|u| crate::needs_orders(u)).count();
+    if let Ok(mut text) = label.get_single_mut() {
+        let value = if waiting == 0 { "All units have orders".to_string() } else { format!("Next Unit ({waiting} waiting)") };
+        if text.0 != value {
+            text.0 = value;
+        }
+    }
+    if let Ok((interaction, mut tint, mut image)) = end.get_single_mut() {
+        let color = if waiting == 0 { Color::srgb(0.62, 0.86, 0.45) } else { BRONZE };
+        if tint.0 != color {
+            tint.0 = color;
+            if *interaction == Interaction::None {
+                image.color = color;
+            }
+        }
     }
 }

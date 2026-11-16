@@ -58,6 +58,29 @@ scenario there, rebuild, and list its JSON in `src/scenario.rs`.
 Land units can cross water once their civilization knows **Seafaring**: they board a boat (boarding
 and landing end the move) and sail three tiles a turn.
 
+## Resources and trade
+Eighteen resources are scattered by terrain:
+
+- **Strategic** (Horses, Iron, Saltpeter, Coal, Oil, Rubber) are required to build things: Horsemen
+  and War Chariots need Horses, Legions and Immortals need Iron, Knights need both, Riflemen need
+  Saltpeter, Cannons Iron and Saltpeter, Cavalry Horses and Saltpeter, Tanks Oil and Rubber, and a
+  Factory needs Coal and Iron. Each stays invisible until the technology that uses it is known
+  (Animal Husbandry, Iron Working, Gunpowder, Steam Power, Refining, Replaceable Parts).
+- **Luxuries** (Wine, Spices, Silk, Furs, Dyes, Incense, Ivory, Gems): every different one a city has
+  access to keeps one more citizen content; a Marketplace makes further luxuries count for more.
+- **Bonus** resources (Wheat, Cattle, Fish, Gold) add food, shields or gold to the city whose land
+  they lie in, as do Farms and Mines.
+
+A source only counts when it is inside your borders **and connected**: its tile needs a road, and
+roads must link it to the city that wants it. Cities with a Harbor are linked to each other across
+the sea. Cities check access when you choose production and stop work if they lose it. Computer
+players are spared the road building and use whatever lies inside their borders.
+
+A second connected source of a resource is spare and can be sold; other leaders sell their spares.
+Deals are made in the foreign advisor, pay gold every turn, run for 20 turns and end at once if war
+breaks out or either side loses the source. The trade advisor (**G**) lists what you own, what
+still needs a road, what you import and export, and which units you cannot yet train.
+
 ## Diplomacy
 Open the foreign advisor (**E**) to deal with the leaders you have met. Each has an attitude towards
 you that drifts with treaties, trade, shared enemies, crowded borders, your reputation and your
@@ -72,10 +95,14 @@ powers fight and make peace among themselves.
 - **Click / tap** a unit or city to select it (click again to cycle what is on the tile)
 - **Click a tile** (or **right-click**) to move the selected unit; moving onto an enemy attacks
 - **Drag** to pan, **mouse wheel / pinch** to zoom, **WASD / arrows** to pan, click the minimap to jump
-- **Space / Enter** or the **End Turn** button — end turn
+- The game selects the next unit that needs orders and moves the camera to it
+- **Space** — skip the selected unit and go to the next; when none is left, end the turn
+- **N** or the **Next Unit** button — go to the next unit without skipping this one
+- **H** — fortify (or put a non-military unit to sleep) so it is no longer asked for orders
+- **Enter** or the **End Turn** button — end the turn now
 - **B** — settler founds a city
 - **F / M / R / X** — worker builds Farm / Mine / Road / clears terrain
-- **Q** — science advisor (choose research), **E** — foreign advisor (treaties, trade)
+- **Q** — science advisor (choose research), **E** — foreign advisor (treaties, resource deals), **G** — trade advisor (resources)
 - **T** — trade routes between your cities, **F2** — save
 - **Esc** — close a window or deselect
 
