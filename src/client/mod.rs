@@ -3,6 +3,7 @@
 use bevy::prelude::*;
 
 pub mod actors;
+pub mod battles;
 pub mod input;
 pub mod map;
 pub mod sfx;
@@ -149,6 +150,14 @@ impl Plugin for ClientPlugin {
             .add_systems(Update, (ui::button_actions, ui::rebuild_menu, ui::button_visuals, ui::fit_ui_scale, ui::update_sound_button).chain().before(GameLogic))
             .add_systems(Update, ui::poll_import.run_if(in_state(crate::AppState::Menu)))
             .init_resource::<tips::Tips>()
+            .init_resource::<battles::BattleTheatre>()
+            .add_systems(
+                Update,
+                (battles::queue_battles, battles::stage_battles, battles::animate_fallen, battles::animate_battle_text)
+                    .chain()
+                    .after(GameLogic)
+                    .run_if(in_state(crate::AppState::Playing)),
+            )
             .add_systems(Update, (tips::queue_tips.run_if(in_state(crate::AppState::Playing)), tips::show_tip).chain().after(GameLogic))
             .add_systems(
                 Update,

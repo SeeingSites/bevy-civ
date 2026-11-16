@@ -492,6 +492,24 @@ pub struct HomeCity(pub Hex);
 #[derive(Event)]
 pub struct Burst(pub Hex);
 
+/// A battle to show the player: the attacker lunges from `from` at `at`, blows are exchanged and
+/// the result floats over the tile. `ours` marks battles the player fought (the camera goes to
+/// them); `good` colours the result for the player (None when neither side is theirs).
+#[derive(Event, Clone, Debug)]
+pub struct BattleShown {
+    pub from: Hex,
+    pub at: Hex,
+    pub attacker: Option<Entity>,
+    pub result: String,
+    pub good: Option<bool>,
+    pub ours: bool,
+    /// The two sides (kind and owner), and which of them died.
+    pub attacker_side: (UnitType, u32),
+    pub defender_side: (UnitType, u32),
+    pub attacker_died: bool,
+    pub defender_died: bool,
+}
+
 fn main() {
     // `--autoplay [scenario] [turns]`: a whole game between computer players, without a window.
     let args: Vec<String> = std::env::args().collect();
@@ -577,6 +595,7 @@ pub fn init_game(app: &mut App) {
         .add_event::<Action>()
         .add_event::<MapClick>()
         .add_event::<Burst>()
+        .add_event::<BattleShown>()
         .add_event::<savegame::SaveRequest>();
 }
 
@@ -770,7 +789,7 @@ fn handle_map_click(
     mut log: ResMut<GameLog>,
     mut dirty: ResMut<Dirty>,
     (mut cycle, mut wonders, mut great, mut taken): (ResMut<Cycle>, ResMut<WorldWonders>, ResMut<GreatPeople>, ResMut<JustCaptured>),
-    (mut bursts, mut sounds): (EventWriter<Burst>, EventWriter<Sfx>),
+    (mut sounds, mut battles): (EventWriter<Sfx>, EventWriter<BattleShown>),
     mut commands: Commands,
 ) {
     for click in clicks.read() {
@@ -905,7 +924,6 @@ fn handle_map_click(
             let adjacent = unit.position.distance_to(hex) == 1;
             if adjacent && unit.can_move() && unit.unit_type.is_military() {
                 unit.spend(StepCost::Full);
-                bursts.send(Burst(hex));
                 if enemy_owner != BARBARIANS && diplomacy.get_treaty(PLAYER, enemy_owner) != Treaty::War {
                     diplomacy.set_treaty(PLAYER, enemy_owner, Treaty::War);
                     log.push("Your attack means war!");
@@ -939,6 +957,23 @@ fn handle_map_click(
                 let theirs = character(enemy_owner).map_or(1.0 / 3.0, |c| c.promotion_chance());
                 let won_chance = if matches!(outcome, Outcome::Won { .. }) { ours } else { theirs };
                 let promoted = rand::thread_rng().gen_bool(won_chance);
+                let (result, good) = match outcome {
+                    Outcome::Won { attacker_hp } => (format!("Victory! {attacker_hp}/{} HP", unit.max_hp()), true),
+                    Outcome::Retreated { .. } => ("Pulled back".to_string(), false),
+                    Outcome::Lost { .. } => (format!("Our {} is lost", unit.unit_type.name()), false),
+                };
+                battles.send(BattleShown {
+                    from: unit.position,
+                    at: hex,
+                    attacker: Some(selected),
+                    result,
+                    good: Some(good),
+                    ours: true,
+                    attacker_side: (unit.unit_type, PLAYER),
+                    defender_side: (enemy_type, enemy_owner),
+                    attacker_died: matches!(outcome, Outcome::Lost { .. }),
+                    defender_died: matches!(outcome, Outcome::Won { .. }),
+                });
                 let won = match outcome {
                     Outcome::Won { attacker_hp } => {
                         unit.hp = attacker_hp;
@@ -2020,7 +2055,7 @@ fn process_turn(
     (mut trade, map, supplies, religions): (ResMut<TradeRoutes>, Res<MapData>, Res<Supplies>, Res<Religions>),
     (mut space, mut wonders, mut great, mut spies): (ResMut<SpaceRace>, ResMut<WorldWonders>, ResMut<GreatPeople>, ResMut<Espionage>),
     (mut log, mut dirty, mut cycle): (ResMut<GameLog>, ResMut<Dirty>, ResMut<Cycle>),
-    mut bursts: EventWriter<Burst>,
+    mut battles: EventWriter<BattleShown>,
     (homes, mut history, mut culture, mut golden, mut taken, rivers, mut saves, observer): (
         Query<&HomeCity>,
         ResMut<History>,
@@ -2864,9 +2899,6 @@ fn process_turn(
         }
         let in_city = city_owners.iter().any(|(p, _)| *p == attack.target);
         let terrain = defence_terrain(tiles.iter().find(|t| t.coord == attack.target).map(|t| t.terrain), in_city);
-        if fog.visible.contains(&attack.target) {
-            bursts.send(Burst(attack.target));
-        }
         let led = |at: Hex, owner: u32| units.iter().any(|(e, u)| !dead.contains(&e) && u.position == at && u.owner == owner && u.unit_type == UnitType::GreatGeneral);
         let (a_led, d_led) = (led(a_pos, a_owner), led(attack.target, d_owner));
         let d_vitals = units.get(d_entity).map(|(_, u)| (u.hp, u.level)).unwrap_or((3, 0));
@@ -2876,6 +2908,29 @@ fn process_turn(
             Ground { terrain, fortified: dug_in, walls: walled_cities.contains(&attack.target), river: rivers.tiles.contains(&attack.target), coast_fort: forts.contains(&attack.target) },
             &mut rng,
         );
+        // Show it: every battle against the player, and others the player can see.
+        let ours = d_owner == PLAYER || a_owner == PLAYER;
+        if ours || fog.visible.contains(&attack.target) {
+            let (result, good) = match (outcome, d_owner == PLAYER) {
+                (Outcome::Won { .. }, true) => (format!("Our {} is lost", d_type.name()), Some(false)),
+                (Outcome::Lost { .. }, true) => (format!("Our {} holds!", d_type.name()), Some(true)),
+                (Outcome::Retreated { .. }, true) => ("Attack driven off".to_string(), Some(true)),
+                (Outcome::Won { .. }, false) => (format!("{} wins", a_type.name()), None),
+                (_, false) => (format!("{} holds", d_type.name()), None),
+            };
+            battles.send(BattleShown {
+                from: a_pos,
+                at: attack.target,
+                attacker: Some(attack.attacker),
+                result,
+                good,
+                ours,
+                attacker_side: (a_type, a_owner),
+                defender_side: (d_type, d_owner),
+                attacker_died: matches!(outcome, Outcome::Lost { .. }),
+                defender_died: matches!(outcome, Outcome::Won { .. }),
+            });
+        }
         // Hit points left after the fight, and a chance of promotion for the victor.
         let mut settle = |entity: Entity, hp: u32, won: bool, rng: &mut rand::rngs::ThreadRng| {
             if let Ok((_, mut unit)) = units.get_mut(entity) {
@@ -3229,8 +3284,12 @@ fn advance_selection(
     state: Res<GameState>,
     mut focus: EventWriter<Focus>,
     mut dirty: ResMut<Dirty>,
+    theatre: Option<Res<client::battles::BattleTheatre>>,
+    mut fresh_battles: EventReader<BattleShown>,
 ) {
-    if !cycle.advance {
+    // Wait while a battle is being shown (or has just been fought), so the camera does not leave it.
+    let fought = fresh_battles.read().count() > 0;
+    if !cycle.advance || fought || theatre.is_some_and(|t| t.busy()) {
         return;
     }
     let force = std::mem::take(&mut cycle.force);
