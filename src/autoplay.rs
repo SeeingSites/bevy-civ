@@ -54,6 +54,10 @@ pub fn run(which: &str, turns: u32) -> bool {
     let mut seen_techs: HashSet<Tech> = HashSet::new();
     let mut eras_reached: BTreeMap<&str, u32> = BTreeMap::new();
     let mut log_seen = 0;
+    // Cities changing hands (conquest, defection), and peoples wiped out.
+    let mut owners: std::collections::HashMap<hexx::Hex, u32> = std::collections::HashMap::new();
+    let mut changes = 0;
+    let mut alive: HashSet<u32> = HashSet::new();
     for _ in 0..turns {
         app.world_mut().send_event(EndTurnNow);
         app.update();
@@ -83,12 +87,34 @@ pub fn run(which: &str, turns: u32) -> bool {
                 println!("  turn {turn:>3}: {line}");
             }
         }
+        {
+            let mut q = world.query::<&City>();
+            let now: Vec<(hexx::Hex, u32)> = q.iter(world).map(|c| (c.position, c.owner)).collect();
+            for (at, owner) in &now {
+                if owners.get(at).is_some_and(|o| o != owner) {
+                    changes += 1;
+                }
+                owners.insert(*at, *owner);
+            }
+            let holding: HashSet<u32> = now.iter().map(|(_, o)| *o).collect();
+            if alive.is_empty() {
+                alive = holding.clone();
+            }
+            let names = world.resource::<Civilizations>().players.iter().map(|c| (c.id, c.name.clone())).collect::<Vec<_>>();
+            for gone in alive.difference(&holding) {
+                let name = names.iter().find(|(id, _)| id == gone).map(|(_, n)| n.clone()).unwrap_or_else(|| "The barbarians".into());
+                println!("  turn {turn:>3}: {name} have lost their last city.");
+            }
+            alive = holding;
+        }
         if turn % 25 == 0 {
             snapshot(world, turn);
         }
         if let Some(outcome) = world.resource::<GameState>().victory.clone() {
             println!("Game over on turn {turn}: {outcome}");
+            println!("Cities that changed hands: {changes}.");
             snapshot(world, turn);
+            armies(world);
             break;
         }
     }
@@ -107,6 +133,24 @@ fn era_of(tech: Tech) -> &'static str {
         26..=45 => "Classical",
         46..=95 => "Industrial",
         _ => "Modern",
+    }
+}
+
+/// The make-up of each civilization's military at the end: its most common unit types.
+fn armies(world: &mut World) {
+    let civs = world.resource::<Civilizations>().clone();
+    let mut units = world.query::<&Unit>();
+    let all: Vec<(u32, bevy_civ::unit::UnitType)> = units.iter(world).filter(|u| u.unit_type.is_military()).map(|u| (u.owner, u.unit_type)).collect();
+    println!("--- armies ---");
+    for civ in civs.players.iter().filter(|c| c.id != PLAYER) {
+        let mut counts: BTreeMap<&str, usize> = BTreeMap::new();
+        for (_, kind) in all.iter().filter(|(o, _)| *o == civ.id) {
+            *counts.entry(kind.name()).or_default() += 1;
+        }
+        let mut list: Vec<(&str, usize)> = counts.into_iter().collect();
+        list.sort_by_key(|(_, n)| std::cmp::Reverse(*n));
+        let text: Vec<String> = list.iter().take(6).map(|(k, n)| format!("{n} {k}")).collect();
+        println!("  {:<14} {}", civ.name.trim_start_matches("the "), text.join(", "));
     }
 }
 
