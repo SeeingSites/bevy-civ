@@ -293,6 +293,18 @@ working directory.
   halves it.
 - **Resistance**: a captured city produces nothing for 1 turn plus 1 per 3 citizens (up to 6); a
   garrison of two settles it twice as fast.
+- **Build queue**: in the city panel, switch "Click to" from *Build now* to *Add to queue* and pick
+  up to six projects; each starts when the one before is done (a unit in production gives way to
+  the queue, otherwise units keep repeating). Click a queued project to take it off.
+- **Pillage and fortresses**: troops on improved enemy land (at war) press P to wreck the railroad,
+  fortress, mine, farm or road there, for 5 gold; computer troops raid your land too. Workers build
+  a Fortress (O, needs Construction) in the field: troops in it defend as if behind walls.
+- **Right of passage**: ask a people at peace for one (Diplomacy); your units and theirs may then
+  share tiles and pass through each other. Walking into the units or an empty city of a people at
+  peace is refused (declare war first). An alliance includes passage; war ends it.
+- **Tribal villages**: scattered on the land at the start (about one per 30 land tiles). The first
+  unit in finds gold, a technology, warriors who join, maps of the area, or now and then hostile
+  tribesmen (scouts are careful and rarely meet them).
 - **Late buildings**: Observatory (Astronomy, +3 science), Research Lab (Computers, +6 science,
   needs a University), Power Plant (Electronics, +4 shields, needs a Factory), Police Station
   (Communism, +2 content), Supermarket (Sanitation, +3 food), Mass Transit (Mass Production, no

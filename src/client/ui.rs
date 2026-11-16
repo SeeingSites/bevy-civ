@@ -175,6 +175,8 @@ pub struct UiState {
     pub group_move: bool,
     /// The end-of-game window has been put away to look around the map.
     pub end_dismissed: bool,
+    /// Clicking a project adds it to the city's build queue instead of starting it now.
+    pub queue_mode: bool,
 }
 
 /// Pages of the city panel.
@@ -244,6 +246,7 @@ pub enum Command {
     EmpireTab(EmpireTab),
     HelpTopic(HelpTopic),
     ToggleGroupMove,
+    ToggleQueueMode,
     /// Put the end-of-game window away (the outcome stays on screen).
     DismissEnd,
     /// Start menu: carry on from the automatic save.
@@ -866,6 +869,9 @@ pub fn rebuild_panels(
                         let rail = tiles.iter().any(|t| t.coord == unit.position && t.has_road() && !t.has_railroad()) && tech.researched.contains(&Tech::SteamPower);
                         button(r, art, if rail { "Railroad (R)" } else { "Road (R)" }, Command::Game(Action::Build(Improvement::Road)), BRONZE, 15.0);
                         button(r, art, "Clear (X)", Command::Game(Action::Transform), BRONZE, 15.0);
+                        if tech.researched.contains(&Tech::Construction) {
+                            button(r, art, "Fortress (O)", Command::Game(Action::Build(Improvement::Fortress)), BRONZE, 15.0);
+                        }
                         button(r, art, "Automate (K)", Command::Game(Action::Automate), GREEN, 15.0);
                     }
                     // Upgrade in one of our cities, once the successor can be equipped there.
@@ -882,6 +888,12 @@ pub fn rebuild_panels(
                     if unit.unit_type == UnitType::Caravan {
                         button(r, art, "Trade Route (T)", Command::Game(Action::TradeRoute), GREEN, 15.0);
                         button(r, art, "Help Wonder (U)", Command::Game(Action::UseUnit), GREEN, 15.0);
+                    }
+                    // Pillage: troops on improved land that is not ours.
+                    let foreign_land = supplies.territory.get(&unit.position).is_none_or(|(o, _)| *o != PLAYER);
+                    let improved = tiles.iter().any(|t| t.coord == unit.position && bevy_civ::terrain::pillage_target(&t.improvements).is_some());
+                    if unit.unit_type.is_army() && foreign_land && improved && !cities.iter().any(|(c, _, _)| c.position == unit.position) {
+                        button(r, art, "Pillage (P)", Command::Game(Action::Pillage), Color::srgb(0.95, 0.65, 0.5), 15.0);
                     }
                     if unit.unit_type == UnitType::Missionary {
                         button(r, art, "Spread Faith (U)", Command::Game(Action::UseUnit), GREEN, 15.0);
@@ -1113,6 +1125,20 @@ pub fn rebuild_panels(
                 }
                 return;
             }
+            // How a click on a project acts (start it now, or add it to the queue), and the queue itself.
+            p.spawn(row(6.0)).with_children(|r| {
+                r.spawn(label(&art.font_body, "Click to:", 14.0, CREAM));
+                button(r, art, "Build now", Command::ToggleQueueMode, if ui.queue_mode { BRONZE } else { GREEN }, 13.0);
+                button(r, art, "Add to queue", Command::ToggleQueueMode, if ui.queue_mode { GREEN } else { BRONZE }, 13.0);
+            });
+            if !city.queue.is_empty() {
+                p.spawn(Node { flex_wrap: FlexWrap::Wrap, column_gap: Val::Px(5.0), row_gap: Val::Px(4.0), align_items: AlignItems::Center, ..default() }).with_children(|r| {
+                    r.spawn(label(&art.font_body, "Then:", 14.0, CREAM));
+                    for (i, item) in city.queue.iter().enumerate() {
+                        button(r, art, format!("{}. {} x", i + 1, item.name()), Command::Game(Action::Unqueue(i)), BRONZE, 12.0);
+                    }
+                });
+            }
             // What can be built first, then what still lacks a resource.
             let (ready, blocked): (Vec<_>, Vec<_>) = options.into_iter().partition(|(item, _)| supplies.missing(city.position, item.required_resources()).is_empty());
             p.spawn(Node { flex_wrap: FlexWrap::Wrap, column_gap: Val::Px(5.0), row_gap: Val::Px(5.0), ..default() }).with_children(|grid| {
@@ -1133,7 +1159,8 @@ pub fn rebuild_panels(
                     } else {
                         format!("needs {}", missing.iter().map(|g| g.name()).collect::<Vec<_>>().join(", "))
                     };
-                    production_button(grid, art, item.name(), second, Command::Game(Action::SetProduction(item.clone())), tint);
+                    let order = if ui.queue_mode { Action::QueueProduction(item.clone()) } else { Action::SetProduction(item.clone()) };
+                    production_button(grid, art, item.name(), second, Command::Game(order), tint);
                 }
             });
             if ui.city_tab == CityTab::Wonders {
@@ -1648,6 +1675,9 @@ pub fn rebuild_panels(
                                     if treaty == Treaty::None {
                                         button(r, art, "Sign peace treaty", ask(DiploAct::Peace), BRONZE, 14.0);
                                     }
+                                    if treaty == Treaty::Peace && !diplomacy.has_passage(PLAYER, civ.id) {
+                                        button(r, art, "Right of passage", ask(DiploAct::Passage), BRONZE, 14.0);
+                                    }
                                     if !foreign.pacts.contains(&civ.id) {
                                         button(r, art, "Trade agreement", ask(DiploAct::TradePact), BRONZE, 14.0);
                                     }
@@ -1827,6 +1857,7 @@ pub fn button_actions(
             Command::EmpireTab(tab) => ui.empire_tab = *tab,
             Command::HelpTopic(topic) => ui.help_topic = *topic,
             Command::ToggleGroupMove => ui.group_move = !ui.group_move,
+            Command::ToggleQueueMode => ui.queue_mode = !ui.queue_mode,
             Command::TipDone => tips.done(),
             Command::TipsOff => tips.set_enabled(false),
             Command::ToggleTips => {

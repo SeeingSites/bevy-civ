@@ -61,6 +61,8 @@ pub fn price(good: Good) -> i32 {
 pub enum DiploAct {
     Peace,
     Alliance,
+    /// A right of passage: each side's units may move through and share tiles with the other's.
+    Passage,
     War,
     Gift,
     Demand,
@@ -274,6 +276,21 @@ pub fn player_act(ctx: &mut Ctx, civ: u32, act: DiploAct) {
                 "Together we shall prosper. Your enemies are ours.".into()
             } else {
                 "An alliance is for trusted friends. We are not there yet.".into()
+            }
+        }
+        DiploAct::Passage => {
+            if at_war {
+                "Your armies march against us, and you ask to pass?".into()
+            } else if ctx.diplomacy.has_passage(PLAYER, civ) {
+                "Your people may already pass through our lands.".into()
+            } else if treaty == Treaty::None {
+                "Make peace with us first; then we will talk of open roads.".into()
+            } else if attitude >= -5 {
+                ctx.diplomacy.grant_passage(PLAYER, civ);
+                ctx.log.push(format!("{name} grant us a right of passage: our units may pass through their lands and share tiles with theirs."));
+                "Our roads are open to you, as yours are to us.".into()
+            } else {
+                "We do not trust you enough to let your soldiers walk our roads.".into()
             }
         }
         DiploAct::Gift => {

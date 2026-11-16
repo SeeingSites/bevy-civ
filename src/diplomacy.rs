@@ -7,6 +7,9 @@ pub struct Diplomacy {
     pub relations: HashMap<(u32, u32), i32>,
     #[serde(with = "crate::save::pairs")]
     pub treaties: HashMap<(u32, u32), Treaty>,
+    /// Pairs of peoples who let each other's units pass through and share tiles.
+    #[serde(default)]
+    pub passage: std::collections::HashSet<(u32, u32)>,
 }
 
 #[derive(Clone, Copy, PartialEq, Debug, serde::Serialize, serde::Deserialize)]
@@ -22,6 +25,7 @@ impl Default for Diplomacy {
         Self {
             relations: HashMap::new(),
             treaties: HashMap::new(),
+            passage: Default::default(),
         }
     }
 }
@@ -40,9 +44,21 @@ impl Diplomacy {
         *self.treaties.get(&(a.min(b), a.max(b))).unwrap_or(&Treaty::None)
     }
 
+    /// Whether `a` and `b` let each other's units pass (a right of passage, or an alliance).
+    pub fn has_passage(&self, a: u32, b: u32) -> bool {
+        self.passage.contains(&(a.min(b), a.max(b))) || self.get_treaty(a, b) == Treaty::Alliance
+    }
+
+    pub fn grant_passage(&mut self, a: u32, b: u32) {
+        self.passage.insert((a.min(b), a.max(b)));
+    }
+
     pub fn set_treaty(&mut self, a: u32, b: u32, treaty: Treaty) {
         let key = (a.min(b), a.max(b));
         self.treaties.insert(key, treaty);
+        if treaty == Treaty::War {
+            self.passage.remove(&key);
+        }
         match treaty {
             Treaty::Peace => self.change_attitude(a, b, 10),
             Treaty::Alliance => self.change_attitude(a, b, 20),
@@ -102,5 +118,23 @@ mod happiness_tests {
         h.update(8, 2, 1); // a temple and a luxury
         assert_eq!((h.happy, h.content, h.unhappy), (1, 6, 1));
         assert!(!h.in_disorder());
+    }
+}
+
+#[cfg(test)]
+mod passage_tests {
+    use super::*;
+
+    #[test]
+    fn passage_comes_with_alliance_or_a_deal_and_ends_with_war() {
+        let mut d = Diplomacy::default();
+        assert!(!d.has_passage(0, 2));
+        d.set_treaty(0, 2, Treaty::Peace);
+        d.grant_passage(2, 0);
+        assert!(d.has_passage(0, 2));
+        d.set_treaty(0, 2, Treaty::War);
+        assert!(!d.has_passage(0, 2));
+        d.set_treaty(0, 3, Treaty::Alliance);
+        assert!(d.has_passage(3, 0));
     }
 }

@@ -197,6 +197,9 @@ pub fn refresh_map(
         if tile.improvements.contains(&Improvement::Mine) {
             overlay_at(overlay::MINE, None, tint, 0.01);
         }
+        if tile.improvements.contains(&Improvement::Fortress) {
+            overlay_at(overlay::FORT, None, tint, 0.011);
+        }
         if let Some((owner, _)) = territory.get(&hex) {
             for n in neighbors {
                 if territory.get(&n).map(|(o, _)| o) != Some(owner) {
@@ -245,6 +248,38 @@ pub fn animate_water(
 }
 
 /// Positions the hover outline and the pulsing ring under the selection.
+/// A tribal village on the map (shown once the land around it has been explored).
+#[derive(Component)]
+pub struct VillageMark(Hex);
+
+pub fn update_villages(
+    villages: Res<bevy_civ::villages::Villages>,
+    fog: Res<FogOfWar>,
+    art: Res<Art>,
+    map: Res<MapData>,
+    marks: Query<(Entity, &VillageMark)>,
+    mut commands: Commands,
+) {
+    if !villages.is_changed() && !fog.is_changed() {
+        return;
+    }
+    let shown: HashSet<Hex> = marks.iter().map(|(_, m)| m.0).collect();
+    for (entity, mark) in &marks {
+        if !villages.sites.contains(&mark.0) || !fog.explored.contains(&mark.0) {
+            commands.entity(entity).despawn_recursive();
+        }
+    }
+    for at in villages.sites.iter().filter(|h| fog.explored.contains(*h) && !shown.contains(*h)) {
+        let pos = map.layout.hex_to_world_pos(*at);
+        commands.spawn((
+            VillageMark(*at),
+            Decor,
+            Sprite { image: art.village.clone(), custom_size: Some(Vec2::splat(84.0)), ..default() },
+            Transform::from_xyz(pos.x, pos.y + 6.0, 4.0),
+        ));
+    }
+}
+
 pub fn update_markers(
     time: Res<Time>,
     map: Res<MapData>,

@@ -119,7 +119,24 @@ function burstFrame(col) {
   return s;
 }
 
+/** A tribal village: two thatched huts, a fence and a campfire. */
+function villageFrame() {
+  const hut = (x, y, s) =>
+    `<ellipse cx="${x}" cy="${y + 2}" rx="${22 * s}" ry="${6 * s}" fill="rgba(0,0,0,0.28)" stroke="none"/>` +
+    `<path d="M${x - 18 * s},${y} v${-16 * s} h${36 * s} v${16 * s} Z" fill="#b58a55"/>` +
+    `<path d="M${x - 24 * s},${y - 14 * s} L${x},${y - 40 * s} L${x + 24 * s},${y - 14 * s} Z" fill="#d9b25f"/>` +
+    `<path d="M${x - 16 * s},${y - 20 * s} L${x},${y - 34 * s} M${x - 8 * s},${y - 16 * s} L${x + 6 * s},${y - 31 * s} M${x + 4 * s},${y - 15 * s} L${x + 14 * s},${y - 24 * s}" stroke="#a9853c" stroke-width="1.5" fill="none"/>` +
+    `<path d="M${x - 5 * s},${y} v${-10 * s} a${5 * s},${5 * s} 0 0 1 ${10 * s},0 v${10 * s} Z" fill="#4a3220"/>`;
+  return wrap(
+    hut(46, 92, 1.1) + hut(86, 84, 0.85) +
+      `<path d="M14,104 h100" stroke-width="2" fill="none"/>` +
+      [18, 34, 50, 66, 82, 98, 112].map((x) => `<path d="M${x},106 v-12" stroke="#7a5a34" stroke-width="3"/>`).join('') +
+      `<path d="M90,108 l6,-4 l6,4 Z" fill="#6b4424"/><path d="M96,104 q-5,-8 0,-14 q5,6 0,14 Z" fill="#f28c28" stroke="#c0561a" stroke-width="1"/>`,
+  );
+}
+
 module.exports = {
+  village: () => sheet({ cols: 1, rows: 1, fw: 128, fh: 128, draw: villageFrame }),
   cities: () => sheet({ cols: 4, rows: 1, fw: 192, fh: 192, draw: cityFrame }),
   flag: () => sheet({ cols: 4, rows: 1, fw: 64, fh: 64, draw: flagFrame }),
   burst: () => sheet({ cols: 6, rows: 1, fw: 128, fh: 128, draw: burstFrame }),
