@@ -256,6 +256,13 @@ Players switch sound off with **V** or the Sound button; the choice is saved in 
 browser's localStorage). To build without audio support at all (no ALSA needed on Linux), turn off
 the default `audio` feature: `cargo run --no-default-features --features full`.
 
+## Autoplay
+`cargo run --release -- --autoplay [rome|earth|discovery] [turns]` plays a whole game between
+computer players under the real rules, without a window, and prints a snapshot every 25 turns plus
+the milestones (eras, wonders, governments, spaceships) and how it ends. CI runs all three scenarios
+to 400 turns. Recent runs: Rome ends in a space race victory around turn 300, the Whole Earth around
+turn 355, and the Age of Discovery by culture around turn 210.
+
 ## Simulator
 Standalone pure-Rust simulator (no Bevy dependency):
 

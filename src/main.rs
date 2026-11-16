@@ -28,6 +28,7 @@ use bevy_civ::terrain::{random_resource, HexTile, Improvement, Terrain};
 use bevy_civ::trade::TradeRoutes;
 use bevy_civ::unit::{spawn_unit, Unit, UnitType};
 
+mod autoplay;
 mod client;
 mod foreign;
 mod governor;
@@ -52,6 +53,12 @@ fn rival_score(owner: u32, cities: &Query<(&mut City, &mut CityBuildings, &mut H
         .filter(|(c, _, _)| c.owner == owner)
         .map(|(c, b, _)| c.population * 2 + b.buildings.iter().map(|w| if w.is_wonder() { 50 } else { 0 }).sum::<u32>())
         .sum()
+}
+
+/// "the Gauls" -> "The Gauls" at the start of a sentence.
+pub fn capitalised(name: &str) -> String {
+    let mut chars = name.chars();
+    chars.next().map(|c| c.to_uppercase().collect::<String>() + chars.as_str()).unwrap_or_default()
 }
 
 /// Aggressive computer players leave neighbours they are not at war with alone until this turn.
@@ -377,7 +384,15 @@ pub struct HomeCity(pub Hex);
 pub struct Burst(pub Hex);
 
 fn main() {
-    App::new()
+    // `--autoplay [scenario] [turns]`: a whole game between computer players, without a window.
+    let args: Vec<String> = std::env::args().collect();
+    if let Some(i) = args.iter().position(|a| a == "--autoplay") {
+        let which = args.get(i + 1).cloned().unwrap_or_else(|| "rome".into());
+        let turns = args.get(i + 2).and_then(|t| t.parse().ok()).unwrap_or(LAST_TURN);
+        std::process::exit(if autoplay::run(&which, turns) { 0 } else { 1 });
+    }
+    let mut app = App::new();
+    app
         .add_plugins(
             DefaultPlugins
                 .set(WindowPlugin {
@@ -399,6 +414,31 @@ fn main() {
         )
         .insert_resource(ClearColor(Color::srgb(0.07, 0.065, 0.055)))
         .init_state::<AppState>()
+        .add_plugins(client::ClientPlugin);
+    init_game(&mut app);
+    app
+        .add_systems(
+            OnEnter(AppState::Playing),
+            (
+                setup_world.run_if(not(resource_exists::<savegame::PendingLoad>)),
+                savegame::restore_world.run_if(resource_exists::<savegame::PendingLoad>),
+            ),
+        )
+        .add_systems(Update, savegame::write_save.after(GameLogic).run_if(in_state(AppState::Playing)))
+        .add_systems(OnExit(AppState::Playing), cleanup_world)
+        .add_systems(
+            Update,
+            (handle_map_click, apply_actions, process_turn, continue_orders, automate_workers, advance_selection, preview_route, refresh_supplies)
+                .chain()
+                .in_set(GameLogic)
+                .run_if(in_state(AppState::Playing)),
+        )
+        .run();
+}
+
+/// The game's state and events, shared by the real game and the headless autoplay.
+pub fn init_game(app: &mut App) {
+    app
         .init_resource::<GameState>()
         .insert_resource(Dirty { map: true, ui: true })
         .init_resource::<TechState>()
@@ -427,26 +467,12 @@ fn main() {
         .add_event::<Action>()
         .add_event::<MapClick>()
         .add_event::<Burst>()
-        .add_plugins(client::ClientPlugin)
-        .add_event::<savegame::SaveRequest>()
-        .add_systems(
-            OnEnter(AppState::Playing),
-            (
-                setup_world.run_if(not(resource_exists::<savegame::PendingLoad>)),
-                savegame::restore_world.run_if(resource_exists::<savegame::PendingLoad>),
-            ),
-        )
-        .add_systems(Update, savegame::write_save.after(GameLogic).run_if(in_state(AppState::Playing)))
-        .add_systems(OnExit(AppState::Playing), cleanup_world)
-        .add_systems(
-            Update,
-            (handle_map_click, apply_actions, process_turn, continue_orders, automate_workers, advance_selection, preview_route, refresh_supplies)
-                .chain()
-                .in_set(GameLogic)
-                .run_if(in_state(AppState::Playing)),
-        )
-        .run();
+        .add_event::<savegame::SaveRequest>();
 }
+
+/// Present when nobody plays: every real civilization is the computer's (see `autoplay`).
+#[derive(Resource)]
+pub struct Observer;
 
 /// Game rules run after input is gathered and before the views are refreshed.
 #[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
@@ -523,6 +549,8 @@ fn setup_world(
             portrait: def.portrait,
             city_names: def.city_names.clone(),
             government: bevy_civ::government::Government::Despotism,
+            anarchy: 0,
+            pending_government: None,
         })
         .collect();
     *tech = TechState::knowing(&defs[0].techs);
@@ -1752,7 +1780,7 @@ fn process_turn(
     (mut space, mut wonders, mut great, mut spies): (ResMut<SpaceRace>, ResMut<WorldWonders>, ResMut<GreatPeople>, ResMut<Espionage>),
     (mut log, mut dirty, mut cycle): (ResMut<GameLog>, ResMut<Dirty>, ResMut<Cycle>),
     mut bursts: EventWriter<Burst>,
-    (homes, mut history, mut culture, mut golden, mut taken, rivers, mut saves): (
+    (homes, mut history, mut culture, mut golden, mut taken, rivers, mut saves, observer): (
         Query<&HomeCity>,
         ResMut<History>,
         ResMut<CultureLedger>,
@@ -1760,6 +1788,7 @@ fn process_turn(
         ResMut<JustCaptured>,
         Res<Rivers>,
         EventWriter<savegame::SaveRequest>,
+        Option<Res<Observer>>,
     ),
     mut commands: Commands,
 ) {
@@ -1807,11 +1836,23 @@ fn process_turn(
     // Each civilization lives under its own government. Computer players adopt the best they know.
     let mut governments: HashMap<u32, Government> = HashMap::from([(PLAYER, state.government)]);
     for civ in civs.players.iter_mut().filter(|c| !c.is_human) {
-        let preferred = Government::preferred(&civ.tech, civ.aggression);
-        if preferred != civ.government {
-            civ.government = preferred;
-            if foreign.met.contains(&civ.id) {
-                log.push(format!("The {} adopt {}.", civ.adjective, preferred.name()));
+        // Computer players pay for a revolution with anarchy too.
+        if civ.anarchy > 0 {
+            civ.anarchy -= 1;
+            if civ.anarchy == 0 {
+                if let Some(next) = civ.pending_government.take() {
+                    civ.government = next;
+                    if foreign.met.contains(&civ.id) {
+                        log.push(format!("{} now live under {}.", capitalised(&civ.name), next.name()));
+                    }
+                }
+            }
+        } else {
+            let preferred = Government::preferred(&civ.tech, civ.aggression);
+            if preferred != civ.government {
+                civ.government = Government::Anarchy;
+                civ.anarchy = Government::REVOLUTION_TURNS;
+                civ.pending_government = Some(preferred);
             }
         }
         governments.insert(civ.id, civ.government);
@@ -2058,7 +2099,7 @@ fn process_turn(
                 ProductionItem::Building(b) if b.is_wonder() => {
                     if wonders.complete(b, city.owner, &city.name) {
                         if golden.begin(city.owner) && (mine || foreign.met.contains(&city.owner)) {
-                            let who = if mine { "Our".to_string() } else { civs.players.iter().find(|c| c.id == city.owner).map(|c| format!("The {}'", c.adjective)).unwrap_or_default() };
+                            let who = if mine { "Our".to_string() } else { civs.players.iter().find(|c| c.id == city.owner).map(|c| format!("The {} people's", c.adjective)).unwrap_or_default() };
                             log.push(format!("{who} first wonder begins a golden age: half again as many shields, and more gold, for {GOLDEN_AGE_TURNS} turns."));
                         }
                         let builder = civs.players.iter().find(|c| c.id == city.owner).map(|c| c.name.clone()).unwrap_or_else(|| "A people".into());
@@ -2671,7 +2712,30 @@ fn process_turn(
 
     let total_cities = cities.iter().count();
     let rivals_remain = cities.iter().any(|(c, _, _)| c.owner != PLAYER && c.owner != BARBARIANS);
-    if player_cities == 0 {
+    let civ_named = |id: u32| civs.players.iter().find(|c| c.id == id).map(|c| c.name.clone()).unwrap_or_default();
+    if observer.is_some() {
+        // Nobody plays: any civilization can win by conquest or domination too.
+        let mut held: HashMap<u32, usize> = HashMap::new();
+        for (city, _, _) in cities.iter().filter(|(c, _, _)| c.owner != BARBARIANS) {
+            *held.entry(city.owner).or_default() += 1;
+        }
+        let leader = held.iter().max_by_key(|(_, n)| **n).map(|(o, n)| (*o, *n));
+        let culture_winner = culture_rules::cultural_winner(&culture.totals(cities.iter().map(|(c, _, _)| (c.position, c.owner))));
+        state.victory = if held.len() == 1 {
+            leader.map(|(o, _)| format!("Conquest victory for {}.", civ_named(o)))
+        } else if let Some((o, n)) = leader.filter(|(_, n)| *n >= 5 && n * 3 >= total_cities * 2) {
+            Some(format!("Domination victory for {} ({n} of {total_cities} cities).", civ_named(o)))
+        } else if let Some(o) = culture_winner {
+            Some(format!("Cultural victory for {}.", civ_named(o)))
+        } else if let Some(o) = space.arrived(state.turn) {
+            Some(format!("Space race victory for {}.", civ_named(o)))
+        } else if state.turn >= LAST_TURN {
+            let best = civs.players.iter().filter(|c| !c.is_human).map(|c| (rival_score(c.id, &cities), c.name.clone())).max_by_key(|(s, _)| *s);
+            best.map(|(s, name)| format!("Score victory for {name} ({s}) at the turn limit."))
+        } else {
+            None
+        };
+    } else if player_cities == 0 {
         state.victory = Some("Your civilization has fallen.".into());
     } else if !rivals_remain {
         state.victory = Some("Conquest Victory!".into());
@@ -2849,6 +2913,8 @@ mod tests {
             portrait: 0,
             city_names: vec![],
             government: bevy_civ::government::Government::Despotism,
+            anarchy: 0,
+            pending_government: None,
         });
         app
     }

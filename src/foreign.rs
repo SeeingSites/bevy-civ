@@ -227,7 +227,7 @@ fn declare_war(ctx: &mut Ctx, civ: u32, name: &str) {
         .collect();
     for (ally, ally_name) in allies {
         set_treaty(ctx, PLAYER, ally, Treaty::War);
-        ctx.log.push(format!("{ally_name}, allied with {name}, declares war on us!"));
+        ctx.log.push(format!("{}, allied with {name}, have declared war on us!", crate::capitalised(&ally_name)));
     }
 }
 
@@ -477,7 +477,7 @@ pub fn answer_offer(ctx: &mut Ctx, accept: bool) {
             shift(ctx, civ, -15);
             if rand::thread_rng().gen_bool(0.5) && ctx.diplomacy.get_treaty(PLAYER, civ) != Treaty::War {
                 set_treaty(ctx, PLAYER, civ, Treaty::War);
-                ctx.log.push(format!("{name} declares war on us!"));
+                ctx.log.push(format!("{} have declared war on us!", crate::capitalised(&name)));
                 "Then we will take it by force."
             } else {
                 "You will come to regret your pride."
@@ -601,7 +601,7 @@ pub fn turn(ctx: &mut Ctx, fog: &FogOfWar, supplies: &Supplies, units: &[(Hex, u
             for other in alive.iter().copied() {
                 if other.0 != id && ctx.diplomacy.get_treaty(PLAYER, other.0) == Treaty::War && ctx.diplomacy.get_treaty(id, other.0) != Treaty::War {
                     set_treaty(ctx, id, other.0, Treaty::War);
-                    ctx.log.push(format!("Our ally {name} declares war on {}.", other.1));
+                    ctx.log.push(format!("Our ally {name} is now at war with {}.", other.1));
                 }
             }
         }
@@ -615,10 +615,10 @@ pub fn turn(ctx: &mut Ctx, fog: &FogOfWar, supplies: &Supplies, units: &[(Hex, u
         let threshold = -12 - ((1.0 - aggression) * 40.0) as i32;
         if may_attack && turn >= AI_GRACE_TURNS && attitude <= threshold && theirs >= ours * 0.8 && rng.gen_bool(0.25) {
             set_treaty(ctx, PLAYER, id, Treaty::War);
-            ctx.log.push(format!("{name} declares war on us!"));
+            ctx.log.push(format!("{} have declared war on us!", crate::capitalised(&name)));
             ctx.foreign.reply.insert(id, "Your lands will be ours.".into());
             if ctx.foreign.offer.is_none() {
-                ctx.foreign.offer = Some(Offer { from: id, kind: OfferKind::Notice, text: format!("{leader} has had enough of words. {name} declares war on us!") });
+                ctx.foreign.offer = Some(Offer { from: id, kind: OfferKind::Notice, text: format!("{leader} has had enough of words. {} have declared war on us!", crate::capitalised(&name)) });
             }
             continue;
         }
@@ -784,6 +784,8 @@ mod tests {
             portrait: 0,
             city_names: vec![],
             government: bevy_civ::government::Government::Despotism,
+            anarchy: 0,
+            pending_government: None,
         }
     }
 
