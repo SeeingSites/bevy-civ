@@ -222,6 +222,11 @@ pub struct MenuState {
     pub scenario: Option<usize>,
     /// A message for the player (e.g. why a file could not be loaded).
     pub notice: Option<String>,
+    /// The people chosen, while the game's options are set.
+    pub civ: Option<usize>,
+    pub difficulty: crate::Difficulty,
+    /// Game length in turns (0 until chosen: the longest).
+    pub last_turn: u32,
 }
 
 #[derive(Clone)]
@@ -245,6 +250,13 @@ pub enum Command {
     Continue,
     /// Start menu: load a saved game file.
     LoadFile,
+    PickDifficulty(crate::Difficulty),
+    TipDone,
+    TipsOff,
+    ToggleTips,
+    PickLength(u32),
+    StartGame,
+    BackToPeoples,
 }
 
 #[derive(Component)]
@@ -301,6 +313,19 @@ fn sliced(border: f32) -> NodeImageMode {
 /// A framed panel that also stops clicks from reaching the map.
 fn panel(image: &Handle<Image>, node: Node) -> impl Bundle {
     (node, ImageNode { image: image.clone(), image_mode: sliced(22.0), ..default() }, Interaction::None, FocusPolicy::Block)
+}
+
+/// A line of text (for other client modules).
+pub fn label_bundle(font: &Handle<Font>, text: impl Into<String>, size: f32, color: Color) -> impl Bundle {
+    label(font, text, size, color)
+}
+
+/// The tip panel's two buttons.
+pub fn tip_buttons(parent: &mut ChildBuilder, art: &Art) {
+    parent.spawn(row(6.0)).with_children(|r| {
+        button(r, art, "Got it", Command::TipDone, GREEN, 14.0);
+        button(r, art, "No more tips", Command::TipsOff, BRONZE, 14.0);
+    });
 }
 
 fn label(font: &Handle<Font>, text: impl Into<String>, size: f32, color: Color) -> impl Bundle {
@@ -678,19 +703,20 @@ pub fn rebuild_panels(
         Res<TradeRoutes>,
     ),
     cities: Query<(&City, &CityBuildings, &Happiness)>,
-    (city_list, space, history, culture, taken): (
+    (city_list, space, history, culture, taken, tips_on): (
         Query<(Entity, &City)>,
         Res<bevy_civ::space::SpaceRace>,
         Res<crate::History>,
         Res<bevy_civ::culture::CultureLedger>,
         Res<crate::JustCaptured>,
+        Res<super::tips::Tips>,
     ),
     unit_panel: Query<Entity, With<UnitPanel>>,
     mut city_panel: Query<(Entity, &mut Node), (With<CityPanel>, Without<ModalRoot>)>,
     mut modal_root: Query<(Entity, &mut Node), (With<ModalRoot>, Without<CityPanel>)>,
     mut commands: Commands,
 ) {
-    if !(dirty.ui || selection.is_changed() || ui.is_changed() || foreign.is_changed() || supplies.is_changed()) {
+    if !(dirty.ui || selection.is_changed() || ui.is_changed() || foreign.is_changed() || supplies.is_changed() || tips_on.is_changed()) {
         return;
     }
     dirty.ui = false;
@@ -1217,7 +1243,7 @@ pub fn rebuild_panels(
                                 civ_ids.extend(civs.players.iter().filter(|c| !c.is_human && foreign.met.contains(&c.id)).map(|c| c.id));
                                 let latest = |id: u32| history.scores.iter().rev().find(|(_, c, _)| *c == id).map(|(_, _, s)| *s).unwrap_or(0);
                                 let best = civ_ids.iter().map(|id| latest(*id)).max().unwrap_or(1).max(1);
-                                w.spawn(label(&art.font_body, format!("Turn {} of {}: if nobody wins sooner, the highest score wins then.", state.turn, crate::LAST_TURN), 14.0, INK_SOFT));
+                                w.spawn(label(&art.font_body, format!("Turn {} of {}: if nobody wins sooner, the highest score wins then.", state.turn, state.last_turn), 14.0, INK_SOFT));
                                 for id in civ_ids {
                                     let name = if id == PLAYER { "Us".to_string() } else { civs.players.iter().find(|c| c.id == id).map(|c| c.name.clone()).unwrap_or_default() };
                                     let score = latest(id);
@@ -1249,6 +1275,8 @@ pub fn rebuild_panels(
                                 c.spawn(Node::default()).with_children(|r| sound_button(r, art));
                             }
                             c.spawn(Node::default()).with_children(|r| button(r, art, "Encyclopedia (F1)", Command::Toggle(Modal::Help), BRONZE, 15.0));
+                            let tips_label = if tips_on.enabled { "Tips for new players: On" } else { "Tips for new players: Off" };
+                            c.spawn(Node::default()).with_children(|r| button(r, art, tips_label, Command::ToggleTips, BRONZE, 15.0));
                             c.spawn(Node::default()).with_children(|r| button(r, art, "Quit to the start menu", Command::QuitToMenu, Color::srgb(0.9, 0.6, 0.5), 15.0));
                         });
                         w.spawn(row(6.0)).with_children(|r| button(r, art, "Close (Esc)", Command::CloseModal, BRONZE, 14.0));
@@ -1657,7 +1685,7 @@ pub fn button_actions(
     mut menu: ResMut<MenuState>,
     mut next: ResMut<NextState<AppState>>,
     mut commands: Commands,
-    (mut sounds, mut sound): (EventWriter<Sfx>, ResMut<SoundSettings>),
+    (mut sounds, mut sound, mut tips): (EventWriter<Sfx>, ResMut<SoundSettings>, ResMut<super::tips::Tips>),
 ) {
     for (interaction, command) in &buttons {
         if *interaction != Interaction::Pressed {
@@ -1670,6 +1698,12 @@ pub fn button_actions(
             Command::EmpireTab(tab) => ui.empire_tab = *tab,
             Command::HelpTopic(topic) => ui.help_topic = *topic,
             Command::ToggleGroupMove => ui.group_move = !ui.group_move,
+            Command::TipDone => tips.done(),
+            Command::TipsOff => tips.set_enabled(false),
+            Command::ToggleTips => {
+                let on = !tips.enabled;
+                tips.set_enabled(on);
+            }
             Command::DismissEnd => ui.end_dismissed = true,
             Command::Game(action) => {
                 actions.send(action.clone());
@@ -1678,7 +1712,21 @@ pub fn button_actions(
             Command::CloseModal => ui.modal = None,
             Command::SelectCiv(civ) => ui.diplo_target = Some(*civ),
             Command::PickScenario(index) => menu.scenario = Some(*index),
-            Command::BackToScenarios => menu.scenario = None,
+            Command::BackToScenarios => {
+                menu.scenario = None;
+                menu.civ = None;
+            }
+            Command::BackToPeoples => menu.civ = None,
+            Command::PickDifficulty(level) => menu.difficulty = *level,
+            Command::PickLength(turns) => menu.last_turn = *turns,
+            Command::StartGame => {
+                if let (Some(scenario), Some(civ)) = (menu.scenario.and_then(|i| menu.catalog.get(i)), menu.civ) {
+                    let last_turn = if menu.last_turn == 0 { crate::LAST_TURN } else { menu.last_turn };
+                    commands.insert_resource(NewGame { scenario: scenario.clone(), civ, difficulty: menu.difficulty, last_turn });
+                    menu.civ = None;
+                    next.set(AppState::Playing);
+                }
+            }
             Command::Continue => match crate::savegame::autosave().map(|json| crate::savegame::SaveGame::parse(&json)) {
                 Some(Ok(game)) => {
                     commands.insert_resource(crate::savegame::PendingLoad(game));
@@ -1691,14 +1739,12 @@ pub fn button_actions(
                 crate::savegame::pick_file();
                 menu.notice = Some("Choose a saved game file (a .json file saved from Bevy Civ)...".into());
             }
-            Command::PickCiv(civ) => {
-                if let Some(scenario) = menu.scenario.and_then(|i| menu.catalog.get(i)) {
-                    commands.insert_resource(NewGame { scenario: scenario.clone(), civ: *civ });
-                    next.set(AppState::Playing);
-                }
-            }
+            // The people chosen; the options page comes next.
+            Command::PickCiv(civ) => menu.civ = Some(*civ),
             Command::QuitToMenu => {
                 ui.end_dismissed = false;
+                tips.shown.clear();
+                tips.done();
                 ui.modal = None;
                 ui.diplo_target = None;
                 menu.scenario = None;
@@ -1793,6 +1839,34 @@ pub fn rebuild_menu(
                             b.spawn(label(&art.font_body, scenario.blurb.clone(), 15.0, INK));
                         });
                     }
+                }
+                Some(scenario) if menu.civ.is_some() => {
+                    // The game's options: difficulty and length.
+                    let civ = menu.civ.and_then(|i| scenario.civs.get(i));
+                    let who = civ.map(|c| format!("{} of {}", c.leader, c.name)).unwrap_or_default();
+                    w.spawn(label(&art.font_title, scenario.name.clone(), 24.0, INK));
+                    w.spawn(label(&art.font_bold, format!("You lead as {who}."), 16.0, INK_SOFT));
+                    w.spawn(label(&art.font_title, "Difficulty", 17.0, INK_SOFT));
+                    w.spawn(row(6.0)).with_children(|r| {
+                        for level in crate::Difficulty::ALL {
+                            let tint = if menu.difficulty == level { GREEN } else { BRONZE };
+                            button(r, art, level.name(), Command::PickDifficulty(level), tint, 15.0);
+                        }
+                    });
+                    w.spawn(label(&art.font_body, menu.difficulty.describe(), 14.0, INK_SOFT));
+                    w.spawn(label(&art.font_title, "Length", 17.0, INK_SOFT));
+                    let chosen = if menu.last_turn == 0 { crate::LAST_TURN } else { menu.last_turn };
+                    w.spawn(row(6.0)).with_children(|r| {
+                        for (turns, name) in [(200, "Short (200 turns)"), (300, "Standard (300 turns)"), (400, "Long (400 turns)")] {
+                            let tint = if chosen == turns { GREEN } else { BRONZE };
+                            button(r, art, name, Command::PickLength(turns), tint, 15.0);
+                        }
+                    });
+                    w.spawn(label(&art.font_body, "If nobody has won by the last turn, the highest score wins.", 14.0, INK_SOFT));
+                    w.spawn(row(8.0)).with_children(|r| {
+                        button(r, art, "Back", Command::BackToPeoples, BRONZE, 15.0);
+                        button(r, art, "Begin", Command::StartGame, GREEN, 18.0);
+                    });
                 }
                 Some(scenario) => {
                     w.spawn(label(&art.font_title, scenario.name.clone(), 24.0, INK));

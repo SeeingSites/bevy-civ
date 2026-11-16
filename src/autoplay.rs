@@ -43,7 +43,7 @@ pub fn run(which: &str, turns: u32) -> bool {
     crate::init_game(&mut app);
     app.insert_resource(Observer);
     app.add_systems(Update, (crate::process_turn, crate::refresh_supplies).chain());
-    app.insert_resource(NewGame { scenario, civ: 0 });
+    app.insert_resource(NewGame { scenario, civ: 0, difficulty: crate::Difficulty::Regent, last_turn: turns.max(1) });
     if let Err(e) = app.world_mut().run_system_once(crate::setup_world) {
         eprintln!("The world could not be set up: {e}");
         return false;

@@ -43,8 +43,64 @@ use scenario::NewGame;
 
 pub const PLAYER: u32 = 0;
 pub const BARBARIANS: u32 = 99;
-/// The game ends on this turn; if nobody has won by then, the highest score does.
+/// The longest game; if nobody has won by its last turn, the highest score does.
 pub const LAST_TURN: u32 = 400;
+
+/// How hard the computer players are: they gather shields and science faster (or slower), and on
+/// the easiest levels the player's people are easier to please.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default, serde::Serialize, serde::Deserialize)]
+pub enum Difficulty {
+    Chieftain,
+    Warlord,
+    #[default]
+    Regent,
+    Monarch,
+    Emperor,
+}
+
+impl Difficulty {
+    pub const ALL: [Difficulty; 5] = [Difficulty::Chieftain, Difficulty::Warlord, Difficulty::Regent, Difficulty::Monarch, Difficulty::Emperor];
+
+    pub fn name(&self) -> &'static str {
+        match self {
+            Difficulty::Chieftain => "Chieftain",
+            Difficulty::Warlord => "Warlord",
+            Difficulty::Regent => "Regent",
+            Difficulty::Monarch => "Monarch",
+            Difficulty::Emperor => "Emperor",
+        }
+    }
+
+    /// What the computer players' shields and science are multiplied by.
+    pub fn ai_output(&self) -> f32 {
+        match self {
+            Difficulty::Chieftain => 0.6,
+            Difficulty::Warlord => 0.8,
+            Difficulty::Regent => 1.0,
+            Difficulty::Monarch => 1.2,
+            Difficulty::Emperor => 1.4,
+        }
+    }
+
+    /// Extra content citizens in each of the player's cities.
+    pub fn player_content(&self) -> u32 {
+        match self {
+            Difficulty::Chieftain => 2,
+            Difficulty::Warlord => 1,
+            _ => 0,
+        }
+    }
+
+    pub fn describe(&self) -> &'static str {
+        match self {
+            Difficulty::Chieftain => "Learning the game: slow rivals, easy-going citizens",
+            Difficulty::Warlord => "Gentle rivals",
+            Difficulty::Regent => "Even terms",
+            Difficulty::Monarch => "Rivals build and learn a fifth faster",
+            Difficulty::Emperor => "Rivals build and learn two fifths faster",
+        }
+    }
+}
 
 /// A computer player's score, counted the same way as the player's (population, cities' buildings).
 fn rival_score(owner: u32, cities: &Query<(&mut City, &mut CityBuildings, &mut Happiness)>) -> u32 {
@@ -107,6 +163,15 @@ pub struct GameState {
     /// Turns of anarchy left in a revolution, and the government it leads to.
     pub anarchy_turns: u32,
     pub pending_government: Option<Government>,
+    #[serde(default)]
+    pub difficulty: Difficulty,
+    /// The game ends on this turn if nobody has won.
+    #[serde(default = "default_last_turn")]
+    pub last_turn: u32,
+}
+
+fn default_last_turn() -> u32 {
+    LAST_TURN
 }
 
 impl Default for GameState {
@@ -123,6 +188,8 @@ impl Default for GameState {
             title: String::new(),
             anarchy_turns: 0,
             pending_government: None,
+            difficulty: Difficulty::Regent,
+            last_turn: LAST_TURN,
         }
     }
 }
@@ -591,6 +658,8 @@ fn setup_world(
         start_year: scenario.start_year,
         years_per_turn: scenario.years_per_turn,
         title: defs[0].name.trim_start_matches("the ").to_string(),
+        difficulty: new_game.difficulty,
+        last_turn: new_game.last_turn,
         ..default()
     };
 
@@ -1978,7 +2047,8 @@ fn process_turn(
             + great.masterpiece_content(city.position)
             + city.luxury_from_specialists()
             + garrison.min(gov.martial_law())
-            + gov.content_bonus();
+            + gov.content_bonus()
+            + if mine { state.difficulty.player_content() } else { 0 };
         let joy = supply::luxury_happiness(supplies.luxuries(city.position), has_market);
         happiness.update(city.population, calm, joy);
         // A computer player's governor turns workers into entertainers to end disorder, and back again.
@@ -2043,6 +2113,13 @@ fn process_turn(
             }
         }
 
+        // Difficulty: the computer players' cities build faster or slower.
+        if !idle && !mine && owner != BARBARIANS {
+            let factor = state.difficulty.ai_output();
+            let base = city.production_per_turn(&buildings, gov, dist) as f32;
+            let extra = (base * (factor - 1.0)).round() as i32;
+            city.production_progress = (city.production_progress as i32 + extra).max(0) as u32;
+        }
         // A golden age adds half again to every city's shields.
         if !idle && golden.active(owner) {
             city.production_progress += city.production_per_turn(&buildings, gov, dist) / 2;
@@ -2224,10 +2301,11 @@ fn process_turn(
         }
     }
 
+    let difficulty = state.difficulty;
     for civ in civs.players.iter_mut().filter(|c| !c.is_human) {
         let (science, gold) = ai_income.get(&civ.id).copied().unwrap_or_default();
         let (trade_gold, trade_science) = trade.income(civ.id);
-        let (science, gold) = (science + trade_science, gold + trade_gold as i32);
+        let (science, gold) = (((science + trade_science) as f32 * difficulty.ai_output()) as u32, gold + trade_gold as i32);
         civ.gold += gold;
         // Savings beyond a reserve are invested in research.
         let invested = ((civ.gold - 250) / 10).max(0);
@@ -2729,7 +2807,7 @@ fn process_turn(
             Some(format!("Cultural victory for {}.", civ_named(o)))
         } else if let Some(o) = space.arrived(state.turn) {
             Some(format!("Space race victory for {}.", civ_named(o)))
-        } else if state.turn >= LAST_TURN {
+        } else if state.turn >= state.last_turn {
             let best = civs.players.iter().filter(|c| !c.is_human).map(|c| (rival_score(c.id, &cities), c.name.clone())).max_by_key(|(s, _)| *s);
             best.map(|(s, name)| format!("Score victory for {name} ({s}) at the turn limit."))
         } else {
@@ -2755,7 +2833,7 @@ fn process_turn(
             let name = civs.players.iter().find(|c| c.id == winner).map(|c| c.name.clone()).unwrap_or_default();
             format!("Defeat: {name} reached Alpha Centauri first.")
         });
-    } else if state.turn >= LAST_TURN {
+    } else if state.turn >= state.last_turn {
         // Time runs out: the highest score wins.
         let ours = state.score.total;
         let best_rival = civs.players.iter().filter(|c| !c.is_human).map(|c| (rival_score(c.id, &cities), c.name.clone())).max_by_key(|(s, _)| *s);
