@@ -811,6 +811,10 @@ fn process_turn(
         *road_work.entry(*owner).or_default() += 1;
     }
     // Science and gold the computer players' cities bring in this turn.
+    let mut cut_off: HashMap<u32, usize> = HashMap::new();
+    for (city, _, _) in cities.iter().filter(|(c, _, _)| !supplies.linked.contains(&c.position)) {
+        *cut_off.entry(city.owner).or_default() += 1;
+    }
     let mut ai_income: HashMap<u32, (u32, i32)> = HashMap::new();
     let mut hurried: HashSet<u32> = HashSet::new();
     let mut city_counts: HashMap<u32, usize> = HashMap::new();
@@ -849,7 +853,7 @@ fn process_turn(
                 // An empty city drops everything for a defender, and pays to hurry it when in danger.
                 let already = matches!(&city.production_queue, Some(ProductionItem::Unit(u)) if u.is_military());
                 if !already {
-                    let civ_view = governor::CivView { tech: &civ.tech, aggression: civ.aggression, cities: 1, workers: 1, settlers: 1, military: 0, road_work: 0, at_war: true };
+                    let civ_view = governor::CivView { tech: &civ.tech, aggression: civ.aggression, cities: 1, workers: 1, settlers: 1, military: 0, road_work: 0, cut_off: 0, at_war: true };
                     city.production_queue = Some(ProductionItem::Unit(governor::best_defender(&view, &civ_view, &supplies)));
                 }
                 let remaining = city.production_queue.as_ref().map(|i| i.cost()).unwrap_or(0).saturating_sub(city.production_progress) as i32;
@@ -958,6 +962,7 @@ fn process_turn(
                     settlers: settler_counts.get(&owner).copied().unwrap_or(0),
                     military: army_sizes.get(&owner).copied().unwrap_or(0),
                     road_work: road_work.get(&owner).copied().unwrap_or(0),
+                    cut_off: cut_off.get(&owner).copied().unwrap_or(0),
                     at_war: wars.iter().any(|(a, b)| *a == owner || *b == owner),
                 };
                 // The unit just trained (if any) now holds the city.
@@ -1047,9 +1052,19 @@ fn process_turn(
             .filter(|(_, owner)| **owner != PLAYER)
             .filter_map(|(hex, owner)| supplies.territory.get(hex).map(|(_, home)| (*owner, *home, *hex)))
             .collect();
-        for (owner, capital) in capitals.iter().filter(|(owner, _)| **owner != PLAYER) {
-            for (city, _) in city_owners.iter().filter(|(p, o)| o == owner && !supplies.linked.contains(p) && p.distance_to(*capital) <= 12) {
-                routes.push((*owner, *capital, *city));
+        // A cut-off city is joined to the nearest city of its owner that is on the network; if none can
+        // be reached by land, to the nearest coastal one, whose harbour will carry the link overseas.
+        let coastal = |hex: &Hex| hex.all_neighbors().iter().any(|n| map.water.contains(n));
+        for (city, owner) in city_owners.iter().filter(|(p, o)| *o != PLAYER && *o != BARBARIANS && !supplies.linked.contains(p)) {
+            let mut hubs: Vec<Hex> = city_owners.iter().filter(|(p, o)| o == owner && p != city).map(|(p, _)| *p).collect();
+            hubs.sort_by_key(|p| (!supplies.linked.contains(p), !coastal(p), p.distance_to(*city)));
+            let reachable = hubs
+                .into_iter()
+                .filter(|p| p.distance_to(*city) <= 14 && (supplies.linked.contains(p) || coastal(p)))
+                .take(4)
+                .find(|p| find_path(*p, *city, land.iter().copied(), false).is_some());
+            if let Some(hub) = reachable {
+                routes.push((*owner, hub, *city));
             }
         }
         // Nearest goals first, so short useful roads are finished before long ones.
@@ -1257,5 +1272,5 @@ fn refresh_supplies(
         .collect();
     let mut techs: HashMap<u32, HashSet<Tech>> = civs.players.iter().map(|c| (c.id, c.tech.researched.clone())).collect();
     techs.insert(PLAYER, tech.researched.clone());
-    supply::recompute(&mut supplies, tiles.iter(), &nodes, &techs, &foreign.deals);
+    supply::recompute(&mut supplies, tiles.iter(), &nodes, &techs, &foreign.transfers());
 }

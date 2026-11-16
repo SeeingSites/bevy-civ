@@ -35,6 +35,8 @@ pub struct CivView<'a> {
     pub military: usize,
     /// Sources and cities still waiting for a road.
     pub road_work: usize,
+    /// Cities not joined to the capital's network.
+    pub cut_off: usize,
     pub at_war: bool,
 }
 
@@ -89,7 +91,8 @@ pub fn choose(city: &CityView, civ: &CivView, supplies: &Supplies, rng: &mut imp
     if civ.workers < wanted_workers {
         return unit(UnitType::Worker);
     }
-    if !city.linked && can_build(&Building::Harbor, city, civ, supplies) {
+    // Harbours join coasts: a cut-off city needs one, and so does the mainland it must reach.
+    if (!city.linked || civ.cut_off > 0) && can_build(&Building::Harbor, city, civ, supplies) {
         return ProductionItem::Building(Building::Harbor);
     }
     let cap = army_cap(civ.cities);
@@ -140,7 +143,7 @@ mod tests {
     }
 
     fn civ(tech: &TechState) -> CivView<'_> {
-        CivView { tech, aggression: 0.4, cities: 2, workers: 1, settlers: 1, military: 3, road_work: 0, at_war: false }
+        CivView { tech, aggression: 0.4, cities: 2, workers: 1, settlers: 1, military: 3, road_work: 0, cut_off: 0, at_war: false }
     }
 
     fn knowing(techs: &[Tech]) -> TechState {
@@ -177,6 +180,10 @@ mod tests {
         let tech = knowing(&[Tech::Seafaring, Tech::Pottery]);
         let view = CityView { coastal: true, linked: false, ..city() };
         assert_eq!(choose(&view, &civ(&tech), &Supplies::default(), &mut rand::thread_rng()), ProductionItem::Building(Building::Harbor));
+        // The mainland builds one too while part of the empire is cut off.
+        let mainland = CityView { coastal: true, linked: true, ..city() };
+        let split = CivView { cut_off: 1, ..civ(&tech) };
+        assert_eq!(choose(&mainland, &split, &Supplies::default(), &mut rand::thread_rng()), ProductionItem::Building(Building::Harbor));
         let inland = CityView { coastal: false, linked: false, ..city() };
         assert_ne!(choose(&inland, &civ(&tech), &Supplies::default(), &mut rand::thread_rng()), ProductionItem::Building(Building::Harbor));
     }

@@ -12,8 +12,10 @@ use std::collections::{HashMap, HashSet};
 use bevy_civ::tech::Tech;
 use bevy_civ::terrain::{HexTile, Improvement, Resource as Good, ResourceKind};
 
-use crate::foreign::Deal;
 use crate::{CITY_RADIUS, PLAYER};
+
+/// A resource one civilization supplies to another: (seller, buyer, good).
+pub type Transfer = (u32, u32, Good);
 
 #[derive(Default, Clone)]
 pub struct CivSupply {
@@ -89,7 +91,7 @@ pub fn recompute<'a>(
     tiles: impl Iterator<Item = &'a HexTile>,
     cities: &[CityNode],
     techs: &HashMap<u32, HashSet<Tech>>,
-    deals: &[Deal],
+    transfers: &[Transfer],
 ) {
     *supplies = Supplies::default();
     let tiles: Vec<&HexTile> = tiles.collect();
@@ -204,21 +206,9 @@ pub fn recompute<'a>(
         networks.insert(owner, Network { piece, goods, capital });
     }
 
-    for deal in deals {
-        let player = supplies.civs.entry(PLAYER).or_default();
-        if let Some(good) = deal.import {
-            player.imports.insert(good);
-        }
-        if let Some(good) = deal.export {
-            *player.exports.entry(good).or_default() += 1;
-        }
-        let other = supplies.civs.entry(deal.civ).or_default();
-        if let Some(good) = deal.export {
-            other.imports.insert(good);
-        }
-        if let Some(good) = deal.import {
-            *other.exports.entry(good).or_default() += 1;
-        }
+    for (seller, buyer, good) in transfers {
+        *supplies.civs.entry(*seller).or_default().exports.entry(*good).or_default() += 1;
+        supplies.civs.entry(*buyer).or_default().imports.insert(*good);
     }
 
     for city in cities {
@@ -321,8 +311,7 @@ mod tests {
         assert_eq!(supplies.civ(rival).spare(Good::Iron), 1);
         assert!(!supplies.has(Hex::ZERO, &[Good::Iron]));
 
-        let deal = Deal { civ: rival, export: None, import: Some(Good::Iron), gold: -5, ends: 20 };
-        recompute(&mut supplies, tiles.iter(), &cities, &techs, &[deal]);
+        recompute(&mut supplies, tiles.iter(), &cities, &techs, &[(rival, PLAYER, Good::Iron)]);
         assert!(supplies.has(Hex::ZERO, &[Good::Iron]), "imports arrive in the capital");
         assert_eq!(supplies.civ(rival).spare(Good::Iron), 0);
         assert!(supplies.has(Hex::new(20, 0), &[Good::Iron]), "the seller keeps one for itself");

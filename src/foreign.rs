@@ -33,6 +33,16 @@ pub struct Deal {
     pub ends: u32,
 }
 
+/// A resource one computer player sells to another.
+#[derive(Clone, Debug)]
+pub struct AiDeal {
+    pub seller: u32,
+    pub buyer: u32,
+    pub good: Good,
+    pub gold: i32,
+    pub ends: u32,
+}
+
 /// A resource trade the player proposes.
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum TradeAsk {
@@ -100,9 +110,26 @@ pub struct Foreign {
     /// Military strength per civilization, refreshed every turn.
     pub strength: HashMap<u32, f32>,
     pub deals: Vec<Deal>,
+    /// Resource deals between computer players.
+    pub ai_deals: Vec<AiDeal>,
 }
 
 impl Foreign {
+    /// Every running resource deal as (seller, buyer, good).
+    pub fn transfers(&self) -> Vec<crate::supply::Transfer> {
+        let mut list = Vec::new();
+        for deal in &self.deals {
+            if let Some(good) = deal.import {
+                list.push((deal.civ, PLAYER, good));
+            }
+            if let Some(good) = deal.export {
+                list.push((PLAYER, deal.civ, good));
+            }
+        }
+        list.extend(self.ai_deals.iter().map(|d| (d.seller, d.buyer, d.good)));
+        list
+    }
+
     pub fn treaty_age(&self, a: u32, b: u32, turn: u32) -> u32 {
         turn.saturating_sub(self.since.get(&pair(a, b)).copied().unwrap_or(0))
     }
@@ -677,5 +704,201 @@ pub fn turn(ctx: &mut Ctx, fog: &FogOfWar, supplies: &Supplies, units: &[(Hex, u
             }
         }
     }
+
+    // Computer players also trade resources with each other: settle the running deals...
+    let mut kept = Vec::new();
+    for deal in std::mem::take(&mut ctx.foreign.ai_deals) {
+        let seller_stock = supplies.civ(deal.seller);
+        let short = seller_stock.connected.get(&deal.good).copied().unwrap_or(0) < seller_stock.exports.get(&deal.good).copied().unwrap_or(0);
+        let buyer_gold = ctx.civs.players.iter().find(|c| c.id == deal.buyer).map(|c| c.gold).unwrap_or(0);
+        let ended = turn >= deal.ends
+            || short
+            || buyer_gold < deal.gold
+            || ctx.foreign.gone.contains(&deal.seller)
+            || ctx.foreign.gone.contains(&deal.buyer)
+            || ctx.diplomacy.get_treaty(deal.seller, deal.buyer) == Treaty::War;
+        if ended {
+            continue;
+        }
+        for civ in ctx.civs.players.iter_mut() {
+            if civ.id == deal.buyer {
+                civ.gold -= deal.gold;
+            } else if civ.id == deal.seller {
+                civ.gold += deal.gold;
+            }
+        }
+        kept.push(deal);
+    }
+    ctx.foreign.ai_deals = kept;
+    // ...and strike new ones: a neighbour with a spare source sells to one that has none.
+    for buyer in alive.iter().copied() {
+        if !rng.gen_bool(0.25) {
+            continue;
+        }
+        let Some(buyer_civ) = ctx.civs.players.iter().find(|c| c.id == buyer.0) else { continue };
+        let (buyer_gold, buyer_tech) = (buyer_civ.gold, buyer_civ.tech.researched.clone());
+        let stock = supplies.civ(buyer.0);
+        let wanted = Good::ALL.into_iter().filter(|g| g.is_strategic() || g.is_luxury()).find_map(|good| {
+            let useful = !stock.has(good) && good.reveal_tech().is_none_or(|t| buyer_tech.contains(&t)) && buyer_gold >= price(good) * 4;
+            let already = ctx.foreign.ai_deals.iter().any(|d| d.buyer == buyer.0 && d.good == good);
+            if !useful || already {
+                return None;
+            }
+            alive
+                .iter()
+                .find(|seller| {
+                    seller.0 != buyer.0
+                        && supplies.civ(seller.0).spare(good) > 0
+                        && ctx.diplomacy.get_treaty(seller.0, buyer.0) != Treaty::War
+                        && nearest(seller.0, buyer.0) <= 16
+                })
+                .map(|seller| (good, (seller.0, seller.1.clone())))
+        });
+        if let Some((good, seller)) = wanted {
+            ctx.foreign.ai_deals.push(AiDeal { seller: seller.0, buyer: buyer.0, good, gold: price(good) - 1, ends: turn + DEAL_TURNS });
+            if ctx.foreign.met.contains(&seller.0) && ctx.foreign.met.contains(&buyer.0) {
+                ctx.log.push(format!("{} now buys {} from {}.", buyer.1, good.name(), seller.1));
+            }
+        }
+    }
     let _ = BARBARIANS;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use bevy_civ::ai::Civ;
+    use crate::supply::CivSupply;
+
+    fn civ(id: u32, human: bool) -> Civ {
+        Civ {
+            id,
+            name: if human { "Us".into() } else { format!("Rival {id}") },
+            is_human: human,
+            gold: 100,
+            tech: TechState::knowing(&["Iron Working".to_string(), "Bronze Working".to_string()]),
+            aggression: 0.3,
+            leader: "Leader".into(),
+            adjective: "Rival".into(),
+            portrait: 0,
+            city_names: vec![],
+        }
+    }
+
+    struct Table {
+        diplomacy: Diplomacy,
+        foreign: Foreign,
+        civs: Civilizations,
+        state: GameState,
+        tech: TechState,
+        log: GameLog,
+    }
+
+    impl Table {
+        fn new(rivals: u32) -> Self {
+            let mut players = vec![civ(0, true)];
+            players.extend((1..=rivals).map(|id| civ(id, false)));
+            let mut foreign = Foreign::default();
+            foreign.met.extend(1..=rivals);
+            Self {
+                diplomacy: Diplomacy::default(),
+                foreign,
+                civs: Civilizations { players },
+                state: GameState { gold: 100, ..Default::default() },
+                tech: TechState::knowing(&["Iron Working".to_string(), "Bronze Working".to_string()]),
+                log: GameLog::default(),
+            }
+        }
+
+        fn ctx(&mut self) -> Ctx<'_> {
+            Ctx { diplomacy: &mut self.diplomacy, foreign: &mut self.foreign, civs: &mut self.civs, state: &mut self.state, tech: &mut self.tech, log: &mut self.log }
+        }
+    }
+
+    /// Supplies in which `owner` has two connected iron sources and nobody else has any.
+    fn iron_with(owner: u32) -> Supplies {
+        let mut supplies = Supplies::default();
+        let mut stock = CivSupply::default();
+        stock.sources.insert(Good::Iron, 2);
+        stock.connected.insert(Good::Iron, 2);
+        supplies.civs.insert(owner, stock);
+        supplies
+    }
+
+    #[test]
+    fn a_rival_offers_to_buy_our_spare_resource() {
+        let mut table = Table::new(1);
+        let supplies = iron_with(PLAYER);
+        let cities = [(Hex::ZERO, PLAYER), (Hex::new(6, 0), 1)];
+        let fog = FogOfWar::default();
+        // Their merchants call only now and then; give them time.
+        for turn in 1..400 {
+            table.state.turn = turn;
+            foreign_turn(&mut table, &fog, &supplies, &cities);
+            if table.foreign.offer.is_some() {
+                break;
+            }
+        }
+        let offer = table.foreign.offer.clone().expect("the rival proposes a deal");
+        assert_eq!(offer.kind, OfferKind::BuyFromUs(Good::Iron, price(Good::Iron) - 1));
+
+        answer_offer(&mut table.ctx(), true);
+        assert_eq!(table.foreign.deals.len(), 1);
+        assert_eq!(table.foreign.deals[0].export, Some(Good::Iron));
+        assert_eq!(table.foreign.transfers(), vec![(PLAYER, 1, Good::Iron)]);
+        let income = settle_deals(&mut table.ctx(), &supplies);
+        assert_eq!(income, price(Good::Iron) - 1);
+    }
+
+    fn foreign_turn(table: &mut Table, fog: &FogOfWar, supplies: &Supplies, cities: &[(Hex, u32)]) {
+        turn(&mut table.ctx(), fog, supplies, &[], cities);
+    }
+
+    #[test]
+    fn a_rival_offers_to_sell_what_we_lack() {
+        let mut table = Table::new(1);
+        // Friendly enough to sell a strategic resource.
+        table.diplomacy.change_attitude(PLAYER, 1, 60);
+        table.foreign.pacts.insert(1);
+        let supplies = iron_with(1);
+        let cities = [(Hex::ZERO, PLAYER), (Hex::new(6, 0), 1)];
+        let fog = FogOfWar::default();
+        let mut seen = None;
+        for turn in 1..600 {
+            table.state.turn = turn;
+            table.foreign.offer = None;
+            foreign_turn(&mut table, &fog, &supplies, &cities);
+            if let Some(Offer { kind: OfferKind::SellToUs(good, gold), .. }) = table.foreign.offer.clone() {
+                seen = Some((good, gold));
+                break;
+            }
+        }
+        assert_eq!(seen, Some((Good::Iron, price(Good::Iron))));
+        answer_offer(&mut table.ctx(), true);
+        assert_eq!(table.foreign.transfers(), vec![(1, PLAYER, Good::Iron)]);
+    }
+
+    #[test]
+    fn rivals_trade_resources_among_themselves() {
+        let mut table = Table::new(2);
+        let supplies = iron_with(1);
+        let cities = [(Hex::ZERO, PLAYER), (Hex::new(6, 0), 1), (Hex::new(12, 0), 2)];
+        let fog = FogOfWar::default();
+        for turn in 1..200 {
+            table.state.turn = turn;
+            table.foreign.offer = None;
+            foreign_turn(&mut table, &fog, &supplies, &cities);
+            if !table.foreign.ai_deals.is_empty() {
+                break;
+            }
+        }
+        let deal = table.foreign.ai_deals.first().expect("the rival without iron buys it");
+        assert_eq!((deal.seller, deal.buyer, deal.good), (1, 2, Good::Iron));
+
+        // War between them ends the deal.
+        table.diplomacy.set_treaty(1, 2, Treaty::War);
+        table.state.turn += 1;
+        foreign_turn(&mut table, &fog, &supplies, &cities);
+        assert!(table.foreign.ai_deals.iter().all(|d| !(d.seller == 1 && d.buyer == 2)));
+    }
 }
