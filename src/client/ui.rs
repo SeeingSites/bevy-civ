@@ -417,6 +417,19 @@ pub fn update_sound_button(settings: Res<SoundSettings>, mut labels: Query<&mut 
 }
 
 /// The wonders that already stand, and who holds them.
+/// "Religious (+1 content in every city, shorter revolutions) and Militaristic (...). Unique unit: Spanish Knight, trained a rank higher."
+pub fn character_line(name: &str, adjective: &str) -> String {
+    let c = bevy_civ::traits::of(name);
+    format!(
+        "{} ({}) and {} ({}). Unique unit: {adjective} {}, trained a rank higher.",
+        c.traits[0].name(),
+        c.traits[0].effect(),
+        c.traits[1].name(),
+        c.traits[1].effect(),
+        c.unique.name()
+    )
+}
+
 fn wonders_of_the_world(p: &mut ChildBuilder, art: &Art, wonders: &WorldWonders, civs: &Civilizations) {
     if wonders.built.is_empty() {
         return;
@@ -687,7 +700,7 @@ pub fn rebuild_panels(
     mut dirty: ResMut<Dirty>,
     selection: Res<Selection>,
     mut ui: ResMut<UiState>,
-    (foreign, supplies, map): (Res<Foreign>, Res<Supplies>, Res<MapData>),
+    (foreign, supplies, map, religions): (Res<Foreign>, Res<Supplies>, Res<MapData>, Res<bevy_civ::religion::Religions>),
     art: Res<Art>,
     state: Res<GameState>,
     tech: Res<TechState>,
@@ -750,7 +763,14 @@ pub fn rebuild_panels(
                     ));
                 });
                 r.spawn(column(4.0)).with_children(|c| {
-                    let title = if unit.is_army_group() { format!("Army of {} units", 1 + unit.troops.len()) } else { unit.unit_type.name().to_string() };
+                    let unique = civs.players.iter().find(|c| c.id == unit.owner).filter(|c| bevy_civ::traits::of(&c.name).unique == unit.unit_type);
+                    let title = if unit.is_army_group() {
+                        format!("Army of {} units", 1 + unit.troops.len())
+                    } else if let Some(civ) = unique {
+                        format!("{} {}", civ.adjective, unit.unit_type.name())
+                    } else {
+                        unit.unit_type.name().to_string()
+                    };
                     c.spawn(label(&art.font_title, title, 20.0, GOLD));
                     let status = match (unit.current_build, unit.build_turns_left) {
                         (Some(job), Some(turns)) => format!("Building {:?} ({} turns)", job, turns),
@@ -862,6 +882,9 @@ pub fn rebuild_panels(
                     if unit.unit_type == UnitType::Caravan {
                         button(r, art, "Trade Route (T)", Command::Game(Action::TradeRoute), GREEN, 15.0);
                         button(r, art, "Help Wonder (U)", Command::Game(Action::UseUnit), GREEN, 15.0);
+                    }
+                    if unit.unit_type == UnitType::Missionary {
+                        button(r, art, "Spread Faith (U)", Command::Game(Action::UseUnit), GREEN, 15.0);
                     }
                     if unit.unit_type == UnitType::GreatGeneral {
                         button(r, art, "Form Army (U)", Command::Game(Action::UseUnit), GREEN, 15.0);
@@ -1050,6 +1073,20 @@ pub fn rebuild_panels(
                 if masterpieces > 0 {
                     p.spawn(label(&art.font_body, format!("Masterpieces: {masterpieces} (+{} content)", masterpieces * 3), 14.0, CREAM));
                 }
+                // Faith: the city's, and whether it shares its ruler's (the capital's).
+                let state_faith = city_list.iter().find(|(_, c)| c.owner == city.owner && c.is_capital).and_then(|(_, c)| religions.of(c.position));
+                let faith_text = match religions.of(city.position) {
+                    Some(f) => {
+                        let holy = if religions.holy_faith(city.position) == Some(f) { format!(", its holy city (+{} gold a turn)", religions.holy_city_gold(f)) } else { String::new() };
+                        let shared = if state_faith == Some(f) { ", our state religion: +1 content (+2 with a Temple)" } else { "" };
+                        format!("Faith: {}{holy}{shared}", f.name())
+                    }
+                    None => "Faith: none yet (faiths spread from nearby cities, or a Missionary brings one)".to_string(),
+                };
+                p.spawn(label(&art.font_body, faith_text, 14.0, CREAM));
+                if city.resistance > 0 {
+                    p.spawn(label(&art.font_bold, format!("Resisting our rule: produces nothing for {} more turns", city.resistance), 14.0, Color::srgb(1.0, 0.45, 0.4)));
+                }
                 let merchants = great.merchants.get(&city.position).copied().unwrap_or(0);
                 if merchants > 0 {
                     p.spawn(label(&art.font_body, format!("Trading houses: {merchants} (+{} gold)", great.merchant_gold(city.position)), 14.0, CREAM));
@@ -1203,6 +1240,35 @@ pub fn rebuild_panels(
                                     format!("We are a {}.", state.government.name())
                                 };
                                 w.spawn(label(&art.font_bold, status, 16.0, INK));
+                                if let Some(me) = civs.players.iter().find(|c| c.id == PLAYER) {
+                                    w.spawn(label(&art.font_body, format!("Our people: {}", character_line(&me.name, &me.adjective)), 14.0, INK_SOFT));
+                                }
+                                // The faiths of the world.
+                                let founded: Vec<String> = bevy_civ::religion::Faith::ALL
+                                    .iter()
+                                    .filter_map(|f| {
+                                        let holy = religions.holy.get(f)?;
+                                        let place = city_list.iter().find(|(_, c)| c.position == *holy).map(|(_, c)| c.name.clone()).unwrap_or_else(|| "a lost city".into());
+                                        Some(format!("{} ({place}, {} {})", f.name(), religions.followers(*f), if religions.followers(*f) == 1 { "city" } else { "cities" }))
+                                    })
+                                    .collect();
+                                let ours = city_list.iter().find(|(_, c)| c.owner == PLAYER && c.is_capital).and_then(|(_, c)| religions.of(c.position));
+                                let faith_text = match ours {
+                                    Some(f) => format!("State religion: {} (our capital's faith). Faiths of the world: {}.", f.name(), founded.join("; ")),
+                                    None if founded.is_empty() => "No faith has been founded yet: the first to learn Mysticism, Philosophy, Theology or Printing Press founds one.".to_string(),
+                                    None => format!("Our capital follows no faith yet. Faiths of the world: {}.", founded.join("; ")),
+                                };
+                                w.spawn(label(&art.font_body, faith_text, 14.0, INK_SOFT));
+                                let war = state.war_turns.get(&PLAYER).copied().unwrap_or(0);
+                                if war > 0 {
+                                    let weary = state.government.war_weariness(war);
+                                    w.spawn(label(
+                                        &art.font_body,
+                                        format!("War weariness: {war} {} of war; {weary} more unhappy in every city (Republic and Democracy tire of war; a Police Station halves it).", if war == 1 { "turn" } else { "turns" }),
+                                        14.0,
+                                        if weary > 0 { RED } else { INK_SOFT },
+                                    ));
+                                }
                                 w.spawn(label(&art.font_body, format!("A revolution costs {} turns of anarchy: no science, poor production.", Government::REVOLUTION_TURNS), 14.0, INK_SOFT));
                                 // Rates: how the empire's commerce is split between science, luxury and taxes.
                                 let cap = state.government.science_cap();
@@ -1909,6 +1975,9 @@ pub fn rebuild_menu(
                     let who = civ.map(|c| format!("{} of {}", c.leader, c.name)).unwrap_or_default();
                     w.spawn(label(&art.font_title, scenario.name.clone(), 24.0, INK));
                     w.spawn(label(&art.font_bold, format!("You lead as {who}."), 16.0, INK_SOFT));
+                    if let Some(c) = civ {
+                        w.spawn(label(&art.font_body, character_line(&c.name, &c.adjective), 14.0, INK_SOFT));
+                    }
                     w.spawn(label(&art.font_title, "Difficulty", 17.0, INK_SOFT));
                     w.spawn(row(6.0)).with_children(|r| {
                         for level in crate::Difficulty::ALL {

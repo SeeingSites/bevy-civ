@@ -548,6 +548,12 @@ const UNITS = [
       )
     );
   },
+  // Missionary: robed, with a staff topped by a sun disc and a book
+  (f) => {
+    const staff = (bob, sway) => limb(5, -42 + bob, 13, -38 + bob, '#efe6d0', 4) + `<path d="M14,2 L${14 + sway},${-78 + bob}" stroke-width="4.5"/><path d="M14,2 L${14 + sway},${-78 + bob}" stroke="${WOOD}" stroke-width="2.2"/><circle cx="${14 + sway}" cy="${-84 + bob}" r="6" fill="#e8c14a"/><circle cx="${14 + sway}" cy="${-84 + bob}" r="2.5" fill="#f7e7a8" stroke="none"/>`;
+    const book = (bob) => `<rect x="-14" y="${-40 + bob}" width="10" height="13" rx="1.5" fill="#7a2a2a"/><path d="M-12,${-37 + bob} h6" stroke="#e8c14a" stroke-width="1.6"/>`;
+    return shadow(62, 24) + wrap(human(58, GROUND, { robe: true, tunic: '#efe6d0', trim: '#c9973f', sleeve: '#efe6d0', head: head.hood('#d8ccb0'), beard: '#8a6a4a', back: book, front: staff }, f));
+  },
 ];
 
 /** A great person: a figure standing in a softly pulsing golden aura. */

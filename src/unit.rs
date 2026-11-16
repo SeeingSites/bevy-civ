@@ -80,6 +80,7 @@ pub enum UnitType {
     Submarine,
     Engineers,
     RadarArtillery,
+    Missionary,
 }
 
 /// Where a unit can go: over land (boarding a boat to cross water), on the sea, or through the air.
@@ -95,7 +96,7 @@ pub const AIR_RANGE: i32 = 8;
 
 impl UnitType {
     /// Every unit type, in declaration order (also the row order of the sprite atlas).
-    pub const ALL: [UnitType; 42] = [
+    pub const ALL: [UnitType; 43] = [
         UnitType::Settler, UnitType::Worker, UnitType::Warrior, UnitType::Spearman, UnitType::Archer,
         UnitType::Horseman, UnitType::Legion, UnitType::WarChariot, UnitType::Immortal, UnitType::Phalanx,
         UnitType::Catapult, UnitType::Knight, UnitType::Cannon, UnitType::Rifleman, UnitType::Cavalry,
@@ -104,7 +105,7 @@ impl UnitType {
         UnitType::Bomber, UnitType::GreatGeneral, UnitType::GreatMerchant, UnitType::GreatScientist,
         UnitType::GreatArtist, UnitType::GreatEngineer, UnitType::Pikeman, UnitType::Musketman, UnitType::Infantry,
         UnitType::MechInfantry, UnitType::ModernArmor, UnitType::Scout, UnitType::Longbowman, UnitType::Galleon,
-        UnitType::Submarine, UnitType::Engineers, UnitType::RadarArtillery,
+        UnitType::Submarine, UnitType::Engineers, UnitType::RadarArtillery, UnitType::Missionary,
     ];
 
     /// The five kinds of great person.
@@ -165,6 +166,7 @@ impl UnitType {
             UnitType::Submarine => "Submarine",
             UnitType::Engineers => "Engineers",
             UnitType::RadarArtillery => "Radar Artillery",
+            UnitType::Missionary => "Missionary",
         }
     }
 
@@ -178,6 +180,7 @@ impl UnitType {
             UnitType::Submarine => Some(Tech::Electronics),
             UnitType::Engineers => Some(Tech::SteamPower),
             UnitType::RadarArtillery => Some(Tech::Rocketry),
+            UnitType::Missionary => Some(Tech::Mysticism),
             UnitType::Spearman | UnitType::Phalanx => Some(Tech::BronzeWorking),
             UnitType::Archer => Some(Tech::Mining),
             UnitType::Horseman => Some(Tech::HorsebackRiding),
@@ -233,6 +236,7 @@ impl UnitType {
             UnitType::Submarine => (10, 2, 5),
             UnitType::Engineers => (0, 0, 2),
             UnitType::RadarArtillery => (16, 2, 2),
+            UnitType::Missionary => (0, 0, 2),
             UnitType::Cavalry => (6, 2, 2),
             UnitType::Tank => (10, 5, 2),
             UnitType::Artillery => (8, 2, 1),
@@ -276,6 +280,7 @@ impl UnitType {
             UnitType::Submarine => 100,
             UnitType::Engineers => 30,
             UnitType::RadarArtillery => 120,
+            UnitType::Missionary => 30,
             UnitType::Cavalry => 60,
             UnitType::Tank => 100,
             UnitType::Artillery => 80,
@@ -319,6 +324,7 @@ impl UnitType {
             UnitType::Submarine => Color::srgb(0.37, 0.42, 0.46),
             UnitType::Engineers => Color::srgb(0.85, 0.54, 0.17),
             UnitType::RadarArtillery => Color::srgb(0.42, 0.46, 0.33),
+            UnitType::Missionary => Color::srgb(0.94, 0.9, 0.82),
             UnitType::Cavalry => Color::srgb(0.7, 0.5, 0.2),
             UnitType::Tank => Color::srgb(0.4, 0.4, 0.2),
             UnitType::Artillery => Color::srgb(0.5, 0.4, 0.3),
@@ -354,7 +360,7 @@ impl UnitType {
     }
 
     pub fn is_military(&self) -> bool {
-        !matches!(self, UnitType::Settler | UnitType::Worker | UnitType::Engineers | UnitType::Scout | UnitType::Diplomat | UnitType::Caravan) && !self.is_great_person()
+        !matches!(self, UnitType::Settler | UnitType::Worker | UnitType::Engineers | UnitType::Scout | UnitType::Diplomat | UnitType::Caravan | UnitType::Missionary) && !self.is_great_person()
     }
 
     /// Strategic resources a city must have access to before it can train this unit.

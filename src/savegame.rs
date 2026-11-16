@@ -67,6 +67,8 @@ pub struct SaveGame {
     pub culture: CultureLedger,
     pub golden: GoldenAges,
     pub rivers: Rivers,
+    #[serde(default)]
+    pub religions: bevy_civ::religion::Religions,
     pub log: Vec<String>,
     pub tiles: Vec<HexTile>,
     pub cities: Vec<SavedCity>,
@@ -113,7 +115,7 @@ pub fn write_save(
         Res<TradeRoutes>,
         Res<SpaceRace>,
     ),
-    (foreign, wonders, great, spies, history, culture, golden, rivers): (
+    (foreign, wonders, great, spies, history, culture, golden, rivers, religions): (
         Res<Foreign>,
         Res<WorldWonders>,
         Res<GreatPeople>,
@@ -122,6 +124,7 @@ pub fn write_save(
         Res<CultureLedger>,
         Res<GoldenAges>,
         Res<Rivers>,
+        Res<bevy_civ::religion::Religions>,
     ),
     mut log: ResMut<GameLog>,
     tiles: Query<&HexTile>,
@@ -148,6 +151,7 @@ pub fn write_save(
         culture: culture.clone(),
         golden: golden.clone(),
         rivers: rivers.clone(),
+        religions: religions.clone(),
         log: log.lines.clone(),
         tiles: tiles.iter().cloned().collect(),
         cities: cities.iter().map(|(c, b)| SavedCity { city: c.clone(), buildings: b.buildings.clone() }).collect(),
@@ -257,6 +261,7 @@ pub fn restore_world(
     commands.insert_resource(game.culture.clone());
     commands.insert_resource(game.golden.clone());
     commands.insert_resource(game.rivers.clone());
+    commands.insert_resource(game.religions.clone());
     let mut log = GameLog { lines: game.log.clone() };
     log.push(format!("Game loaded: turn {}.", game.state.turn));
     commands.insert_resource(log);
@@ -341,6 +346,7 @@ mod tests {
             owner: PLAYER,
             specialists: vec![],
             is_capital: true,
+            resistance: 0,
         };
         let unit = Unit { unit_type: UnitType::Legion, movement_left: 1, owner: PLAYER, position: Hex::new(2, 2), build_turns_left: None, current_build: None, fortified: true, road_credit: 0, hp: 2, level: 1, troops: Vec::new() };
         SaveGame {
@@ -361,6 +367,7 @@ mod tests {
             culture,
             golden: GoldenAges::default(),
             rivers: Rivers::default(),
+            religions: Default::default(),
             log: vec!["hello".into()],
             tiles: vec![HexTile { coord: Hex::new(1, 2), terrain: Terrain::Hills, improvements: vec![], resource: None }],
             cities: vec![SavedCity { city, buildings: vec![Building::Temple, Building::Oracle] }],

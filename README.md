@@ -275,6 +275,21 @@ working directory.
   in the Empire advisor's Government tab: science, luxury, and taxes for the rest. Every 2 luxury
   make a citizen happy. A government limits any one rate: Despotism 60%, Monarchy and Communism
   70%, Republic 80%, Democracy 100%, Fundamentalism 50%; Anarchy allows no science.
+- **Traits and unique units**: every civilization has two traits - Militaristic (troops promoted
+  after half their victories), Commercial (+1 gold a city), Scientific (+1 science a city),
+  Religious (+1 content a city, shorter revolutions), Industrious (+1 shield a city), Agricultural
+  (+1 food a city) - and a unique unit it trains a rank higher (Roman Legion, Spanish Knight...).
+- **Religion**: the first to learn Mysticism, Philosophy, Theology and Printing Press founds the Old
+  Gods, the Way of Reason, the One Faith and the Reformed Faith in one of its cities (the holy city).
+  Faiths spread by themselves to nearby cities with none, and Missionaries (Mysticism) carry your
+  state religion - your capital's faith - to any city at peace with you (U). Cities of your state
+  religion get +1 content (+2 with a Temple); the holy city's owner earns a gold for every two
+  cities of its faith; peoples of one faith grow friendlier, of different faiths cooler.
+- **War weariness**: under a Republic every 12 turns of war make one more citizen unhappy in every
+  city (up to 2), under Democracy every 8 (up to 3); peace brings it back down; a Police Station
+  halves it.
+- **Resistance**: a captured city produces nothing for 1 turn plus 1 per 3 citizens (up to 6); a
+  garrison of two settles it twice as fast.
 - **Late buildings**: Observatory (Astronomy, +3 science), Research Lab (Computers, +6 science,
   needs a University), Power Plant (Electronics, +4 shields, needs a Factory), Police Station
   (Communism, +2 content), Supermarket (Sanitation, +3 food), Mass Transit (Mass Production, no

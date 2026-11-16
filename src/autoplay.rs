@@ -42,7 +42,7 @@ pub fn run(which: &str, turns: u32) -> bool {
     app.add_plugins(MinimalPlugins);
     crate::init_game(&mut app);
     app.insert_resource(Observer);
-    app.add_systems(Update, (crate::process_turn, crate::refresh_supplies).chain());
+    app.add_systems(Update, (crate::process_turn, crate::religion_turn, crate::refresh_supplies).chain());
     app.insert_resource(NewGame { scenario, civ: 0, difficulty: crate::Difficulty::Regent, last_turn: turns.max(1) });
     if let Err(e) = app.world_mut().run_system_once(crate::setup_world) {
         eprintln!("The world could not be set up: {e}");
@@ -78,7 +78,7 @@ pub fn run(which: &str, turns: u32) -> bool {
         let news: Vec<String> = log.lines.iter().skip(log_seen.min(log.lines.len())).cloned().collect();
         log_seen = log.lines.len();
         for line in news {
-            let notable = ["Wonder of the world", "launched a spaceship", "adopt", "golden age", "has been born", "Alpha Centauri", "cultural victory"];
+            let notable = ["priests found", "Wonder of the world", "launched a spaceship", "adopt", "golden age", "has been born", "Alpha Centauri", "cultural victory"];
             if notable.iter().any(|n| line.contains(n)) {
                 println!("  turn {turn:>3}: {line}");
             }

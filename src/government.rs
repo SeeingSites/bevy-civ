@@ -13,6 +13,16 @@ pub enum Government {
 }
 
 impl Government {
+    /// Citizens made unhappy in every city by a war that has lasted `turns` turns: the people of a
+    /// republic, and more so a democracy, tire of fighting. Other governments do not mind.
+    pub fn war_weariness(&self, turns: u32) -> u32 {
+        match self {
+            Government::Democracy => (turns / 8).min(3),
+            Government::Republic => (turns / 12).min(2),
+            _ => 0,
+        }
+    }
+
     pub fn name(&self) -> &'static str {
         match self {
             Government::Anarchy => "Anarchy",
@@ -172,5 +182,19 @@ impl Government {
 impl Default for Government {
     fn default() -> Self {
         Government::Despotism
+    }
+}
+
+#[cfg(test)]
+mod weariness_tests {
+    use super::*;
+
+    #[test]
+    fn only_republics_and_democracies_tire_of_war() {
+        assert_eq!(Government::Monarchy.war_weariness(100), 0);
+        assert_eq!(Government::Republic.war_weariness(11), 0);
+        assert_eq!(Government::Republic.war_weariness(24), 2);
+        assert_eq!(Government::Democracy.war_weariness(16), 2);
+        assert_eq!(Government::Democracy.war_weariness(200), 3);
     }
 }
