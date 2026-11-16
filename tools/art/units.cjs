@@ -433,6 +433,62 @@ const UNITS = [
   // Great Engineer: work coat, brass helmet, hammer over the shoulder
   (f) => greatPerson(f, { tunic: '#8b5a2b', legs: '#4a3a2a', boots: '#3a2a1a', head: head.cap('#d9a441'),
     front: (bob) => limb(5, -42 + bob, 14, -52 + bob, SKIN, 4) + `<path d="M14,${-52 + bob} L4,${-74 + bob}" stroke-width="5"/><path d="M14,${-52 + bob} L4,${-74 + bob}" stroke="${WOOD}" stroke-width="2.5"/><rect x="-6" y="${-82 + bob}" width="18" height="9" rx="2" fill="#7a8088" transform="rotate(-25 4 ${-78 + bob})"/>` }),
+  // ---- the later defenders (rows after the great people) ----
+  // Pikeman
+  (f) => {
+    const pike = (bob, sway) => armTo(13, -34, '#6a7a8f')(bob) + spear(14, 98)(bob, sway);
+    return shadow(62, 24) + wrap(human(60, GROUND, { tunic: '#6a7a8f', sleeve: '#6a7a8f', legs: '#8b2f2f', trim: '#e8c14a', head: head.helm('#e8c14a'), back: roundShield(-6, -34, 10, '#8b2f2f'), front: pike }, f));
+  },
+  // Musketman
+  (f) => {
+    const musket = (bob, sway) =>
+      limb(5, -42 + bob, 13, -30 + bob, '#b3261e', 4) +
+      `<g transform="rotate(${sway} 8 ${-30 + bob})"><path d="M-2,${-16 + bob} L18,${-70 + bob}" stroke-width="6"/><path d="M-2,${-16 + bob} L8,${-44 + bob}" stroke="#7a4a24" stroke-width="3.6"/><path d="M8,${-44 + bob} L18,${-70 + bob}" stroke="#4a4f58" stroke-width="2.4"/></g>`;
+    const sash = (bob) => `<path d="M-7,${-45 + bob} L9,${-24 + bob}" stroke="#f1ecdf" stroke-width="3"/>`;
+    return shadow(62, 24) + wrap(human(60, GROUND, { tunic: '#b3261e', sleeve: '#b3261e', legs: '#f1ecdf', boots: '#22201d', head: head.brim('#22201d'), chest: sash, front: musket }, f));
+  },
+  // Infantry
+  (f) => {
+    const rifle = (bob, sway) =>
+      limb(5, -42 + bob, 14, -32 + bob, '#5f6b3a', 4) +
+      `<g transform="rotate(${sway} 8 ${-30 + bob})"><path d="M-6,${-22 + bob} L30,${-52 + bob}" stroke-width="5.5"/><path d="M-6,${-22 + bob} L12,${-37 + bob}" stroke="#6b4424" stroke-width="3.4"/><path d="M12,${-37 + bob} L30,${-52 + bob}" stroke="#3f444a" stroke-width="2.2"/></g>`;
+    const pack = (bob) => `<rect x="-14" y="${-46 + bob}" width="8" height="16" rx="2" fill="#4a5230"/>`;
+    return shadow(62, 24) + wrap(human(60, GROUND, { tunic: '#5f6b3a', sleeve: '#5f6b3a', legs: '#5f6b3a', boots: '#2a241c', head: head.cap('#4a5230'), back: pack, front: rifle }, f));
+  },
+  // Mech. Infantry: a tracked carrier with a soldier in the hatch
+  (f) => {
+    const jig = [0, -0.8, 0, 0.8][f];
+    let wheels = '';
+    for (let x = 30; x <= 98; x += 17) wheels += `<circle cx="${x}" cy="${GROUND - 10}" r="6.5" fill="#4a4f44"/><circle cx="${x}" cy="${GROUND - 10}" r="1.6" fill="${OUT}"/>`;
+    let treads = '';
+    for (let x = 22 + ((f * 3) % 12); x < 106; x += 12) treads += `<path d="M${x},${GROUND - 21} v3 M${x - 4},${GROUND - 1} v-3" stroke-width="2.2"/>`;
+    return (
+      shadow(64, 52, 7) +
+      wrap(
+        `<g transform="translate(0,${jig})"><path d="M18,${GROUND - 22} v-26 h70 l24,10 v16 Z" fill="#7a7f5c"/><path d="M24,${GROUND - 38} h56" stroke="rgba(255,255,255,0.3)" stroke-width="1.6"/>` +
+          `<path d="M40,${GROUND - 48} v-6 h14 v6" fill="#5f6447"/><path d="M58,${GROUND - 52} h30 v4 h-30 Z" fill="#4a4f38"/>` +
+          `<circle cx="47" cy="${GROUND - 60}" r="6" fill="${SKIN}"/><path d="M41,${GROUND - 61} a6,6 0 0 1 12,0 Z" fill="#4a5230"/></g>` +
+          `<rect x="16" y="${GROUND - 22}" width="96" height="23" rx="11.5" fill="#33362e"/>` + wheels + treads,
+      )
+    );
+  },
+  // Modern Armor
+  (f) => {
+    const jig = [0, -0.8, 0, 0.8][f];
+    let wheels = '';
+    for (let x = 28; x <= 100; x += 12) wheels += `<circle cx="${x}" cy="${GROUND - 9}" r="5.5" fill="#55585a"/>`;
+    let treads = '';
+    for (let x = 20 + ((f * 3) % 10); x < 110; x += 10) treads += `<path d="M${x},${GROUND - 20} v3" stroke-width="2"/>`;
+    return (
+      shadow(64, 54, 7) +
+      wrap(
+        `<g transform="translate(0,${jig})"><path d="M14,${GROUND - 22} l10,-16 h76 l16,16 Z" fill="#b8a77a"/><path d="M34,${GROUND - 38} l6,-12 h40 l10,12 Z" fill="#a8976a"/>` +
+          `<path d="M84,${GROUND - 46} h40 v4 h-40 Z" fill="#6f6650"/><path d="M50,${GROUND - 50} v-6 h12 v6" fill="#8f8460"/><path d="M24,${GROUND - 38} h76" stroke="rgba(255,255,255,0.35)" stroke-width="1.6"/></g>` +
+          `<rect x="12" y="${GROUND - 21}" width="104" height="22" rx="11" fill="#3a3a36"/>` + wheels + treads +
+          (f === 2 ? `<g stroke="none"><circle cx="126" cy="${GROUND - 44}" r="5" fill="rgba(255,214,120,0.85)"/></g>` : ''),
+      )
+    );
+  },
 ];
 
 /** A great person: a figure standing in a softly pulsing golden aura. */

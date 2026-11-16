@@ -10,12 +10,15 @@ Turn-based, Civilization-style empire building on a hex map, playable in the bro
 - Cities that grow (up to 8, 16 with an Aqueduct or a river, beyond with a Sewer System), can
   starve, and need happy citizens: disorder stops growth, production, science and taxes
 - Specialists (entertainers, tax collectors, scientists) and corruption by distance
+- Science, luxury and tax rates, capped by your government
 - Strategic and luxury resources joined to cities by roads and harbours, and traded with leaders
 - 38 technologies from Pottery to Superconductors, shown as a tree by era
 - Six governments chosen in a revolution (with anarchy): Despotism to Democracy, Communism and
   Fundamentalism; martial law where it applies
 - Combat in rounds with hit points, veterans and elites, retreat, walls, fortification, river and
   terrain defence, artillery bombardment, great generals, zone of control and unit upgrades
+- A defender for every age: Warrior, Spearman, Phalanx, Pikeman, Musketman, Rifleman, Infantry and
+  Mech. Infantry, and Modern Armor after the Tank
 - Ships and aircraft, troops crossing the sea in boats
 - World wonders (one per world) with real effects, golden ages
 - Great people: generals, merchants, scientists, artists, engineers
@@ -186,11 +189,14 @@ Computer players follow the same rules as you and are run by three pieces of cod
   city is re-occupied by the nearest unit; field units strike beatable enemies nearby and march on
   enemy cities, but gather outside a defended city until enough of the army has arrived. Workers
   road resources and cities, then farm and mine. Settlers walk clear of existing cities to found
-  new ones. Research follows temperament: warlike leaders study arms first, builders the economy.
+  new ones: each settler heads for the best free site in reach (good land, resources, not too far),
+  sailing there once the civilization knows Seafaring. Research follows temperament: warlike
+  leaders study arms first, builders the economy; a civilization hemmed in on a small island
+  studies Seafaring first.
 - **Cities** (`src/governor.rs`): each city picks its next project in order of need - a defender if
   it has none, workers while roads are missing, a Harbor if it is cut off from the capital, an army
   sized to peace or war, settlers, then buildings and wonders. A city in danger pays gold to hurry
-  its defender.
+  its defender. Settlers keep coming (one per six cities) while there is free land within reach.
 - **Economy and diplomacy** (`src/main.rs`, `src/foreign.rs`): science and gold come from their own
   cities and buildings. Spare gold hurries production and is invested in research. Their merchants
   propose resource deals: to buy what you can spare and sell what they can. They also buy and
@@ -257,6 +263,13 @@ keep it as a backup. On the desktop the files are `autosave.json` and `savegame.
 working directory.
 
 ## Rules in brief
+- **Rates**: each of your cities' commerce (its science and taxes) is pooled and split by the rates
+  in the Empire advisor's Government tab: science, luxury, and taxes for the rest. Every 2 luxury
+  make a citizen happy. A government limits any one rate: Despotism 60%, Monarchy and Communism
+  70%, Republic 80%, Democracy 100%, Fundamentalism 50%; Anarchy allows no science.
+- **Defenders**: Pikeman (Engineering, Iron), Musketman (Gunpowder, Saltpeter), Rifleman
+  (Industrialization, Saltpeter), Infantry (Electricity), Mech. Infantry (Computers, Oil); Modern
+  Armor (Plastics, Oil) follows the Tank. Older units upgrade along this line in a city for gold.
 - **Happiness**: five citizens are content; the rest are unhappy until calmed by temples (+2),
   colosseums and cathedrals (+3), wonders, masterpieces, entertainers or martial law (troops in the
   city under Despotism, Monarchy and Communism). Each luxury the city can reach makes one citizen

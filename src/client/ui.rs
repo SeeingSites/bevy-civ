@@ -915,8 +915,13 @@ pub fn rebuild_panels(
             p.spawn(row(14.0)).with_children(|r| {
                 stat(r, art, icon::FOOD, format!("+{food}"), CREAM);
                 stat(r, art, icon::PRODUCTION, format!("+{production}"), CREAM);
-                stat(r, art, icon::SCIENCE, format!("+{}", city.science_per_turn(buildings, gov, dist)), CREAM);
-                stat(r, art, icon::GOLD, format!("+{}", city.gold_per_turn(buildings) + 1 + extra_gold), CREAM);
+                let commerce = city.science_per_turn(buildings, gov, dist) + city.gold_per_turn(buildings) + 1;
+                let (science, luxury, gold) = state.split_commerce(commerce);
+                stat(r, art, icon::SCIENCE, format!("+{science}"), CREAM);
+                stat(r, art, icon::GOLD, format!("+{}", gold + extra_gold), CREAM);
+                if luxury > 0 {
+                    r.spawn(label(&art.font_body, format!("lux {luxury}"), 14.0, CREAM));
+                }
                 stat(r, art, icon::HAPPY, format!("{} / {}", happiness.happy + happiness.content, happiness.unhappy), if happiness.in_disorder() { Color::srgb(1.0, 0.45, 0.4) } else { CREAM });
             });
             let grow_in = (city.food_to_grow().saturating_sub(city.food_storage) as f32 / food.max(1) as f32).ceil();
@@ -1191,6 +1196,32 @@ pub fn rebuild_panels(
                                 };
                                 w.spawn(label(&art.font_bold, status, 16.0, INK));
                                 w.spawn(label(&art.font_body, format!("A revolution costs {} turns of anarchy: no science, poor production.", Government::REVOLUTION_TURNS), 14.0, INK_SOFT));
+                                // Rates: how the empire's commerce is split between science, luxury and taxes.
+                                let cap = state.government.science_cap();
+                                w.spawn(label(&art.font_bold, format!("Rates (a {} allows at most {cap}% in one)", state.government.name()), 15.0, INK));
+                                let (sci, lux) = (state.science_rate, state.luxury_rate);
+                                let rows: [(&str, u32, Option<(u32, u32)>, Option<(u32, u32)>); 3] = [
+                                    ("Science", sci, (sci >= 10).then(|| (sci - 10, lux)), (sci + 10 <= cap && sci + lux + 10 <= 100).then(|| (sci + 10, lux))),
+                                    ("Luxury", lux, (lux >= 10).then(|| (sci, lux - 10)), (lux + 10 <= cap && sci + lux + 10 <= 100).then(|| (sci, lux + 10))),
+                                    ("Taxes", state.tax_rate(), None, None),
+                                ];
+                                for (name, value, less, more) in rows {
+                                    w.spawn(Node { align_items: AlignItems::Center, column_gap: Val::Px(10.0), ..default() }).with_children(|r| {
+                                        r.spawn(Node { width: Val::Px(150.0), ..default() }).with_children(|c| {
+                                            c.spawn(label(&art.font_bold, format!("{name} {value}%"), 15.0, INK));
+                                        });
+                                        for (text, change) in [("-10%", less), ("+10%", more)] {
+                                            r.spawn(Node { width: Val::Px(64.0), ..default() }).with_children(|slot| {
+                                                if let Some((s, l)) = change {
+                                                    button(slot, art, text, Command::Game(Action::SetRates(s, l)), BRONZE, 13.0);
+                                                }
+                                            });
+                                        }
+                                        if name == "Taxes" {
+                                            r.spawn(label(&art.font_body, "the rest; every 2 luxury make a citizen happy", 13.0, INK_SOFT));
+                                        }
+                                    });
+                                }
                                 for g in Government::CHOICES {
                                     let known = g.available(&tech);
                                     w.spawn(Node { align_items: AlignItems::Center, column_gap: Val::Px(10.0), ..default() }).with_children(|r| {

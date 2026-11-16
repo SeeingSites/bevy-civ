@@ -63,6 +63,12 @@ pub enum UnitType {
     GreatScientist,
     GreatArtist,
     GreatEngineer,
+    // The later defenders (after the great people, to keep the sprite rows in order)
+    Pikeman,
+    Musketman,
+    Infantry,
+    MechInfantry,
+    ModernArmor,
 }
 
 /// Where a unit can go: over land (boarding a boat to cross water), on the sea, or through the air.
@@ -78,14 +84,15 @@ pub const AIR_RANGE: i32 = 8;
 
 impl UnitType {
     /// Every unit type, in declaration order (also the row order of the sprite atlas).
-    pub const ALL: [UnitType; 31] = [
+    pub const ALL: [UnitType; 36] = [
         UnitType::Settler, UnitType::Worker, UnitType::Warrior, UnitType::Spearman, UnitType::Archer,
         UnitType::Horseman, UnitType::Legion, UnitType::WarChariot, UnitType::Immortal, UnitType::Phalanx,
         UnitType::Catapult, UnitType::Knight, UnitType::Cannon, UnitType::Rifleman, UnitType::Cavalry,
         UnitType::Tank, UnitType::Artillery, UnitType::Diplomat, UnitType::Caravan, UnitType::Galley,
         UnitType::Frigate, UnitType::Ironclad, UnitType::Destroyer, UnitType::Battleship, UnitType::Fighter,
         UnitType::Bomber, UnitType::GreatGeneral, UnitType::GreatMerchant, UnitType::GreatScientist,
-        UnitType::GreatArtist, UnitType::GreatEngineer,
+        UnitType::GreatArtist, UnitType::GreatEngineer, UnitType::Pikeman, UnitType::Musketman, UnitType::Infantry,
+        UnitType::MechInfantry, UnitType::ModernArmor,
     ];
 
     /// The five kinds of great person.
@@ -135,6 +142,11 @@ impl UnitType {
             UnitType::GreatScientist => "Great Scientist",
             UnitType::GreatArtist => "Great Artist",
             UnitType::GreatEngineer => "Great Engineer",
+            UnitType::Pikeman => "Pikeman",
+            UnitType::Musketman => "Musketman",
+            UnitType::Infantry => "Infantry",
+            UnitType::MechInfantry => "Mech. Infantry",
+            UnitType::ModernArmor => "Modern Armor",
         }
     }
 
@@ -150,7 +162,12 @@ impl UnitType {
             UnitType::WarChariot => Some(Tech::TheWheel),
             UnitType::Catapult => Some(Tech::Mathematics),
             UnitType::Knight => Some(Tech::HorsebackRiding),
-            UnitType::Cannon | UnitType::Rifleman | UnitType::Cavalry => Some(Tech::Gunpowder),
+            UnitType::Pikeman => Some(Tech::Engineering),
+            UnitType::Cannon | UnitType::Musketman | UnitType::Cavalry => Some(Tech::Gunpowder),
+            UnitType::Rifleman => Some(Tech::Industrialization),
+            UnitType::Infantry => Some(Tech::Electricity),
+            UnitType::MechInfantry => Some(Tech::Computers),
+            UnitType::ModernArmor => Some(Tech::Plastics),
             UnitType::Artillery => Some(Tech::ReplaceableParts),
             UnitType::Tank => Some(Tech::MotorizedTransport),
             UnitType::Diplomat => Some(Tech::Writing),
@@ -179,7 +196,12 @@ impl UnitType {
             UnitType::Catapult => (4, 1, 1),
             UnitType::Knight => (4, 2, 2),
             UnitType::Cannon => (6, 1, 1),
-            UnitType::Rifleman => (5, 4, 1),
+            UnitType::Rifleman => (5, 7, 1),
+            UnitType::Pikeman => (1, 4, 1),
+            UnitType::Musketman => (2, 6, 1),
+            UnitType::Infantry => (6, 10, 1),
+            UnitType::MechInfantry => (6, 14, 2),
+            UnitType::ModernArmor => (20, 12, 3),
             UnitType::Cavalry => (6, 2, 2),
             UnitType::Tank => (10, 5, 2),
             UnitType::Artillery => (8, 2, 1),
@@ -212,6 +234,11 @@ impl UnitType {
             UnitType::Knight => 50,
             UnitType::Cannon => 60,
             UnitType::Rifleman => 50,
+            UnitType::Pikeman => 30,
+            UnitType::Musketman => 40,
+            UnitType::Infantry => 70,
+            UnitType::MechInfantry => 110,
+            UnitType::ModernArmor => 150,
             UnitType::Cavalry => 60,
             UnitType::Tank => 100,
             UnitType::Artillery => 80,
@@ -245,6 +272,10 @@ impl UnitType {
             UnitType::Knight => Color::srgb(0.6, 0.2, 0.5),
             UnitType::Cannon => Color::srgb(0.3, 0.3, 0.3),
             UnitType::Rifleman => Color::srgb(0.2, 0.5, 0.2),
+            UnitType::Pikeman => Color::srgb(0.42, 0.48, 0.56),
+            UnitType::Musketman => Color::srgb(0.7, 0.15, 0.12),
+            UnitType::Infantry | UnitType::MechInfantry => Color::srgb(0.37, 0.42, 0.23),
+            UnitType::ModernArmor => Color::srgb(0.72, 0.65, 0.48),
             UnitType::Cavalry => Color::srgb(0.7, 0.5, 0.2),
             UnitType::Tank => Color::srgb(0.4, 0.4, 0.2),
             UnitType::Artillery => Color::srgb(0.5, 0.4, 0.3),
@@ -285,7 +316,9 @@ impl UnitType {
             UnitType::Legion | UnitType::Immortal | UnitType::Artillery => &[Resource::Iron],
             UnitType::Knight => &[Resource::Horses, Resource::Iron],
             UnitType::Cannon => &[Resource::Iron, Resource::Saltpeter],
-            UnitType::Rifleman => &[Resource::Saltpeter],
+            UnitType::Pikeman => &[Resource::Iron],
+            UnitType::Musketman | UnitType::Rifleman => &[Resource::Saltpeter],
+            UnitType::MechInfantry | UnitType::ModernArmor => &[Resource::Oil],
             UnitType::Cavalry => &[Resource::Horses, Resource::Saltpeter],
             UnitType::Tank | UnitType::Bomber => &[Resource::Oil, Resource::Rubber],
             UnitType::Frigate => &[Resource::Iron, Resource::Saltpeter],
@@ -309,7 +342,8 @@ impl UnitType {
         match self {
             UnitType::Immortal | UnitType::Phalanx => 1.5,
             UnitType::Legion => 1.2,
-            UnitType::Rifleman | UnitType::Tank => 1.3,
+            UnitType::Tank => 1.3,
+            UnitType::Pikeman => 1.25,
             _ => 1.0,
         }
     }
@@ -320,7 +354,12 @@ impl UnitType {
         Some(match self {
             Warrior => Spearman,
             Spearman => Phalanx,
-            Phalanx | Archer | Legion | Immortal => Rifleman,
+            Phalanx => Pikeman,
+            Pikeman | Archer | Legion | Immortal => Musketman,
+            Musketman => Rifleman,
+            Rifleman => Infantry,
+            Infantry => MechInfantry,
+            Tank => ModernArmor,
             Horseman | WarChariot => Knight,
             Knight => Cavalry,
             Cavalry => Tank,

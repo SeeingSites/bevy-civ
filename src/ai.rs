@@ -151,6 +151,23 @@ pub fn process_ai_turn(
     let roads = road_network(tiles.iter(), city_positions.iter().map(|(p, _)| *p));
     let terrain_at: HashMap<Hex, Terrain> = land.iter().copied().collect();
     let polluted: std::collections::HashSet<Hex> = tiles.iter().filter(|t| t.is_polluted()).map(|t| t.coord).collect();
+    let resources: std::collections::HashSet<Hex> = tiles.iter().filter(|t| t.resource.is_some()).map(|t| t.coord).collect();
+    // How good a place is for a city: the land around it (grass and plains best), the sea for a
+    // harbour, and any resources within reach.
+    let site_value = |site: Hex| -> i32 {
+        hexx::shapes::hexagon(site, 2)
+            .map(|h| {
+                let land = match terrain_at.get(&h) {
+                    Some(Terrain::Grassland | Terrain::Plains) => 3,
+                    Some(Terrain::Hills) => 2,
+                    Some(Terrain::Forest) => 1,
+                    Some(Terrain::Water) => 1,
+                    _ => 0,
+                };
+                land + if resources.contains(&h) { 3 } else { 0 }
+            })
+            .sum()
+    };
     let features: HashMap<Hex, (Terrain, bool, bool)> = tiles
         .iter()
         .map(|t| (t.coord, (t.terrain, t.improvements.contains(&Improvement::Farm), t.improvements.contains(&Improvement::Mine))))
@@ -232,6 +249,31 @@ pub fn process_ai_turn(
             let crowded = |hex: Hex| {
                 city_positions.iter().any(|(p, _)| p.distance_to(hex) < 3) || founded.iter().any(|p| p.distance_to(hex) < 3)
             };
+            // The best free site within reach (by land, or by sea once Seafaring is known).
+            let reach = if can_sail { 14 } else { 10 };
+            let target = land_set
+                .iter()
+                .copied()
+                .filter(|h| h.distance_to(here) <= reach && !crowded(*h) && !occupied.get(h).is_some_and(|(o, _)| *o != owner))
+                .max_by_key(|h| (site_value(*h) * 4 - h.distance_to(here) * 3, h.x, h.y));
+            let settle_here = is_land(here) && !crowded(here) && target.is_none_or(|t| t == here || site_value(here) * 4 >= site_value(t) * 4 - 6);
+            if !settle_here {
+                if let Some(target) = target {
+                    let travel = if can_sail { Travel::Amphibious } else { Travel::Land };
+                    if let Some(path) = find_route(here, target, land.iter().copied(), &roads, travel) {
+                        for next in path.into_iter().skip(1) {
+                            if !unit.can_move() || occupied.get(&next).is_some_and(|(o, _)| *o != owner) {
+                                break;
+                            }
+                            let boarding = is_land(unit.position) != is_land(next);
+                            let cost = if boarding { StepCost::EndsTurn } else { land_step(unit.position, next, terrain_at.get(&next).copied(), &roads, true) };
+                            unit.step(next, cost);
+                        }
+                        unit.end_move();
+                        continue;
+                    }
+                }
+            }
             if is_land(here) && !crowded(here) {
                 let civ = civs.players.iter().find(|c| c.id == owner);
                 let count = city_positions.iter().filter(|(_, o)| *o == owner).count() + founded.len();

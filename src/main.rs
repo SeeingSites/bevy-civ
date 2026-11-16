@@ -168,6 +168,30 @@ pub struct GameState {
     /// The game ends on this turn if nobody has won.
     #[serde(default = "default_last_turn")]
     pub last_turn: u32,
+    /// How the player's commerce is split, in percent: science and luxury; taxes take the rest.
+    #[serde(default = "default_science_rate")]
+    pub science_rate: u32,
+    #[serde(default)]
+    pub luxury_rate: u32,
+}
+
+fn default_science_rate() -> u32 {
+    60
+}
+
+impl GameState {
+    pub fn tax_rate(&self) -> u32 {
+        100u32.saturating_sub(self.science_rate + self.luxury_rate)
+    }
+
+    /// Splits a city's commerce into (science, luxury, gold) by the rates.
+    pub fn split_commerce(&self, commerce: u32) -> (u32, u32, u32) {
+        // A government that allows less than the chosen rate caps it (the rest goes to taxes).
+        let cap = self.government.science_cap();
+        let science = commerce * self.science_rate.min(cap) / 100;
+        let luxury = commerce * self.luxury_rate.min(cap) / 100;
+        (science, luxury, commerce - science - luxury)
+    }
 }
 
 fn default_last_turn() -> u32 {
@@ -190,6 +214,8 @@ impl Default for GameState {
             pending_government: None,
             difficulty: Difficulty::Regent,
             last_turn: LAST_TURN,
+            science_rate: 60,
+            luxury_rate: 0,
         }
     }
 }
@@ -277,6 +303,8 @@ pub enum Action {
     Upgrade,
     /// Burn the selected city, taken this turn, to the ground.
     Raze,
+    /// Set the share of commerce going to science and to luxury (percent; taxes take the rest).
+    SetRates(u32, u32),
     /// Buy the rest of the selected city's project with gold (not wonders).
     Hurry,
     /// Rush the selected city's project with citizens' labour (Despotism and Communism).
@@ -1475,6 +1503,14 @@ fn apply_actions(
                     cycle.advance = true;
                 }
             }
+            Action::SetRates(science, luxury) => {
+                let cap = state.government.science_cap();
+                let (science, luxury) = ((*science).min(cap), (*luxury).min(cap));
+                if science + luxury <= 100 {
+                    state.science_rate = science;
+                    state.luxury_rate = luxury;
+                }
+            }
             Action::Hurry | Action::Rush => {
                 let Some(mut city) = selection.city.and_then(|e| cities.get_mut(e).ok()) else { continue };
                 if city.owner != PLAYER {
@@ -1937,6 +1973,28 @@ fn process_turn(
     for (_, unit) in units.iter().filter(|(_, u)| matches!(u.unit_type, UnitType::Caravan | UnitType::Diplomat)) {
         *envoy_counts.entry((unit.owner, unit.unit_type)).or_default() += 1;
     }
+    // Civilizations with free land for new cities near their own (at least 3 tiles from any city,
+    // within 10 of one of theirs).
+    let room: HashSet<u32> = {
+        let city_spots: Vec<(Hex, u32)> = cities.iter().map(|(c, _, _)| (c.position, c.owner)).collect();
+        let free: Vec<Hex> = tiles
+            .iter()
+            .filter(|t| t.terrain != Terrain::Water && city_spots.iter().all(|(p, _)| p.distance_to(t.coord) >= 3))
+            .map(|t| t.coord)
+            .collect();
+        civs.players
+            .iter()
+            .filter(|c| free.iter().any(|f| city_spots.iter().any(|(p, o)| *o == c.id && p.distance_to(*f) <= 10)))
+            .map(|c| c.id)
+            .collect()
+    };
+    // A computer civilization hemmed in on a small island studies seafaring first, to reach new land.
+    for civ in civs.players.iter_mut().filter(|c| c.id != PLAYER) {
+        let owned = cities.iter().filter(|(c, _, _)| c.owner == civ.id).count();
+        if owned > 0 && owned < 4 && state.turn > 20 && civ.tech.can_research(Tech::Seafaring) {
+            civ.tech.current = Some(Tech::Seafaring);
+        }
+    }
     // Spaceship parts each civilization still needs (one city per part kind at a time is enough).
     let space_wanted: HashMap<u32, Vec<Building>> = civs
         .players
@@ -2055,7 +2113,7 @@ fn process_turn(
                 // An empty city drops everything for a defender, and pays to hurry it when in danger.
                 let already = matches!(&city.production_queue, Some(ProductionItem::Unit(u)) if u.is_army());
                 if !already {
-                    let civ_view = governor::CivView { tech: &civ.tech, aggression: civ.aggression, cities: 1, workers: 1, settlers: 1, military: 0, navy: 0, air: 0, road_work: 0, cut_off: 0, at_war: true, wonders_taken: &wonders_taken, caravans: 1, diplomats: 1, wonder_elsewhere: false, space_parts: &[] };
+                    let civ_view = governor::CivView { tech: &civ.tech, aggression: civ.aggression, cities: 1, workers: 1, settlers: 1, military: 0, navy: 0, air: 0, road_work: 0, cut_off: 0, at_war: true, wonders_taken: &wonders_taken, caravans: 1, diplomats: 1, wonder_elsewhere: false, space_parts: &[], room_to_expand: false };
                     city.production_queue = Some(ProductionItem::Unit(governor::best_defender(&view, &civ_view, &supplies)));
                 }
                 let remaining = city.production_queue.as_ref().map(|i| i.cost()).unwrap_or(0).saturating_sub(city.production_progress) as i32;
@@ -2103,7 +2161,11 @@ fn process_turn(
             + if wonders.owns(owner, Building::Mausoleum) { buildings.buildings.iter().filter(|b| matches!(b, Building::Temple | Building::Walls)).count() as u32 } else { 0 }
             + if buildings.has(Building::Shakespeare) { city.population } else { 0 }
             + if mine { state.difficulty.player_content() } else { 0 };
-        let joy = supply::luxury_happiness(supplies.luxuries(city.position), has_market);
+        // The player's commerce (what the city's science and taxes would be) is split by the rates;
+        // every two points of luxury make one citizen happy.
+        let commerce = city.science_per_turn(&buildings, gov, dist) + city.gold_per_turn(&buildings) + 1;
+        let (rate_science, rate_luxury, rate_gold) = if mine { state.split_commerce(commerce) } else { (0, 0, 0) };
+        let joy = supply::luxury_happiness(supplies.luxuries(city.position), has_market) + rate_luxury / 2;
         happiness.update(city.population, calm, joy);
         // A computer player's governor turns workers into entertainers to end disorder, and back again.
         if !mine && owner != BARBARIANS {
@@ -2349,6 +2411,7 @@ fn process_turn(
                     diplomats: envoy_counts.get(&(owner, UnitType::Diplomat)).copied().unwrap_or(0),
                     wonder_elsewhere: wonder_sites.iter().any(|(at, o)| *o == owner && *at != city.position),
                     space_parts: &space_wanted.get(&owner).cloned().unwrap_or_default(),
+                    room_to_expand: room.contains(&owner),
                 };
                 // The unit just trained (if any) now holds the city.
                 let view = governor::CityView { built: buildings.buildings.clone(), defended: view.defended || just_trained, ..view };
@@ -2388,8 +2451,8 @@ fn process_turn(
         }
 
         if mine && !idle {
-            total_science += city.science_per_turn(&buildings, gov, dist);
-            total_gold += city.gold_per_turn(&buildings) as i32 + 1;
+            total_science += rate_science;
+            total_gold += rate_gold as i32;
         }
     }
 
@@ -3052,6 +3115,23 @@ fn refresh_supplies(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn rates_split_commerce_within_the_government_cap() {
+        let mut state = GameState::default();
+        assert_eq!(state.split_commerce(10), (6, 0, 4));
+        state.science_rate = 50;
+        state.luxury_rate = 30;
+        assert_eq!(state.split_commerce(10), (5, 3, 2));
+        assert_eq!(state.tax_rate(), 20);
+        // Despotism allows at most 60% in one: a 90% science rate pays only 60%.
+        state.government = bevy_civ::government::Government::Despotism;
+        state.science_rate = 90;
+        state.luxury_rate = 0;
+        assert_eq!(state.split_commerce(10), (6, 0, 4));
+        state.government = bevy_civ::government::Government::Anarchy;
+        assert_eq!(state.split_commerce(10).0, 0);
+    }
 
     fn plain_map() -> MapData {
         MapData {
