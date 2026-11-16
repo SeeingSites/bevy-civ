@@ -153,11 +153,12 @@ impl Building {
         }
     }
 
-    /// The largest a city can grow without (and with) the buildings that supply water.
-    pub fn size_limit(buildings: &[Building]) -> u32 {
+    /// The largest a city can grow without (and with) the buildings that supply water. A river beside
+    /// the city counts as an aqueduct.
+    pub fn size_limit(buildings: &[Building], fresh_water: bool) -> u32 {
         if buildings.contains(&Building::SewerSystem) {
             u32::MAX
-        } else if buildings.contains(&Building::Aqueduct) {
+        } else if buildings.contains(&Building::Aqueduct) || fresh_water {
             16
         } else {
             8

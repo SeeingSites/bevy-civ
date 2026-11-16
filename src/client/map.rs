@@ -96,6 +96,7 @@ pub fn refresh_map(
     fog: Res<FogOfWar>,
     clock: Res<WaterClock>,
     (tech, supplies): (Res<TechState>, Res<crate::supply::Supplies>),
+    rivers: Res<crate::Rivers>,
     mut tiles: Query<(&HexTile, &mut Sprite)>,
     cities: Query<&City>,
     decor: Query<Entity, With<Decor>>,
@@ -180,6 +181,18 @@ pub fn refresh_map(
                 }
             }
             overlay_at(overlay::ROAD_HUB, None, if rail { iron } else { tint }, 0.009);
+        }
+        // Rivers: a blue channel towards the next and previous tiles of each river.
+        if rivers.tiles.contains(&hex) {
+            for path in rivers.paths.iter().filter(|p| p.contains(&hex)) {
+                let i = path.iter().position(|h| *h == hex).unwrap_or(0);
+                for n in [i.checked_sub(1).and_then(|j| path.get(j)), path.get(i + 1)].into_iter().flatten() {
+                    overlay_at(overlay::ROAD, Some(*n), Color::srgb(0.32, 0.6, 0.95).mix(&tint, 0.15), 0.007);
+                }
+            }
+        }
+        if tile.is_polluted() {
+            overlay_at(overlay::BASE, None, Color::srgba(0.25, 0.2, 0.12, 0.7), 0.012);
         }
         if tile.improvements.contains(&Improvement::Mine) {
             overlay_at(overlay::MINE, None, tint, 0.01);

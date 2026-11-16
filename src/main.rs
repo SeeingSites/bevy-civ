@@ -201,6 +201,10 @@ pub enum Action {
     SelectCity(Entity),
     /// The selected unit, in one of the player's cities, is re-equipped as its modern successor.
     Upgrade,
+    /// Burn the selected city, taken this turn, to the ground.
+    Raze,
+    /// K: the selected worker looks after the land by itself (again to take it back).
+    Automate,
     /// Make one of the selected city's workers a specialist of this kind (true), or send one back (false).
     Specialist(bevy_civ::city::Specialist, bool),
     /// The selected artillery, ship or bomber fires on the strongest enemy next to it.
@@ -216,7 +220,92 @@ pub enum Action {
 pub struct MapClick {
     pub hex: Hex,
     pub secondary: bool,
+    /// Move every unit of the same kind (land, sea or air) on the selected unit's tile.
+    pub group: bool,
 }
+
+/// Rivers: each a chain of tiles running from high ground down to the sea.
+#[derive(Resource, Default, Clone, serde::Serialize, serde::Deserialize)]
+pub struct Rivers {
+    pub paths: Vec<Vec<Hex>>,
+    pub tiles: HashSet<Hex>,
+}
+
+impl Rivers {
+    /// Traces rivers from some hills and mountains, always downhill (and towards the sea), until they
+    /// reach water. Roughly one river per sixty land tiles.
+    pub fn generate(terrain: &HashMap<Hex, Terrain>, rng: &mut impl Rng) -> Self {
+        let height = |t: Terrain| match t {
+            Terrain::Water => 0,
+            Terrain::Grassland | Terrain::Plains | Terrain::Desert => 1,
+            Terrain::Forest => 2,
+            Terrain::Hills => 3,
+            Terrain::Mountain => 4,
+        };
+        // Distance from the sea, by breadth-first search from every water tile.
+        let mut to_sea: HashMap<Hex, i32> = terrain.iter().filter(|(_, t)| **t == Terrain::Water).map(|(h, _)| (*h, 0)).collect();
+        let mut frontier: Vec<Hex> = to_sea.keys().copied().collect();
+        while !frontier.is_empty() {
+            let mut next = Vec::new();
+            for hex in frontier {
+                let d = to_sea[&hex];
+                for n in hex.all_neighbors() {
+                    if terrain.contains_key(&n) && !to_sea.contains_key(&n) {
+                        to_sea.insert(n, d + 1);
+                        next.push(n);
+                    }
+                }
+            }
+            frontier = next;
+        }
+        let mut sources: Vec<Hex> = terrain.iter().filter(|(_, t)| matches!(t, Terrain::Hills | Terrain::Mountain)).map(|(h, _)| *h).collect();
+        sources.sort_by_key(|h| (h.x, h.y));
+        let land = terrain.values().filter(|t| **t != Terrain::Water).count();
+        let wanted = land / 60;
+        let mut rivers = Rivers::default();
+        for _ in 0..wanted * 4 {
+            if rivers.paths.len() >= wanted || sources.is_empty() {
+                break;
+            }
+            let start = sources[rng.gen_range(0..sources.len())];
+            if rivers.tiles.contains(&start) || start.all_neighbors().iter().any(|n| rivers.tiles.contains(n)) {
+                continue;
+            }
+            let mut path = vec![start];
+            let mut here = start;
+            while path.len() < 30 {
+                let step = here
+                    .all_neighbors()
+                    .into_iter()
+                    .filter(|n| terrain.contains_key(n) && !path.contains(n))
+                    .min_by_key(|n| (height(terrain[n]), to_sea.get(n).copied().unwrap_or(99)));
+                let Some(step) = step else { break };
+                if height(terrain[&step]) > height(terrain[&here]) {
+                    break;
+                }
+                path.push(step);
+                here = step;
+                if terrain[&step] == Terrain::Water || rivers.tiles.contains(&step) {
+                    break;
+                }
+            }
+            let reached_water = path.last().is_some_and(|h| terrain[h] == Terrain::Water || rivers.tiles.contains(h));
+            if path.len() >= 4 && reached_water {
+                rivers.tiles.extend(path.iter().filter(|h| terrain[*h] != Terrain::Water));
+                rivers.paths.push(path);
+            }
+        }
+        rivers
+    }
+}
+
+/// A worker the player has handed over to automation: it finds its own jobs every turn.
+#[derive(Component)]
+pub struct Automated;
+
+/// Cities the player took this turn: they can still be razed.
+#[derive(Resource, Default)]
+pub struct JustCaptured(pub HashSet<Hex>);
 
 /// Ends the player's turn (sent once the order to end it is confirmed).
 #[derive(Event)]
@@ -331,6 +420,8 @@ fn main() {
         .init_resource::<History>()
         .init_resource::<CultureLedger>()
         .init_resource::<GoldenAges>()
+        .init_resource::<JustCaptured>()
+        .init_resource::<Rivers>()
         .add_event::<EndTurnNow>()
         .add_event::<Focus>()
         .add_event::<Action>()
@@ -341,7 +432,7 @@ fn main() {
         .add_systems(OnExit(AppState::Playing), cleanup_world)
         .add_systems(
             Update,
-            (handle_map_click, apply_actions, process_turn, continue_orders, advance_selection, preview_route, refresh_supplies)
+            (handle_map_click, apply_actions, process_turn, continue_orders, automate_workers, advance_selection, preview_route, refresh_supplies)
                 .chain()
                 .in_set(GameLogic)
                 .run_if(in_state(AppState::Playing)),
@@ -472,6 +563,7 @@ fn setup_world(
         transform.translation = home.extend(transform.translation.z);
         projection.scale = 1.0;
     }
+    commands.insert_resource(Rivers::generate(&map.terrain, &mut rng));
     commands.insert_resource(map);
     dirty.map = true;
     dirty.ui = true;
@@ -509,6 +601,8 @@ fn cleanup_world(
     commands.insert_resource(History::default());
     commands.insert_resource(CultureLedger::default());
     commands.insert_resource(GoldenAges::default());
+    commands.insert_resource(JustCaptured::default());
+    commands.insert_resource(Rivers::default());
     commands.insert_resource(Cycle { advance: true, force: false });
     commands.insert_resource(Dirty { map: true, ui: true });
 }
@@ -518,7 +612,7 @@ fn handle_map_click(
     mut selection: ResMut<Selection>,
     mut units: Query<(Entity, &mut Unit)>,
     mut cities: Query<(Entity, &mut City)>,
-    (tiles, walls_of): (Query<&HexTile>, Query<&CityBuildings>),
+    (tiles, walls_of, rivers): (Query<&HexTile>, Query<&CityBuildings>, Res<Rivers>),
     state: Res<GameState>,
     map: Res<MapData>,
     tech: Res<TechState>,
@@ -526,7 +620,7 @@ fn handle_map_click(
     mut diplomacy: ResMut<Diplomacy>,
     mut log: ResMut<GameLog>,
     mut dirty: ResMut<Dirty>,
-    (mut cycle, mut wonders, mut great): (ResMut<Cycle>, ResMut<WorldWonders>, ResMut<GreatPeople>),
+    (mut cycle, mut wonders, mut great, mut taken): (ResMut<Cycle>, ResMut<WorldWonders>, ResMut<GreatPeople>, ResMut<JustCaptured>),
     (mut bursts, mut sounds): (EventWriter<Burst>, EventWriter<Sfx>),
     mut commands: Commands,
 ) {
@@ -641,7 +735,12 @@ fn handle_map_click(
         // Stop next to a defended tile; the last step is the attack itself.
         let approach = if enemy.is_some() { &route[..route.len() - 1] } else { &route[..] };
         let mut trail = Vec::new();
-        walk(unit, approach, &map, &roads, &mut fog, &mut trail);
+        let enemies: HashSet<Hex> = snapshot
+            .iter()
+            .filter(|u| u.2 != PLAYER && u.3.is_army() && (u.2 == BARBARIANS || diplomacy.get_treaty(PLAYER, u.2) == Treaty::War))
+            .map(|u| u.1)
+            .collect();
+        walk(unit, approach, &map, &roads, &enemies, &mut fog, &mut trail);
         if !trail.is_empty() {
             sounds.send(Sfx::moving(domain));
         }
@@ -670,7 +769,7 @@ fn handle_map_click(
                 let outcome = combat::fight(
                     Side { kind: unit.unit_type, hp: unit.hp, level: unit.level, led: led(unit.position, PLAYER) },
                     Side { kind: enemy_type, hp: d_hp, level: d_level, led: led(hex, enemy_owner) },
-                    Ground { terrain, fortified: dug_in, walls },
+                    Ground { terrain, fortified: dug_in, walls, river: rivers.tiles.contains(&hex) },
                     &mut rand::thread_rng(),
                 );
                 // The defender's wounds (it is another entity, so the change is queued).
@@ -725,12 +824,41 @@ fn handle_map_click(
         }
 
         fog.reveal(unit.position, 2);
-        capture(unit, cities.iter_mut().map(|(_, c)| c), &mut wonders, &mut log);
+        capture(unit, cities.iter_mut().map(|(_, c)| c), &mut wonders, &mut taken, &mut log);
+
+        // The rest of the stack follows when ordered together.
+        if click.group {
+            let from = snapshot.iter().find(|u| u.0 == selected).map(|u| u.1);
+            let followers: Vec<Entity> = snapshot.iter().filter(|u| Some(u.1) == from && u.0 != selected && u.2 == PLAYER && u.3.domain() == domain).map(|u| u.0).collect();
+            let enemies: HashSet<Hex> = snapshot
+                .iter()
+                .filter(|u| u.2 != PLAYER && u.3.is_army() && (u.2 == BARBARIANS || diplomacy.get_treaty(PLAYER, u.2) == Treaty::War))
+                .map(|u| u.1)
+                .collect();
+            for follower in followers {
+                let Ok((_, mut unit)) = units.get_mut(follower) else { continue };
+                if unit.build_turns_left.is_some() || !unit.can_move() {
+                    continue;
+                }
+                let travel = player_travel(unit.unit_type.domain(), sail, &ports);
+                let Some(route) = find_route(unit.position, hex, tiles.iter().map(|t| (t.coord, t.terrain)), &roads, travel) else { continue };
+                let approach = if enemy.is_some() { &route[..route.len() - 1] } else { &route[..] };
+                let mut trail = Vec::new();
+                unit.fortified = false;
+                walk(&mut unit, approach, &map, &roads, &enemies, &mut fog, &mut trail);
+                let short = unit.position != *approach.last().unwrap_or(&hex);
+                if short {
+                    commands.entity(follower).insert((GoTo(hex), Trail(trail)));
+                } else {
+                    commands.entity(follower).insert(Trail(trail)).remove::<GoTo>();
+                }
+            }
+        }
     }
 }
 
 /// An army standing in a foreign city takes it.
-fn capture<'a>(unit: &Unit, cities: impl Iterator<Item = Mut<'a, City>>, wonders: &mut WorldWonders, log: &mut GameLog) {
+fn capture<'a>(unit: &Unit, cities: impl Iterator<Item = Mut<'a, City>>, wonders: &mut WorldWonders, taken: &mut JustCaptured, log: &mut GameLog) {
     if !unit.unit_type.is_army() {
         return;
     }
@@ -739,7 +867,9 @@ fn capture<'a>(unit: &Unit, cities: impl Iterator<Item = Mut<'a, City>>, wonders
             city.owner = PLAYER;
             city.is_capital = false;
             wonders.transfer_city(&city.name, PLAYER);
-            log.push(format!("Your {} captured {}!", unit.unit_type.name(), city.name));
+            taken.0.insert(city.position);
+            city.production_queue = None;
+            log.push(format!("Your {} captured {}! Keep it, or raze it from the city panel this turn.", unit.unit_type.name(), city.name));
         }
     }
 }
@@ -792,9 +922,9 @@ fn moves_per_turn(unit_type: UnitType, at: Hex, map: &MapData, sea_bonus: u32) -
 
 /// Moves a unit along `route` (which starts where it stands) while it has moves left, revealing the
 /// land around each tile entered and adding it to `trail`.
-fn walk(unit: &mut Unit, route: &[Hex], map: &MapData, roads: &HashMap<Hex, Road>, fog: &mut FogOfWar, trail: &mut Vec<Hex>) {
+fn walk(unit: &mut Unit, route: &[Hex], map: &MapData, roads: &HashMap<Hex, Road>, enemies: &HashSet<Hex>, fog: &mut FogOfWar, trail: &mut Vec<Hex>) {
     for next in route.iter().skip(1) {
-        if !unit.can_move() {
+        if !unit.can_move() || (unit.unit_type.is_army() && bevy_civ::pathfinding::zoc_blocks(unit.position, *next, enemies)) {
             break;
         }
         let cost = move_cost(unit.unit_type.domain(), unit.position, *next, map, roads);
@@ -816,9 +946,9 @@ fn continue_orders(
     mut units: Query<(Entity, &mut Unit, Option<&GoTo>)>,
     mut cities: Query<&mut City>,
     tiles: Query<&HexTile>,
-    (map, tech): (Res<MapData>, Res<TechState>),
+    (map, tech, diplomacy): (Res<MapData>, Res<TechState>, Res<Diplomacy>),
     mut fog: ResMut<FogOfWar>,
-    (mut log, mut wonders): (ResMut<GameLog>, ResMut<WorldWonders>),
+    (mut log, mut wonders, mut taken): (ResMut<GameLog>, ResMut<WorldWonders>, ResMut<JustCaptured>),
     mut dirty: ResMut<Dirty>,
     mut commands: Commands,
 ) {
@@ -826,6 +956,11 @@ fn continue_orders(
         return;
     }
     let foreign: HashSet<Hex> = units.iter().filter(|(_, u, _)| u.owner != PLAYER).map(|(_, u, _)| u.position).collect();
+    let enemy_armies: HashSet<Hex> = units
+        .iter()
+        .filter(|(_, u, _)| u.owner != PLAYER && u.unit_type.is_army() && (u.owner == BARBARIANS || diplomacy.get_treaty(PLAYER, u.owner) == Treaty::War))
+        .map(|(_, u, _)| u.position)
+        .collect();
     let ports: HashSet<Hex> = cities.iter().filter(|c| c.owner == PLAYER).map(|c| c.position).collect();
     let land: Vec<(Hex, Terrain)> = tiles.iter().map(|t| (t.coord, t.terrain)).collect();
     let roads = road_network(tiles.iter(), cities.iter().map(|c| c.position));
@@ -846,8 +981,8 @@ fn continue_orders(
         // Walk up to (not into) the first tile held by someone else.
         let clear = route.iter().skip(1).position(|h| foreign.contains(h)).map_or(route.len(), |i| i + 1);
         let mut trail = Vec::new();
-        walk(&mut unit, &route[..clear], &map, &roads, &mut fog, &mut trail);
-        capture(&unit, cities.iter_mut(), &mut wonders, &mut log);
+        walk(&mut unit, &route[..clear], &map, &roads, &enemy_armies, &mut fog, &mut trail);
+        capture(&unit, cities.iter_mut(), &mut wonders, &mut taken, &mut log);
         let blocked = clear < route.len() && unit.position == route[clear - 1];
         if unit.position == target || blocked {
             if blocked {
@@ -865,6 +1000,77 @@ fn continue_orders(
     }
     if !arrived.is_empty() {
         dirty.ui = true;
+    }
+}
+
+/// At the start of the player's turn, automated workers pick the most useful job inside our borders:
+/// clean pollution, road a resource, mine hills, farm flat land, then lay railroads. They walk to the
+/// nearest such tile (two workers never take the same one) and start work when they arrive.
+#[allow(clippy::too_many_arguments)]
+fn automate_workers(
+    state: Res<GameState>,
+    mut last_turn: Local<u32>,
+    mut workers: Query<(Entity, &mut Unit), With<Automated>>,
+    tiles: Query<&HexTile>,
+    cities: Query<&City>,
+    (map, tech, supplies): (Res<MapData>, Res<TechState>, Res<Supplies>),
+    mut fog: ResMut<FogOfWar>,
+    mut commands: Commands,
+) {
+    if std::mem::replace(&mut *last_turn, state.turn) == state.turn || state.victory.is_some() {
+        return;
+    }
+    let city_tiles: HashSet<Hex> = cities.iter().map(|c| c.position).collect();
+    let roads = road_network(tiles.iter(), city_tiles.iter().copied());
+    let land: Vec<(Hex, Terrain)> = tiles.iter().map(|t| (t.coord, t.terrain)).collect();
+    let steam = tech.researched.contains(&Tech::SteamPower);
+    // The job a tile needs, if any, with its urgency (lower is sooner).
+    let job = |tile: &HexTile| -> Option<(u8, Improvement)> {
+        let ours = supplies.territory.get(&tile.coord).is_some_and(|(o, _)| *o == PLAYER);
+        if !ours || tile.terrain == Terrain::Water || city_tiles.contains(&tile.coord) {
+            return None;
+        }
+        if tile.is_polluted() {
+            return Some((0, Improvement::Pollution));
+        }
+        if tile.resource.is_some() && !tile.has_road() {
+            return Some((1, Improvement::Road));
+        }
+        match tile.terrain {
+            Terrain::Hills | Terrain::Mountain if !tile.improvements.contains(&Improvement::Mine) => return Some((2, Improvement::Mine)),
+            Terrain::Grassland | Terrain::Plains if !tile.improvements.contains(&Improvement::Farm) => return Some((3, Improvement::Farm)),
+            _ => {}
+        }
+        (steam && tile.has_road() && !tile.has_railroad()).then_some((4, Improvement::Railroad))
+    };
+    let jobs: Vec<(Hex, u8, Improvement)> = tiles.iter().filter_map(|t| job(t).map(|(p, j)| (t.coord, p, j))).collect();
+    let mut claimed: HashSet<Hex> = HashSet::new();
+    for (entity, mut unit) in &mut workers {
+        if unit.owner != PLAYER || unit.build_turns_left.is_some() || !unit.can_move() {
+            continue;
+        }
+        let here = unit.position;
+        let target = jobs
+            .iter()
+            .filter(|(at, _, _)| !claimed.contains(at))
+            .min_by_key(|(at, urgency, _)| (*urgency as i32) * 3 + at.distance_to(here))
+            .copied();
+        let Some((at, _, improvement)) = target else {
+            unit.end_move();
+            continue;
+        };
+        claimed.insert(at);
+        if at != here {
+            let Some(route) = find_route(here, at, land.iter().copied(), &roads, Travel::Land) else { continue };
+            let mut trail = Vec::new();
+            walk(&mut unit, &route, &map, &roads, &HashSet::new(), &mut fog, &mut trail);
+            commands.entity(entity).insert(Trail(trail));
+        }
+        if unit.position == at && unit.can_move() {
+            unit.start_build(improvement);
+        } else {
+            unit.end_move();
+        }
     }
 }
 
@@ -950,14 +1156,17 @@ fn apply_actions(
     mut log: ResMut<GameLog>,
     mut dirty: ResMut<Dirty>,
     (mut cycle, supplies, mut map, mut end_turn, mut focus): (ResMut<Cycle>, Res<Supplies>, ResMut<MapData>, EventWriter<EndTurnNow>, EventWriter<Focus>),
-    (unit_entities, mut sounds, wonders, mut great, mut spies, homes, walled): (
+    (unit_entities, mut sounds, mut wonders, mut great, mut spies, homes, walled, mut taken, automated, rivers): (
         Query<Entity, With<Unit>>,
         EventWriter<Sfx>,
-        Res<WorldWonders>,
+        ResMut<WorldWonders>,
         ResMut<GreatPeople>,
         ResMut<Espionage>,
         Query<&HomeCity>,
         Query<(Entity, &CityBuildings)>,
+        ResMut<JustCaptured>,
+        Query<Entity, With<Automated>>,
+        Res<Rivers>,
     ),
     mut commands: Commands,
 ) {
@@ -1132,6 +1341,38 @@ fn apply_actions(
                     sounds.send(Sfx::Select);
                 }
             }
+            Action::Automate => {
+                let Some(entity) = selected_unit else { continue };
+                let Ok(unit) = units.get(entity) else { continue };
+                if !unit.unit_type.is_worker() {
+                    continue;
+                }
+                if automated.contains(entity) {
+                    commands.entity(entity).remove::<Automated>();
+                    log.push("The worker awaits your orders again.");
+                } else {
+                    commands.entity(entity).insert(Automated);
+                    commands.entity(entity).remove::<GoTo>();
+                    if let Ok(mut unit) = units.get_mut(entity) {
+                        unit.end_move();
+                    }
+                    log.push("The worker will look after our land by itself from next turn (K again to take it back).");
+                    cycle.advance = true;
+                }
+            }
+            Action::Raze => {
+                let Some(entity) = selection.city else { continue };
+                let Ok(city) = cities.get(entity) else { continue };
+                if city.owner != PLAYER || !taken.0.contains(&city.position) {
+                    continue;
+                }
+                log.push(format!("{} is razed to the ground.", city.name));
+                let (at, name) = (city.position, city.name.clone());
+                wonders.built.retain(|_, (_, place)| *place != name);
+                taken.0.remove(&at);
+                commands.entity(entity).despawn_recursive();
+                selection.city = None;
+            }
             Action::Specialist(kind, add) => {
                 let Some(mut city) = selection.city.and_then(|e| cities.get_mut(e).ok()) else { continue };
                 if city.owner != PLAYER {
@@ -1198,7 +1439,7 @@ fn apply_actions(
                 let hp = combat::bombard(
                     Side { kind, hp: 3, level, led: false },
                     Side { kind: their_kind, hp: their_hp, level: their_level, led: false },
-                    Ground { terrain, fortified: dug_in, walls: false },
+                    Ground { terrain, fortified: dug_in, walls: false, river: rivers.tiles.contains(&at) },
                     &mut rand::thread_rng(),
                 );
                 if let Ok(mut victim) = units.get_mut(target) {
@@ -1258,6 +1499,12 @@ fn apply_actions(
             Action::Transform => {
                 let Some(mut unit) = selected_unit.and_then(|e| units.get_mut(e).ok()) else { continue };
                 if !unit.unit_type.is_worker() || !unit.can_move() {
+                    continue;
+                }
+                if tiles.iter().any(|t| t.coord == unit.position && t.is_polluted()) {
+                    unit.start_build(Improvement::Pollution);
+                    cycle.advance = true;
+                    log.push("Worker begins cleaning up the pollution (3 turns).");
                     continue;
                 }
                 if let Some(mut tile) = tiles.iter_mut().find(|t| t.coord == unit.position) {
@@ -1506,7 +1753,14 @@ fn process_turn(
     (mut space, mut wonders, mut great, mut spies): (ResMut<SpaceRace>, ResMut<WorldWonders>, ResMut<GreatPeople>, ResMut<Espionage>),
     (mut log, mut dirty, mut cycle): (ResMut<GameLog>, ResMut<Dirty>, ResMut<Cycle>),
     mut bursts: EventWriter<Burst>,
-    (homes, mut history, mut culture, mut golden): (Query<&HomeCity>, ResMut<History>, ResMut<CultureLedger>, ResMut<GoldenAges>),
+    (homes, mut history, mut culture, mut golden, mut taken, rivers): (
+        Query<&HomeCity>,
+        ResMut<History>,
+        ResMut<CultureLedger>,
+        ResMut<GoldenAges>,
+        ResMut<JustCaptured>,
+        Res<Rivers>,
+    ),
     mut commands: Commands,
 ) {
     if actions.read().count() == 0 || state.victory.is_some() {
@@ -1517,6 +1771,8 @@ fn process_turn(
     state.turn += 1;
     spies.tick();
     golden.tick();
+    // The chance to raze last turn's conquests has passed.
+    taken.0.clear();
     // Routes close when a city changes hands or their two owners are at war.
     {
         let owners: HashMap<Hex, u32> = cities.iter().map(|(c, _, _)| (c.position, c.owner)).collect();
@@ -1664,8 +1920,12 @@ fn process_turn(
         let (extra_food, extra_shields, extra_gold) = supplies.yields.get(&city.position).copied().unwrap_or_default();
         city.food_storage += extra_food;
         city.production_progress += extra_shields;
+        // Trade along the rivers in the city's land: a gold for every river tile.
+        let river_gold = supplies.territory.iter().filter(|(at, (_, home))| *home == city.position && rivers.tiles.contains(at)).count() as i32;
         if mine {
-            total_gold += extra_gold as i32;
+            total_gold += extra_gold as i32 + river_gold;
+        } else if owner != BARBARIANS {
+            ai_income.entry(owner).or_default().1 += river_gold;
         }
 
         // Happiness. Temples and the like, wonders, masterpieces, entertainers and martial law calm the
@@ -1706,7 +1966,8 @@ fn process_turn(
         }
         let idle = unrest || disorder;
         if !idle {
-            match city.process_food(&buildings, gov, dist) {
+            let fresh_water = rivers.tiles.contains(&city.position) || city.position.all_neighbors().iter().any(|n| rivers.tiles.contains(n));
+            match city.process_food(&buildings, fresh_water) {
                 Growth::Grew if mine => log.push(format!("{} grows to size {}.", city.name, city.population)),
                 Growth::Starved if mine => log.push(format!("{} is starving and shrinks to size {}.", city.name, city.population)),
                 Growth::Capped if mine && state.turn % 5 == 0 => {
@@ -1828,6 +2089,25 @@ fn process_turn(
             }
         }
 
+        // Big industrial cities foul the land around them.
+        if buildings.has(Building::Factory) && city.population >= 10 && rng.gen_bool((0.04 + 0.01 * (city.population - 10) as f64).min(0.3)) {
+            let spoiled: Vec<Hex> = supplies
+                .territory
+                .iter()
+                .filter(|(at, (_, home))| *home == city.position && **at != city.position && !map.water.contains(at))
+                .map(|(at, _)| *at)
+                .collect();
+            if !spoiled.is_empty() {
+                let at = spoiled[rng.gen_range(0..spoiled.len())];
+                if let Some(mut tile) = tiles.iter_mut().find(|t| t.coord == at && !t.is_polluted()) {
+                    tile.add_improvement(Improvement::Pollution);
+                    if mine {
+                        log.push(format!("Pollution spoils land near {}: a worker can clean it up (X).", city.name));
+                    }
+                }
+            }
+        }
+
         // Culture accrues whatever the city's mood.
         culture.add(city.position, culture_rules::per_turn(&buildings.buildings, city.is_capital));
 
@@ -1938,9 +2218,16 @@ fn process_turn(
     for (_, mut unit) in &mut units {
         if let Some(done) = unit.process_build() {
             if let Some(mut tile) = tiles.iter_mut().find(|t| t.coord == unit.position) {
-                tile.add_improvement(done);
-                if unit.owner == PLAYER {
-                    log.push(format!("A {:?} is finished.", done));
+                if done == Improvement::Pollution {
+                    tile.improvements.retain(|i| *i != Improvement::Pollution);
+                    if unit.owner == PLAYER {
+                        log.push("The pollution is cleaned up.");
+                    }
+                } else {
+                    tile.add_improvement(done);
+                    if unit.owner == PLAYER {
+                        log.push(format!("A {:?} is finished.", done));
+                    }
                 }
             }
         }
@@ -2096,7 +2383,7 @@ fn process_turn(
         let outcome = combat::fight(
             Side { kind: a_type, hp: a_vitals.0, level: a_vitals.1, led: a_led },
             Side { kind: defending_as(d_type, attack.target, &map), hp: d_vitals.0, level: d_vitals.1, led: d_led },
-            Ground { terrain, fortified: dug_in, walls: walled_cities.contains(&attack.target) },
+            Ground { terrain, fortified: dug_in, walls: walled_cities.contains(&attack.target), river: rivers.tiles.contains(&attack.target) },
             &mut rng,
         );
         // Hit points left after the fight, and a chance of promotion for the victor.
@@ -2236,7 +2523,7 @@ fn process_turn(
                     let stop = blocked.map_or(stop, |b| b.min(stop));
                     if let Ok((_, mut unit)) = units.get_mut(entity) {
                         let mut trail = Vec::new();
-                        walk(&mut unit, &route[..stop.max(1)], &map, &roads, &mut fog, &mut trail);
+                        walk(&mut unit, &route[..stop.max(1)], &map, &roads, &HashSet::new(), &mut fog, &mut trail);
                         commands.entity(entity).insert(Trail(trail));
                     }
                 }
@@ -2541,7 +2828,9 @@ mod tests {
             .init_resource::<Supplies>()
             .init_resource::<WorldWonders>()
             .init_resource::<GreatPeople>()
-        .init_resource::<Espionage>()
+            .init_resource::<Espionage>()
+            .init_resource::<JustCaptured>()
+            .init_resource::<Rivers>()
             .add_systems(Update, apply_actions);
         let world = app.world_mut();
         let mut commands = world.commands();
@@ -2680,7 +2969,7 @@ mod tests {
         let walked = |roads: &HashMap<Hex, Road>, fog: &mut FogOfWar| {
             let mut unit = legion(1);
             let mut trail = Vec::new();
-            walk(&mut unit, &route, &map, roads, fog, &mut trail);
+            walk(&mut unit, &route, &map, roads, &HashSet::new(), fog, &mut trail);
             trail.len()
         };
         assert_eq!(walked(&HashMap::new(), &mut fog), 1);

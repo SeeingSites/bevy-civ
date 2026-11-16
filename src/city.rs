@@ -121,7 +121,7 @@ impl City {
 
     /// A turn of eating: the city grows when its granary fills (up to the size its water supply
     /// allows) and starves when it runs dry.
-    pub fn process_food(&mut self, buildings: &CityBuildings, _gov: Government, _dist: u32) -> Growth {
+    pub fn process_food(&mut self, buildings: &CityBuildings, fresh_water: bool) -> Growth {
         let balance = self.food_balance(buildings);
         if balance < 0 {
             let need = balance.unsigned_abs();
@@ -144,7 +144,7 @@ impl City {
         if self.food_storage < self.food_to_grow() {
             return Growth::Steady;
         }
-        if self.population >= crate::building::Building::size_limit(&buildings.buildings) {
+        if self.population >= crate::building::Building::size_limit(&buildings.buildings, fresh_water) {
             self.food_storage = self.food_to_grow();
             return Growth::Capped;
         }

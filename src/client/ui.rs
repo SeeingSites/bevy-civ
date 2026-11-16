@@ -106,7 +106,7 @@ fn help_lines(topic: HelpTopic) -> Vec<String> {
         HelpTopic::Basics => [
             "Click a unit or city to select it; click again or press Tab for the next unit on that tile. Click a tile (or right-click) to move; far destinations become standing orders.",
             "Space: skip a unit (or go to a city that needs a project, then end the turn). Enter: end the turn. N: next unit. H: fortify or sleep. Esc: close or deselect.",
-            "Workers: F farm, M mine, R road (railroad on a road, with Steam Power), X clear land, A automate. Settlers: B found a city.",
+            "Workers: F farm, M mine, R road (railroad on a road, with Steam Power), X clear land (or clean pollution), K automate. Settlers: B found a city.",
             "U uses a great person or a caravan's help on a wonder; T opens a caravan's trade route. Diplomats act from the unit panel next to a foreign city.",
             "Q science, E foreign affairs, G trade, Y empire (government, cities, military, score), F1 this encyclopedia, V sound, F2 save (the game also saves itself every turn).",
             "Roads triple movement for troops on foot; railroads make it free. Hills and forest cost 2 moves, mountains 3.",
@@ -169,6 +169,8 @@ pub struct UiState {
     pub city_tab: CityTab,
     pub empire_tab: EmpireTab,
     pub help_topic: HelpTopic,
+    /// Move orders take the whole stack along (as Shift-click does).
+    pub group_move: bool,
 }
 
 /// Pages of the city panel.
@@ -230,6 +232,7 @@ pub enum Command {
     CityTab(CityTab),
     EmpireTab(EmpireTab),
     HelpTopic(HelpTopic),
+    ToggleGroupMove,
 }
 
 #[derive(Component)]
@@ -664,7 +667,13 @@ pub fn rebuild_panels(
         Res<TradeRoutes>,
     ),
     cities: Query<(&City, &CityBuildings, &Happiness)>,
-    (city_list, space, history, culture): (Query<(Entity, &City)>, Res<bevy_civ::space::SpaceRace>, Res<crate::History>, Res<bevy_civ::culture::CultureLedger>),
+    (city_list, space, history, culture, taken): (
+        Query<(Entity, &City)>,
+        Res<bevy_civ::space::SpaceRace>,
+        Res<crate::History>,
+        Res<bevy_civ::culture::CultureLedger>,
+        Res<crate::JustCaptured>,
+    ),
     unit_panel: Query<Entity, With<UnitPanel>>,
     mut city_panel: Query<(Entity, &mut Node), (With<CityPanel>, Without<ModalRoot>)>,
     mut modal_root: Query<(Entity, &mut Node), (With<ModalRoot>, Without<CityPanel>)>,
@@ -764,6 +773,8 @@ pub fn rebuild_panels(
                         14.0,
                         GOLD,
                     ));
+                    let together = if ui.group_move { "Move together: On" } else { "Move together: Off (or Shift-click)" };
+                    p.spawn(row(6.0)).with_children(|r| button(r, art, together, Command::ToggleGroupMove, if ui.group_move { GREEN } else { BRONZE }, 13.0));
                     p.spawn(row(6.0)).with_children(|r| {
                         for entity in &stack {
                             let Ok(other) = units.get(*entity) else { continue };
@@ -793,6 +804,7 @@ pub fn rebuild_panels(
                         let rail = tiles.iter().any(|t| t.coord == unit.position && t.has_road() && !t.has_railroad()) && tech.researched.contains(&Tech::SteamPower);
                         button(r, art, if rail { "Railroad (R)" } else { "Road (R)" }, Command::Game(Action::Build(Improvement::Road)), BRONZE, 15.0);
                         button(r, art, "Clear (X)", Command::Game(Action::Transform), BRONZE, 15.0);
+                        button(r, art, "Automate (K)", Command::Game(Action::Automate), GREEN, 15.0);
                     }
                     // Upgrade in one of our cities, once the successor can be equipped there.
                     if let Some(to) = unit.unit_type.upgrades_to() {
@@ -844,6 +856,12 @@ pub fn rebuild_panels(
             if !garrison.is_empty() {
                 let units_here = if garrison.len() == 1 { "1 of your units is".to_string() } else { format!("{} of your units are", garrison.len()) };
                 p.spawn(label(&art.font_bold, format!("{units_here} here - press Tab or click the city again to pick one."), 14.0, GOLD));
+            }
+            if taken.0.contains(&city.position) {
+                p.spawn(row(6.0)).with_children(|r| {
+                    r.spawn(label(&art.font_bold, "Just captured:", 14.0, GOLD));
+                    button(r, art, "Raze it to the ground", Command::Game(Action::Raze), RED, 13.0);
+                });
             }
             if let Some(turns) = spies.unrest.get(&city.position) {
                 p.spawn(label(&art.font_bold, format!("In unrest: no growth or production for {turns} more turns."), 14.0, RED));
@@ -1219,8 +1237,27 @@ pub fn rebuild_panels(
                                 button(r, art, format!("{} ({})", t.name(), tech.cost_of(t)), Command::Game(Action::Research(t)), tint, 14.0);
                             }
                         });
-                        let learned: Vec<&str> = Tech::ALL.iter().filter(|t| tech.researched.contains(t)).map(|t| t.name()).collect();
-                        w.spawn(label(&art.font_body, format!("Known: {}", if learned.is_empty() { "nothing yet".into() } else { learned.join(", ") }), 15.0, INK_SOFT));
+                        // The whole tree, era by era: known in green, open to study in ink, the rest with what they need.
+                        w.spawn(label(&art.font_title, "The tree of knowledge", 16.0, INK_SOFT));
+                        let eras: [(&str, u32, u32); 4] = [("Ancient", 0, 25), ("Classical", 26, 45), ("Industrial", 46, 95), ("Modern", 96, u32::MAX)];
+                        for (era, low, high) in eras {
+                            w.spawn(Node { column_gap: Val::Px(8.0), flex_wrap: FlexWrap::Wrap, row_gap: Val::Px(2.0), ..default() }).with_children(|r| {
+                                r.spawn(Node { width: Val::Px(90.0), ..default() }).with_children(|c| {
+                                    c.spawn(label(&art.font_bold, era, 13.0, INK));
+                                });
+                                for t in Tech::ALL.into_iter().filter(|t| (low..=high).contains(&t.cost())) {
+                                    let (text, color) = if tech.researched.contains(&t) {
+                                        (t.name().to_string(), Color::srgb(0.2, 0.5, 0.2))
+                                    } else if tech.can_research(t) {
+                                        (format!("{} (open)", t.name()), INK)
+                                    } else {
+                                        let needs: Vec<&str> = t.prerequisites().iter().filter(|p| !tech.researched.contains(p)).map(|p| p.name()).collect();
+                                        (format!("{} (needs {})", t.name(), needs.join(", ")), Color::srgb(0.55, 0.5, 0.45))
+                                    };
+                                    r.spawn(label(&art.font_body, text, 12.0, color));
+                                }
+                            });
+                        }
                         w.spawn(row(6.0)).with_children(|r| button(r, art, "Close (Esc)", Command::CloseModal, BRONZE, 14.0));
                     });
                 }
@@ -1556,6 +1593,7 @@ pub fn button_actions(
             Command::CityTab(tab) => ui.city_tab = *tab,
             Command::EmpireTab(tab) => ui.empire_tab = *tab,
             Command::HelpTopic(topic) => ui.help_topic = *topic,
+            Command::ToggleGroupMove => ui.group_move = !ui.group_move,
             Command::Game(action) => {
                 actions.send(action.clone());
             }

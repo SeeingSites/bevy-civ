@@ -12,6 +12,7 @@ use std::collections::{HashMap, HashSet};
 use bevy_civ::tech::Tech;
 use bevy_civ::terrain::{HexTile, Improvement, Resource as Good, ResourceKind};
 
+#[cfg(test)]
 use crate::PLAYER;
 
 /// A resource one civilization supplies to another: (seller, buyer, good).
@@ -115,6 +116,10 @@ pub fn recompute<'a>(
     // Yields from the land, and every usable source with its owner.
     let mut usable: Vec<(Hex, Good, u32)> = Vec::new();
     for tile in &tiles {
+        // A polluted tile yields nothing, not even its resource.
+        if tile.is_polluted() {
+            continue;
+        }
         let Some((owner, city)) = supplies.territory.get(&tile.coord).copied() else { continue };
         let entry = supplies.yields.entry(city).or_default();
         if tile.improvements.contains(&Improvement::Farm) {

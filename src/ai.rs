@@ -4,7 +4,7 @@ use crate::unit::{Unit, UnitType};
 use crate::terrain::{HexTile, Improvement, Terrain};
 use std::collections::HashMap;
 use crate::tech::{Tech, TechState};
-use crate::pathfinding::{find_path, find_route, land_step, road_network, StepCost, Travel};
+use crate::pathfinding::{find_path, find_route, land_step, road_network, zoc_blocks, StepCost, Travel};
 use crate::unit::{Domain, AIR_RANGE};
 use rand::Rng;
 
@@ -145,6 +145,7 @@ pub fn process_ai_turn(
     let is_land = |hex: Hex| land_set.contains(&hex);
     let roads = road_network(tiles.iter(), city_positions.iter().map(|(p, _)| *p));
     let terrain_at: HashMap<Hex, Terrain> = land.iter().copied().collect();
+    let polluted: std::collections::HashSet<Hex> = tiles.iter().filter(|t| t.is_polluted()).map(|t| t.coord).collect();
     let features: HashMap<Hex, (Terrain, bool, bool)> = tiles
         .iter()
         .map(|t| (t.coord, (t.terrain, t.improvements.contains(&Improvement::Farm), t.improvements.contains(&Improvement::Mine))))
@@ -289,6 +290,11 @@ pub fn process_ai_turn(
                     }
                 }
             }
+            // Pollution is cleaned up where the worker stands.
+            if polluted.contains(&here) && owns(here, owner) {
+                unit.start_build(Improvement::Pollution);
+                continue;
+            }
             // No road work: farm the flat land and mine the hills inside the borders.
             let on_city = city_positions.iter().any(|(p, _)| *p == here);
             if let Some((terrain, farm, mine)) = features.get(&here).copied().filter(|_| owns(here, owner) && !on_city) {
@@ -413,9 +419,11 @@ pub fn process_ai_turn(
 
         if let Some(target) = goal {
             let travel = if can_sail { Travel::Amphibious } else { Travel::Land };
+            let enemy_armies: std::collections::HashSet<Hex> =
+                unit_snapshots.iter().filter(|(_, other, strength)| hostile(owner, *other) && *strength > 0.0).map(|(pos, _, _)| *pos).collect();
             if let Some(path) = find_route(here, target, land.iter().copied(), &roads, travel) {
                 for next in path.into_iter().skip(1) {
-                    if !unit.can_move() {
+                    if !unit.can_move() || zoc_blocks(unit.position, next, &enemy_armies) {
                         break;
                     }
                     let boarding = is_land(unit.position) != is_land(next);

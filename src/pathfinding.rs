@@ -38,6 +38,12 @@ pub enum StepCost {
     EndsTurn,
 }
 
+/// Zone of control: an army may not slip from one tile next to an enemy army to another tile next to
+/// the same enemy. (Moving onto the enemy is an attack, handled elsewhere.)
+pub fn zoc_blocks(from: Hex, to: Hex, enemies: &std::collections::HashSet<Hex>) -> bool {
+    !enemies.contains(&to) && enemies.iter().any(|e| e.distance_to(from) == 1 && e.distance_to(to) == 1)
+}
+
 /// The cost of a step onto a tile of `terrain` for a unit on foot (or anything else), counting roads.
 pub fn land_step(from: Hex, to: Hex, terrain: Option<Terrain>, roads: &HashMap<Hex, Road>, on_foot: bool) -> StepCost {
     match step_cost(from, to, roads, on_foot) {
@@ -262,6 +268,16 @@ mod tests {
         budget.spend(StepCost::Road);
         budget.spend(StepCost::Full);
         assert!(!budget.can_step());
+    }
+
+    #[test]
+    fn armies_cannot_slip_past_an_enemy() {
+        let enemy: std::collections::HashSet<Hex> = [Hex::new(1, 0)].into();
+        // Both tiles touch the enemy: blocked.
+        assert!(zoc_blocks(Hex::new(0, 0), Hex::new(1, -1), &enemy));
+        // Stepping away is fine, and so is attacking it.
+        assert!(!zoc_blocks(Hex::new(0, 0), Hex::new(-1, 0), &enemy));
+        assert!(!zoc_blocks(Hex::new(0, 0), Hex::new(1, 0), &enemy));
     }
 
     #[test]

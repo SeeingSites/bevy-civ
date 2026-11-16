@@ -28,6 +28,9 @@ pub enum Improvement {
     Road,
     /// Built over a road once Steam Power is known: movement along it is free.
     Railroad,
+    /// Left by industry: the tile yields nothing until a worker cleans it up (a "build" of this
+    /// removes it).
+    Pollution,
 }
 
 /// What a resource is good for.
@@ -217,6 +220,10 @@ impl HexTile {
     /// A road or a railroad (a railroad is built over a road and works as one too).
     pub fn has_road(&self) -> bool {
         self.improvements.contains(&Improvement::Road) || self.has_railroad()
+    }
+
+    pub fn is_polluted(&self) -> bool {
+        self.improvements.contains(&Improvement::Pollution)
     }
 
     pub fn has_railroad(&self) -> bool {
