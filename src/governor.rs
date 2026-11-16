@@ -47,6 +47,8 @@ pub struct CivView<'a> {
     pub diplomats: usize,
     /// Another city of this civilization is building a wonder (caravans can help it).
     pub wonder_elsewhere: bool,
+    /// Spaceship parts its ship still needs.
+    pub space_parts: &'a [Building],
 }
 
 /// Largest army a computer player keeps.
@@ -61,6 +63,7 @@ fn can_train(unit: UnitType, city: &CityView, civ: &CivView, supplies: &Supplies
 pub fn can_build(building: &Building, city: &CityView, civ: &CivView, supplies: &Supplies) -> bool {
     !city.built.contains(building)
         && !(building.is_wonder() && civ.wonders_taken.contains(building))
+        && (!building.is_spaceship_part() || (city.built.contains(&Building::Factory) && civ.space_parts.contains(building)))
         && building.required_tech().is_none_or(|t| civ.tech.researched.contains(&t))
         && supplies.has(city.position, building.required_resources())
         && (*building != Building::Harbor || city.coastal)
@@ -140,14 +143,23 @@ pub fn choose(city: &CityView, civ: &CivView, supplies: &Supplies, rng: &mut imp
         return unit(UnitType::Diplomat);
     }
 
+    // The space race comes first once a civilization can build its ship.
+    if let Some(part) = civ.space_parts.iter().find(|p| can_build(p, city, civ, supplies)) {
+        return ProductionItem::Building(*part);
+    }
     let wish = [
         (Building::Walls, city.threatened || civ.at_war),
+        (Building::Temple, city.population >= bevy_civ::diplomacy::BASE_CONTENT),
+        (Building::Aqueduct, city.population >= 7),
         (Building::Granary, city.population < 8),
         (Building::Barracks, civ.at_war || civ.aggression > 0.6),
         (Building::Library, true),
         (Building::Marketplace, true),
         (Building::Harbor, true),
-        (Building::Aqueduct, city.population >= 6),
+        (Building::Courthouse, civ.cities >= 4),
+        (Building::Colosseum, city.population >= 8),
+        (Building::Cathedral, city.population >= 10),
+        (Building::SewerSystem, city.population >= 15),
         (Building::University, true),
         (Building::Bank, true),
         (Building::Factory, true),
@@ -180,7 +192,7 @@ mod tests {
     }
 
     fn civ(tech: &TechState) -> CivView<'_> {
-        CivView { tech, aggression: 0.4, cities: 2, workers: 1, settlers: 1, military: 3, navy: 0, air: 0, road_work: 0, cut_off: 0, at_war: false, wonders_taken: &NO_WONDERS, caravans: 2, diplomats: 1, wonder_elsewhere: false }
+        CivView { tech, aggression: 0.4, cities: 2, workers: 1, settlers: 1, military: 3, navy: 0, air: 0, road_work: 0, cut_off: 0, at_war: false, wonders_taken: &NO_WONDERS, caravans: 2, diplomats: 1, wonder_elsewhere: false, space_parts: &[] }
     }
 
     fn knowing(techs: &[Tech]) -> TechState {

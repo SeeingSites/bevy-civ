@@ -27,12 +27,26 @@ pub fn road_network<'a>(tiles: impl Iterator<Item = &'a HexTile>, cities: impl I
 pub enum StepCost {
     /// Off the roads: a whole move.
     Full,
+    /// Rough ground off the roads (hills and forest 2, mountains 3). A unit with fewer moves left can
+    /// still enter, using up the rest of its turn.
+    Rough(u32),
     /// Road to road: a third of a move.
     Road,
     /// Railroad to railroad: nothing.
     Free,
     /// Boarding or leaving a boat: the rest of the turn.
     EndsTurn,
+}
+
+/// The cost of a step onto a tile of `terrain` for a unit on foot (or anything else), counting roads.
+pub fn land_step(from: Hex, to: Hex, terrain: Option<Terrain>, roads: &HashMap<Hex, Road>, on_foot: bool) -> StepCost {
+    match step_cost(from, to, roads, on_foot) {
+        StepCost::Full if on_foot => match terrain.and_then(terrain_cost) {
+            Some(cost) if cost > 1 => StepCost::Rough(cost),
+            _ => StepCost::Full,
+        },
+        other => other,
+    }
 }
 
 /// The cost of a step between neighbouring tiles for a unit of the given travel, ignoring boarding.
@@ -72,6 +86,11 @@ impl Budget {
             }
             StepCost::Full if self.moves > 0 => self.moves -= 1,
             StepCost::Full => self.road_credit = 0,
+            StepCost::Rough(cost) if self.moves > 0 => {
+                self.moves = self.moves.saturating_sub(cost);
+                self.road_credit = 0;
+            }
+            StepCost::Rough(_) => self.road_credit = 0,
             StepCost::EndsTurn => *self = Budget::default(),
         }
     }
@@ -230,6 +249,14 @@ mod tests {
         assert_eq!(turns_along(&route, moves(1), |_| 1, cost(&roads)), vec![0; 7]);
         // Ships and aircraft ignore roads.
         assert_eq!(step_cost(route[0], route[1], &roads, false), StepCost::Full);
+        // Rough ground: a two-move unit spends both on a hill, but one move still lets it climb.
+        let mut climber = moves(2);
+        climber.spend(land_step(route[0], route[1], Some(Terrain::Hills), &HashMap::new(), true));
+        assert!(!climber.can_step());
+        let mut tired = moves(1);
+        tired.spend(land_step(route[0], route[1], Some(Terrain::Mountain), &HashMap::new(), true));
+        assert!(!tired.can_step());
+        assert_eq!(land_step(route[0], route[1], Some(Terrain::Mountain), &roads, true), StepCost::Free, "railroad over the pass");
         // Leaving the road with a part-move left still buys one step.
         let mut budget = moves(1);
         budget.spend(StepCost::Road);

@@ -10,7 +10,7 @@ use bevy_civ::ai::{process_ai_turn, Civilizations};
 use std::collections::HashSet;
 use bevy_civ::barbarians::{process_barbarians, BarbarianState};
 use bevy_civ::building::{Building, CityBuildings, WorldWonders};
-use bevy_civ::city::{spawn_city, City, ProductionItem};
+use bevy_civ::city::{spawn_city, City, Growth, ProductionItem};
 use bevy_civ::combat::resolve_led_combat;
 use bevy_civ::great::{self, GreatPeople};
 use bevy_civ::espionage::{self, Espionage, Mission};
@@ -18,11 +18,11 @@ use rand::Rng;
 use bevy_civ::diplomacy::{Diplomacy, Happiness, Treaty};
 use bevy_civ::fog::FogOfWar;
 use bevy_civ::government::Government;
-use bevy_civ::pathfinding::{find_path, find_route, road_network, step_cost, turns_along, Road, StepCost, Travel};
+use bevy_civ::pathfinding::{find_path, find_route, land_step, road_network, turns_along, Road, StepCost, Travel};
 use bevy_civ::unit::{Domain, AIR_RANGE};
 use bevy_civ::save::{save_game, SaveData};
 use bevy_civ::score::Score;
-use bevy_civ::space::{SpaceComponent, SpaceRace};
+use bevy_civ::space::SpaceRace;
 use bevy_civ::tech::{Tech, TechState};
 use bevy_civ::terrain::{random_resource, HexTile, Improvement, Terrain};
 use bevy_civ::trade::TradeRoutes;
@@ -41,6 +41,18 @@ use scenario::NewGame;
 
 pub const PLAYER: u32 = 0;
 pub const BARBARIANS: u32 = 99;
+/// The game ends on this turn; if nobody has won by then, the highest score does.
+pub const LAST_TURN: u32 = 400;
+
+/// A computer player's score, counted the same way as the player's (population, cities' buildings).
+fn rival_score(owner: u32, cities: &Query<(&mut City, &mut CityBuildings, &mut Happiness)>) -> u32 {
+    cities
+        .iter()
+        .filter(|(c, _, _)| c.owner == owner)
+        .map(|(c, b, _)| c.population * 2 + b.buildings.iter().map(|w| if w.is_wonder() { 50 } else { 0 }).sum::<u32>())
+        .sum()
+}
+
 /// Aggressive computer players leave neighbours they are not at war with alone until this turn.
 pub const AI_GRACE_TURNS: u32 = 25;
 /// Tiles around a city that belong to its owner.
@@ -65,6 +77,8 @@ pub struct MapData {
     /// Every tile of the map.
     pub cells: HashSet<Hex>,
     pub water: HashSet<Hex>,
+    /// The terrain of every tile (kept in step with the tiles when land is cleared).
+    pub terrain: HashMap<Hex, Terrain>,
     /// World-space bounding box of the tile centres.
     pub min: Vec2,
     pub max: Vec2,
@@ -82,6 +96,9 @@ pub struct GameState {
     pub years_per_turn: i32,
     /// Name of the player's civilization, shown in the status bar.
     pub title: String,
+    /// Turns of anarchy left in a revolution, and the government it leads to.
+    pub anarchy_turns: u32,
+    pub pending_government: Option<Government>,
 }
 
 impl Default for GameState {
@@ -96,6 +113,8 @@ impl Default for GameState {
             start_year: -4000,
             years_per_turn: 40,
             title: String::new(),
+            anarchy_turns: 0,
+            pending_government: None,
         }
     }
 }
@@ -175,6 +194,10 @@ pub enum Action {
     UseUnit,
     /// A mission for the selected diplomat at the foreign city it stands in or next to.
     Spy(Mission),
+    /// Overthrow the government for another: a few turns of anarchy first.
+    Revolution(Government),
+    /// Select one of the player's cities (from the cities advisor) and look at it.
+    SelectCity(Entity),
     /// Tab: the next of the player's units on the selected unit's or city's tile.
     CycleStack,
     SetProduction(ProductionItem),
@@ -207,6 +230,13 @@ pub struct Cycle {
 /// A player unit that still expects orders this turn.
 pub fn needs_orders(unit: &Unit) -> bool {
     unit.owner == PLAYER && unit.can_move() && unit.build_turns_left.is_none() && !unit.fortified
+}
+
+/// Every civilization's score, turn by turn, for the score advisor.
+#[derive(Resource, Default, Clone, serde::Serialize, serde::Deserialize)]
+pub struct History {
+    /// (turn, civilization, score)
+    pub scores: Vec<(u32, u32, u32)>,
 }
 
 /// The city a unit was trained in (a caravan's trade routes start there).
@@ -258,6 +288,7 @@ fn main() {
         .init_resource::<WorldWonders>()
         .init_resource::<GreatPeople>()
         .init_resource::<Espionage>()
+        .init_resource::<History>()
         .add_event::<EndTurnNow>()
         .add_event::<Focus>()
         .add_event::<Action>()
@@ -319,7 +350,7 @@ fn setup_world(
 
     let layout = HexLayout::flat().with_hex_size(client::map::HEX_SIZE);
     let mut rng = rand::thread_rng();
-    let mut map = MapData { layout, cells: HashSet::new(), water: HashSet::new(), min: Vec2::splat(f32::MAX), max: Vec2::splat(f32::MIN) };
+    let mut map = MapData { layout, cells: HashSet::new(), water: HashSet::new(), terrain: HashMap::new(), min: Vec2::splat(f32::MAX), max: Vec2::splat(f32::MIN) };
     for (row, line) in scenario.rows.iter().enumerate() {
         for (col, code) in line.chars().enumerate() {
             let hex = scenario::offset_to_hex(col as i32, row as i32);
@@ -328,6 +359,7 @@ fn setup_world(
             map.min = map.min.min(pos);
             map.max = map.max.max(pos);
             map.cells.insert(hex);
+            map.terrain.insert(hex, terrain);
             if terrain == Terrain::Water {
                 map.water.insert(hex);
             }
@@ -349,6 +381,7 @@ fn setup_world(
             adjective: def.adjective.clone(),
             portrait: def.portrait,
             city_names: def.city_names.clone(),
+            government: bevy_civ::government::Government::Despotism,
         })
         .collect();
     *tech = TechState::knowing(&defs[0].techs);
@@ -431,6 +464,7 @@ fn cleanup_world(
     commands.insert_resource(WorldWonders::default());
     commands.insert_resource(GreatPeople::default());
     commands.insert_resource(Espionage::default());
+    commands.insert_resource(History::default());
     commands.insert_resource(Cycle { advance: true, force: false });
     commands.insert_resource(Dirty { map: true, ui: true });
 }
@@ -655,12 +689,13 @@ fn ends_move(domain: Domain, from: Hex, to: Hex, map: &MapData) -> bool {
     domain == Domain::Land && map.water.contains(&from) != map.water.contains(&to)
 }
 
-/// What a step costs: roads and railroads speed troops on foot; boarding a boat ends the turn.
+/// What a step costs: rough ground slows troops on foot, roads and railroads speed them; boarding a
+/// boat ends the turn.
 fn move_cost(domain: Domain, from: Hex, to: Hex, map: &MapData, roads: &HashMap<Hex, Road>) -> StepCost {
     if ends_move(domain, from, to, map) {
         StepCost::EndsTurn
     } else {
-        step_cost(from, to, roads, domain == Domain::Land)
+        land_step(from, to, map.terrain.get(&to).copied(), roads, domain == Domain::Land)
     }
 }
 
@@ -831,7 +866,7 @@ fn apply_actions(
     mut civs: ResMut<Civilizations>,
     mut log: ResMut<GameLog>,
     mut dirty: ResMut<Dirty>,
-    (mut cycle, supplies, map, mut end_turn): (ResMut<Cycle>, Res<Supplies>, Res<MapData>, EventWriter<EndTurnNow>),
+    (mut cycle, supplies, mut map, mut end_turn, mut focus): (ResMut<Cycle>, Res<Supplies>, ResMut<MapData>, EventWriter<EndTurnNow>, EventWriter<Focus>),
     (unit_entities, mut sounds, wonders, mut great, mut spies, homes, walled): (
         Query<Entity, With<Unit>>,
         EventWriter<Sfx>,
@@ -867,6 +902,13 @@ fn apply_actions(
                     selection.city = None;
                     cycle.advance = true;
                     cycle.force = true;
+                } else if let Some((entity, _)) = idle_city(walled.iter().filter_map(|(e, _)| cities.get(e).ok().map(|c| (e, c)))).filter(|(e, _)| selection.city != Some(*e)) {
+                    // A city waiting for a project is shown before the turn ends (Enter ends it anyway).
+                    selection.unit = None;
+                    selection.city = Some(entity);
+                    if let Ok(city) = cities.get(entity) {
+                        log.push(format!("{} needs something to build (Enter ends the turn anyway).", city.name));
+                    }
                 } else {
                     end_turn.send(EndTurnNow);
                 }
@@ -990,6 +1032,23 @@ fn apply_actions(
                     sounds.send(Sfx::Select);
                 }
             }
+            Action::Revolution(government) => {
+                if !government.available(&tech) || *government == state.government || state.anarchy_turns > 0 {
+                    continue;
+                }
+                state.government = Government::Anarchy;
+                state.anarchy_turns = Government::REVOLUTION_TURNS;
+                state.pending_government = Some(*government);
+                log.push(format!("Revolution! After {} turns of anarchy we will be a {}.", Government::REVOLUTION_TURNS, government.name()));
+            }
+            Action::SelectCity(entity) => {
+                if let Ok(city) = cities.get(*entity) {
+                    selection.city = Some(*entity);
+                    selection.unit = None;
+                    focus.send(Focus(city.position));
+                    sounds.send(Sfx::Select);
+                }
+            }
             Action::CycleStack => {
                 let here = selected_unit
                     .and_then(|e| units.get(e).ok().map(|u| u.position))
@@ -1041,6 +1100,7 @@ fn apply_actions(
                 }
                 if let Some(mut tile) = tiles.iter_mut().find(|t| t.coord == unit.position) {
                     if tile.transform_terrain() {
+                        map.terrain.insert(tile.coord, tile.terrain);
                         unit.end_move();
                         cycle.advance = true;
                         log.push("The land is cleared into plains.");
@@ -1233,6 +1293,12 @@ fn apply_actions(
                 if city.owner != PLAYER {
                     continue;
                 }
+                if let ProductionItem::Building(part) = item {
+                    if part.is_spaceship_part() && !selection.city.and_then(|e| walled.get(e).ok()).is_some_and(|(_, b)| b.has(Building::Factory)) {
+                        log.push("Spaceship parts are built in cities with a Factory.");
+                        continue;
+                    }
+                }
                 if let ProductionItem::Building(wonder) = item {
                     if let Some((_, place)) = wonder.is_wonder().then(|| wonders.built.get(wonder)).flatten() {
                         log.push(format!("The {} already stands in {}; each wonder can be built only once.", wonder.name(), place));
@@ -1278,7 +1344,7 @@ fn process_turn(
     (mut space, mut wonders, mut great, mut spies): (ResMut<SpaceRace>, ResMut<WorldWonders>, ResMut<GreatPeople>, ResMut<Espionage>),
     (mut log, mut dirty, mut cycle): (ResMut<GameLog>, ResMut<Dirty>, ResMut<Cycle>),
     mut bursts: EventWriter<Burst>,
-    homes: Query<&HomeCity>,
+    (homes, mut history): (Query<&HomeCity>, ResMut<History>),
     mut commands: Commands,
 ) {
     if actions.read().count() == 0 || state.victory.is_some() {
@@ -1306,6 +1372,12 @@ fn process_turn(
     for (_, unit) in units.iter().filter(|(_, u)| matches!(u.unit_type, UnitType::Caravan | UnitType::Diplomat)) {
         *envoy_counts.entry((unit.owner, unit.unit_type)).or_default() += 1;
     }
+    // Spaceship parts each civilization still needs (one city per part kind at a time is enough).
+    let space_wanted: HashMap<u32, Vec<Building>> = civs
+        .players
+        .iter()
+        .map(|c| (c.id, [Building::SpaceStructure, Building::SpaceComponent, Building::SpaceModule].into_iter().filter(|p| p.required_tech().is_some_and(|t| c.tech.researched.contains(&t)) && space.wants(c.id, *p)).collect()))
+        .collect();
     let wonder_sites: Vec<(Hex, u32)> = cities
         .iter()
         .filter(|(c, _, _)| matches!(&c.production_queue, Some(ProductionItem::Building(b)) if b.is_wonder()))
@@ -1313,6 +1385,18 @@ fn process_turn(
         .collect();
     let mut rng = rand::thread_rng();
     let gov = state.government;
+    // Each civilization lives under its own government. Computer players adopt the best they know.
+    let mut governments: HashMap<u32, Government> = HashMap::from([(PLAYER, state.government)]);
+    for civ in civs.players.iter_mut().filter(|c| !c.is_human) {
+        let preferred = Government::preferred(&civ.tech, civ.aggression);
+        if preferred != civ.government {
+            civ.government = preferred;
+            if foreign.met.contains(&civ.id) {
+                log.push(format!("The {} adopt {}.", civ.adjective, preferred.name()));
+            }
+        }
+        governments.insert(civ.id, civ.government);
+    }
     let mut total_science = 0;
     let mut total_gold = 0i32;
     let mut player_cities = 0;
@@ -1373,6 +1457,7 @@ fn process_turn(
 
         // What a computer player's governor sees of this city.
         let owner = city.owner;
+        let gov = governments.get(&owner).copied().unwrap_or(Government::Despotism);
         let view = governor::CityView {
             position: city.position,
             population: city.population,
@@ -1389,7 +1474,7 @@ fn process_turn(
                 // An empty city drops everything for a defender, and pays to hurry it when in danger.
                 let already = matches!(&city.production_queue, Some(ProductionItem::Unit(u)) if u.is_army());
                 if !already {
-                    let civ_view = governor::CivView { tech: &civ.tech, aggression: civ.aggression, cities: 1, workers: 1, settlers: 1, military: 0, navy: 0, air: 0, road_work: 0, cut_off: 0, at_war: true, wonders_taken: &wonders_taken, caravans: 1, diplomats: 1, wonder_elsewhere: false };
+                    let civ_view = governor::CivView { tech: &civ.tech, aggression: civ.aggression, cities: 1, workers: 1, settlers: 1, military: 0, navy: 0, air: 0, road_work: 0, cut_off: 0, at_war: true, wonders_taken: &wonders_taken, caravans: 1, diplomats: 1, wonder_elsewhere: false, space_parts: &[] };
                     city.production_queue = Some(ProductionItem::Unit(governor::best_defender(&view, &civ_view, &supplies)));
                 }
                 let remaining = city.production_queue.as_ref().map(|i| i.cost()).unwrap_or(0).saturating_sub(city.production_progress) as i32;
@@ -1420,24 +1505,42 @@ fn process_turn(
             total_gold += extra_gold as i32;
         }
 
-        // A city stirred up by a foreign diplomat stands idle: no growth, no production.
-        let idle = spies.in_unrest(city.position);
-        if idle && mine {
-            log.push(format!("{} is in unrest and stands idle.", city.name));
-        }
-        if !idle && city.process_food(&buildings, gov, dist) && mine {
-            log.push(format!("{} grows to size {}.", city.name, city.population));
+        // Happiness. Temples and the like, wonders, masterpieces, entertainers and martial law calm the
+        // unhappy; every different luxury the city can reach makes someone happy.
+        let has_market = buildings.buildings.contains(&Building::Marketplace);
+        let garrison = armies.iter().filter(|(p, o)| *p == city.position && *o == owner).count() as u32;
+        let calm = buildings.buildings.iter().map(|b| b.content()).sum::<u32>()
+            + wonders.empire_content(owner)
+            + great.masterpiece_content(city.position)
+            + city.luxury_from_specialists()
+            + garrison.min(gov.martial_law())
+            + gov.content_bonus();
+        let joy = supply::luxury_happiness(supplies.luxuries(city.position), has_market);
+        happiness.update(city.population, calm, joy);
+        let disorder = happiness.in_disorder();
+        if disorder && mine {
+            log.push(format!(
+                "Civil disorder in {}: no growth, production, science or taxes until its {} unhappy citizens are calmed (temple, luxuries, entertainers, or troops under martial law).",
+                city.name, happiness.unhappy
+            ));
         }
 
-        // Every different luxury the city has access to keeps people content.
-        let has_market = buildings.buildings.contains(&Building::Marketplace);
-        let luxury_bonus = city.luxury_from_specialists()
-            + supply::luxury_happiness(supplies.luxuries(city.position), has_market)
-            + wonders.empire_content(city.owner)
-            + great.masterpiece_content(city.position);
-        happiness.update(city.population, luxury_bonus);
-        if happiness.in_disorder() && mine {
-            log.push(format!("Civil disorder in {}!", city.name));
+        // A city in disorder, or stirred up by a foreign diplomat, stands idle.
+        let unrest = spies.in_unrest(city.position);
+        if unrest && mine {
+            log.push(format!("{} is in unrest and stands idle.", city.name));
+        }
+        let idle = unrest || disorder;
+        if !idle {
+            match city.process_food(&buildings, gov, dist) {
+                Growth::Grew if mine => log.push(format!("{} grows to size {}.", city.name, city.population)),
+                Growth::Starved if mine => log.push(format!("{} is starving and shrinks to size {}.", city.name, city.population)),
+                Growth::Capped if mine && state.turn % 5 == 0 => {
+                    let need = if buildings.has(Building::Aqueduct) { "a Sewer System" } else { "an Aqueduct" };
+                    log.push(format!("{} cannot grow past size {} without {need}.", city.name, city.population));
+                }
+                _ => {}
+            }
         }
 
         // A city that has lost access to a resource its project needs falls back to something it can build.
@@ -1481,23 +1584,29 @@ fn process_turn(
                     }
                     {
                         if mine {
-                            log.push(format!("{} trains a {}.", city.name, ut.name()));
-                            // Once the army outgrows what the government supports for free, a city left on
-                            // its default order turns to the cheapest building it can construct.
-                            let supported = gov.free_unit_support() as usize * capitals.len().max(1);
-                            if ut == UnitType::Warrior && army_sizes.get(&PLAYER).copied().unwrap_or(0) > supported + 2 {
-                                let next = Building::ALL
-                                    .into_iter()
-                                    .filter(|b| !b.is_wonder() && !buildings.buildings.contains(b))
-                                    .filter(|b| b.required_tech().is_none_or(|t| tech.researched.contains(&t)))
-                                    .min_by_key(|b| b.cost());
-                                if let Some(building) = next {
-                                    log.push(format!("{} starts building a {}.", city.name, building.name()));
-                                    city.production_queue = Some(ProductionItem::Building(building));
-                                }
-                            }
+                            log.push(format!("{} trains a {}. What next?", city.name, ut.name()));
+                            // The player chooses every project: the city waits for orders.
+                            city.production_queue = None;
                         }
                     }
+                }
+                ProductionItem::Building(b) if b.is_spaceship_part() => {
+                    match space.add_part(city.owner, b, state.turn) {
+                        Some(arrives) => {
+                            let who = civs.players.iter().find(|c| c.id == city.owner).map(|c| c.name.clone()).unwrap_or_else(|| "We".into());
+                            log.push(if mine {
+                                format!("Our spaceship is complete and launches! It reaches Alpha Centauri on turn {arrives} unless our capital falls.")
+                            } else {
+                                format!("{who} have launched a spaceship! It arrives on turn {arrives} unless their capital falls.")
+                            });
+                        }
+                        None if mine => {
+                            let missing = space.ships.get(&PLAYER).map(|s| s.missing()).unwrap_or_default();
+                            log.push(format!("{} completes a {}. Still needed: {missing}.", city.name, b.name()));
+                        }
+                        None => {}
+                    }
+                    city.production_queue = None;
                 }
                 ProductionItem::Building(b) if b.is_wonder() => {
                     if wonders.complete(b, city.owner, &city.name) {
@@ -1573,6 +1682,7 @@ fn process_turn(
                     caravans: envoy_counts.get(&(owner, UnitType::Caravan)).copied().unwrap_or(0),
                     diplomats: envoy_counts.get(&(owner, UnitType::Diplomat)).copied().unwrap_or(0),
                     wonder_elsewhere: wonder_sites.iter().any(|(at, o)| *o == owner && *at != city.position),
+                    space_parts: &space_wanted.get(&owner).cloned().unwrap_or_default(),
                 };
                 // The unit just trained (if any) now holds the city.
                 let view = governor::CityView { built: buildings.buildings.clone(), defended: view.defended || just_trained, ..view };
@@ -1588,13 +1698,13 @@ fn process_turn(
                 city.production_queue = Some(next);
             }
         }
-        if !mine {
+        if !mine && !idle {
             let income = ai_income.entry(owner).or_default();
             income.0 += city.science_per_turn(&buildings, gov, dist);
             income.1 += city.gold_per_turn(&buildings) as i32 + 2 + supplies.yields.get(&city.position).map(|y| y.2 as i32).unwrap_or(0);
         }
 
-        if mine {
+        if mine && !idle {
             total_science += city.science_per_turn(&buildings, gov, dist);
             total_gold += city.gold_per_turn(&buildings) as i32 + 1;
         }
@@ -1959,23 +2069,35 @@ fn process_turn(
 
     if let Some(completed) = tech.process_turn() {
         log.push(format!("Discovery! We have learned {}.", completed.name()));
-        if completed == Tech::Monarchy {
-            state.government = Government::Monarchy;
-            log.push("Our government becomes a Monarchy.");
-        }
-        if completed == Tech::Democracy {
-            state.government = Government::Democracy;
+        if let Some(government) = Government::CHOICES.into_iter().find(|g| g.required_tech() == Some(completed)) {
+            log.push(format!("We may now adopt {}: open the Empire advisor (Y) to start a revolution.", government.name()));
         }
     }
 
-    // The space race opens with Democracy; a new stage is completed every ten turns after that.
-    if tech.researched.contains(&Tech::Democracy) && space.progress < 4 && state.turn % 10 == 0 {
-        let next = [SpaceComponent::Thrusters, SpaceComponent::LifeSupport, SpaceComponent::Habitation, SpaceComponent::SolarPanels][space.progress as usize].clone();
-        log.push(format!("Our spaceship gains its {} ({}/4).", next.name(), space.progress + 1));
-        space.add_component(next);
+    // A revolution ends after its turns of anarchy.
+    if state.anarchy_turns > 0 {
+        state.anarchy_turns -= 1;
+        if state.anarchy_turns == 0 {
+            if let Some(next) = state.pending_government.take() {
+                state.government = next;
+                log.push(format!("The anarchy ends: we are now a {}.", next.name()));
+            }
+        }
+    }
+
+    // A capital that fell takes its civilization's spaceship with it.
+    for civ_id in std::iter::once(PLAYER).chain(civs.players.iter().map(|c| c.id)) {
+        let has_capital = cities.iter().any(|(c, _, _)| c.owner == civ_id && c.is_capital);
+        if !has_capital && space.lose(civ_id) {
+            log.push(if civ_id == PLAYER { "With our capital lost, our spaceship is lost too.".to_string() } else { "A spaceship in flight has been lost with its capital.".to_string() });
+        }
     }
 
     state.score = Score::calculate(cities.iter().map(|(c, b, _)| (c, b)), &tech);
+    history.scores.push((state.turn, PLAYER, state.score.total));
+    for civ in civs.players.iter().filter(|c| !c.is_human) {
+        history.scores.push((state.turn, civ.id, rival_score(civ.id, &cities)));
+    }
 
     let total_cities = cities.iter().count();
     let rivals_remain = cities.iter().any(|(c, _, _)| c.owner != PLAYER && c.owner != BARBARIANS);
@@ -1985,8 +2107,21 @@ fn process_turn(
         state.victory = Some("Conquest Victory!".into());
     } else if player_cities >= 5 && player_cities * 3 >= total_cities * 2 {
         state.victory = Some("Domination Victory!".into());
-    } else if space.is_complete() {
-        state.victory = Some("Space Race Victory!".into());
+    } else if let Some(winner) = space.arrived(state.turn) {
+        state.victory = Some(if winner == PLAYER {
+            "Space Race Victory! Our colonists have reached Alpha Centauri.".to_string()
+        } else {
+            let name = civs.players.iter().find(|c| c.id == winner).map(|c| c.name.clone()).unwrap_or_default();
+            format!("Defeat: {name} reached Alpha Centauri first.")
+        });
+    } else if state.turn >= LAST_TURN {
+        // Time runs out: the highest score wins.
+        let ours = state.score.total;
+        let best_rival = civs.players.iter().filter(|c| !c.is_human).map(|c| (rival_score(c.id, &cities), c.name.clone())).max_by_key(|(s, _)| *s);
+        state.victory = Some(match best_rival {
+            Some((theirs, name)) if theirs > ours => format!("Time is up: {name} lead the world on score ({theirs} to our {ours})."),
+            _ => format!("Score Victory! Time is up and we lead the world with {ours} points."),
+        });
     }
 }
 
@@ -1995,6 +2130,7 @@ fn advance_selection(
     mut cycle: ResMut<Cycle>,
     mut selection: ResMut<Selection>,
     units: Query<(Entity, &Unit)>,
+    cities: Query<(Entity, &City)>,
     state: Res<GameState>,
     mut focus: EventWriter<Focus>,
     mut dirty: ResMut<Dirty>,
@@ -2022,11 +2158,24 @@ fn advance_selection(
                 focus.send(Focus(position));
             }
         }
-        // Nothing left to order: release a unit that has finished so the turn can end.
-        None if current.is_some_and(|(_, u)| u.owner == PLAYER) => selection.unit = None,
-        None => {}
+        // No unit needs orders: a city waiting for a project comes next.
+        None => match idle_city(cities.iter()) {
+            Some((entity, position)) => {
+                selection.unit = None;
+                selection.city = Some(entity);
+                focus.send(Focus(position));
+            }
+            // Nothing left to order: release a unit that has finished so the turn can end.
+            None if current.is_some_and(|(_, u)| u.owner == PLAYER) => selection.unit = None,
+            None => {}
+        },
     }
     dirty.ui = true;
+}
+
+/// One of the player's cities that has nothing to build.
+fn idle_city<'a>(cities: impl Iterator<Item = (Entity, &'a City)>) -> Option<(Entity, Hex)> {
+    cities.filter(|(_, c)| c.owner == PLAYER && c.production_queue.is_none()).min_by_key(|(e, _)| e.index()).map(|(e, c)| (e, c.position))
 }
 
 /// Rebuilds the resource network whenever the map, borders or deals may have changed.
@@ -2060,6 +2209,7 @@ mod tests {
             layout: HexLayout::flat(),
             cells: HashSet::new(),
             water: HashSet::new(),
+            terrain: HashMap::new(),
             min: Vec2::ZERO,
             max: Vec2::ZERO,
         }
@@ -2077,6 +2227,7 @@ mod tests {
             .add_event::<Action>()
             .add_event::<EndTurnNow>()
             .add_event::<Sfx>()
+            .add_event::<Focus>()
             .insert_resource(plain_map())
             .insert_resource(Dirty { map: false, ui: false })
             .init_resource::<Selection>()
@@ -2110,6 +2261,7 @@ mod tests {
             adjective: "Egyptian".into(),
             portrait: 0,
             city_names: vec![],
+            government: bevy_civ::government::Government::Despotism,
         });
         app
     }

@@ -4,7 +4,7 @@ use crate::unit::{Unit, UnitType};
 use crate::terrain::{HexTile, Improvement, Terrain};
 use std::collections::HashMap;
 use crate::tech::{Tech, TechState};
-use crate::pathfinding::{find_path, find_route, road_network, step_cost, StepCost, Travel};
+use crate::pathfinding::{find_path, find_route, land_step, road_network, StepCost, Travel};
 use crate::unit::{Domain, AIR_RANGE};
 use rand::Rng;
 
@@ -27,6 +27,7 @@ pub struct Civ {
     pub portrait: usize,
     /// Names for cities this civilization founds later.
     pub city_names: Vec<String>,
+    pub government: crate::government::Government,
 }
 
 impl Default for Civilizations {
@@ -65,6 +66,17 @@ fn appeal(tech: Tech) -> (f32, f32) {
         Tech::SteamPower => (2.5, 3.0),
         Tech::Industrialization => (2.0, 4.0),
         Tech::Refining => (3.0, 2.5),
+        Tech::TheRepublic => (0.5, 3.0),
+        Tech::Theology => (0.5, 2.5),
+        Tech::Fundamentalism => (3.0, 0.5),
+        Tech::Communism => (2.5, 1.5),
+        Tech::Sanitation => (0.5, 3.0),
+        Tech::Electricity => (1.5, 3.0),
+        Tech::Computers => (2.0, 4.0),
+        Tech::Rocketry => (3.5, 3.0),
+        Tech::SpaceFlight => (1.0, 5.0),
+        Tech::Plastics => (1.0, 5.0),
+        Tech::Superconductors => (1.0, 5.0),
     }
 }
 
@@ -132,6 +144,7 @@ pub fn process_ai_turn(
     let land_set: std::collections::HashSet<Hex> = land.iter().filter(|(_, t)| *t != Terrain::Water).map(|(c, _)| *c).collect();
     let is_land = |hex: Hex| land_set.contains(&hex);
     let roads = road_network(tiles.iter(), city_positions.iter().map(|(p, _)| *p));
+    let terrain_at: HashMap<Hex, Terrain> = land.iter().copied().collect();
     let features: HashMap<Hex, (Terrain, bool, bool)> = tiles
         .iter()
         .map(|t| (t.coord, (t.terrain, t.improvements.contains(&Improvement::Farm), t.improvements.contains(&Improvement::Mine))))
@@ -199,7 +212,7 @@ pub fn process_ai_turn(
                     if !unit.can_move() || occupied.get(&next).is_some_and(|(other, _)| *other != owner) {
                         break;
                     }
-                    let cost = step_cost(unit.position, next, &roads, true);
+                    let cost = land_step(unit.position, next, terrain_at.get(&next).copied(), &roads, true);
                     unit.step(next, cost);
                 }
             }
@@ -417,7 +430,7 @@ pub fn process_ai_turn(
                         }
                         _ => {
                             // Roads speed the march; boarding or leaving a boat takes the rest of the turn.
-                            let cost = if boarding { StepCost::EndsTurn } else { step_cost(unit.position, next, &roads, true) };
+                            let cost = if boarding { StepCost::EndsTurn } else { land_step(unit.position, next, terrain_at.get(&next).copied(), &roads, true) };
                             unit.step(next, cost);
                         }
                     }
@@ -477,6 +490,7 @@ mod tests {
             adjective: String::new(),
             portrait: 0,
             city_names: vec![],
+            government: crate::government::Government::Despotism,
         }
     }
 

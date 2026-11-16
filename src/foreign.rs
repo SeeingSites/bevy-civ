@@ -782,6 +782,7 @@ mod tests {
             adjective: "Rival".into(),
             portrait: 0,
             city_names: vec![],
+            government: bevy_civ::government::Government::Despotism,
         }
     }
 

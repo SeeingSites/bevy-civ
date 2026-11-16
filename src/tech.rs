@@ -42,16 +42,31 @@ pub enum Tech {
     Refining,
     ReplaceableParts,
     MotorizedTransport,
+    // Governments and faith
+    TheRepublic,
+    Theology,
+    Fundamentalism,
+    Communism,
+    // Modern
+    Sanitation,
+    Electricity,
+    Computers,
+    Rocketry,
+    SpaceFlight,
+    Plastics,
+    Superconductors,
 }
 
 impl Tech {
-    pub const ALL: [Tech; 27] = [
+    pub const ALL: [Tech; 38] = [
         Tech::Pottery, Tech::AnimalHusbandry, Tech::Mining, Tech::BronzeWorking, Tech::Masonry,
         Tech::Alphabet, Tech::TheWheel, Tech::Writing, Tech::CodeOfLaws, Tech::Mysticism, Tech::Seafaring,
         Tech::IronWorking, Tech::Mathematics, Tech::HorsebackRiding, Tech::Construction,
         Tech::Philosophy, Tech::Monarchy, Tech::Currency, Tech::Engineering, Tech::Gunpowder,
         Tech::PrintingPress, Tech::Democracy, Tech::SteamPower, Tech::Industrialization, Tech::Refining,
         Tech::ReplaceableParts, Tech::MotorizedTransport,
+        Tech::TheRepublic, Tech::Theology, Tech::Fundamentalism, Tech::Communism, Tech::Sanitation,
+        Tech::Electricity, Tech::Computers, Tech::Rocketry, Tech::SpaceFlight, Tech::Plastics, Tech::Superconductors,
     ];
 
     pub fn cost(&self) -> u32 {
@@ -68,6 +83,17 @@ impl Tech {
             Tech::Industrialization => 70,
             Tech::Refining | Tech::ReplaceableParts => 80,
             Tech::MotorizedTransport => 90,
+            Tech::TheRepublic => 35,
+            Tech::Theology => 45,
+            Tech::Fundamentalism => 70,
+            Tech::Communism => 85,
+            Tech::Sanitation => 95,
+            Tech::Electricity => 85,
+            Tech::Computers => 110,
+            Tech::Rocketry => 120,
+            Tech::SpaceFlight => 140,
+            Tech::Plastics => 150,
+            Tech::Superconductors => 160,
         }
     }
 
@@ -93,6 +119,17 @@ impl Tech {
             Tech::Refining => vec![Tech::Industrialization],
             Tech::ReplaceableParts => vec![Tech::Industrialization],
             Tech::MotorizedTransport => vec![Tech::Refining, Tech::ReplaceableParts],
+            Tech::TheRepublic => vec![Tech::CodeOfLaws, Tech::Writing],
+            Tech::Theology => vec![Tech::Philosophy, Tech::Monarchy],
+            Tech::Fundamentalism => vec![Tech::Theology, Tech::Gunpowder],
+            Tech::Communism => vec![Tech::Philosophy, Tech::Industrialization],
+            Tech::Sanitation => vec![Tech::Engineering, Tech::Industrialization],
+            Tech::Electricity => vec![Tech::SteamPower, Tech::Mathematics],
+            Tech::Computers => vec![Tech::Electricity, Tech::ReplaceableParts],
+            Tech::Rocketry => vec![Tech::Computers, Tech::MotorizedTransport],
+            Tech::SpaceFlight => vec![Tech::Rocketry],
+            Tech::Plastics => vec![Tech::SpaceFlight, Tech::Refining],
+            Tech::Superconductors => vec![Tech::Plastics, Tech::Computers],
             _ => vec![],
         }
     }
@@ -126,6 +163,17 @@ impl Tech {
             Tech::Refining => "Refining",
             Tech::ReplaceableParts => "Replaceable Parts",
             Tech::MotorizedTransport => "Motorized Transport",
+            Tech::TheRepublic => "The Republic",
+            Tech::Theology => "Theology",
+            Tech::Fundamentalism => "Fundamentalism",
+            Tech::Communism => "Communism",
+            Tech::Sanitation => "Sanitation",
+            Tech::Electricity => "Electricity",
+            Tech::Computers => "Computers",
+            Tech::Rocketry => "Rocketry",
+            Tech::SpaceFlight => "Space Flight",
+            Tech::Plastics => "Plastics",
+            Tech::Superconductors => "Superconductors",
         }
     }
 }

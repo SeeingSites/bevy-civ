@@ -13,6 +13,7 @@ use bevy_civ::building::{Building, CityBuildings, WorldWonders};
 use bevy_civ::great::{self, GreatPeople};
 use bevy_civ::espionage::{self, Espionage, Mission};
 use bevy_civ::trade::TradeRoutes;
+use bevy_civ::government::Government;
 use bevy_civ::city::{City, ProductionItem};
 use bevy_civ::diplomacy::{Diplomacy, Happiness, Treaty};
 use bevy_civ::fog::FogOfWar;
@@ -45,6 +46,118 @@ pub enum Modal {
     Science,
     Diplomacy,
     Trade,
+    Empire,
+    Help,
+}
+
+/// Pages of the empire advisor.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub enum EmpireTab {
+    #[default]
+    Government,
+    Cities,
+    Military,
+    Score,
+}
+
+impl EmpireTab {
+    const ALL: [EmpireTab; 4] = [EmpireTab::Government, EmpireTab::Cities, EmpireTab::Military, EmpireTab::Score];
+
+    fn name(self) -> &'static str {
+        match self {
+            EmpireTab::Government => "Government",
+            EmpireTab::Cities => "Cities",
+            EmpireTab::Military => "Military",
+            EmpireTab::Score => "Score",
+        }
+    }
+}
+
+/// Topics of the encyclopedia.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub enum HelpTopic {
+    #[default]
+    Basics,
+    Units,
+    Buildings,
+    Wonders,
+    Cities,
+    Victory,
+}
+
+impl HelpTopic {
+    const ALL: [HelpTopic; 6] = [HelpTopic::Basics, HelpTopic::Units, HelpTopic::Buildings, HelpTopic::Wonders, HelpTopic::Cities, HelpTopic::Victory];
+
+    fn name(self) -> &'static str {
+        match self {
+            HelpTopic::Basics => "Basics & keys",
+            HelpTopic::Units => "Units",
+            HelpTopic::Buildings => "Buildings",
+            HelpTopic::Wonders => "Wonders",
+            HelpTopic::Cities => "Cities & happiness",
+            HelpTopic::Victory => "Victory",
+        }
+    }
+}
+
+/// The text of an encyclopedia page, one paragraph or table row per line.
+fn help_lines(topic: HelpTopic) -> Vec<String> {
+    match topic {
+        HelpTopic::Basics => [
+            "Click a unit or city to select it; click again or press Tab for the next unit on that tile. Click a tile (or right-click) to move; far destinations become standing orders.",
+            "Space: skip a unit (or go to a city that needs a project, then end the turn). Enter: end the turn. N: next unit. H: fortify or sleep. Esc: close or deselect.",
+            "Workers: F farm, M mine, R road (railroad on a road, with Steam Power), X clear land, A automate. Settlers: B found a city.",
+            "U uses a great person or a caravan's help on a wonder; T opens a caravan's trade route. Diplomats act from the unit panel next to a foreign city.",
+            "Q science, E foreign affairs, G trade, Y empire (government, cities, military, score), F1 this encyclopedia, V sound, F2 save (the game also saves itself every turn).",
+            "Roads triple movement for troops on foot; railroads make it free. Hills and forest cost 2 moves, mountains 3.",
+        ]
+        .into_iter()
+        .map(String::from)
+        .collect(),
+        HelpTopic::Units => UnitType::ALL
+            .into_iter()
+            .map(|u| {
+                let (a, d, m) = u.stats();
+                let needs = u.required_tech().map(|t| format!(", needs {}", t.name())).unwrap_or_default();
+                let res: Vec<&str> = u.required_resources().iter().map(|r| r.name()).collect();
+                let res = if res.is_empty() { String::new() } else { format!(" and {}", res.join(", ")) };
+                if u.is_great_person() {
+                    format!("{}: {}", u.name(), great::ability(u))
+                } else {
+                    format!("{}: attack {a}, defence {d}, moves {m}; {} shields{needs}{res}", u.name(), u.cost())
+                }
+            })
+            .collect(),
+        HelpTopic::Buildings => Building::ALL
+            .into_iter()
+            .filter(|b| !b.is_wonder())
+            .map(|b| format!("{}: {} ({} shields{})", b.name(), b.effect(), b.cost(), b.required_tech().map(|t| format!(", needs {}", t.name())).unwrap_or_default()))
+            .collect(),
+        HelpTopic::Wonders => Building::ALL
+            .into_iter()
+            .filter(|b| b.is_wonder())
+            .map(|b| format!("{}: {} ({} shields{}). One per world.", b.name(), b.wonder_effect(), b.cost(), b.required_tech().map(|t| format!(", needs {}", t.name())).unwrap_or_default()))
+            .collect(),
+        HelpTopic::Cities => [
+            "A city's first five citizens are content; every one beyond is unhappy. Temples (+2), Colosseums and Cathedrals (+3), wonders, masterpieces, entertainers and, under Despotism, Monarchy and Communism, troops in the city (martial law) calm them. Each different luxury the city can reach makes one citizen happy.",
+            "When the unhappy outnumber the happy the city falls into disorder: no growth, production, science or taxes until it is calmed.",
+            "Cities grow when their granary fills and cannot pass size 8 without an Aqueduct, or 16 without a Sewer System. Specialists eat without farming: too many and the city starves.",
+            "Culture from temples, cathedrals, colosseums, libraries, universities and wonders widens a city's borders over time. A city in disorder next to a much greater culture may defect to it.",
+            "Corruption grows with distance from the capital and is halved by a Courthouse. A finished project leaves the city waiting for orders.",
+        ]
+        .into_iter()
+        .map(String::from)
+        .collect(),
+        HelpTopic::Victory => [
+            "Conquest: take every rival city. Domination: hold two thirds of the cities in the world (at least five).",
+            "Space: research Space Flight, Plastics and Superconductors; cities with a Factory build 4 Space Structures, 2 Components and 2 Modules. The ship launches when complete and arrives 12 turns later - unless your capital falls first.",
+            "Culture: reach 5,000 culture points and twice the culture of any rival.",
+            "Score: if nobody has won by the last turn, the highest score wins. Score counts citizens, technologies and wonders.",
+        ]
+        .into_iter()
+        .map(String::from)
+        .collect(),
+    }
 }
 
 #[derive(Resource, Default)]
@@ -54,6 +167,8 @@ pub struct UiState {
     pub diplo_target: Option<u32>,
     /// The page of the city panel being shown (kept from city to city).
     pub city_tab: CityTab,
+    pub empire_tab: EmpireTab,
+    pub help_topic: HelpTopic,
 }
 
 /// Pages of the city panel.
@@ -113,6 +228,8 @@ pub enum Command {
     QuitToMenu,
     ToggleSound,
     CityTab(CityTab),
+    EmpireTab(EmpireTab),
+    HelpTopic(HelpTopic),
 }
 
 #[derive(Component)]
@@ -379,6 +496,8 @@ pub fn setup_ui(mut commands: Commands, art: Res<Art>, mut images: ResMut<Assets
             button(bar, &art, "Science (Q)", Command::Toggle(Modal::Science), BRONZE, 14.0);
             button(bar, &art, "Diplomacy (E)", Command::Toggle(Modal::Diplomacy), BRONZE, 14.0);
             button(bar, &art, "Trade (G)", Command::Toggle(Modal::Trade), BRONZE, 14.0);
+            button(bar, &art, "Empire (Y)", Command::Toggle(Modal::Empire), BRONZE, 14.0);
+            button(bar, &art, "Help (F1)", Command::Toggle(Modal::Help), BRONZE, 14.0);
             if SoundSettings::AVAILABLE {
                 sound_button(bar, &art);
             }
@@ -545,6 +664,7 @@ pub fn rebuild_panels(
         Res<TradeRoutes>,
     ),
     cities: Query<(&City, &CityBuildings, &Happiness)>,
+    (city_list, space, history): (Query<(Entity, &City)>, Res<bevy_civ::space::SpaceRace>, Res<crate::History>),
     unit_panel: Query<Entity, With<UnitPanel>>,
     mut city_panel: Query<(Entity, &mut Node), (With<CityPanel>, Without<ModalRoot>)>,
     mut modal_root: Query<(Entity, &mut Node), (With<ModalRoot>, Without<CityPanel>)>,
@@ -774,8 +894,9 @@ pub fn rebuild_panels(
                         .into_iter()
                         .filter(|b| b.is_wonder() == wonder_tab && known(b.required_tech()) && !buildings.buildings.contains(b) && (*b != Building::Harbor || coastal))
                         .filter(|b| !wonders.is_taken(*b))
+                        .filter(|b| !b.is_spaceship_part() || (buildings.has(Building::Factory) && space.wants(PLAYER, *b)))
                         .map(|b| {
-                            let effect = if b.is_wonder() { b.wonder_effect().to_string() } else { building_effect(&b) };
+                            let effect = b.effect().to_string();
                             (ProductionItem::Building(b), effect)
                         })
                         .collect()
@@ -910,6 +1031,128 @@ pub fn rebuild_panels(
             }
             let Some(modal) = ui.modal else { return };
             match modal {
+                Modal::Empire => {
+                    p.spawn(window(760.0)).with_children(|w| {
+                        w.spawn(label(&art.font_title, "Empire Advisor", 26.0, INK));
+                        w.spawn(Node { column_gap: Val::Px(4.0), ..default() }).with_children(|r| {
+                            for tab in EmpireTab::ALL {
+                                let tint = if ui.empire_tab == tab { GOLD } else { BRONZE };
+                                button(r, art, tab.name(), Command::EmpireTab(tab), tint, 14.0);
+                            }
+                        });
+                        match ui.empire_tab {
+                            EmpireTab::Government => {
+                                let status = if state.anarchy_turns > 0 {
+                                    format!("Anarchy: {} more turns until we become a {}.", state.anarchy_turns, state.pending_government.map(|g| g.name()).unwrap_or("new state"))
+                                } else {
+                                    format!("We are a {}.", state.government.name())
+                                };
+                                w.spawn(label(&art.font_bold, status, 16.0, INK));
+                                w.spawn(label(&art.font_body, format!("A revolution costs {} turns of anarchy: no science, poor production.", Government::REVOLUTION_TURNS), 14.0, INK_SOFT));
+                                for g in Government::CHOICES {
+                                    let known = g.available(&tech);
+                                    w.spawn(Node { align_items: AlignItems::Center, column_gap: Val::Px(10.0), ..default() }).with_children(|r| {
+                                        r.spawn(Node { width: Val::Px(150.0), ..default() }).with_children(|c| {
+                                            c.spawn(label(&art.font_bold, g.name(), 15.0, if known { INK } else { INK_SOFT }));
+                                        });
+                                        r.spawn(Node { width: Val::Px(380.0), ..default() }).with_children(|c| {
+                                            c.spawn(label(&art.font_body, g.summary(), 13.0, INK_SOFT));
+                                        });
+                                        if g == state.government {
+                                            r.spawn(label(&art.font_bold, "current", 13.0, INK));
+                                        } else if !known {
+                                            let needs = g.required_tech().map(|t| t.name()).unwrap_or("");
+                                            r.spawn(label(&art.font_body, format!("needs {needs}"), 13.0, INK_SOFT));
+                                        } else if state.anarchy_turns == 0 {
+                                            button(r, art, "Revolution", Command::Game(Action::Revolution(g)), BRONZE, 13.0);
+                                        }
+                                    });
+                                }
+                            }
+                            EmpireTab::Cities => {
+                                let mut ours: Vec<_> = city_list.iter().filter(|(_, c)| c.owner == PLAYER).collect();
+                                ours.sort_by_key(|(_, c)| std::cmp::Reverse(c.population));
+                                if ours.is_empty() {
+                                    w.spawn(label(&art.font_body, "We have no cities.", 14.0, INK));
+                                }
+                                for (entity, city) in ours {
+                                    let Some((_, buildings, happiness)) = cities.iter().find(|(c, _, _)| c.position == city.position) else { continue };
+                                    let making = city.production_queue.as_ref().map(|i| i.name().to_string()).unwrap_or_else(|| "nothing!".into());
+                                    let mood = if happiness.in_disorder() { "DISORDER" } else if spies.in_unrest(city.position) { "unrest" } else { "calm" };
+                                    let text = format!(
+                                        "{} (size {}) - {:+} food, building {} - {} happy, {} unhappy, {}",
+                                        city.name,
+                                        city.population,
+                                        city.food_balance(buildings),
+                                        making,
+                                        happiness.happy,
+                                        happiness.unhappy,
+                                        mood
+                                    );
+                                    let tint = if city.production_queue.is_none() || happiness.in_disorder() { Color::srgb(0.95, 0.6, 0.5) } else { BRONZE };
+                                    w.spawn(Node { ..default() }).with_children(|r| button(r, art, text, Command::Game(Action::SelectCity(entity)), tint, 13.0));
+                                }
+                            }
+                            EmpireTab::Military => {
+                                let mut counts: Vec<(UnitType, usize)> = UnitType::ALL
+                                    .into_iter()
+                                    .map(|k| (k, units.iter().filter(|u| u.owner == PLAYER && u.unit_type == k).count()))
+                                    .filter(|(_, n)| *n > 0)
+                                    .collect();
+                                counts.sort_by_key(|(_, n)| std::cmp::Reverse(*n));
+                                let military = units.iter().filter(|u| u.owner == PLAYER && u.unit_type.is_military()).count() as u32;
+                                let own_cities = city_list.iter().filter(|(_, c)| c.owner == PLAYER).count() as u32;
+                                let free = state.government.free_unit_support() * own_cities.max(1);
+                                let upkeep = military.saturating_sub(free) * state.government.unit_upkeep_food();
+                                w.spawn(label(&art.font_bold, format!("{military} military units; {free} supported free; upkeep {upkeep} gold a turn."), 15.0, INK));
+                                w.spawn(row(6.0)).with_children(|r| {
+                                    for (kind, n) in counts {
+                                        r.spawn(label(&art.font_body, format!("{} x{n}", kind.name()), 14.0, INK));
+                                    }
+                                });
+                            }
+                            EmpireTab::Score => {
+                                let mut civ_ids: Vec<u32> = vec![PLAYER];
+                                civ_ids.extend(civs.players.iter().filter(|c| !c.is_human && foreign.met.contains(&c.id)).map(|c| c.id));
+                                let latest = |id: u32| history.scores.iter().rev().find(|(_, c, _)| *c == id).map(|(_, _, s)| *s).unwrap_or(0);
+                                let best = civ_ids.iter().map(|id| latest(*id)).max().unwrap_or(1).max(1);
+                                w.spawn(label(&art.font_body, format!("Turn {} of {}: if nobody wins sooner, the highest score wins then.", state.turn, crate::LAST_TURN), 14.0, INK_SOFT));
+                                for id in civ_ids {
+                                    let name = if id == PLAYER { "Us".to_string() } else { civs.players.iter().find(|c| c.id == id).map(|c| c.name.clone()).unwrap_or_default() };
+                                    let score = latest(id);
+                                    let then = history.scores.iter().filter(|(t, c, _)| *c == id && *t + 20 <= state.turn).last().map(|(_, _, s)| *s);
+                                    let trend = then.map(|t| format!(" ({:+} in 20 turns)", score as i64 - t as i64)).unwrap_or_default();
+                                    w.spawn(label(&art.font_bold, format!("{name}: {score}{trend}"), 14.0, owner_color(id).mix(&Color::BLACK, 0.35)));
+                                    bar(w, score as f32 / best as f32, owner_color(id));
+                                }
+                                for (owner, ship) in &space.ships {
+                                    let who = if *owner == PLAYER { "Our".to_string() } else { format!("{}'s", owner_name(*owner, &civs)) };
+                                    let state_text = match ship.arrives {
+                                        Some(turn) => format!("in flight, arriving on turn {turn}"),
+                                        None => format!("being built: still needs {}", ship.missing()),
+                                    };
+                                    w.spawn(label(&art.font_body, format!("{who} spaceship: {state_text}."), 14.0, INK));
+                                }
+                            }
+                        }
+                        w.spawn(row(6.0)).with_children(|r| button(r, art, "Close (Esc)", Command::CloseModal, BRONZE, 14.0));
+                    });
+                }
+                Modal::Help => {
+                    p.spawn(window(800.0)).with_children(|w| {
+                        w.spawn(label(&art.font_title, "Encyclopedia", 26.0, INK));
+                        w.spawn(Node { column_gap: Val::Px(4.0), flex_wrap: FlexWrap::Wrap, row_gap: Val::Px(4.0), ..default() }).with_children(|r| {
+                            for topic in HelpTopic::ALL {
+                                let tint = if ui.help_topic == topic { GOLD } else { BRONZE };
+                                button(r, art, topic.name(), Command::HelpTopic(topic), tint, 14.0);
+                            }
+                        });
+                        for line in help_lines(ui.help_topic) {
+                            w.spawn(label(&art.font_body, line, 13.0, INK));
+                        }
+                        w.spawn(row(6.0)).with_children(|r| button(r, art, "Close (Esc)", Command::CloseModal, BRONZE, 14.0));
+                    });
+                }
                 Modal::Science => {
                     p.spawn(window(580.0)).with_children(|w| {
                         w.spawn(label(&art.font_title, "Science Advisor", 26.0, INK));
@@ -1262,6 +1505,8 @@ pub fn button_actions(
         match &command.0 {
             Command::ToggleSound => sound.toggle(),
             Command::CityTab(tab) => ui.city_tab = *tab,
+            Command::EmpireTab(tab) => ui.empire_tab = *tab,
+            Command::HelpTopic(topic) => ui.help_topic = *topic,
             Command::Game(action) => {
                 actions.send(action.clone());
             }

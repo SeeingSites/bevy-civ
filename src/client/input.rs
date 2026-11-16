@@ -202,6 +202,12 @@ pub fn keyboard_input(
     if keys.just_pressed(KeyCode::KeyG) {
         toggle(Modal::Trade, &mut ui);
     }
+    if keys.just_pressed(KeyCode::KeyY) {
+        toggle(Modal::Empire, &mut ui);
+    }
+    if keys.just_pressed(KeyCode::F1) {
+        toggle(Modal::Help, &mut ui);
+    }
     if keys.just_pressed(KeyCode::KeyV) && SoundSettings::AVAILABLE {
         sound.toggle();
     }
