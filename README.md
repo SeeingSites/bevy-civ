@@ -89,17 +89,38 @@ Breaking a treaty costs reputation with everyone, allies join each other's wars,
 powers fight and make peace among themselves.
 
 ## Wonders and great people
-Each **wonder** can be built only once in the world: when one civilization finishes it, everyone
+There are 27 wonders. Each **wonder** can be built only once in the world: when one civilization finishes it, everyone
 else's work on it stops (their shields go to the next project) and the news is announced.
 
-| Wonder | Effect |
-|---|---|
-| Pyramids | +3 shields in its city |
-| Great Library | +5 science in its city |
-| Hanging Gardens | +2 food in its city, +1 content citizen in every city |
-| Colossus | +3 gold in its city (needs Iron) |
-| Oracle | +2 content citizens in every city |
-| Great Lighthouse | +1 move for its owner's ships and troops at sea |
+| Wonder | Needs | Effect |
+|---|---|---|
+| Pyramids | Masonry | +3 shields in its city |
+| Great Library | Writing | +5 science in its city |
+| Hanging Gardens | Monarchy | +2 food in its city, +1 content in every city |
+| Colossus | Bronze Working | +3 gold in its city (needs Iron) |
+| Oracle | Mysticism | +2 content in every city |
+| Great Lighthouse | Masonry | +1 move for ships and troops at sea |
+| Statue of Zeus | Bronze Working | one more unit per city supported free |
+| Mausoleum | Masonry | temples and walls each calm one more citizen |
+| Great Wall | Construction | every city counts as walled |
+| Copernicus' Observatory | Mathematics | +6 science in its city |
+| Sun Tzu's War Academy | Iron Working | new troops trained as veterans everywhere |
+| Marco Polo's Embassy | Currency | an embassy with every civilization |
+| King Richard's Crusade | Monarchy | +4 shields in its city |
+| Michelangelo's Chapel | Theology | +3 content in every city |
+| Leonardo's Workshop | Engineering | one obsolete unit upgraded free every turn |
+| J.S. Bach's Cathedral | Printing Press | +2 content in every city |
+| Magellan's Expedition | Gunpowder | +2 moves for ships |
+| Isaac Newton's College | Steam Power | +8 science in its city |
+| Adam Smith's Trading Company | Industrialization | +1 gold for every Marketplace, Bank and Harbor |
+| Shakespeare's Theatre | Sanitation | no unhappy citizens in its city |
+| Statue of Liberty | Democracy | revolutions without anarchy |
+| Darwin's Voyage | Electricity | two technologies at once |
+| Eiffel Tower | Refining | +2 culture a turn in every city |
+| Hoover Dam | Replaceable Parts | +25% shields in every city |
+| The Internet | Computers | +3 science in every city with a Library |
+| Apollo Program | Space Flight | the whole world revealed |
+| Cure for Cancer | Superconductors | +2 content in every city |
 
 A captured city's wonders change hands with it.
 
@@ -207,6 +228,11 @@ Computer players follow the same rules as you and are run by three pieces of cod
 - **F2** — save the game as a file (the **Game** button also has sound and quitting)
 - **V** — switch sound effects on or off (remembered between games)
 - **Esc** — close a window or deselect
+
+A city's project (anything but a wonder) can be finished at once from the city panel: **Buy now**
+costs two gold a missing shield plus a premium that grows with what is missing, doubled if nothing
+has been built of it yet; under Despotism and Communism **Rush** spends one citizen for every 20
+shields instead.
 
 Units also have buttons for upgrading (in a city, for gold), bombarding (artillery, warships,
 bombers) and diplomats' missions. A city keeps training the same unit until you change its order;

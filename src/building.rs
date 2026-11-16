@@ -28,16 +28,37 @@ pub enum Building {
     Colossus,
     Oracle,
     GreatLighthouse,
+    GreatWall,
+    StatueOfZeus,
+    Mausoleum,
+    Copernicus,
+    SunTzu,
+    MarcoPolo,
+    KingRichards,
+    Michelangelo,
+    Leonardo,
+    Bach,
+    Magellan,
+    Newton,
+    AdamSmith,
+    Shakespeare,
+    Darwin,
+    Liberty,
+    HooverDam,
+    Eiffel,
+    Internet,
+    Apollo,
+    CureForCancer,
 }
 
 impl Building {
-    pub const ALL: [Building; 24] = [
+    pub const ALL: [Building; 45] = [
         Building::Granary, Building::Barracks, Building::Library, Building::Marketplace, Building::Walls,
         Building::Aqueduct, Building::University, Building::Bank, Building::Factory, Building::Harbor,
         Building::Temple, Building::Courthouse, Building::Colosseum, Building::Cathedral, Building::SewerSystem,
         Building::SpaceStructure, Building::SpaceComponent, Building::SpaceModule, Building::Pyramids,
         Building::GreatLibrary, Building::HangingGardens, Building::Colossus, Building::Oracle,
-        Building::GreatLighthouse,
+        Building::GreatLighthouse, Building::GreatWall, Building::StatueOfZeus, Building::Mausoleum, Building::Copernicus, Building::SunTzu, Building::MarcoPolo, Building::KingRichards, Building::Michelangelo, Building::Leonardo, Building::Bach, Building::Magellan, Building::Newton, Building::AdamSmith, Building::Shakespeare, Building::Darwin, Building::Liberty, Building::HooverDam, Building::Eiffel, Building::Internet, Building::Apollo, Building::CureForCancer,
     ];
 
     pub fn name(&self) -> &'static str {
@@ -66,6 +87,27 @@ impl Building {
             Building::Colossus => "Colossus",
             Building::Oracle => "Oracle",
             Building::GreatLighthouse => "Great Lighthouse",
+            Building::GreatWall => "Great Wall",
+            Building::StatueOfZeus => "Statue of Zeus",
+            Building::Mausoleum => "Mausoleum",
+            Building::Copernicus => "Copernicus' Observatory",
+            Building::SunTzu => "Sun Tzu's War Academy",
+            Building::MarcoPolo => "Marco Polo's Embassy",
+            Building::KingRichards => "King Richard's Crusade",
+            Building::Michelangelo => "Michelangelo's Chapel",
+            Building::Leonardo => "Leonardo's Workshop",
+            Building::Bach => "J.S. Bach's Cathedral",
+            Building::Magellan => "Magellan's Expedition",
+            Building::Newton => "Isaac Newton's College",
+            Building::AdamSmith => "Adam Smith's Trading Company",
+            Building::Shakespeare => "Shakespeare's Theatre",
+            Building::Darwin => "Darwin's Voyage",
+            Building::Liberty => "Statue of Liberty",
+            Building::HooverDam => "Hoover Dam",
+            Building::Eiffel => "Eiffel Tower",
+            Building::Internet => "The Internet",
+            Building::Apollo => "Apollo Program",
+            Building::CureForCancer => "Cure for Cancer",
         }
     }
 
@@ -95,6 +137,27 @@ impl Building {
             Building::Colossus => 200,
             Building::Oracle => 150,
             Building::GreatLighthouse => 180,
+            Building::GreatWall => 160,
+            Building::StatueOfZeus => 120,
+            Building::Mausoleum => 140,
+            Building::Copernicus => 200,
+            Building::SunTzu => 180,
+            Building::MarcoPolo => 180,
+            Building::KingRichards => 200,
+            Building::Michelangelo => 300,
+            Building::Leonardo => 300,
+            Building::Bach => 280,
+            Building::Magellan => 260,
+            Building::Newton => 320,
+            Building::AdamSmith => 350,
+            Building::Shakespeare => 300,
+            Building::Darwin => 400,
+            Building::Liberty => 300,
+            Building::HooverDam => 450,
+            Building::Eiffel => 400,
+            Building::Internet => 600,
+            Building::Apollo => 600,
+            Building::CureForCancer => 700,
         }
     }
 
@@ -124,6 +187,27 @@ impl Building {
             Building::Colossus => Some(crate::tech::Tech::BronzeWorking),
             Building::Oracle => Some(crate::tech::Tech::Mysticism),
             Building::GreatLighthouse => Some(crate::tech::Tech::Masonry),
+            Building::GreatWall => Some(crate::tech::Tech::Construction),
+            Building::StatueOfZeus => Some(crate::tech::Tech::BronzeWorking),
+            Building::Mausoleum => Some(crate::tech::Tech::Masonry),
+            Building::Copernicus => Some(crate::tech::Tech::Mathematics),
+            Building::SunTzu => Some(crate::tech::Tech::IronWorking),
+            Building::MarcoPolo => Some(crate::tech::Tech::Currency),
+            Building::KingRichards => Some(crate::tech::Tech::Monarchy),
+            Building::Michelangelo => Some(crate::tech::Tech::Theology),
+            Building::Leonardo => Some(crate::tech::Tech::Engineering),
+            Building::Bach => Some(crate::tech::Tech::PrintingPress),
+            Building::Magellan => Some(crate::tech::Tech::Gunpowder),
+            Building::Newton => Some(crate::tech::Tech::SteamPower),
+            Building::AdamSmith => Some(crate::tech::Tech::Industrialization),
+            Building::Shakespeare => Some(crate::tech::Tech::Sanitation),
+            Building::Darwin => Some(crate::tech::Tech::Electricity),
+            Building::Liberty => Some(crate::tech::Tech::Democracy),
+            Building::HooverDam => Some(crate::tech::Tech::ReplaceableParts),
+            Building::Eiffel => Some(crate::tech::Tech::Refining),
+            Building::Internet => Some(crate::tech::Tech::Computers),
+            Building::Apollo => Some(crate::tech::Tech::SpaceFlight),
+            Building::CureForCancer => Some(crate::tech::Tech::Superconductors),
         }
     }
 
@@ -188,8 +272,13 @@ impl Building {
         }
     }
 
+    /// The wonders added after the first six (each with its own effect, mostly handled in the game's turn).
+    fn is_later_wonder(&self) -> bool {
+        matches!(self, Building::GreatWall | Building::StatueOfZeus | Building::Mausoleum | Building::Copernicus | Building::SunTzu | Building::MarcoPolo | Building::KingRichards | Building::Michelangelo | Building::Leonardo | Building::Bach | Building::Magellan | Building::Newton | Building::AdamSmith | Building::Shakespeare | Building::Darwin | Building::Liberty | Building::HooverDam | Building::Eiffel | Building::Internet | Building::Apollo | Building::CureForCancer)
+    }
+
     pub fn is_wonder(&self) -> bool {
-        matches!(self, Building::Pyramids | Building::GreatLibrary | Building::HangingGardens | Building::Colossus | Building::Oracle | Building::GreatLighthouse)
+        matches!(self, Building::Pyramids | Building::GreatLibrary | Building::HangingGardens | Building::Colossus | Building::Oracle | Building::GreatLighthouse) || self.is_later_wonder()
     }
 
     pub fn food_bonus(&self) -> u32 {
@@ -206,6 +295,8 @@ impl Building {
             Building::Library => 2,
             Building::University => 4,
             Building::GreatLibrary => 5,
+            Building::Copernicus => 6,
+            Building::Newton => 8,
             _ => 0,
         }
     }
@@ -215,6 +306,7 @@ impl Building {
             Building::Barracks => 1,
             Building::Factory => 3,
             Building::Pyramids => 3,
+            Building::KingRichards => 4,
             _ => 0,
         }
     }
@@ -239,6 +331,27 @@ impl Building {
             Building::Colossus => "+3 gold here",
             Building::Oracle => "+2 content in every city",
             Building::GreatLighthouse => "+1 move for ships and troops at sea",
+            Building::GreatWall => "every city of its owner counts as walled",
+            Building::StatueOfZeus => "one more unit per city supported free",
+            Building::Mausoleum => "temples and walls each calm one more citizen",
+            Building::Copernicus => "+6 science here",
+            Building::SunTzu => "new troops trained as veterans everywhere",
+            Building::MarcoPolo => "an embassy with every civilization",
+            Building::KingRichards => "+4 shields here",
+            Building::Michelangelo => "+3 content in every city",
+            Building::Leonardo => "upgrades one obsolete unit free every turn",
+            Building::Bach => "+2 content in every city",
+            Building::Magellan => "+2 moves for ships",
+            Building::Newton => "+8 science here",
+            Building::AdamSmith => "+1 gold for every Marketplace, Bank and Harbor",
+            Building::Shakespeare => "no unhappy citizens here",
+            Building::Darwin => "two technologies at once",
+            Building::Liberty => "revolutions without anarchy",
+            Building::HooverDam => "+25% shields in every city",
+            Building::Eiffel => "+2 culture a turn in every city",
+            Building::Internet => "+3 science in every city with a Library",
+            Building::Apollo => "the whole world revealed",
+            Building::CureForCancer => "+2 content in every city",
             _ => "",
         }
     }
@@ -248,6 +361,8 @@ impl Building {
         match self {
             Building::Oracle => 2,
             Building::HangingGardens => 1,
+            Building::Michelangelo => 3,
+            Building::Bach | Building::CureForCancer => 2,
             _ => 0,
         }
     }
@@ -276,7 +391,12 @@ impl WorldWonders {
 
     /// Extra moves a ship (or troops at sea) of `owner` gets each turn.
     pub fn sea_moves(&self, owner: u32) -> u32 {
-        u32::from(self.owns(owner, Building::GreatLighthouse))
+        u32::from(self.owns(owner, Building::GreatLighthouse)) + 2 * u32::from(self.owns(owner, Building::Magellan))
+    }
+
+    /// Whether `owner`'s cities all count as walled (the Great Wall).
+    pub fn walls_everywhere(&self, owner: u32) -> bool {
+        self.owns(owner, Building::GreatWall)
     }
 
     /// Records a finished wonder. Returns false if someone else got there first.

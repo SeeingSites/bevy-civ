@@ -48,7 +48,10 @@ pub fn city_points(buildings: &[Building], specialists: &[Specialist], capital: 
         match building {
             Building::Marketplace | Building::Harbor => *merchant += 1,
             Building::Bank => *merchant += 2,
-            Building::Colossus | Building::GreatLighthouse => *merchant += 3,
+            Building::Colossus | Building::GreatLighthouse | Building::MarcoPolo | Building::AdamSmith | Building::Magellan => *merchant += 3,
+            Building::Copernicus | Building::Newton | Building::Darwin | Building::Internet | Building::Apollo => *scientist += 3,
+            Building::Michelangelo | Building::Bach | Building::Shakespeare | Building::Mausoleum | Building::Eiffel | Building::Liberty | Building::CureForCancer => *artist += 3,
+            Building::GreatWall | Building::Leonardo | Building::KingRichards | Building::HooverDam | Building::StatueOfZeus | Building::SunTzu => *engineer += 3,
             Building::Library => *scientist += 1,
             Building::University => *scientist += 2,
             Building::GreatLibrary => *scientist += 3,
