@@ -1450,10 +1450,33 @@ fn apply_actions(
                             false
                         }
                     },
-                    _ => {
-                        log.push("A Great General needs no orders: troops on its tile fight half again as hard. Keep it with your army.");
-                        false
+                    UnitType::GreatGeneral => {
+                        // In one of our cities, the general forms the troops there into an army.
+                        let stack: Vec<(Entity, Unit)> = if own_city.is_some() {
+                            unit_entities.iter().filter_map(|e| units.get(e).ok().filter(|u| u.position == here && u.owner == PLAYER).map(|u| (e, u.clone()))).collect()
+                        } else {
+                            Vec::new()
+                        };
+                        let refs: Vec<&Unit> = stack.iter().map(|(_, u)| u).collect();
+                        match bevy_civ::unit::plan_army(&refs) {
+                            Some((leader, absorbed)) => {
+                                let members: Vec<Unit> = absorbed.iter().map(|i| stack[*i].1.clone()).collect();
+                                for i in &absorbed {
+                                    commands.entity(stack[*i].0).try_despawn_recursive();
+                                }
+                                if let Ok(mut lead) = units.get_mut(stack[leader].0) {
+                                    bevy_civ::unit::join_army(&mut lead, &members);
+                                    log.push(format!("Your Great General forms an army: {} ({} hit points), fighting as one.", lead.display_name(), lead.max_hp()));
+                                }
+                                true
+                            }
+                            None => {
+                                log.push("A Great General forms an army: bring it and two or three land units into one of your cities, then press U. Until then, troops on its tile fight half again as hard.");
+                                false
+                            }
+                        }
                     }
+                    _ => false,
                 };
                 if used {
                     commands.entity(entity).try_despawn_recursive();
@@ -1579,6 +1602,10 @@ fn apply_actions(
                 let Some(entity) = selected_unit else { continue };
                 let Ok(unit) = units.get(entity) else { continue };
                 let here = unit.position;
+                if unit.is_army_group() {
+                    log.push("An army cannot be re-equipped.");
+                    continue;
+                }
                 let Some(to) = unit.unit_type.upgrades_to() else {
                     log.push(format!("A {} has nothing to upgrade to.", unit.unit_type.name()));
                     continue;
@@ -2494,6 +2521,33 @@ fn process_turn(
             }
         }
     }
+    // Computer generals in one of their cities form the troops there into an army.
+    {
+        let city_spots: HashSet<(Hex, u32)> = cities.iter().map(|(c, _, _)| (c.position, c.owner)).collect();
+        let generals: Vec<(Entity, Hex, u32)> = units
+            .iter()
+            .filter(|(_, u)| u.unit_type == UnitType::GreatGeneral && u.owner != PLAYER && city_spots.contains(&(u.position, u.owner)))
+            .map(|(e, u)| (e, u.position, u.owner))
+            .collect();
+        for (general, at, owner) in generals {
+            let stack: Vec<(Entity, Unit)> = units.iter().filter(|(_, u)| u.position == at && u.owner == owner).map(|(e, u)| (e, u.clone())).collect();
+            // Keep one unit back as the city's own garrison.
+            if stack.iter().filter(|(_, u)| bevy_civ::unit::can_join_army(u)).count() < 3 {
+                continue;
+            }
+            let refs: Vec<&Unit> = stack.iter().map(|(_, u)| u).collect();
+            let Some((leader, mut absorbed)) = bevy_civ::unit::plan_army(&refs) else { continue };
+            absorbed.truncate(1);
+            let members: Vec<Unit> = absorbed.iter().map(|i| stack[*i].1.clone()).collect();
+            for i in &absorbed {
+                commands.entity(stack[*i].0).try_despawn_recursive();
+            }
+            commands.entity(general).try_despawn_recursive();
+            if let Ok((_, mut lead)) = units.get_mut(stack[leader].0) {
+                bevy_civ::unit::join_army(&mut lead, &members);
+            }
+        }
+    }
     // Leonardo's Workshop: one obsolete unit of its owner is upgraded free each turn.
     if let Some(&(owner, _)) = wonders.built.get(&Building::Leonardo) {
         let known = |t: Option<Tech>| {
@@ -2501,7 +2555,7 @@ fn process_turn(
         };
         let candidate = units
             .iter()
-            .filter(|(_, u)| u.owner == owner && u.unit_type.upgrades_to().is_some_and(|to| known(to.required_tech())))
+            .filter(|(_, u)| u.owner == owner && u.troops.is_empty() && u.unit_type.upgrades_to().is_some_and(|to| known(to.required_tech())))
             .map(|(e, _)| e)
             .min_by_key(|e| e.index());
         if let Some(entity) = candidate {
@@ -2539,7 +2593,7 @@ fn process_turn(
             unit.hp = if home { unit.max_hp() } else { unit.hp + 1 };
         }
         if unit.build_turns_left.is_none() {
-            let moves = moves_per_turn(unit.unit_type, unit.position, &map, wonders.sea_moves(unit.owner));
+            let moves = moves_per_turn(unit.unit_type, unit.position, &map, wonders.sea_moves(unit.owner)).min(unit.troop_moves());
             unit.refresh(moves);
         }
     }
@@ -3145,7 +3199,7 @@ mod tests {
     }
 
     fn legion(moves: u32) -> Unit {
-        Unit { unit_type: UnitType::Legion, movement_left: moves, owner: PLAYER, position: Hex::ZERO, build_turns_left: None, current_build: None, fortified: false, road_credit: 0, hp: 3, level: 0 }
+        Unit { unit_type: UnitType::Legion, movement_left: moves, owner: PLAYER, position: Hex::ZERO, build_turns_left: None, current_build: None, fortified: false, road_credit: 0, hp: 3, level: 0, troops: Vec::new() }
     }
 
     /// A minimal app that runs `apply_actions`, with the player's capital at the origin and a

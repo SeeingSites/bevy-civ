@@ -22,6 +22,8 @@ Turn-based, Civilization-style empire building on a hex map, playable in the bro
 - Ships and aircraft, troops crossing the sea in boats
 - World wonders (one per world) with real effects, golden ages
 - Great people: generals, merchants, scientists, artists, engineers
+- Armies: a great general in one of your cities forms up to three land units into one army
+- A health gauge beside every military unit on the map (green, yellow, red; gold-framed for armies)
 - Culture that widens borders and can win over restless cities
 - Caravans (trade routes, help with wonders) and diplomats (embassies and espionage)
 - Diplomacy: treaties, attitude and reputation, tribute, tech exchange, resource deals
@@ -282,6 +284,10 @@ working directory.
 - **Pollution**: big industrial cities spoil tiles, which yield nothing until cleaned.
 - **Combat**: 3 hit points (4 veteran, 5 elite); winners may be promoted, Barracks train veterans,
   wounds heal while resting (fully in a city). Faster attackers retreat rather than die.
+- **Armies**: select a Great General in one of your cities with two or three land units and press
+  U (Form Army). The strongest unit leads; the army fights with its strength and the hit points of
+  every member, moves at its slowest member's pace and cannot be upgraded. The general is used up.
+  Computer players form armies too.
 - **Space race**: research Space Flight, Plastics and Superconductors; cities with a Factory build 4
   structures, 2 components and 2 modules; the ship arrives 12 turns after launch unless the capital
   falls.

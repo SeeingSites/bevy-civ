@@ -120,6 +120,7 @@ fn snapshot(world: &mut World, turn: u32) {
     let city_list: Vec<(u32, u32, bool, bevy_civ::city::City)> = cities.iter(world).map(|(c, b)| (c.owner, c.population, b.buildings.len() > 3, c.clone())).collect();
     let mut units = world.query::<&Unit>();
     let armies: Vec<u32> = units.iter(world).filter(|u| u.unit_type.is_military()).map(|u| u.owner).collect();
+    let groups: Vec<u32> = units.iter(world).filter(|u| u.is_army_group()).map(|u| u.owner).collect();
     println!("--- turn {turn} ---");
     for civ in civs.players.iter().filter(|c| c.id != PLAYER) {
         let owned: Vec<_> = city_list.iter().filter(|c| c.0 == civ.id).collect();
@@ -128,11 +129,13 @@ fn snapshot(world: &mut World, turn: u32) {
         }
         let people: u32 = owned.iter().map(|c| c.1).sum();
         let army = armies.iter().filter(|o| **o == civ.id).count();
+        let grouped = groups.iter().filter(|o| **o == civ.id).count();
+        let grouped = if grouped > 0 { format!(" ({grouped} armies)") } else { String::new() };
         let points: u32 = owned.iter().map(|c| culture.of(c.3.position)).sum();
         let held = wonders.built.values().filter(|(o, _)| *o == civ.id).count();
         let ship = space.ships.get(&civ.id).map(|s| format!(", ship needs {}", if s.arrives.is_some() { "nothing (launched)".into() } else { s.missing() })).unwrap_or_default();
         println!(
-            "  {:<14} {:>2} cities {:>3} people {:>2} techs {:>3} army {:>5} gold  {:<14} culture {:>5}  wonders {}{ship}",
+            "  {:<14} {:>2} cities {:>3} people {:>2} techs {:>3} army{grouped} {:>5} gold  {:<14} culture {:>5}  wonders {}{ship}",
             civ.name.trim_start_matches("the "),
             owned.len(),
             people,

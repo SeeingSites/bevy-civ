@@ -169,6 +169,7 @@ impl Plugin for ClientPlugin {
                     actors::attach_unit_views,
                     actors::attach_city_views,
                     actors::animate_units,
+                    actors::update_health_bars,
                     actors::update_city_views,
                     actors::animate_flags,
                     actors::update_stack_badges,

@@ -18,6 +18,10 @@ pub struct Unit {
     pub hp: u32,
     /// 0 regular, 1 veteran, 2 elite.
     pub level: u8,
+    /// An army led by a great general: the other units marching with this one. The army fights
+    /// as its best unit with every member's hit points, and moves at its slowest member's pace.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub troops: Vec<UnitType>,
 }
 
 #[derive(Component)]
@@ -401,9 +405,28 @@ impl Unit {
         }
     }
 
-    /// Hit points when unhurt: 3, 4 for a veteran, 5 for elite.
+    /// Hit points when unhurt: 3, 4 for a veteran, 5 for elite; an army has that for each member.
     pub fn max_hp(&self) -> u32 {
-        3 + self.level as u32
+        (3 + self.level as u32) * (1 + self.troops.len() as u32)
+    }
+
+    pub fn is_army_group(&self) -> bool {
+        !self.troops.is_empty()
+    }
+
+    /// The most an army's slowest member can move in a turn (no limit for a single unit).
+    pub fn troop_moves(&self) -> u32 {
+        self.troops.iter().map(|t| t.stats().2).min().unwrap_or(u32::MAX)
+    }
+
+    /// "Rifleman" or "Army (Rifleman, Musketman, Pikeman)".
+    pub fn display_name(&self) -> String {
+        if self.troops.is_empty() {
+            self.unit_type.name().to_string()
+        } else {
+            let names: Vec<&str> = std::iter::once(self.unit_type).chain(self.troops.iter().copied()).map(|t| t.name()).collect();
+            format!("Army ({})", names.join(", "))
+        }
     }
 
     pub fn level_name(&self) -> &'static str {
@@ -490,6 +513,69 @@ pub fn spawn_unit(commands: &mut Commands, coord: Hex, unit_type: UnitType, owne
             road_credit: 0,
             hp: 3,
             level: 0,
+            troops: Vec::new(),
         })
         .id()
+}
+
+/// Most units in one army (the leader and its troops).
+pub const ARMY_SIZE: usize = 3;
+
+/// Units that can join an army: ground troops that are not already in one.
+pub fn can_join_army(unit: &Unit) -> bool {
+    unit.unit_type.is_army() && unit.troops.is_empty()
+}
+
+/// Forms an army from units standing together: the strongest leads, up to two more march with it.
+/// Returns the leader's index in `units` and the indices of the units absorbed (to remove), or
+/// None if fewer than two units can join.
+pub fn plan_army(units: &[&Unit]) -> Option<(usize, Vec<usize>)> {
+    let mut eligible: Vec<usize> = (0..units.len()).filter(|i| can_join_army(units[*i])).collect();
+    if eligible.len() < 2 {
+        return None;
+    }
+    let power = |u: &Unit| {
+        let (a, d, _) = u.unit_type.stats();
+        (a + d) * 10 + u.level as u32
+    };
+    eligible.sort_by_key(|i| std::cmp::Reverse(power(units[*i])));
+    eligible.truncate(ARMY_SIZE);
+    Some((eligible[0], eligible[1..].to_vec()))
+}
+
+/// Makes `leader` an army with `members` marching in it (their wounds come along).
+pub fn join_army(leader: &mut Unit, members: &[Unit]) {
+    let hp = leader.hp + members.iter().map(|m| m.hp).sum::<u32>();
+    leader.troops.extend(members.iter().map(|m| m.unit_type));
+    leader.hp = hp.min(leader.max_hp());
+    leader.fortified = false;
+    leader.end_move();
+}
+
+#[cfg(test)]
+mod army_tests {
+    use super::*;
+
+    fn unit(kind: UnitType, hp: u32, level: u8) -> Unit {
+        Unit { unit_type: kind, movement_left: 1, owner: 0, position: Hex::ZERO, build_turns_left: None, current_build: None, fortified: false, road_credit: 0, hp, level, troops: Vec::new() }
+    }
+
+    #[test]
+    fn the_strongest_leads_and_the_army_pools_hit_points() {
+        let units = [unit(UnitType::Spearman, 3, 0), unit(UnitType::Musketman, 2, 1), unit(UnitType::Worker, 3, 0), unit(UnitType::Knight, 3, 0), unit(UnitType::Warrior, 3, 0)];
+        let refs: Vec<&Unit> = units.iter().collect();
+        let (leader, absorbed) = plan_army(&refs).unwrap();
+        assert_eq!(units[leader].unit_type, UnitType::Musketman);
+        assert_eq!(absorbed.len(), 2);
+        assert!(!absorbed.contains(&2), "workers do not join");
+        let mut army = units[leader].clone();
+        let members: Vec<Unit> = absorbed.iter().map(|i| units[*i].clone()).collect();
+        join_army(&mut army, &members);
+        assert_eq!(army.max_hp(), 12);
+        assert_eq!(army.hp, 8);
+        assert_eq!(army.troop_moves(), 1);
+        assert!(army.display_name().starts_with("Army (Musketman"));
+        // An army does not join another.
+        assert!(plan_army(&[&army, &units[0]]).is_none());
+    }
 }
