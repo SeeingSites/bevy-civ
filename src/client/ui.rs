@@ -144,7 +144,7 @@ fn help_lines(topic: HelpTopic) -> Vec<String> {
             "A city's first five citizens are content; every one beyond is unhappy. Temples (+2), Colosseums and Cathedrals (+3), wonders, masterpieces, entertainers and, under Despotism, Monarchy and Communism, troops in the city (martial law) calm them. Each different luxury the city can reach makes one citizen happy.",
             "When the unhappy outnumber the happy the city falls into disorder: no growth, production, science or taxes until it is calmed.",
             "Cities grow when their granary fills and cannot pass size 8 without an Aqueduct, or 16 without a Sewer System. Specialists eat without farming: too many and the city starves.",
-            "Culture from temples, cathedrals, colosseums, libraries, universities and wonders widens a city's borders over time. A city in disorder next to a much greater culture may defect to it.",
+            "Culture from temples, cathedrals, colosseums, libraries, universities and wonders widens a city's borders over time (2 tiles, 3 at 100, 4 at 1,000, 5 at 5,000). Where borders meet, the land goes to the city with the stronger culture for its distance, so a great culture pushes its neighbours' borders back. A city in disorder next to a much greater culture may defect to it.",
             "Corruption grows with distance from the capital and is halved by a Courthouse. A city keeps training the same unit until told otherwise; a finished building or wonder leaves it waiting for its next project.",
         ]
         .into_iter()
@@ -1024,11 +1024,7 @@ pub fn rebuild_panels(
                 p.spawn(label(&art.font_body, format!("Great people: {}/{} points, {pace}", great.progress(city.position), great.threshold(PLAYER)), 14.0, CREAM));
                 // Culture and the reach of the city's borders.
                 let points = culture.of(city.position);
-                let next = match bevy_civ::culture::border_radius(points) {
-                    2 => " (borders widen at 100)",
-                    3 => " (borders widen at 1,000)",
-                    _ => "",
-                };
+                let next = bevy_civ::culture::next_border_step(points).map(|step| format!(" (borders widen at {step})")).unwrap_or_default();
                 p.spawn(label(&art.font_body, format!("Culture: {points}, +{} a turn{next}", bevy_civ::culture::per_turn(&buildings.buildings, city.is_capital)), 14.0, CREAM));
                 // Citizens: workers on the land, and specialists who eat without farming.
                 use bevy_civ::city::Specialist;

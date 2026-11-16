@@ -3159,6 +3159,7 @@ fn refresh_supplies(
             capital: c.is_capital,
             harbor: b.buildings.contains(&Building::Harbor),
             radius: bevy_civ::culture::border_radius(culture.of(c.position)),
+            culture: culture.of(c.position),
         })
         .collect();
     let mut techs: HashMap<u32, HashSet<Tech>> = civs.players.iter().map(|c| (c.id, c.tech.researched.clone())).collect();
