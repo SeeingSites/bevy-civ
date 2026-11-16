@@ -59,7 +59,8 @@ scenario there, rebuild, and list its JSON in `src/scenario.rs`.
 unit covers three times as much ground along them (cities count as road). Once **Steam Power** is
 known, a worker on a road lays a **railroad** (the same **R** order): moving from rail to rail costs
 nothing at all, and railroads run on through cities. Route planning prefers roads and railroads,
-for computer players too. Ships and aircraft ignore both.
+for computer players too, whose workers also lay railroads over their roads once they have Steam
+Power (after any roads their network still needs). Ships and aircraft ignore both.
 
 Land units can cross water once their civilization knows **Seafaring**: they board a boat (boarding
 and landing end the move) and sail three tiles a turn.
@@ -131,7 +132,9 @@ Computer players follow the same rules as you and are run by three pieces of cod
   both hunt enemies within reach and otherwise stay at their base.
 
 ## Controls
-- **Click / tap** a unit or city to select it (click again to cycle what is on the tile)
+- **Click / tap** a unit or city to select it; a bouncing arrow marks the selection
+- Where units share a tile they fan out and a **×N** badge shows how many there are; **click the
+  tile again** or press **Tab** for the next one, or pick it from the list in the unit panel
 - **Click a tile** (or **right-click**) to move the selected unit; moving onto an enemy attacks
 - With a unit selected, **hovering** a tile shows the route there: bright dots are reached this
   turn, faded ones later, and a number marks where each turn's march ends

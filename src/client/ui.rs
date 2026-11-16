@@ -453,7 +453,7 @@ pub fn rebuild_panels(
     tech: Res<TechState>,
     civs: Res<Civilizations>,
     diplomacy: Res<Diplomacy>,
-    (units, tiles): (Query<&Unit>, Query<&HexTile>),
+    (units, tiles, unit_entities): (Query<&Unit>, Query<&HexTile>, Query<Entity, With<Unit>>),
     cities: Query<(&City, &CityBuildings, &Happiness)>,
     unit_panel: Query<Entity, With<UnitPanel>>,
     mut city_panel: Query<(Entity, &mut Node), (With<CityPanel>, Without<ModalRoot>)>,
@@ -473,7 +473,7 @@ pub fn rebuild_panels(
                 p.spawn(label(&art.font_title, "No unit selected", 17.0, GOLD));
                 p.spawn(label(
                     &art.font_body,
-                    "Click a unit or city to select it; click a tile (or right-click) to move.\nSpace skips a unit and moves to the next; Enter ends the turn.",
+                    "Click a unit or city to select it; click again (or Tab) for the next unit on that tile.\nClick a tile (or right-click) to move. Space skips a unit; Enter ends the turn.",
                     14.0,
                     MUTED,
                 ));
@@ -509,6 +509,35 @@ pub fn rebuild_panels(
                     });
                 });
             });
+            // Several of the player's units on one tile: say so, and list them to pick from.
+            if mine {
+                let stack = crate::own_stack(unit.position, unit_entities.iter(), |e| units.get(e).ok().map(|u| (u.position, u.owner)));
+                if stack.len() > 1 {
+                    let index = selection.unit.and_then(|s| stack.iter().position(|e| *e == s)).unwrap_or(0);
+                    p.spawn(label(
+                        &art.font_bold,
+                        format!("Unit {} of {} on this tile - Tab or click the tile again for the next:", index + 1, stack.len()),
+                        14.0,
+                        GOLD,
+                    ));
+                    p.spawn(row(6.0)).with_children(|r| {
+                        for entity in &stack {
+                            let Ok(other) = units.get(*entity) else { continue };
+                            let state = if other.build_turns_left.is_some() {
+                                " (working)"
+                            } else if other.fortified {
+                                " (fortified)"
+                            } else if !other.can_move() {
+                                " (done)"
+                            } else {
+                                ""
+                            };
+                            let tint = if selection.unit == Some(*entity) { GREEN } else { BRONZE };
+                            button(r, art, format!("{}{}", other.unit_type.name(), state), Command::Game(Action::Select(*entity)), tint, 13.0);
+                        }
+                    });
+                }
+            }
             if mine {
                 p.spawn(row(6.0)).with_children(|r| {
                     if unit.unit_type == UnitType::Settler {
@@ -548,6 +577,11 @@ pub fn rebuild_panels(
             p.spawn(label(&art.font_body, format!("{} {}  -  size {}", owner_name(city.owner, &civs), kind, city.population), 15.0, owner_color(city.owner).mix(&Color::WHITE, 0.55)));
             if !mine {
                 return;
+            }
+            let garrison = crate::own_stack(city.position, unit_entities.iter(), |e| units.get(e).ok().map(|u| (u.position, u.owner)));
+            if !garrison.is_empty() {
+                let units_here = if garrison.len() == 1 { "1 of your units is".to_string() } else { format!("{} of your units are", garrison.len()) };
+                p.spawn(label(&art.font_bold, format!("{units_here} here - press Tab or click the city again to pick one."), 14.0, GOLD));
             }
             let dist = capital.map(|c| city.position.distance_to(c) as u32).unwrap_or(0);
             let gov = state.government;

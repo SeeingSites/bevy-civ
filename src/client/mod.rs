@@ -167,6 +167,7 @@ impl Plugin for ClientPlugin {
                     actors::animate_units,
                     actors::update_city_views,
                     actors::animate_flags,
+                    actors::update_stack_badges,
                     actors::spawn_bursts,
                     actors::animate_bursts,
                     ui::rebuild_panels,

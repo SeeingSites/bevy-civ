@@ -164,6 +164,10 @@ pub enum Action {
     AnswerOffer(bool),
     TradeRoute,
     Save,
+    /// Pick one of the player's units (from the list of units sharing a tile).
+    Select(Entity),
+    /// Tab: the next of the player's units on the selected unit's or city's tile.
+    CycleStack,
     SetProduction(ProductionItem),
     Research(Tech),
 }
@@ -386,7 +390,7 @@ fn setup_world(
 /// Removes the finished game so a new one can start from the menu.
 fn cleanup_world(
     mut commands: Commands,
-    entities: Query<Entity, Or<(With<HexTile>, With<Unit>, With<City>, With<client::map::Decor>, With<client::map::PathDot>, With<client::actors::BurstFx>)>>,
+    entities: Query<Entity, Or<(With<HexTile>, With<Unit>, With<City>, With<client::map::Decor>, With<client::map::PathDot>, With<client::actors::BurstFx>, With<client::actors::StackBadge>)>>,
     parents: Query<&Parent>,
 ) {
     for entity in &entities {
@@ -597,6 +601,13 @@ fn capture<'a>(unit: &Unit, cities: impl Iterator<Item = Mut<'a, City>>, log: &m
     }
 }
 
+/// The player's units on a tile, in the fixed order that Tab and the unit panel use.
+pub fn own_stack(at: Hex, entities: impl Iterator<Item = Entity>, place: impl Fn(Entity) -> Option<(Hex, u32)>) -> Vec<Entity> {
+    let mut stack: Vec<Entity> = entities.filter(|e| place(*e) == Some((at, PLAYER))).collect();
+    stack.sort_by_key(|e| e.index());
+    stack
+}
+
 /// How the player's units of a kind travel, given whether Seafaring is known and where the ports are.
 fn player_travel(domain: Domain, sail: bool, ports: &HashSet<Hex>) -> Travel<'_> {
     match domain {
@@ -786,6 +797,7 @@ fn apply_actions(
     mut log: ResMut<GameLog>,
     mut dirty: ResMut<Dirty>,
     (mut cycle, supplies, map, mut end_turn): (ResMut<Cycle>, Res<Supplies>, Res<MapData>, EventWriter<EndTurnNow>),
+    (unit_entities, mut sounds): (Query<Entity, With<Unit>>, EventWriter<Sfx>),
     mut commands: Commands,
 ) {
     for action in actions.read() {
@@ -832,6 +844,26 @@ fn apply_actions(
             Action::Deselect => {
                 selection.unit = None;
                 selection.city = None;
+            }
+            Action::Select(entity) => {
+                if units.get(*entity).is_ok_and(|u| u.owner == PLAYER) {
+                    selection.unit = Some(*entity);
+                    selection.city = None;
+                    sounds.send(Sfx::Select);
+                }
+            }
+            Action::CycleStack => {
+                let here = selected_unit
+                    .and_then(|e| units.get(e).ok().map(|u| u.position))
+                    .or_else(|| selection.city.and_then(|e| cities.get(e).ok().map(|c| c.position)));
+                let Some(here) = here else { continue };
+                let stack = own_stack(here, unit_entities.iter(), |e| units.get(e).ok().map(|u| (u.position, u.owner)));
+                let next = selected_unit.and_then(|e| stack.iter().position(|s| *s == e)).map_or(0, |i| (i + 1) % stack.len().max(1));
+                if let Some(entity) = stack.get(next) {
+                    selection.unit = Some(*entity);
+                    selection.city = None;
+                    sounds.send(Sfx::Select);
+                }
             }
             Action::Build(improvement) => {
                 let Some(mut unit) = selected_unit.and_then(|e| units.get_mut(e).ok()) else { continue };

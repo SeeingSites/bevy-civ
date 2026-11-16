@@ -10,11 +10,11 @@ use bevy_civ::unit::{Unit, UnitType};
 use super::map::HEX_SPRITE;
 use super::sfx::Sfx;
 use super::{overlay, owner_color, Art};
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 
 use hexx::Hex;
 
-use crate::{Burst, MapData, Trail, PLAYER};
+use crate::{Burst, MapData, Selection, Trail, PLAYER};
 
 const UNIT_SIZE: f32 = 76.0;
 /// Feet of the figure inside its 128px frame, relative to the frame centre.
@@ -45,6 +45,34 @@ pub struct CityLabel;
 pub struct CityLabelBack;
 #[derive(Component)]
 pub struct BurstFx(Timer);
+/// The "×3" marker on a tile where several units stand.
+#[derive(Component)]
+pub struct StackBadge;
+
+/// Units sharing a tile, front first: the selected unit, then the player's, then the rest.
+fn stacks<'a>(units: impl Iterator<Item = (Entity, &'a Unit)>, selected: Option<Entity>) -> HashMap<Hex, Vec<Entity>> {
+    let mut by_tile: HashMap<Hex, Vec<(Entity, u32)>> = HashMap::new();
+    for (entity, unit) in units {
+        by_tile.entry(unit.position).or_default().push((entity, unit.owner));
+    }
+    by_tile
+        .into_iter()
+        .map(|(hex, mut list)| {
+            list.sort_by_key(|(e, owner)| (Some(*e) != selected, *owner != PLAYER, e.index()));
+            (hex, list.into_iter().map(|(e, _)| e).collect())
+        })
+        .collect()
+}
+
+/// Where a unit stands within its tile: the front unit in the middle, the others fanned out behind it.
+fn stack_offset(slot: usize) -> Vec2 {
+    if slot == 0 {
+        return Vec2::ZERO;
+    }
+    let side = if slot % 2 == 1 { -1.0 } else { 1.0 };
+    let reach = ((slot + 1) / 2).min(3) as f32;
+    Vec2::new(side * 17.0 * reach, 9.0 + 3.0 * reach)
+}
 
 /// Row of a unit type in the atlas; the transport boat sits between the land units and the rest.
 pub fn unit_row(unit_type: UnitType) -> usize {
@@ -93,12 +121,15 @@ pub fn animate_units(
     time: Res<Time>,
     map: Res<MapData>,
     fog: Res<FogOfWar>,
-    mut units: Query<(&Unit, &mut Transform, &mut Sprite, &mut UnitView, &mut Visibility, &Children, Option<&mut Trail>)>,
+    selection: Res<Selection>,
+    mut units: Query<(Entity, &Unit, &mut Transform, &mut Sprite, &mut UnitView, &mut Visibility, &Children, Option<&mut Trail>)>,
     mut bases: Query<&mut Sprite, (With<UnitBase>, Without<UnitView>)>,
 ) {
     let place = |hex: Hex| map.layout.hex_to_world_pos(hex) + UNIT_OFFSET;
-    for (unit, mut transform, mut sprite, mut view, mut visibility, children, trail) in &mut units {
-        let target = place(unit.position);
+    let stacked = stacks(units.iter().map(|(e, u, ..)| (e, u)), selection.unit);
+    for (entity, unit, mut transform, mut sprite, mut view, mut visibility, children, trail) in &mut units {
+        let slot = stacked.get(&unit.position).and_then(|s| s.iter().position(|e| *e == entity)).unwrap_or(0);
+        let target = place(unit.position) + stack_offset(slot);
         // The unit moved: walk the figure through every tile on the way, following the route it took
         // when that is known (the player's orders) and a straight line of tiles otherwise.
         if unit.position != view.at {
@@ -243,6 +274,55 @@ pub fn animate_flags(time: Res<Time>, mut flags: Query<&mut Sprite, With<CityFla
         if let Some(atlas) = sprite.texture_atlas.as_mut() {
             atlas.index = frame;
         }
+    }
+}
+
+/// Marks tiles where several units stand with their number, so a stack is never mistaken for one unit.
+pub fn update_stack_badges(
+    art: Res<Art>,
+    map: Res<MapData>,
+    fog: Res<FogOfWar>,
+    units: Query<&Unit>,
+    changed: Query<(), Changed<Unit>>,
+    mut removed: RemovedComponents<Unit>,
+    badges: Query<Entity, With<StackBadge>>,
+    mut commands: Commands,
+) {
+    let units_gone = !removed.is_empty();
+    removed.clear();
+    if changed.is_empty() && !units_gone && !fog.is_changed() {
+        return;
+    }
+    for badge in &badges {
+        commands.entity(badge).despawn_recursive();
+    }
+    let mut counts: HashMap<Hex, (usize, u32)> = HashMap::new();
+    for unit in units.iter().filter(|u| u.owner == PLAYER || fog.visible.contains(&u.position)) {
+        let entry = counts.entry(unit.position).or_insert((0, unit.owner));
+        entry.0 += 1;
+    }
+    for (hex, (count, owner)) in counts.into_iter().filter(|(_, (n, _))| *n > 1) {
+        let pos = map.layout.hex_to_world_pos(hex) + Vec2::new(-44.0, 30.0);
+        commands
+            .spawn((
+                StackBadge,
+                Sprite {
+                    image: art.overlays.clone(),
+                    texture_atlas: Some(art.atlas(&art.overlays_layout, overlay::DOT)),
+                    custom_size: Some(HEX_SPRITE * 1.9),
+                    color: owner_color(owner).mix(&Color::BLACK, 0.55),
+                    ..default()
+                },
+                Transform::from_xyz(pos.x, pos.y, 8.7),
+            ))
+            .with_children(|parent| {
+                parent.spawn((
+                    Text2d::new(format!("×{count}")),
+                    TextFont { font: art.font_bold.clone(), font_size: 16.0, ..default() },
+                    TextColor(Color::srgb(1.0, 0.95, 0.8)),
+                    Transform::from_xyz(0.0, 1.0, 0.1),
+                ));
+            });
     }
 }
 

@@ -137,6 +137,14 @@ pub fn process_ai_turn(
         .map(|t| (t.coord, (t.terrain, t.improvements.contains(&Improvement::Farm), t.improvements.contains(&Improvement::Mine))))
         .collect();
     let mut founded: Vec<Hex> = Vec::new();
+    // Roads that could carry a railroad (cities need none), and which of them a worker has already taken.
+    let city_tiles: std::collections::HashSet<Hex> = city_positions.iter().map(|(p, _)| *p).collect();
+    let unrailed: Vec<Hex> = tiles.iter().filter(|t| t.has_road() && !t.has_railroad() && !city_tiles.contains(&t.coord)).map(|t| t.coord).collect();
+    let mut rail_claimed: std::collections::HashSet<Hex> = units
+        .iter()
+        .filter(|(_, u)| u.current_build == Some(Improvement::Railroad))
+        .map(|(_, u)| u.position)
+        .collect();
 
     // The best defender standing in each city is its garrison and stays there.
     let mut holders: HashMap<Hex, (Entity, f32)> = HashMap::new();
@@ -218,6 +226,28 @@ pub fn process_ai_turn(
                     unit.position = next;
                     unit.movement_left = 0;
                     continue;
+                }
+            }
+            // Once Steam Power is known, lay railroads over the roads inside the borders, nearest first.
+            let steam = civs.players.iter().any(|c| c.id == owner && c.tech.researched.contains(&Tech::SteamPower));
+            if steam {
+                if unrailed.contains(&here) && owns(here, owner) && rail_claimed.insert(here) {
+                    unit.start_build(Improvement::Railroad);
+                    continue;
+                }
+                let target = unrailed
+                    .iter()
+                    .copied()
+                    .filter(|h| owns(*h, owner) && !rail_claimed.contains(h) && here.distance_to(*h) <= 10)
+                    .min_by_key(|h| (here.distance_to(*h), h.x, h.y));
+                if let Some(target) = target {
+                    rail_claimed.insert(target);
+                    let step = find_route(here, target, land.iter().copied(), &roads, Travel::Land).and_then(|path| path.get(1).copied());
+                    if let Some(next) = step.filter(|n| !occupied.get(n).is_some_and(|(other, _)| *other != owner)) {
+                        unit.position = next;
+                        unit.end_move();
+                        continue;
+                    }
                 }
             }
             // No road work: farm the flat land and mine the hills inside the borders.
@@ -453,6 +483,43 @@ mod tests {
         let unit = world.get::<Unit>(worker).unwrap();
         assert_eq!(unit.position, Hex::new(1, 0));
         assert_eq!(unit.current_build, Some(Improvement::Road));
+    }
+
+    #[test]
+    fn workers_lay_railroads_over_roads_once_steam_power_is_known() {
+        let (mut world, worker) = world_with_worker(Terrain::Plains);
+        // A road two tiles east, inside the borders; the worker stands off the road.
+        for mut tile in world.query::<&mut HexTile>().iter_mut(&mut world) {
+            if tile.coord == Hex::new(2, 0) {
+                tile.add_improvement(Improvement::Road);
+            }
+        }
+        world.get_mut::<Unit>(worker).unwrap().position = Hex::new(-1, 0);
+        world.insert_resource(Jobs(HashMap::new()));
+
+        // Without Steam Power it farms instead.
+        world.run_system_once(ai_phase).unwrap();
+        assert_eq!(world.get::<Unit>(worker).unwrap().current_build, Some(Improvement::Farm));
+
+        let reset = |world: &mut World| {
+            let mut unit = world.get_mut::<Unit>(worker).unwrap();
+            unit.current_build = None;
+            unit.build_turns_left = None;
+            unit.movement_left = 1;
+        };
+        reset(&mut world);
+        world.resource_mut::<Civilizations>().players[0].tech.researched.insert(Tech::SteamPower);
+        // Three turns to walk there, one to start work.
+        for _ in 0..4 {
+            world.run_system_once(ai_phase).unwrap();
+            if world.get::<Unit>(worker).unwrap().current_build.is_some() {
+                break;
+            }
+            world.get_mut::<Unit>(worker).unwrap().movement_left = 1;
+        }
+        let unit = world.get::<Unit>(worker).unwrap();
+        assert_eq!(unit.position, Hex::new(2, 0));
+        assert_eq!(unit.current_build, Some(Improvement::Railroad));
     }
 
     fn soldier(world: &mut World, kind: UnitType, owner: u32, q: i32) -> Entity {

@@ -34,6 +34,9 @@ pub struct HoverMarker;
 pub struct SelectMarker;
 #[derive(Component)]
 pub struct PathDot;
+/// The bouncing arrow over the selected unit or city.
+#[derive(Component)]
+pub struct SelectArrow;
 #[derive(Resource)]
 pub struct WaterClock(Timer, usize);
 
@@ -69,6 +72,13 @@ pub fn setup_map_view(mut commands: Commands, art: Res<Art>) {
     };
     commands.spawn((HoverMarker, overlay_sprite(overlay::HOVER), Transform::from_xyz(0.0, 0.0, 4.0), Visibility::Hidden));
     commands.spawn((SelectMarker, overlay_sprite(overlay::SELECT), Transform::from_xyz(0.0, 0.0, 5.5), Visibility::Hidden));
+    let arrow = |color: Color| (Text2d::new("▼"), TextFont { font: art.font_bold.clone(), font_size: 80.0, ..default() }, TextColor(color));
+    commands
+        .spawn((SelectArrow, arrow(Color::srgb(1.0, 0.86, 0.3)), Transform::from_xyz(0.0, 0.0, 9.5), Visibility::Hidden))
+        .with_children(|parent| {
+            // A dark copy just behind it keeps the arrow readable on any terrain.
+            parent.spawn((arrow(Color::srgba(0.1, 0.06, 0.02, 0.85)), Transform::from_xyz(2.0, -3.0, -0.05).with_scale(Vec3::splat(1.15))));
+        });
 }
 
 pub fn attach_tile_views(mut commands: Commands, map: Res<MapData>, tiles: Query<(Entity, &HexTile), Added<HexTile>>) {
@@ -239,7 +249,26 @@ pub fn update_markers(
     cities: Query<&City>,
     mut hover: Query<(&mut Transform, &mut Visibility), (With<HoverMarker>, Without<SelectMarker>)>,
     mut select: Query<(&mut Transform, &mut Visibility, &mut Sprite), (With<SelectMarker>, Without<HoverMarker>)>,
+    mut arrow: Query<(&mut Transform, &mut Visibility, &mut TextColor), (With<SelectArrow>, Without<SelectMarker>, Without<HoverMarker>, Without<Unit>)>,
 ) {
+    // A bouncing arrow over the selected unit (or city), on top of everything, so it is always found.
+    if let Ok((mut transform, mut visibility, mut color)) = arrow.get_single_mut() {
+        let bounce = 7.0 * (time.elapsed_secs() * 4.5).sin().abs();
+        let over = if let Some((unit, unit_transform)) = selection.unit.and_then(|e| units.get(e).ok()) {
+            color.0 = if unit.owner == PLAYER { Color::srgb(1.0, 0.86, 0.3) } else { Color::srgb(1.0, 0.45, 0.35) };
+            Some(unit_transform.translation.truncate() + Vec2::new(0.0, 74.0))
+        } else {
+            color.0 = Color::srgb(1.0, 0.86, 0.3);
+            selection.city.and_then(|e| cities.get(e).ok()).map(|c| map.layout.hex_to_world_pos(c.position) + Vec2::new(0.0, 88.0))
+        };
+        match over {
+            Some(pos) => {
+                transform.translation = (pos + Vec2::new(0.0, bounce)).extend(9.5);
+                *visibility = Visibility::Inherited;
+            }
+            None => *visibility = Visibility::Hidden,
+        }
+    }
     if let Ok((mut transform, mut visibility)) = hover.get_single_mut() {
         match hovered.0 {
             Some(hex) => {

@@ -172,6 +172,7 @@ pub fn keyboard_input(
     let bindings = [
         (KeyCode::Space, Action::SkipOrEnd),
         (KeyCode::KeyN, Action::NextUnit),
+        (KeyCode::Tab, Action::CycleStack),
         (KeyCode::KeyH, Action::Fortify),
         (KeyCode::Enter, Action::EndTurn),
         (KeyCode::KeyF, Action::Build(Improvement::Farm)),
