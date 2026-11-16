@@ -8,6 +8,7 @@ use rand::Rng;
 use std::collections::HashMap;
 
 use bevy_civ::ai::{process_ai_turn, Civilizations};
+use std::collections::HashSet;
 use bevy_civ::barbarians::{process_barbarians, BarbarianState};
 use bevy_civ::building::CityBuildings;
 use bevy_civ::city::{spawn_city, City, ProductionItem};
@@ -29,6 +30,8 @@ mod client;
 pub const MAP_RADIUS: u32 = 10;
 pub const PLAYER: u32 = 0;
 pub const BARBARIANS: u32 = 99;
+/// Aggressive computer players leave neighbours they are not at war with alone until this turn.
+pub const AI_GRACE_TURNS: u32 = 25;
 /// Tiles around a city that belong to its owner.
 pub const CITY_RADIUS: i32 = 2;
 
@@ -360,6 +363,7 @@ fn handle_map_click(
                     diplomacy.set_treaty(PLAYER, enemy_owner, Treaty::War);
                     log.push("Your attack means war!");
                 }
+                let terrain = defence_terrain(Some(terrain), city_here.is_some());
                 if resolve_combat(unit.unit_type, enemy_type, terrain, None, None) {
                     log.push(format!("Victory! Your {} defeated the enemy {}.", unit.unit_type.name(), enemy_type.name()));
                     commands.entity(enemy_entity).despawn_recursive();
@@ -390,6 +394,15 @@ fn handle_map_click(
                 }
             }
         }
+    }
+}
+
+/// Terrain used for a defender's bonus: city streets and walls defend at least as well as hills.
+fn defence_terrain(terrain: Option<Terrain>, in_city: bool) -> Terrain {
+    match terrain.unwrap_or(Terrain::Plains) {
+        Terrain::Mountain => Terrain::Mountain,
+        _ if in_city => Terrain::Hills,
+        other => other,
     }
 }
 
@@ -533,16 +546,16 @@ fn process_turn(
     mut state: ResMut<GameState>,
     mut tech: ResMut<TechState>,
     mut cities: Query<(&mut City, &mut CityBuildings, &mut Happiness)>,
-    mut units: Query<&mut Unit>,
+    mut units: Query<(Entity, &mut Unit)>,
     mut tiles: Query<&mut HexTile>,
     mut civs: ResMut<Civilizations>,
     mut fog: ResMut<FogOfWar>,
     mut barbarians: ResMut<BarbarianState>,
+    mut diplomacy: ResMut<Diplomacy>,
     trade: Res<TradeRoutes>,
     mut space: ResMut<SpaceRace>,
-    mut log: ResMut<GameLog>,
-    mut dirty: ResMut<Dirty>,
-    mut path: ResMut<PathPreview>,
+    (mut log, mut dirty, mut path): (ResMut<GameLog>, ResMut<Dirty>, ResMut<PathPreview>),
+    mut bursts: EventWriter<Burst>,
     mut commands: Commands,
 ) {
     if !actions.read().any(|a| *a == Action::EndTurn) || state.victory.is_some() {
@@ -561,7 +574,7 @@ fn process_turn(
     let capitals: HashMap<u32, Hex> =
         cities.iter().filter(|(c, _, _)| c.is_capital).map(|(c, _, _)| (c.owner, c.position)).collect();
     let mut army_sizes: HashMap<u32, usize> = HashMap::new();
-    for unit in units.iter() {
+    for (_, unit) in units.iter() {
         *army_sizes.entry(unit.owner).or_default() += 1;
     }
 
@@ -594,12 +607,23 @@ fn process_turn(
                 ProductionItem::Unit(ut) => {
                     let has_resource = ut.required_resource().is_none_or(|req| tiles.iter().any(|t| t.resource == Some(req)));
                     // Keep computer players from flooding the map.
-                    let at_cap = !mine && army_sizes.get(&city.owner).copied().unwrap_or(0) >= 6;
+                    let at_cap = !mine && army_sizes.get(&city.owner).copied().unwrap_or(0) >= 8;
                     if has_resource && !at_cap {
                         spawn_unit(&mut commands, city.position, ut, city.owner);
                         *army_sizes.entry(city.owner).or_default() += 1;
                         if mine {
                             log.push(format!("{} trains a {}.", city.name, ut.name()));
+                        } else if let Some(civ) = civs.players.iter().find(|c| c.id == city.owner) {
+                            // Computer players field the strongest unit their technology and resources allow.
+                            let best = UnitType::ALL
+                                .into_iter()
+                                .filter(|u| u.is_military())
+                                .filter(|u| u.required_tech().is_none_or(|t| civ.tech.researched.contains(&t)))
+                                .filter(|u| u.required_resource().is_none_or(|req| tiles.iter().any(|t| t.resource == Some(req))))
+                                .max_by_key(|u| (u.stats().0 + u.stats().1, u.stats().2));
+                            if let Some(best) = best {
+                                city.production_queue = Some(ProductionItem::Unit(best));
+                            }
                         }
                     } else if mine {
                         log.push(format!("{} cannot train a {} without its strategic resource.", city.name, ut.name()));
@@ -625,7 +649,7 @@ fn process_turn(
     total_science += trade.total_science();
 
     let free_support = gov.free_unit_support() * player_cities.max(1);
-    let military = units.iter().filter(|u| u.owner == PLAYER && u.unit_type.is_military()).count() as u32;
+    let military = units.iter().filter(|(_, u)| u.owner == PLAYER && u.unit_type.is_military()).count() as u32;
     if military > free_support {
         total_gold -= (military - free_support) as i32 * gov.unit_upkeep_food() as i32;
     }
@@ -633,7 +657,7 @@ fn process_turn(
     state.gold = (state.gold + total_gold).max(0);
     tech.science_per_turn = total_science;
 
-    for mut unit in &mut units {
+    for (_, mut unit) in &mut units {
         if let Some(done) = unit.process_build() {
             if let Some(mut tile) = tiles.iter_mut().find(|t| t.coord == unit.position) {
                 tile.add_improvement(done);
@@ -648,10 +672,103 @@ fn process_turn(
     }
 
     let city_owners: Vec<(Hex, u32)> = cities.iter().map(|(c, _, _)| (c.position, c.owner)).collect();
-    process_ai_turn(&mut civs, &mut units, &city_owners, &tiles, &mut commands);
-    process_barbarians(&mut barbarians, &mut commands, &tiles, &units);
 
-    let unit_positions: Vec<Hex> = units.iter().filter(|u| u.owner == PLAYER).map(|u| u.position).collect();
+    // --- Computer players and barbarians move, attack and capture -----------------------------
+    // Barbarians fight everyone; a civilization attacks those it is at war with, and an
+    // aggressive one also attacks anyone it has no peace treaty with once the early game is over.
+    let turn = state.turn;
+    let aggression: HashMap<u32, f32> = civs.players.iter().map(|c| (c.id, c.aggression)).collect();
+    let treaties = diplomacy.treaties.clone();
+    let hostile = move |a: u32, b: u32| {
+        if a == b {
+            return false;
+        }
+        if a == BARBARIANS || b == BARBARIANS {
+            return true;
+        }
+        match treaties.get(&(a.min(b), a.max(b))).copied().unwrap_or(Treaty::None) {
+            Treaty::War => true,
+            Treaty::Peace | Treaty::Alliance => false,
+            Treaty::None => turn >= AI_GRACE_TURNS && aggression.get(&a).copied().unwrap_or(0.5) > 0.6,
+        }
+    };
+    let attacks = process_ai_turn(&mut civs, &mut units, &city_owners, &tiles, &hostile, &mut commands);
+    let civ_name = |owner: u32| client::owner_name(owner, &civs).replace("Your", "Our");
+
+    let mut dead: HashSet<Entity> = HashSet::new();
+    for attack in attacks {
+        if dead.contains(&attack.attacker) {
+            continue;
+        }
+        let Ok((_, attacker)) = units.get(attack.attacker) else { continue };
+        let (a_type, a_owner) = (attacker.unit_type, attacker.owner);
+        let defender = units
+            .iter()
+            .filter(|(e, u)| u.position == attack.target && u.owner != a_owner && !dead.contains(e))
+            .max_by_key(|(_, u)| u.unit_type.stats().1)
+            .map(|(e, u)| (e, u.unit_type, u.owner));
+        let Some((d_entity, d_type, d_owner)) = defender else {
+            if let Ok((_, mut attacker)) = units.get_mut(attack.attacker) {
+                attacker.position = attack.target;
+            }
+            continue;
+        };
+        if d_owner == PLAYER && a_owner != BARBARIANS && diplomacy.get_treaty(PLAYER, a_owner) != Treaty::War {
+            diplomacy.set_treaty(PLAYER, a_owner, Treaty::War);
+            log.push(format!("{} declares war on us!", civ_name(a_owner)));
+        }
+        let terrain = defence_terrain(tiles.iter().find(|t| t.coord == attack.target).map(|t| t.terrain), city_owners.iter().any(|(p, _)| *p == attack.target));
+        if fog.visible.contains(&attack.target) {
+            bursts.send(Burst(attack.target));
+        }
+        if resolve_combat(a_type, d_type, terrain, None, None) {
+            dead.insert(d_entity);
+            commands.entity(d_entity).despawn_recursive();
+            if d_owner == PLAYER {
+                log.push(format!("Our {} was destroyed by a {} {}.", d_type.name(), civ_name(a_owner), a_type.name()));
+            }
+            let still_defended = units.iter().any(|(e, u)| u.position == attack.target && u.owner != a_owner && !dead.contains(&e));
+            if !still_defended {
+                if let Ok((_, mut attacker)) = units.get_mut(attack.attacker) {
+                    attacker.position = attack.target;
+                }
+            }
+        } else {
+            dead.insert(attack.attacker);
+            commands.entity(attack.attacker).despawn_recursive();
+            if d_owner == PLAYER {
+                log.push(format!("Our {} repelled a {} {}.", d_type.name(), civ_name(a_owner), a_type.name()));
+            }
+        }
+    }
+
+    // An enemy military unit standing in an undefended city takes it.
+    for (mut city, _, _) in &mut cities {
+        let defended = units.iter().any(|(e, u)| !dead.contains(&e) && u.position == city.position && u.owner == city.owner);
+        let occupier = units
+            .iter()
+            .find(|(e, u)| {
+                !dead.contains(e) && u.position == city.position && u.owner != PLAYER && u.owner != city.owner && u.unit_type.is_military() && hostile(u.owner, city.owner)
+            })
+            .map(|(_, u)| u.owner);
+        if let Some(new_owner) = occupier.filter(|_| !defended) {
+            if city.owner == PLAYER {
+                log.push(format!("{} has fallen to {} forces!", city.name, civ_name(new_owner)));
+            } else if fog.explored.contains(&city.position) {
+                log.push(format!("{} forces capture {}.", civ_name(new_owner), city.name));
+            }
+            city.owner = new_owner;
+            city.is_capital = false;
+            city.production_progress = 0;
+            city.production_queue = Some(ProductionItem::Unit(UnitType::Warrior));
+        }
+    }
+    let player_cities = cities.iter().filter(|(c, _, _)| c.owner == PLAYER).count();
+
+    let all_positions: Vec<Hex> = units.iter().filter(|(e, _)| !dead.contains(e)).map(|(_, u)| u.position).collect();
+    process_barbarians(&mut barbarians, &mut commands, &tiles, &all_positions);
+
+    let unit_positions: Vec<Hex> = units.iter().filter(|(e, u)| u.owner == PLAYER && !dead.contains(e)).map(|(_, u)| u.position).collect();
     let city_positions: Vec<Hex> = cities.iter().filter(|(c, _, _)| c.owner == PLAYER).map(|(c, _, _)| c.position).collect();
     fog.update_visibility(&unit_positions, &city_positions);
 

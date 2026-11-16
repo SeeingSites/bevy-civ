@@ -267,7 +267,7 @@ pub fn setup_ui(mut commands: Commands, art: Res<Art>, mut images: ResMut<Assets
                     RelativeCursorPosition::default(),
                 ));
             });
-            p.spawn((label(&art.font_body, "", 14.0, CREAM), TileInfoText, Node { min_height: Val::Px(36.0), ..default() }));
+            p.spawn((label(&art.font_body, "", 14.0, CREAM), TileInfoText, Node { height: Val::Px(38.0), ..default() }));
             button(p, &art, "End Turn", Command::Game(Action::EndTurn), Color::srgb(0.62, 0.86, 0.45), 19.0);
         });
 

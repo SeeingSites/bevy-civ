@@ -18,6 +18,7 @@ Core systems from Civ 2/3 implemented modularly. Goal: exceed FreeCiv. **All maj
 - Corruption based on distance from capital
 - Unit upkeep
 - Advanced war AI (aggression-based attack/retreat, targets cities, uses A* pathfinding)
+- Computer players and barbarians attack units and capture undefended cities; aggressive civilizations declare war after turn 25 unless you hold a peace treaty, and units inside a city defend as if on hills
 - AI that researches, founds cities, and improves tiles
 - Fog of war and diplomacy treaties (Peace / Alliance / War)
 - Victory conditions (Domination / Democracy / Space Race / Culture)
