@@ -89,6 +89,7 @@ pub fn run(which: &str, turns: u32) -> bool {
         if let Some(outcome) = world.resource::<GameState>().victory.clone() {
             println!("Game over on turn {turn}: {outcome}");
             snapshot(world, turn);
+            armies(world);
             break;
         }
     }
@@ -107,6 +108,24 @@ fn era_of(tech: Tech) -> &'static str {
         26..=45 => "Classical",
         46..=95 => "Industrial",
         _ => "Modern",
+    }
+}
+
+/// The make-up of each civilization's military at the end: its most common unit types.
+fn armies(world: &mut World) {
+    let civs = world.resource::<Civilizations>().clone();
+    let mut units = world.query::<&Unit>();
+    let all: Vec<(u32, bevy_civ::unit::UnitType)> = units.iter(world).filter(|u| u.unit_type.is_military()).map(|u| (u.owner, u.unit_type)).collect();
+    println!("--- armies ---");
+    for civ in civs.players.iter().filter(|c| c.id != PLAYER) {
+        let mut counts: BTreeMap<&str, usize> = BTreeMap::new();
+        for (_, kind) in all.iter().filter(|(o, _)| *o == civ.id) {
+            *counts.entry(kind.name()).or_default() += 1;
+        }
+        let mut list: Vec<(&str, usize)> = counts.into_iter().collect();
+        list.sort_by_key(|(_, n)| std::cmp::Reverse(*n));
+        let text: Vec<String> = list.iter().take(6).map(|(k, n)| format!("{n} {k}")).collect();
+        println!("  {:<14} {}", civ.name.trim_start_matches("the "), text.join(", "));
     }
 }
 
