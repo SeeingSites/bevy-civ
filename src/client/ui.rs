@@ -925,7 +925,7 @@ pub fn rebuild_panels(
                 let commerce = city.science_per_turn(buildings, gov, dist) + city.gold_per_turn(buildings) + 1;
                 let (science, luxury, gold) = state.split_commerce(commerce);
                 stat(r, art, icon::SCIENCE, format!("+{science}"), CREAM);
-                stat(r, art, icon::GOLD, format!("+{}", gold + extra_gold), CREAM);
+                stat(r, art, icon::GOLD, format!("+{}", gold as i32 + extra_gold as i32 + great.merchant_gold(city.position)), CREAM);
                 if luxury > 0 {
                     r.spawn(label(&art.font_body, format!("lux {luxury}"), 14.0, CREAM));
                 }
@@ -995,6 +995,7 @@ pub fn rebuild_panels(
                         .filter(|b| b.is_wonder() == wonder_tab && known(b.required_tech()) && !buildings.buildings.contains(b) && (*b != Building::Harbor || coastal))
                         .filter(|b| !wonders.is_taken(*b))
                         .filter(|b| !b.is_spaceship_part() || (buildings.has(Building::Factory) && space.wants(PLAYER, *b)))
+                        .filter(|b| b.required_building().is_none_or(|r| buildings.has(r)))
                         .map(|b| {
                             let effect = b.effect().to_string();
                             (ProductionItem::Building(b), effect)
@@ -1048,6 +1049,10 @@ pub fn rebuild_panels(
                 let masterpieces = great.masterpieces.get(&city.position).copied().unwrap_or(0);
                 if masterpieces > 0 {
                     p.spawn(label(&art.font_body, format!("Masterpieces: {masterpieces} (+{} content)", masterpieces * 3), 14.0, CREAM));
+                }
+                let merchants = great.merchants.get(&city.position).copied().unwrap_or(0);
+                if merchants > 0 {
+                    p.spawn(label(&art.font_body, format!("Trading houses: {merchants} (+{} gold)", great.merchant_gold(city.position)), 14.0, CREAM));
                 }
                 // Resources this city can draw on through roads, harbours and trade.
                 let mut goods: Vec<Good> = supplies.city.get(&city.position).map(|set| set.iter().copied().collect()).unwrap_or_default();
@@ -1225,6 +1230,12 @@ pub fn rebuild_panels(
                                         }
                                     });
                                 }
+                                w.spawn(label(
+                                    &art.font_body,
+                                    format!("Interest on the treasury: +{} gold a turn (5% of savings, up to 2 for each Bank and 3 for each Stock Exchange).", state.interest),
+                                    14.0,
+                                    INK_SOFT,
+                                ));
                                 for g in Government::CHOICES {
                                     let known = g.available(&tech);
                                     w.spawn(Node { align_items: AlignItems::Center, column_gap: Val::Px(10.0), ..default() }).with_children(|r| {

@@ -173,6 +173,9 @@ pub struct GameState {
     pub science_rate: u32,
     #[serde(default)]
     pub luxury_rate: u32,
+    /// Interest earned on the treasury last turn (included in `gold_per_turn`).
+    #[serde(default)]
+    pub interest: i32,
 }
 
 fn default_science_rate() -> u32 {
@@ -216,6 +219,7 @@ impl Default for GameState {
             last_turn: LAST_TURN,
             science_rate: 60,
             luxury_rate: 0,
+            interest: 0,
         }
     }
 }
@@ -1407,7 +1411,12 @@ fn apply_actions(
                         }
                     },
                     UnitType::GreatMerchant => match &city_here {
-                        Some((owner, name)) if *owner != PLAYER && *owner != BARBARIANS && diplomacy.get_treaty(PLAYER, *owner) != Treaty::War => {
+                        Some((owner, name)) if *owner == PLAYER => {
+                            *great.merchants.entry(here).or_default() += 1;
+                            log.push(format!("Your Great Merchant settles in {name} and founds a trading house: +{} gold there every turn.", great::SETTLED_MERCHANT_GOLD));
+                            true
+                        }
+                        Some((owner, name)) if *owner != BARBARIANS && diplomacy.get_treaty(PLAYER, *owner) != Treaty::War => {
                             let capital = cities.iter().find(|c| c.owner == PLAYER && c.is_capital).map(|c| c.position).unwrap_or(here);
                             let gold = great::trade_mission_gold(capital.distance_to(here));
                             state.gold += gold;
@@ -1415,7 +1424,7 @@ fn apply_actions(
                             true
                         }
                         _ => {
-                            log.push("A Great Merchant trades in a foreign city you are not at war with: move it into one, then press U.");
+                            log.push("A Great Merchant trades in a foreign city you are not at war with (a trade mission for gold now), or settles in one of your cities (gold every turn): move it into one, then press U.");
                             false
                         }
                     },
@@ -1914,6 +1923,12 @@ fn apply_actions(
                         log.push("Spaceship parts are built in cities with a Factory.");
                         continue;
                     }
+                    if let Some(needed) = part.required_building() {
+                        if !selection.city.and_then(|e| walled.get(e).ok()).is_some_and(|(_, b)| b.has(needed)) {
+                            log.push(format!("A {} needs a {} in the city first.", part.name(), needed.name()));
+                            continue;
+                        }
+                    }
                 }
                 if let ProductionItem::Building(wonder) = item {
                     if let Some((_, place)) = wonder.is_wonder().then(|| wonders.built.get(wonder)).flatten() {
@@ -2102,6 +2117,8 @@ fn process_turn(
         *cut_off.entry(city.owner).or_default() += 1;
     }
     let mut ai_income: HashMap<u32, (u32, i32)> = HashMap::new();
+    // Banks and Stock Exchanges each civilization owns (they decide its interest).
+    let mut finance: HashMap<u32, (u32, u32)> = HashMap::new();
     let mut hurried: HashSet<u32> = HashSet::new();
     let mut city_counts: HashMap<u32, usize> = HashMap::new();
     for (city, _, _) in cities.iter() {
@@ -2402,6 +2419,8 @@ fn process_turn(
                         UnitType::GreatScientist => {
                             civ.tech.discover();
                         }
+                        // A rich civilization settles its merchant for lasting income; a poor one takes the cash.
+                        UnitType::GreatMerchant if civ.gold >= 200 => *great.merchants.entry(city.position).or_default() += 1,
                         UnitType::GreatMerchant => civ.gold += great::trade_mission_gold(6),
                         UnitType::GreatEngineer => {
                             if let Some(item) = &city.production_queue {
@@ -2456,11 +2475,18 @@ fn process_turn(
         }
         // Adam Smith's Trading Company and the Internet reward the owner's markets and libraries.
         let wonder_gold = if wonders.owns(owner, Building::AdamSmith) {
-            buildings.buildings.iter().filter(|b| matches!(b, Building::Marketplace | Building::Bank | Building::Harbor)).count() as i32
+            buildings.buildings.iter().filter(|b| matches!(b, Building::Marketplace | Building::Bank | Building::StockExchange | Building::Harbor)).count() as i32
         } else {
             0
         };
         let wonder_science = if wonders.owns(owner, Building::Internet) && buildings.has(Building::Library) { 3 } else { 0 };
+        // Great merchants settled here add their gold.
+        let wonder_gold = wonder_gold + great.merchant_gold(city.position);
+        {
+            let held = finance.entry(owner).or_default();
+            held.0 += u32::from(buildings.has(Building::Bank));
+            held.1 += u32::from(buildings.has(Building::StockExchange));
+        }
         if !idle {
             if mine {
                 total_gold += wonder_gold;
@@ -2488,7 +2514,8 @@ fn process_turn(
         let (science, gold) = ai_income.get(&civ.id).copied().unwrap_or_default();
         let (trade_gold, trade_science) = trade.income(civ.id);
         let (science, gold) = (((science + trade_science) as f32 * difficulty.ai_output()) as u32, gold + trade_gold as i32);
-        civ.gold += gold;
+        let (banks, exchanges) = finance.get(&civ.id).copied().unwrap_or_default();
+        civ.gold += gold + bevy_civ::building::interest(civ.gold, banks, exchanges);
         // Savings beyond a reserve are invested in research.
         let invested = ((civ.gold - 250) / 10).max(0);
         civ.gold -= invested;
@@ -2508,6 +2535,9 @@ fn process_turn(
     if military > free_support {
         total_gold -= (military - free_support) as i32 * gov.unit_upkeep_food() as i32;
     }
+    let (banks, exchanges) = finance.get(&PLAYER).copied().unwrap_or_default();
+    state.interest = bevy_civ::building::interest(state.gold, banks, exchanges);
+    total_gold += state.interest;
     state.gold_per_turn = total_gold;
     state.gold = (state.gold + total_gold).max(0);
     tech.science_per_turn = total_science;

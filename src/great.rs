@@ -28,11 +28,14 @@ pub const THRESHOLD_STEP: u32 = 30;
 pub const GENERAL_PER_VICTORY: u32 = 10;
 pub const GENERAL_THRESHOLD: u32 = 40;
 
+/// Gold a great merchant settled in one of its own cities brings in every turn.
+pub const SETTLED_MERCHANT_GOLD: u32 = 3;
+
 /// What a great person does when used (shown on its button and in the unit panel).
 pub fn ability(kind: UnitType) -> &'static str {
     match kind {
         UnitType::GreatGeneral => "Leads the troops it stands with (they fight half again as hard); in one of your cities, forms up to three units there into an army",
-        UnitType::GreatMerchant => "Trade mission: in a foreign city not at war with you, earns gold (more the farther from home)",
+        UnitType::GreatMerchant => "Trade mission in a foreign city not at war with you (gold now, more the farther from home), or settle in one of your cities (+3 gold there every turn)",
         UnitType::GreatScientist => "Discovery: completes the current research at once",
         UnitType::GreatArtist => "Masterpiece: in one of your cities, +3 content citizens for good",
         UnitType::GreatEngineer => "Hurry: in one of your cities, finishes what it is building (wonders too)",
@@ -48,6 +51,7 @@ pub fn city_points(buildings: &[Building], specialists: &[Specialist], capital: 
         match building {
             Building::Marketplace | Building::Harbor => *merchant += 1,
             Building::Bank => *merchant += 2,
+            Building::StockExchange => *merchant += 3,
             Building::Colossus | Building::GreatLighthouse | Building::MarcoPolo | Building::AdamSmith | Building::Magellan => *merchant += 3,
             Building::Copernicus | Building::Newton | Building::Darwin | Building::Internet | Building::Apollo => *scientist += 3,
             Building::Michelangelo | Building::Bach | Building::Shakespeare | Building::Mausoleum | Building::Eiffel | Building::Liberty | Building::CureForCancer => *artist += 3,
@@ -105,6 +109,9 @@ pub struct GreatPeople {
     /// Masterpieces made by great artists, by city tile.
     #[serde(with = "crate::save::pairs")]
     pub masterpieces: HashMap<Hex, u32>,
+    /// Great merchants settled in a city of their own people, by city tile.
+    #[serde(default, with = "crate::save::pairs")]
+    pub merchants: HashMap<Hex, u32>,
 }
 
 impl GreatPeople {
@@ -144,6 +151,11 @@ impl GreatPeople {
     /// Points a city has gathered so far.
     pub fn progress(&self, at: Hex) -> u32 {
         self.city.get(&at).map(|p| p.iter().sum()).unwrap_or(0)
+    }
+
+    /// Gold a city earns each turn from great merchants settled there.
+    pub fn merchant_gold(&self, at: Hex) -> i32 {
+        (self.merchants.get(&at).copied().unwrap_or(0) * SETTLED_MERCHANT_GOLD) as i32
     }
 
     /// Content citizens a city has from masterpieces.

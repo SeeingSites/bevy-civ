@@ -265,6 +265,12 @@ keep it as a backup. On the desktop the files are `autosave.json` and `savegame.
 working directory.
 
 ## Rules in brief
+- **Finance**: Currency brings the Marketplace (+2 gold, luxuries count double); Banking (Currency
+  and The Republic) the Bank (+4 gold, needs a Marketplace); Economics (Banking and Printing Press)
+  the Stock Exchange (+3 gold and +50% of the city's building gold, needs a Bank) and Adam Smith's
+  Trading Company. Savings earn 5% interest a turn, up to 2 gold per Bank and 3 per Stock Exchange.
+  A Great Merchant makes a trade mission abroad (gold now) or settles in one of your cities as a
+  trading house (+3 gold there every turn).
 - **Rates**: each of your cities' commerce (its science and taxes) is pooled and split by the rates
   in the Empire advisor's Government tab: science, luxury, and taxes for the rest. Every 2 luxury
   make a citizen happy. A government limits any one rate: Despotism 60%, Monarchy and Communism
