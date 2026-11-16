@@ -11,7 +11,7 @@ use std::collections::HashSet;
 use bevy_civ::barbarians::{process_barbarians, BarbarianState};
 use bevy_civ::building::{Building, CityBuildings, WorldWonders};
 use bevy_civ::city::{spawn_city, City, Growth, ProductionItem};
-use bevy_civ::combat::resolve_led_combat;
+use bevy_civ::combat::{self, Ground, Outcome, Side};
 use bevy_civ::great::{self, GreatPeople};
 use bevy_civ::espionage::{self, Espionage, Mission};
 use rand::Rng;
@@ -198,6 +198,10 @@ pub enum Action {
     Revolution(Government),
     /// Select one of the player's cities (from the cities advisor) and look at it.
     SelectCity(Entity),
+    /// The selected unit, in one of the player's cities, is re-equipped as its modern successor.
+    Upgrade,
+    /// The selected artillery, ship or bomber fires on the strongest enemy next to it.
+    Bombard,
     /// Tab: the next of the player's units on the selected unit's or city's tile.
     CycleStack,
     SetProduction(ProductionItem),
@@ -474,7 +478,7 @@ fn handle_map_click(
     mut selection: ResMut<Selection>,
     mut units: Query<(Entity, &mut Unit)>,
     mut cities: Query<(Entity, &mut City)>,
-    tiles: Query<&HexTile>,
+    (tiles, walls_of): (Query<&HexTile>, Query<&CityBuildings>),
     state: Res<GameState>,
     map: Res<MapData>,
     tech: Res<TechState>,
@@ -502,6 +506,8 @@ fn handle_map_click(
 
         let snapshot: Vec<(Entity, Hex, u32, UnitType)> =
             units.iter().map(|(e, u)| (e, u.position, u.owner, u.unit_type)).collect();
+        // Hit points, level and whether dug in, for whoever has to defend.
+        let vitals: HashMap<Entity, (u32, u8, bool)> = units.iter().map(|(e, u)| (e, (u.hp, u.level, u.fortified))).collect();
         let city_here = cities.iter().find(|(_, c)| c.position == hex).map(|(e, c)| (e, c.owner));
         let own_here: Vec<Entity> =
             snapshot.iter().filter(|u| u.1 == hex && u.2 == PLAYER).map(|u| u.0).collect();
@@ -568,7 +574,7 @@ fn handle_map_click(
         let sail = tech.researched.contains(&Tech::Seafaring);
         let domain = unit.unit_type.domain();
         // The strongest defender on the tile meets an attack.
-        let enemy = snapshot.iter().filter(|u| u.1 == hex && u.2 != unit.owner).max_by_key(|u| u.3.stats().1).copied();
+        let enemy = snapshot.iter().filter(|u| u.1 == hex && u.2 != unit.owner).max_by_key(|u| u.3.stats().1 * 10 + vitals.get(&u.0).map_or(0, |v| v.0)).copied();
         let ports: HashSet<Hex> = cities.iter().filter(|(_, c)| c.owner == PLAYER).map(|(_, c)| c.position).collect();
         // Where each kind of unit may go.
         let refusal = match domain {
@@ -619,8 +625,45 @@ fn handle_map_click(
                 let terrain = defence_terrain(Some(terrain), city_here.is_some());
                 let enemy_type = defending_as(enemy_type, hex, &map);
                 let led = |at: Hex, owner: u32| snapshot.iter().any(|u| u.1 == at && u.2 == owner && u.3 == UnitType::GreatGeneral);
-                if resolve_led_combat(unit.unit_type, enemy_type, terrain, None, None, led(unit.position, PLAYER), led(hex, enemy_owner)) {
-                    log.push(format!("Victory! Your {} defeated the enemy {}.", unit.unit_type.name(), enemy_type.name()));
+                let (d_hp, d_level, dug_in) = vitals.get(&enemy_entity).copied().unwrap_or((3, 0, false));
+                let walls = city_here.is_some_and(|(e, _)| walls_of.get(e).is_ok_and(|b| b.has(Building::Walls)));
+                let outcome = combat::fight(
+                    Side { kind: unit.unit_type, hp: unit.hp, level: unit.level, led: led(unit.position, PLAYER) },
+                    Side { kind: enemy_type, hp: d_hp, level: d_level, led: led(hex, enemy_owner) },
+                    Ground { terrain, fortified: dug_in, walls },
+                    &mut rand::thread_rng(),
+                );
+                // The defender's wounds (it is another entity, so the change is queued).
+                let wound = |commands: &mut Commands, hp: u32, promote: bool| {
+                    commands.queue(move |world: &mut World| {
+                        if let Some(mut defender) = world.get_mut::<Unit>(enemy_entity) {
+                            defender.hp = hp.max(1);
+                            if promote {
+                                defender.promote();
+                            }
+                        }
+                    });
+                };
+                let promoted = rand::thread_rng().gen_bool(1.0 / 3.0);
+                let won = match outcome {
+                    Outcome::Won { attacker_hp } => {
+                        unit.hp = attacker_hp;
+                        true
+                    }
+                    Outcome::Retreated { defender_hp } => {
+                        unit.hp = 1;
+                        wound(&mut commands, defender_hp, false);
+                        log.push(format!("Your {} pulls back, badly hurt, from the enemy {}.", unit.unit_type.name(), enemy_type.name()));
+                        continue;
+                    }
+                    Outcome::Lost { defender_hp } => {
+                        wound(&mut commands, defender_hp, promoted);
+                        false
+                    }
+                };
+                if won {
+                    let rank = if promoted && unit.promote() { format!(" It is promoted to {}.", unit.level_name()) } else { String::new() };
+                    log.push(format!("Victory! Your {} defeated the enemy {} ({} of {} hit points left).{rank}", unit.unit_type.name(), enemy_type.name(), unit.hp, unit.max_hp()));
                     if great.victory(PLAYER) {
                         spawn_unit(&mut commands, unit.position, UnitType::GreatGeneral, PLAYER);
                         log.push("Your victories bring forth a Great General! Keep it with your troops: they fight half again as hard.");
@@ -1048,6 +1091,70 @@ fn apply_actions(
                     focus.send(Focus(city.position));
                     sounds.send(Sfx::Select);
                 }
+            }
+            Action::Upgrade => {
+                let Some(entity) = selected_unit else { continue };
+                let Ok(unit) = units.get(entity) else { continue };
+                let here = unit.position;
+                let Some(to) = unit.unit_type.upgrades_to() else {
+                    log.push(format!("A {} has nothing to upgrade to.", unit.unit_type.name()));
+                    continue;
+                };
+                if !cities.iter().any(|c| c.position == here && c.owner == PLAYER) {
+                    log.push("Units are upgraded in one of your cities.");
+                    continue;
+                }
+                if to.required_tech().is_some_and(|t| !tech.researched.contains(&t)) || !supplies.missing(here, to.required_resources()).is_empty() {
+                    log.push(format!("This city cannot equip a {} yet.", to.name()));
+                    continue;
+                }
+                let cost = unit.unit_type.upgrade_cost(to);
+                if state.gold < cost {
+                    log.push(format!("Upgrading to a {} costs {cost} gold; we have {}.", to.name(), state.gold));
+                    continue;
+                }
+                state.gold -= cost;
+                if let Ok(mut unit) = units.get_mut(entity) {
+                    log.push(format!("Our {} is re-equipped as a {} for {cost} gold.", unit.unit_type.name(), to.name()));
+                    unit.unit_type = to;
+                    unit.hp = unit.max_hp();
+                    unit.end_move();
+                }
+            }
+            Action::Bombard => {
+                let Some(entity) = selected_unit else { continue };
+                let Ok(unit) = units.get(entity) else { continue };
+                if !unit.unit_type.can_bombard() || !unit.can_move() {
+                    continue;
+                }
+                let (kind, level, here) = (unit.unit_type, unit.level, unit.position);
+                // The strongest enemy we are at war with (or barbarians) next to us.
+                let target = unit_entities
+                    .iter()
+                    .filter_map(|e| units.get(e).ok().map(|u| (e, u)))
+                    .filter(|(_, u)| u.position.distance_to(here) == 1 && u.owner != PLAYER && (u.owner == BARBARIANS || diplomacy.get_treaty(PLAYER, u.owner) == Treaty::War))
+                    .max_by_key(|(_, u)| u.unit_type.stats().1 * 10 + u.hp)
+                    .map(|(e, u)| (e, u.unit_type, u.hp, u.level, u.fortified, u.position));
+                let Some((target, their_kind, their_hp, their_level, dug_in, at)) = target else {
+                    log.push("There is no enemy we are at war with next to us to bombard.");
+                    continue;
+                };
+                let terrain = defence_terrain(map.terrain.get(&at).copied(), cities.iter().any(|c| c.position == at));
+                let hp = combat::bombard(
+                    Side { kind, hp: 3, level, led: false },
+                    Side { kind: their_kind, hp: their_hp, level: their_level, led: false },
+                    Ground { terrain, fortified: dug_in, walls: false },
+                    &mut rand::thread_rng(),
+                );
+                if let Ok(mut victim) = units.get_mut(target) {
+                    victim.hp = hp;
+                }
+                if let Ok(mut unit) = units.get_mut(entity) {
+                    unit.end_move();
+                }
+                log.push(format!("Our {} bombards the enemy {}: {} of {} hit points left.", kind.name(), their_kind.name(), hp, their_hp));
+                sounds.send(Sfx::Battle);
+                cycle.advance = true;
             }
             Action::CycleStack => {
                 let here = selected_unit
@@ -1577,6 +1684,14 @@ fn process_turn(
                     if !at_cap {
                         let trained = spawn_unit(&mut commands, city.position, ut, city.owner);
                         commands.entity(trained).insert(HomeCity(city.position));
+                        // Barracks train veterans.
+                        if ut.is_military() && buildings.has(Building::Barracks) {
+                            commands.queue(move |world: &mut World| {
+                                if let Some(mut unit) = world.get_mut::<Unit>(trained) {
+                                    unit.promote();
+                                }
+                            });
+                        }
                         if ut.is_army() {
                             *army_sizes.entry(city.owner).or_default() += 1;
                             just_trained = true;
@@ -1738,6 +1853,7 @@ fn process_turn(
     state.gold = (state.gold + total_gold).max(0);
     tech.science_per_turn = total_science;
 
+    let home_cities: HashSet<(Hex, u32)> = cities.iter().map(|(c, _, _)| (c.position, c.owner)).collect();
     for (_, mut unit) in &mut units {
         if let Some(done) = unit.process_build() {
             if let Some(mut tile) = tiles.iter_mut().find(|t| t.coord == unit.position) {
@@ -1746,6 +1862,11 @@ fn process_turn(
                     log.push(format!("A {:?} is finished.", done));
                 }
             }
+        }
+        // Wounds heal while a unit rests: fully in one of its own cities, a hit point a turn elsewhere.
+        if unit.hp < unit.max_hp() && (unit.can_move() || unit.fortified) {
+            let home = home_cities.contains(&(unit.position, unit.owner));
+            unit.hp = if home { unit.max_hp() } else { unit.hp + 1 };
         }
         if unit.build_turns_left.is_none() {
             let moves = moves_per_turn(unit.unit_type, unit.position, &map, wonders.sea_moves(unit.owner));
@@ -1809,6 +1930,7 @@ fn process_turn(
     let names: HashMap<u32, String> = civs.players.iter().map(|c| (c.id, c.adjective.clone())).collect();
     let civ_name = |owner: u32| names.get(&owner).cloned().unwrap_or_else(|| "Barbarian".to_string());
 
+    let walled_cities: HashSet<Hex> = cities.iter().filter(|(_, b, _)| b.has(Building::Walls)).map(|(c, _, _)| c.position).collect();
     let mut dead: HashSet<Entity> = HashSet::new();
     for attack in attacks {
         if dead.contains(&attack.attacker) {
@@ -1819,8 +1941,9 @@ fn process_turn(
         let defender = units
             .iter()
             .filter(|(e, u)| u.position == attack.target && u.owner != a_owner && !dead.contains(e))
-            .max_by_key(|(_, u)| u.unit_type.stats().1)
+            .max_by_key(|(_, u)| u.unit_type.stats().1 * 10 + u.hp)
             .map(|(e, u)| (e, u.unit_type, u.owner, u.fortified));
+        let a_vitals = (attacker.hp, attacker.level);
         let own_cities: HashSet<Hex> = city_owners.iter().filter(|(_, o)| *o == a_owner).map(|(p, _)| *p).collect();
         let can_enter = may_enter(a_type, attack.target, &map, &own_cities);
         let Some((d_entity, d_type, d_owner, dug_in)) = defender else {
@@ -1836,13 +1959,48 @@ fn process_turn(
             log.push(format!("The {} attack means war!", civ_name(a_owner)));
             foreign.since.insert((PLAYER, a_owner), state.turn);
         }
-        let terrain = defence_terrain(tiles.iter().find(|t| t.coord == attack.target).map(|t| t.terrain), city_owners.iter().any(|(p, _)| *p == attack.target) || dug_in);
+        let in_city = city_owners.iter().any(|(p, _)| *p == attack.target);
+        let terrain = defence_terrain(tiles.iter().find(|t| t.coord == attack.target).map(|t| t.terrain), in_city);
         if fog.visible.contains(&attack.target) {
             bursts.send(Burst(attack.target));
         }
         let led = |at: Hex, owner: u32| units.iter().any(|(e, u)| !dead.contains(&e) && u.position == at && u.owner == owner && u.unit_type == UnitType::GreatGeneral);
         let (a_led, d_led) = (led(a_pos, a_owner), led(attack.target, d_owner));
-        if resolve_led_combat(a_type, defending_as(d_type, attack.target, &map), terrain, None, None, a_led, d_led) {
+        let d_vitals = units.get(d_entity).map(|(_, u)| (u.hp, u.level)).unwrap_or((3, 0));
+        let outcome = combat::fight(
+            Side { kind: a_type, hp: a_vitals.0, level: a_vitals.1, led: a_led },
+            Side { kind: defending_as(d_type, attack.target, &map), hp: d_vitals.0, level: d_vitals.1, led: d_led },
+            Ground { terrain, fortified: dug_in, walls: walled_cities.contains(&attack.target) },
+            &mut rng,
+        );
+        // Hit points left after the fight, and a chance of promotion for the victor.
+        let mut settle = |entity: Entity, hp: u32, won: bool, rng: &mut rand::rngs::ThreadRng| {
+            if let Ok((_, mut unit)) = units.get_mut(entity) {
+                unit.hp = hp.max(1);
+                if won && rng.gen_bool(1.0 / 3.0) {
+                    unit.promote();
+                }
+            }
+        };
+        let attacker_won = match outcome {
+            Outcome::Won { attacker_hp } => {
+                settle(attack.attacker, attacker_hp, true, &mut rng);
+                true
+            }
+            Outcome::Retreated { defender_hp } => {
+                settle(attack.attacker, 1, false, &mut rng);
+                settle(d_entity, defender_hp, false, &mut rng);
+                if d_owner == PLAYER {
+                    log.push(format!("Our {} drove off a {} {}.", d_type.name(), civ_name(a_owner), a_type.name()));
+                }
+                continue;
+            }
+            Outcome::Lost { defender_hp } => {
+                settle(d_entity, defender_hp, true, &mut rng);
+                false
+            }
+        };
+        if attacker_won {
             if a_owner != BARBARIANS && great.victory(a_owner) {
                 spawn_unit(&mut commands, a_pos, UnitType::GreatGeneral, a_owner);
             }
@@ -2216,7 +2374,7 @@ mod tests {
     }
 
     fn legion(moves: u32) -> Unit {
-        Unit { unit_type: UnitType::Legion, movement_left: moves, owner: PLAYER, position: Hex::ZERO, build_turns_left: None, current_build: None, fortified: false, road_credit: 0 }
+        Unit { unit_type: UnitType::Legion, movement_left: moves, owner: PLAYER, position: Hex::ZERO, build_turns_left: None, current_build: None, fortified: false, road_credit: 0, hp: 3, level: 0 }
     }
 
     /// A minimal app that runs `apply_actions`, with the player's capital at the origin and a

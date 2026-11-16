@@ -716,6 +716,10 @@ pub fn rebuild_panels(
                         stat(s, art, icon::ATTACK, attack.to_string(), CREAM);
                         stat(s, art, icon::DEFENSE, defense.to_string(), CREAM);
                         stat(s, art, icon::MOVES, format!("{}/{}", moves_left(unit), moves), CREAM);
+                        if unit.unit_type.is_military() {
+                            let hurt = unit.hp < unit.max_hp();
+                            s.spawn(label(&art.font_bold, format!("HP {}/{} {}", unit.hp, unit.max_hp(), unit.level_name()), 14.0, if hurt { RED } else { CREAM }));
+                        }
                     });
                 });
             });
@@ -789,6 +793,17 @@ pub fn rebuild_panels(
                         let rail = tiles.iter().any(|t| t.coord == unit.position && t.has_road() && !t.has_railroad()) && tech.researched.contains(&Tech::SteamPower);
                         button(r, art, if rail { "Railroad (R)" } else { "Road (R)" }, Command::Game(Action::Build(Improvement::Road)), BRONZE, 15.0);
                         button(r, art, "Clear (X)", Command::Game(Action::Transform), BRONZE, 15.0);
+                    }
+                    // Upgrade in one of our cities, once the successor can be equipped there.
+                    if let Some(to) = unit.unit_type.upgrades_to() {
+                        let in_city = cities.iter().any(|(c, _, _)| c.position == unit.position && c.owner == PLAYER);
+                        let ready = to.required_tech().is_none_or(|t| tech.researched.contains(&t)) && supplies.missing(unit.position, to.required_resources()).is_empty();
+                        if in_city && ready {
+                            button(r, art, format!("Upgrade to {} ({} gold)", to.name(), unit.unit_type.upgrade_cost(to)), Command::Game(Action::Upgrade), GREEN, 15.0);
+                        }
+                    }
+                    if unit.unit_type.can_bombard() && unit.can_move() {
+                        button(r, art, "Bombard", Command::Game(Action::Bombard), Color::srgb(0.95, 0.65, 0.5), 15.0);
                     }
                     if unit.unit_type == UnitType::Caravan {
                         button(r, art, "Trade Route (T)", Command::Game(Action::TradeRoute), GREEN, 15.0);
@@ -1110,6 +1125,9 @@ pub fn rebuild_panels(
                                         r.spawn(label(&art.font_body, format!("{} x{n}", kind.name()), 14.0, INK));
                                     }
                                 });
+                                let wounded = units.iter().filter(|u| u.owner == PLAYER && u.hp < u.max_hp()).count();
+                                let veterans = units.iter().filter(|u| u.owner == PLAYER && u.level > 0).count();
+                                w.spawn(label(&art.font_body, format!("{veterans} veterans or elite; {wounded} wounded (they heal while resting, fully in a city)."), 14.0, INK_SOFT));
                             }
                             EmpireTab::Score => {
                                 let mut civ_ids: Vec<u32> = vec![PLAYER];

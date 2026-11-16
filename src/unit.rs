@@ -14,6 +14,10 @@ pub struct Unit {
     pub fortified: bool,
     /// Thirds of a move left over from travelling on roads this turn.
     pub road_credit: u32,
+    /// Hit points left (see `max_hp`).
+    pub hp: u32,
+    /// 0 regular, 1 veteran, 2 elite.
+    pub level: u8,
 }
 
 #[derive(Component)]
@@ -310,6 +314,36 @@ impl UnitType {
         }
     }
 
+    /// What this unit can be upgraded to once that is buildable (in a city, for gold).
+    pub fn upgrades_to(&self) -> Option<UnitType> {
+        use UnitType::*;
+        Some(match self {
+            Warrior => Spearman,
+            Spearman => Phalanx,
+            Phalanx | Archer | Legion | Immortal => Rifleman,
+            Horseman | WarChariot => Knight,
+            Knight => Cavalry,
+            Cavalry => Tank,
+            Catapult => Cannon,
+            Cannon => Artillery,
+            Galley => Frigate,
+            Frigate => Ironclad,
+            Ironclad => Destroyer,
+            Destroyer => Battleship,
+            _ => return None,
+        })
+    }
+
+    /// Gold to upgrade to `to`.
+    pub fn upgrade_cost(&self, to: UnitType) -> i32 {
+        (to.cost() as i32 - self.cost() as i32).max(10) * 2 + 20
+    }
+
+    /// Artillery that can bombard a neighbouring tile without risk.
+    pub fn can_bombard(&self) -> bool {
+        matches!(self, UnitType::Catapult | UnitType::Cannon | UnitType::Artillery | UnitType::Frigate | UnitType::Ironclad | UnitType::Battleship | UnitType::Bomber)
+    }
+
     pub fn unique_for_civ(civ_id: u32) -> Option<Self> {
         match civ_id {
             0 | 1 => Some(UnitType::Legion),
@@ -326,6 +360,29 @@ impl Unit {
             self.build_turns_left = Some(3);
             self.end_move();
         }
+    }
+
+    /// Hit points when unhurt: 3, 4 for a veteran, 5 for elite.
+    pub fn max_hp(&self) -> u32 {
+        3 + self.level as u32
+    }
+
+    pub fn level_name(&self) -> &'static str {
+        match self.level {
+            0 => "Regular",
+            1 => "Veteran",
+            _ => "Elite",
+        }
+    }
+
+    /// Promotion after a victory (one level, up to elite), which also adds a hit point.
+    pub fn promote(&mut self) -> bool {
+        if self.level >= 2 {
+            return false;
+        }
+        self.level += 1;
+        self.hp += 1;
+        true
     }
 
     /// What it can still move this turn.
@@ -392,6 +449,8 @@ pub fn spawn_unit(commands: &mut Commands, coord: Hex, unit_type: UnitType, owne
             current_build: None,
             fortified: false,
             road_credit: 0,
+            hp: 3,
+            level: 0,
         })
         .id()
 }

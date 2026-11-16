@@ -501,7 +501,7 @@ mod tests {
         }
         world.insert_resource(Civilizations { players: vec![rival()] });
         let worker = world
-            .spawn(Unit { unit_type: UnitType::Worker, movement_left: 1, owner: 1, position: Hex::ZERO, build_turns_left: None, current_build: None, fortified: false, road_credit: 0 })
+            .spawn(Unit { unit_type: UnitType::Worker, movement_left: 1, owner: 1, position: Hex::ZERO, build_turns_left: None, current_build: None, fortified: false, road_credit: 0, hp: 3, level: 0 })
             .id();
         (world, worker)
     }
@@ -580,7 +580,7 @@ mod tests {
 
     fn soldier(world: &mut World, kind: UnitType, owner: u32, q: i32) -> Entity {
         world
-            .spawn(Unit { unit_type: kind, movement_left: 1, owner, position: Hex::new(q, 0), build_turns_left: None, current_build: None, fortified: false, road_credit: 0 })
+            .spawn(Unit { unit_type: kind, movement_left: 1, owner, position: Hex::new(q, 0), build_turns_left: None, current_build: None, fortified: false, road_credit: 0, hp: 3, level: 0 })
             .id()
     }
 
