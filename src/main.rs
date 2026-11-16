@@ -2032,12 +2032,9 @@ fn process_turn(
                             just_trained = true;
                         }
                     }
-                    {
-                        if mine {
-                            log.push(format!("{} trains a {}. What next?", city.name, ut.name()));
-                            // The player chooses every project: the city waits for orders.
-                            city.production_queue = None;
-                        }
+                    // Units keep coming until the player changes the order.
+                    if mine {
+                        log.push(format!("{} trains a {}.", city.name, ut.name()));
                     }
                 }
                 ProductionItem::Building(b) if b.is_spaceship_part() => {
@@ -2066,7 +2063,7 @@ fn process_turn(
                         }
                         let builder = civs.players.iter().find(|c| c.id == city.owner).map(|c| c.name.clone()).unwrap_or_else(|| "A people".into());
                         log.push(if mine {
-                            format!("{} completes the {}! ({})", city.name, b.name(), b.wonder_effect())
+                            format!("{} completes the {}! ({}) Choose its next project.", city.name, b.name(), b.wonder_effect())
                         } else {
                             format!("Wonder of the world: {} completed the {} in {}.", builder, b.name(), city.name)
                         });
@@ -2082,7 +2079,7 @@ fn process_turn(
                 }
                 ProductionItem::Building(b) => {
                     if mine {
-                        log.push(format!("{} completes the {}.", city.name, b.name()));
+                        log.push(format!("{} completes the {}. Choose its next project.", city.name, b.name()));
                     }
                     buildings.buildings.push(b);
                 }

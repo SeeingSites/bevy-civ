@@ -145,7 +145,7 @@ fn help_lines(topic: HelpTopic) -> Vec<String> {
             "When the unhappy outnumber the happy the city falls into disorder: no growth, production, science or taxes until it is calmed.",
             "Cities grow when their granary fills and cannot pass size 8 without an Aqueduct, or 16 without a Sewer System. Specialists eat without farming: too many and the city starves.",
             "Culture from temples, cathedrals, colosseums, libraries, universities and wonders widens a city's borders over time. A city in disorder next to a much greater culture may defect to it.",
-            "Corruption grows with distance from the capital and is halved by a Courthouse. A finished project leaves the city waiting for orders.",
+            "Corruption grows with distance from the capital and is halved by a Courthouse. A city keeps training the same unit until told otherwise; a finished building or wonder leaves it waiting for its next project.",
         ]
         .into_iter()
         .map(String::from)

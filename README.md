@@ -209,7 +209,9 @@ Computer players follow the same rules as you and are run by three pieces of cod
 - **Esc** — close a window or deselect
 
 Units also have buttons for upgrading (in a city, for gold), bombarding (artillery, warships,
-bombers) and diplomats' missions. Cities waiting for a project are brought up before the turn ends.
+bombers) and diplomats' missions. A city keeps training the same unit until you change its order;
+when it finishes a building or wonder it announces it and waits for its next project, and such
+cities are brought up before the turn ends.
 
 ## Saving and loading
 The game saves itself at the end of every turn; **Continue your last game** on the start menu picks
