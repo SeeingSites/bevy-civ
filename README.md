@@ -277,7 +277,10 @@ working directory.
   city under Despotism, Monarchy and Communism). Each luxury the city can reach makes one citizen
   happy. Disorder (more unhappy than happy) stops the city.
 - **Culture**: temples, libraries, colosseums, cathedrals, universities, wonders and the palace earn
-  culture. Borders reach 2 tiles, 3 from 100 culture and 4 from 1,000. A city in disorder within 5
+  culture. Borders reach 2 tiles, 3 from 100 culture, 4 from 1,000 and 5 from 5,000. Where borders
+  meet, each tile goes to the city pressing hardest on it: (culture + 50) / distance², so a great
+  culture pushes its neighbours back (every city keeps its own ring). Land lost this way takes its
+  resources and river gold with it. A city in disorder within 5
   tiles of a civilization with twice its owner's culture may defect.
 - **Golden age**: a civilization's first wonder brings 10 turns of +50% shields and extra gold.
 - **Rivers**: +1 gold per river tile in a city's land, +25% defence, and fresh water.

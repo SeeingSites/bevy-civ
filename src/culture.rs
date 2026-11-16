@@ -31,13 +31,19 @@ pub fn per_turn(buildings: &[Building], capital: bool) -> u32 {
     from_buildings + u32::from(capital)
 }
 
-/// How far a city's borders reach: 2 tiles, 3 from 100 culture, 4 from 1,000.
+/// How far a city's borders reach: 2 tiles, 3 from 100 culture, 4 from 1,000, 5 from 5,000.
 pub fn border_radius(points: u32) -> u32 {
     match points {
         0..=99 => 2,
         100..=999 => 3,
-        _ => 4,
+        1_000..=4_999 => 4,
+        _ => 5,
     }
+}
+
+/// Culture a city needs for its borders to widen next, if they still can.
+pub fn next_border_step(points: u32) -> Option<u32> {
+    [100, 1_000, 5_000].into_iter().find(|step| points < *step)
 }
 
 /// Culture gathered by every city, by its tile (a captured city keeps its culture).
@@ -80,7 +86,8 @@ mod tests {
     #[test]
     fn culture_widens_borders_and_decides_the_cultural_victory() {
         assert_eq!(per_turn(&[Building::Temple, Building::Cathedral, Building::Oracle], true), 1 + 2 + 3 + 1);
-        assert_eq!((border_radius(0), border_radius(150), border_radius(5000)), (2, 3, 4));
+        assert_eq!((border_radius(0), border_radius(150), border_radius(4999), border_radius(5000)), (2, 3, 4, 5));
+        assert_eq!((next_border_step(0), next_border_step(999), next_border_step(6000)), (Some(100), Some(1_000), None));
         let mut ledger = CultureLedger::default();
         ledger.add(Hex::ZERO, 12_000);
         ledger.add(Hex::new(5, 0), 7_000);

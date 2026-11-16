@@ -40,7 +40,19 @@ impl CivSupply {
     }
 }
 
+/// How strongly a city with `points` culture presses its claim on a tile `distance` away. Where
+/// borders overlap, the tile goes to the strongest claim: a city with ten times the culture of a
+/// neighbour pushes its border about three times as far into the land between them. A city always
+/// keeps its own tile and the ring around it.
+pub fn border_pressure(points: u32, distance: u32) -> f32 {
+    if distance <= 1 {
+        return f32::MAX;
+    }
+    (points as f32 + 50.0) / (distance * distance) as f32
+}
+
 /// A city as the supply network sees it.
+#[derive(Clone)]
 pub struct CityNode {
     pub position: Hex,
     pub owner: u32,
@@ -48,6 +60,8 @@ pub struct CityNode {
     pub harbor: bool,
     /// How far its borders reach (grows with culture).
     pub radius: u32,
+    /// Its culture, which decides who holds the land where borders overlap.
+    pub culture: u32,
 }
 
 #[derive(Resource, Default)]
@@ -100,17 +114,26 @@ pub fn recompute<'a>(
     let tiles: Vec<&HexTile> = tiles.collect();
     let known: HashSet<Hex> = tiles.iter().map(|t| t.coord).collect();
 
-    // Borders: every tile within reach of a city belongs to the nearest one.
-    let mut claim: HashMap<Hex, (u32, Hex, i32)> = HashMap::new();
+    // Borders: every tile within reach of a city belongs to the strongest claim on it, which grows
+    // with the city's culture and falls off with distance (ties go to the nearer city, then the
+    // older position order, so the result never depends on iteration order).
+    let mut claim: HashMap<Hex, (u32, Hex, f32, i32)> = HashMap::new();
     for city in cities {
         for hex in hexx::shapes::hexagon(city.position, city.radius) {
+            if !known.contains(&hex) {
+                continue;
+            }
             let dist = hex.distance_to(city.position);
-            if known.contains(&hex) && claim.get(&hex).is_none_or(|(_, _, d)| dist < *d) {
-                claim.insert(hex, (city.owner, city.position, dist));
+            let pressure = border_pressure(city.culture, dist as u32);
+            let better = claim.get(&hex).is_none_or(|(_, at, p, d)| {
+                pressure > *p || (pressure == *p && (dist < *d || (dist == *d && (city.position.x, city.position.y) < (at.x, at.y))))
+            });
+            if better {
+                claim.insert(hex, (city.owner, city.position, pressure, dist));
             }
         }
     }
-    supplies.territory = claim.iter().map(|(hex, (owner, city, _))| (*hex, (*owner, *city))).collect();
+    supplies.territory = claim.iter().map(|(hex, (owner, city, _, _))| (*hex, (*owner, *city))).collect();
     let sees = |owner: u32, good: Good| good.reveal_tech().is_none_or(|t| techs.get(&owner).is_some_and(|known| known.contains(&t)));
 
     // Yields from the land, and every usable source with its owner.
@@ -242,7 +265,7 @@ mod tests {
     }
 
     fn city(q: i32, r: i32, owner: u32, capital: bool, harbor: bool) -> CityNode {
-        CityNode { position: Hex::new(q, r), owner, capital, harbor, radius: crate::CITY_RADIUS as u32 }
+        CityNode { position: Hex::new(q, r), owner, capital, harbor, radius: crate::CITY_RADIUS as u32, culture: 0 }
     }
 
     fn all_techs(owners: &[u32]) -> HashMap<u32, HashSet<Tech>> {
@@ -274,6 +297,25 @@ mod tests {
         recompute(&mut supplies, tiles.iter(), &cities, &techs, &[]);
         assert!(supplies.has(Hex::ZERO, &[Good::Iron]));
         assert!(supplies.unconnected.is_empty());
+    }
+
+    #[test]
+    fn a_greater_culture_pushes_the_border_back() {
+        // Two cities six tiles apart, each reaching 4 tiles: they meet in the middle.
+        let tiles: Vec<HexTile> = (0..=6).map(|q| tile(q, 0, false, None)).collect();
+        let techs = all_techs(&[PLAYER, 1]);
+        let mut supplies = Supplies::default();
+        let mut ours = city(0, 0, PLAYER, true, false);
+        let mut theirs = city(6, 0, 1, true, false);
+        ours.radius = 4;
+        theirs.radius = 4;
+        recompute(&mut supplies, tiles.iter(), &[ours.clone(), theirs.clone()], &techs, &[]);
+        let owner = |s: &Supplies, q: i32| s.territory.get(&Hex::new(q, 0)).map(|(o, _)| *o);
+        assert_eq!((owner(&supplies, 2), owner(&supplies, 4)), (Some(PLAYER), Some(1)));
+        // With far more culture we take the land up to their city's own ring.
+        ours.culture = 3_000;
+        recompute(&mut supplies, tiles.iter(), &[ours, theirs], &techs, &[]);
+        assert_eq!((owner(&supplies, 3), owner(&supplies, 4), owner(&supplies, 5)), (Some(PLAYER), Some(PLAYER), Some(1)));
     }
 
     #[test]
