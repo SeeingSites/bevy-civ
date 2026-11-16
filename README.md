@@ -127,6 +127,11 @@ Computer players follow the same rules as you and are run by three pieces of cod
 ## Controls
 - **Click / tap** a unit or city to select it (click again to cycle what is on the tile)
 - **Click a tile** (or **right-click**) to move the selected unit; moving onto an enemy attacks
+- With a unit selected, **hovering** a tile shows the route there: bright dots are reached this
+  turn, faded ones later, and a number marks where each turn's march ends
+- A destination too far for one turn becomes a standing order: the unit marches on at the start of
+  each turn, halts next to anything foreign in its way, and forgets the order on arrival or when
+  given a new one (fortifying or building also cancels it)
 - **Drag** to pan, **mouse wheel / pinch** to zoom, **WASD / arrows** to pan, click the minimap to jump
 - The game selects the next unit that needs orders and moves the camera to it
 - **Space** — skip the selected unit and go to the next; when none is left, end the turn
@@ -137,6 +142,7 @@ Computer players follow the same rules as you and are run by three pieces of cod
 - **F / M / R / X** — worker builds Farm / Mine / Road / clears terrain
 - **Q** — science advisor (choose research), **E** — foreign advisor (treaties, resource deals), **G** — trade advisor (resources)
 - **T** — trade routes between your cities, **F2** — save
+- **V** or the **Sound** button — switch sound effects on or off (remembered between games)
 - **Esc** — close a window or deselect
 
 Every order also has a button, so the game is playable with a mouse or touch screen alone.
@@ -147,6 +153,15 @@ All sprites are original and generated from code: `tools/art/*.cjs` describe eac
 and `node tools/art/generate.cjs` rasterises them into the atlases in `assets/sprites/`
 (needs Playwright with Chromium). Fonts are Cinzel and Alegreya Sans (SIL Open Font License,
 see `assets/fonts/`).
+
+## Sound
+Sound effects play when you select a unit or city, order troops, ships or aircraft to move, a fight
+breaks out in sight, and on interface buttons. They are synthesised from code:
+`node tools/audio/generate.cjs` writes the small WAV files in `assets/sounds/` (no dependencies).
+
+Players switch sound off with **V** or the Sound button; the choice is saved in `sound.json` (or the
+browser's localStorage). To build without audio support at all (no ALSA needed on Linux), turn off
+the default `audio` feature: `cargo run --no-default-features --features full`.
 
 ## Simulator
 Standalone pure-Rust simulator (no Bevy dependency):

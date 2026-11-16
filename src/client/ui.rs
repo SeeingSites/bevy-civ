@@ -19,6 +19,7 @@ use bevy_civ::unit::{Unit, UnitType};
 
 use super::actors::unit_row;
 use super::map::Hovered;
+use super::sfx::{Sfx, SoundSettings};
 use super::{icon, owner_color, owner_name, Art};
 use crate::foreign::{self, DiploAct, Foreign, OfferKind, TradeAsk};
 use crate::supply::Supplies;
@@ -67,6 +68,7 @@ pub enum Command {
     PickCiv(usize),
     BackToScenarios,
     QuitToMenu,
+    ToggleSound,
 }
 
 #[derive(Component)]
@@ -160,6 +162,43 @@ fn button(parent: &mut ChildBuilder, art: &Art, text: impl Into<String>, command
         });
 }
 
+/// Label of the in-game sound switch.
+#[derive(Component)]
+pub struct SoundLabel;
+
+fn sound_label(on: bool) -> &'static str {
+    if on { "Sound: On (V)" } else { "Sound: Off (V)" }
+}
+
+fn sound_button(parent: &mut ChildBuilder, art: &Art) {
+    parent
+        .spawn((
+            Button,
+            Node {
+                padding: UiRect::axes(Val::Px(14.0 * 0.8), Val::Px(14.0 * 0.42)),
+                justify_content: JustifyContent::Center,
+                align_items: AlignItems::Center,
+                ..default()
+            },
+            ImageNode { image: art.button.clone(), image_mode: sliced(14.0), color: BRONZE, ..default() },
+            ButtonTint(BRONZE),
+            ButtonCommand(Command::ToggleSound),
+        ))
+        .with_children(|b| {
+            b.spawn((label(&art.font_bold, sound_label(true), 14.0, INK), SoundLabel));
+        });
+}
+
+/// Keeps the sound switch's label in step with the setting (it can also change from the keyboard).
+pub fn update_sound_button(settings: Res<SoundSettings>, mut labels: Query<&mut Text, With<SoundLabel>>, added: Query<(), Added<SoundLabel>>) {
+    if !settings.is_changed() && added.is_empty() {
+        return;
+    }
+    for mut text in &mut labels {
+        text.0 = sound_label(settings.enabled).into();
+    }
+}
+
 fn bar(parent: &mut ChildBuilder, fraction: f32, color: Color) {
     parent
         .spawn((
@@ -245,6 +284,9 @@ pub fn setup_ui(mut commands: Commands, art: Res<Art>, mut images: ResMut<Assets
             button(bar, &art, "Science (Q)", Command::Toggle(Modal::Science), BRONZE, 14.0);
             button(bar, &art, "Diplomacy (E)", Command::Toggle(Modal::Diplomacy), BRONZE, 14.0);
             button(bar, &art, "Trade (G)", Command::Toggle(Modal::Trade), BRONZE, 14.0);
+            if SoundSettings::AVAILABLE {
+                sound_button(bar, &art);
+            }
             button(bar, &art, "Save", Command::Game(Action::Save), BRONZE, 14.0);
             button(bar, &art, "Menu", Command::QuitToMenu, BRONZE, 14.0);
         });
@@ -933,12 +975,15 @@ pub fn button_actions(
     mut menu: ResMut<MenuState>,
     mut next: ResMut<NextState<AppState>>,
     mut commands: Commands,
+    (mut sounds, mut sound): (EventWriter<Sfx>, ResMut<SoundSettings>),
 ) {
     for (interaction, command) in &buttons {
         if *interaction != Interaction::Pressed {
             continue;
         }
+        sounds.send(Sfx::Click);
         match &command.0 {
+            Command::ToggleSound => sound.toggle(),
             Command::Game(action) => {
                 actions.send(action.clone());
             }

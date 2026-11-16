@@ -71,9 +71,48 @@ pub fn move_along_path(
     spent
 }
 
+/// The turn on which a unit following `route` (which starts at its position) enters each later tile:
+/// 0 is this turn. `moves_left` is what it has now, `moves_at(tile)` the allowance it gets when a
+/// turn begins on that tile, and `ends_move(from, to)` marks a step that uses up the rest of the turn
+/// (boarding or leaving a boat). The result has one entry per step, `route.len() - 1` in all.
+pub fn turns_along(
+    route: &[Hex],
+    moves_left: u32,
+    moves_at: impl Fn(Hex) -> u32,
+    ends_move: impl Fn(Hex, Hex) -> bool,
+) -> Vec<u32> {
+    let mut moves = moves_left;
+    let mut turn = 0;
+    route
+        .windows(2)
+        .map(|step| {
+            if moves == 0 {
+                turn += 1;
+                moves = moves_at(step[0]).max(1);
+            }
+            moves = if ends_move(step[0], step[1]) { 0 } else { moves - 1 };
+            turn
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn long_routes_are_split_into_turns() {
+        let route: Vec<Hex> = (0..=7).map(|q| Hex::new(q, 0)).collect();
+        // One move left now, then two a turn.
+        assert_eq!(turns_along(&route, 1, |_| 2, |_, _| false), vec![0, 1, 1, 2, 2, 3, 3]);
+        // A unit that has already moved starts next turn.
+        assert_eq!(turns_along(&route[..3], 0, |_| 2, |_, _| false), vec![1, 1]);
+        // Boarding at step 2 ends that turn; at sea it gets three moves.
+        let boards = |from: Hex, _: Hex| from.x == 1;
+        let at_sea = |tile: Hex| if tile.x >= 2 { 3 } else { 2 };
+        assert_eq!(turns_along(&route, 2, at_sea, boards), vec![0, 0, 1, 1, 1, 2, 2]);
+        assert!(turns_along(&route[..1], 2, |_| 2, |_, _| false).is_empty());
+    }
     use std::collections::HashSet;
 
     /// A strip: land at x = 0..=1, water at 2..=4, land at 5..=6.

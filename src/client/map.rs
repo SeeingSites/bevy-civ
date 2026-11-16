@@ -277,22 +277,49 @@ pub fn update_path_dots(
         return;
     }
     for entity in &dots {
-        commands.entity(entity).despawn();
+        commands.entity(entity).despawn_recursive();
     }
-    let last = path.0.len().saturating_sub(1);
-    for (i, hex) in path.0.iter().enumerate().skip(1) {
+    let Some(start) = path.start else { return };
+    let dot = |color: Color, scale: f32| Sprite {
+        image: art.overlays.clone(),
+        texture_atlas: Some(art.atlas(&art.overlays_layout, overlay::DOT)),
+        custom_size: Some(HEX_SPRITE * scale),
+        color,
+        ..default()
+    };
+    let multi_turn = path.steps.last().is_some_and(|(_, turn)| *turn > 0);
+    let mut from = map.layout.hex_to_world_pos(start);
+    for (i, (hex, turn)) in path.steps.iter().enumerate() {
         let pos = map.layout.hex_to_world_pos(*hex);
-        let (color, scale) = if i == last { (Color::srgb(1.0, 0.35, 0.3), 1.3) } else { (Color::srgb(1.0, 0.92, 0.4), 0.9) };
-        commands.spawn((
-            PathDot,
-            Sprite {
-                image: art.overlays.clone(),
-                texture_atlas: Some(art.atlas(&art.overlays_layout, overlay::DOT)),
-                custom_size: Some(HEX_SPRITE * scale),
-                color,
-                ..default()
-            },
-            Transform::from_xyz(pos.x, pos.y, 4.5),
-        ));
+        let last = i + 1 == path.steps.len();
+        // This turn's steps are bright; later turns fade so the reach of each turn reads at a glance.
+        let color = if last {
+            Color::srgb(1.0, 0.35, 0.3)
+        } else if *turn == 0 {
+            Color::srgb(1.0, 0.92, 0.4)
+        } else {
+            Color::srgba(0.95, 0.88, 0.62, 0.75)
+        };
+        // Small dots in between tiles trace the road itself.
+        for t in [0.33, 0.66] {
+            let between = from.lerp(pos, t);
+            commands.spawn((PathDot, dot(color.with_alpha(color.alpha() * 0.7), 0.45), Transform::from_xyz(between.x, between.y, 4.5)));
+        }
+        from = pos;
+        let turn_ends = path.steps.get(i + 1).is_none_or(|(_, next)| next != turn);
+        let marker = multi_turn && turn_ends;
+        let scale = if last || marker { 1.3 } else { 0.9 };
+        let mut entity = commands.spawn((PathDot, dot(color, scale), Transform::from_xyz(pos.x, pos.y, 4.5)));
+        // Where each turn's march ends, the number of turns it takes to get there.
+        if marker {
+            entity.with_children(|parent| {
+                parent.spawn((
+                    Text2d::new((turn + 1).to_string()),
+                    TextFont { font: art.font_bold.clone(), font_size: 22.0, ..default() },
+                    TextColor(Color::srgb(0.12, 0.08, 0.05)),
+                    Transform::from_xyz(0.0, 1.0, 0.1),
+                ));
+            });
+        }
     }
 }
