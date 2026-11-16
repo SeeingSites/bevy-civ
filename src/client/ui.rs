@@ -173,6 +173,8 @@ pub struct UiState {
     pub help_topic: HelpTopic,
     /// Move orders take the whole stack along (as Shift-click does).
     pub group_move: bool,
+    /// The end-of-game window has been put away to look around the map.
+    pub end_dismissed: bool,
 }
 
 /// Pages of the city panel.
@@ -237,6 +239,8 @@ pub enum Command {
     EmpireTab(EmpireTab),
     HelpTopic(HelpTopic),
     ToggleGroupMove,
+    /// Put the end-of-game window away (the outcome stays on screen).
+    DismissEnd,
     /// Start menu: carry on from the automatic save.
     Continue,
     /// Start menu: load a saved game file.
@@ -277,6 +281,9 @@ pub struct LogText;
 pub struct VictoryText;
 #[derive(Component)]
 pub struct MinimapNode;
+/// The message log and unit panel (bottom left), narrowed on phones.
+#[derive(Component)]
+pub struct LeftColumn;
 #[derive(Resource)]
 pub struct MinimapImage(Handle<Image>);
 
@@ -405,14 +412,11 @@ fn production_button(parent: &mut ChildBuilder, art: &Art, name: &str, detail: S
             Node {
                 width: Val::Percent(32.0),
                 padding: UiRect::axes(Val::Px(7.0), Val::Px(3.0)),
-                border: UiRect::all(Val::Px(1.0)),
                 flex_direction: FlexDirection::Column,
                 ..default()
             },
             // A flat face (no bevel) keeps the small second line readable.
             BackgroundColor(tint),
-            BorderColor(Color::srgba(0.1, 0.06, 0.02, 0.8)),
-            BorderRadius::all(Val::Px(5.0)),
             ButtonTint(tint),
             ButtonCommand(command),
         ))
@@ -514,15 +518,18 @@ pub fn setup_ui(mut commands: Commands, art: Res<Art>, mut images: ResMut<Assets
 
     // Message log stacked on the unit panel (bottom left)
     commands
-        .spawn(Node {
-            position_type: PositionType::Absolute,
-            left: Val::Px(10.0),
-            bottom: Val::Px(10.0),
-            width: Val::Px(360.0),
-            flex_direction: FlexDirection::Column,
-            row_gap: Val::Px(8.0),
-            ..default()
-        })
+        .spawn((
+            LeftColumn,
+            Node {
+                position_type: PositionType::Absolute,
+                left: Val::Px(10.0),
+                bottom: Val::Px(10.0),
+                width: Val::Px(360.0),
+                flex_direction: FlexDirection::Column,
+                row_gap: Val::Px(8.0),
+                ..default()
+            },
+        ))
         .with_children(|left| {
             left.spawn((
                 Node { padding: UiRect::axes(Val::Px(14.0), Val::Px(8.0)), ..default() },
@@ -1051,7 +1058,8 @@ pub fn rebuild_panels(
         }
     }
     if let Ok((root, mut node)) = modal_root.get_single_mut() {
-        node.display = if ui.modal.is_some() || foreign.offer.is_some() { Display::Flex } else { Display::None };
+        let ended = state.victory.is_some() && !ui.end_dismissed;
+        node.display = if ended || ui.modal.is_some() || (foreign.offer.is_some() && state.victory.is_none()) { Display::Flex } else { Display::None };
         commands.entity(root).despawn_descendants().with_children(|p| {
             let window = |width: f32| {
                 panel(
@@ -1060,7 +1068,33 @@ pub fn rebuild_panels(
                 )
             };
             // A waiting proposal takes priority over the advisors.
-            if let Some(offer) = &foreign.offer {
+            // The game is over: the outcome, the final standing, and where to go next.
+            if let Some(outcome) = state.victory.as_ref().filter(|_| !ui.end_dismissed) {
+                p.spawn(window(560.0)).with_children(|w| {
+                    w.spawn(label(&art.font_title, "The game is over", 28.0, INK));
+                    w.spawn(label(&art.font_bold, outcome.clone(), 20.0, INK));
+                    w.spawn(label(&art.font_body, format!("Turn {} ({}). Our score: {}.", state.turn, year_label(&state), state.score.total), 15.0, INK_SOFT));
+                    let mut standing: Vec<(String, u32)> = std::iter::once(PLAYER)
+                        .chain(civs.players.iter().filter(|c| !c.is_human && foreign.met.contains(&c.id)).map(|c| c.id))
+                        .map(|id| {
+                            let name = if id == PLAYER { "Us".to_string() } else { civs.players.iter().find(|c| c.id == id).map(|c| c.name.clone()).unwrap_or_default() };
+                            let score = history.scores.iter().rev().find(|(_, c, _)| *c == id).map(|(_, _, s)| *s).unwrap_or(0);
+                            (name, score)
+                        })
+                        .collect();
+                    standing.sort_by_key(|(_, s)| std::cmp::Reverse(*s));
+                    for (name, score) in standing {
+                        w.spawn(label(&art.font_body, format!("{name}: {score}"), 14.0, INK));
+                    }
+                    w.spawn(row(6.0)).with_children(|r| {
+                        button(r, art, "Look around the map", Command::DismissEnd, BRONZE, 14.0);
+                        button(r, art, "Save to a file", Command::Game(Action::Save), BRONZE, 14.0);
+                        button(r, art, "Back to the start menu", Command::QuitToMenu, GREEN, 14.0);
+                    });
+                });
+                return;
+            }
+            if let Some(offer) = foreign.offer.as_ref().filter(|_| state.victory.is_none()) {
                 let Some(civ) = civs.players.iter().find(|c| c.id == offer.from) else { return };
                 p.spawn(window(560.0)).with_children(|w| {
                     w.spawn(Node { align_items: AlignItems::Center, column_gap: Val::Px(16.0), ..default() }).with_children(|r| {
@@ -1510,6 +1544,7 @@ pub fn rebuild_panels(
 
 pub fn update_top_bar(
     state: Res<GameState>,
+    ui: Res<UiState>,
     golden: Res<crate::GoldenAges>,
     tech: Res<TechState>,
     cities: Query<&City>,
@@ -1538,7 +1573,8 @@ pub fn update_top_bar(
         }
     }
     if let Ok(mut text) = victory.get_single_mut() {
-        let value = state.victory.clone().unwrap_or_default();
+        // The outcome stays across the map once the end-of-game window is put away.
+        let value = state.victory.clone().filter(|_| ui.end_dismissed).unwrap_or_default();
         if text.0 != value {
             text.0 = value;
         }
@@ -1583,11 +1619,32 @@ pub fn update_log(log: Res<GameLog>, mut text: Query<&mut Text, With<LogText>>) 
 }
 
 /// Shrinks the whole interface on narrow (phone) screens so the panels never collide.
-pub fn fit_ui_scale(windows: Query<&Window>, mut scale: ResMut<UiScale>) {
+pub fn fit_ui_scale(
+    windows: Query<&Window>,
+    mut scale: ResMut<UiScale>,
+    mut minimap: Query<&mut Node, With<MinimapNode>>,
+    mut left: Query<&mut Node, (With<LeftColumn>, Without<MinimapNode>)>,
+) {
     let Ok(window) = windows.get_single() else { return };
-    let target = (window.width() / 740.0).clamp(0.55, 1.0);
+    // Narrow (phone) screens get a bigger interface than a straight fit would give: panels wrap and
+    // stack instead, and text stays readable.
+    let target = (window.width() / 520.0).clamp(0.6, 1.0);
     if (scale.0 - target).abs() > 0.01 {
         scale.0 = target;
+    }
+    // On a phone the minimap gives way, and the unit panel narrows, so the bottom panels sit side by side.
+    let narrow = window.width() < 640.0;
+    let minimap_display = if narrow { Display::None } else { Display::Flex };
+    for mut node in &mut minimap {
+        if node.display != minimap_display {
+            node.display = minimap_display;
+        }
+    }
+    let width = Val::Px(if narrow { 290.0 } else { 360.0 });
+    for mut node in &mut left {
+        if node.width != width {
+            node.width = width;
+        }
     }
 }
 
@@ -1613,6 +1670,7 @@ pub fn button_actions(
             Command::EmpireTab(tab) => ui.empire_tab = *tab,
             Command::HelpTopic(topic) => ui.help_topic = *topic,
             Command::ToggleGroupMove => ui.group_move = !ui.group_move,
+            Command::DismissEnd => ui.end_dismissed = true,
             Command::Game(action) => {
                 actions.send(action.clone());
             }
@@ -1640,6 +1698,7 @@ pub fn button_actions(
                 }
             }
             Command::QuitToMenu => {
+                ui.end_dismissed = false;
                 ui.modal = None;
                 ui.diplo_target = None;
                 menu.scenario = None;
