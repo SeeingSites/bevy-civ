@@ -68,7 +68,7 @@ pub fn can_build(building: &Building, city: &CityView, civ: &CivView, supplies: 
         && (!building.is_spaceship_part() || (city.built.contains(&Building::Factory) && civ.space_parts.contains(building)))
         && building.required_tech().is_none_or(|t| civ.tech.researched.contains(&t))
         && supplies.has(city.position, building.required_resources())
-        && (*building != Building::Harbor || city.coastal)
+        && (!building.needs_coast() || city.coastal)
         && building.required_building().is_none_or(|b| city.built.contains(&b))
 }
 
@@ -105,7 +105,7 @@ pub fn choose(city: &CityView, civ: &CivView, supplies: &Supplies, rng: &mut imp
     }
     let wanted_workers = (civ.cities.div_ceil(2) + usize::from(civ.road_work > 3 * civ.workers.max(1))).min(civ.cities.max(1));
     if civ.workers < wanted_workers {
-        return unit(UnitType::Worker);
+        return unit(worker_kind(civ));
     }
     // Harbours join coasts: a cut-off city needs one, and so does the mainland it must reach.
     if (!city.linked || civ.cut_off > 0) && can_build(&Building::Harbor, city, civ, supplies) {
@@ -169,6 +169,15 @@ pub fn choose(city: &CityView, civ: &CivView, supplies: &Supplies, rng: &mut imp
         (Building::Bank, true),
         (Building::StockExchange, city.population >= 8),
         (Building::Factory, true),
+        (Building::Observatory, true),
+        (Building::Supermarket, city.population >= 12),
+        (Building::PoliceStation, city.population >= 12),
+        (Building::CoastalFortress, civ.at_war),
+        (Building::PowerPlant, true),
+        (Building::ResearchLab, true),
+        (Building::MassTransit, city.population >= 10),
+        (Building::RecyclingCenter, city.population >= 10),
+        (Building::Airport, civ.at_war),
     ];
     if let Some((building, _)) = wish.into_iter().find(|(b, wanted)| *wanted && can_build(b, city, civ, supplies)) {
         return ProductionItem::Building(building);
@@ -181,7 +190,12 @@ pub fn choose(city: &CityView, civ: &CivView, supplies: &Supplies, rng: &mut imp
     if civ.military < cap {
         return unit(best_attacker(city, civ, supplies));
     }
-    unit(UnitType::Worker)
+    unit(worker_kind(civ))
+}
+
+/// Engineers once the civilization can train them, workers before.
+fn worker_kind(civ: &CivView) -> UnitType {
+    if UnitType::Engineers.required_tech().is_some_and(|t| civ.tech.researched.contains(&t)) { UnitType::Engineers } else { UnitType::Worker }
 }
 
 #[cfg(test)]

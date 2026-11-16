@@ -73,6 +73,13 @@ pub enum UnitType {
     Infantry,
     MechInfantry,
     ModernArmor,
+    // Filling the gaps
+    Scout,
+    Longbowman,
+    Galleon,
+    Submarine,
+    Engineers,
+    RadarArtillery,
 }
 
 /// Where a unit can go: over land (boarding a boat to cross water), on the sea, or through the air.
@@ -88,7 +95,7 @@ pub const AIR_RANGE: i32 = 8;
 
 impl UnitType {
     /// Every unit type, in declaration order (also the row order of the sprite atlas).
-    pub const ALL: [UnitType; 36] = [
+    pub const ALL: [UnitType; 42] = [
         UnitType::Settler, UnitType::Worker, UnitType::Warrior, UnitType::Spearman, UnitType::Archer,
         UnitType::Horseman, UnitType::Legion, UnitType::WarChariot, UnitType::Immortal, UnitType::Phalanx,
         UnitType::Catapult, UnitType::Knight, UnitType::Cannon, UnitType::Rifleman, UnitType::Cavalry,
@@ -96,7 +103,8 @@ impl UnitType {
         UnitType::Frigate, UnitType::Ironclad, UnitType::Destroyer, UnitType::Battleship, UnitType::Fighter,
         UnitType::Bomber, UnitType::GreatGeneral, UnitType::GreatMerchant, UnitType::GreatScientist,
         UnitType::GreatArtist, UnitType::GreatEngineer, UnitType::Pikeman, UnitType::Musketman, UnitType::Infantry,
-        UnitType::MechInfantry, UnitType::ModernArmor,
+        UnitType::MechInfantry, UnitType::ModernArmor, UnitType::Scout, UnitType::Longbowman, UnitType::Galleon,
+        UnitType::Submarine, UnitType::Engineers, UnitType::RadarArtillery,
     ];
 
     /// The five kinds of great person.
@@ -151,6 +159,12 @@ impl UnitType {
             UnitType::Infantry => "Infantry",
             UnitType::MechInfantry => "Mech. Infantry",
             UnitType::ModernArmor => "Modern Armor",
+            UnitType::Scout => "Scout",
+            UnitType::Longbowman => "Longbowman",
+            UnitType::Galleon => "Galleon",
+            UnitType::Submarine => "Submarine",
+            UnitType::Engineers => "Engineers",
+            UnitType::RadarArtillery => "Radar Artillery",
         }
     }
 
@@ -158,14 +172,19 @@ impl UnitType {
     pub fn required_tech(&self) -> Option<crate::tech::Tech> {
         use crate::tech::Tech;
         match self {
-            UnitType::Settler | UnitType::Worker | UnitType::Warrior => None,
+            UnitType::Settler | UnitType::Worker | UnitType::Warrior | UnitType::Scout => None,
+            UnitType::Longbowman => Some(Tech::Monarchy),
+            UnitType::Galleon => Some(Tech::Navigation),
+            UnitType::Submarine => Some(Tech::Electronics),
+            UnitType::Engineers => Some(Tech::SteamPower),
+            UnitType::RadarArtillery => Some(Tech::Rocketry),
             UnitType::Spearman | UnitType::Phalanx => Some(Tech::BronzeWorking),
             UnitType::Archer => Some(Tech::Mining),
-            UnitType::Horseman => Some(Tech::AnimalHusbandry),
+            UnitType::Horseman => Some(Tech::HorsebackRiding),
             UnitType::Legion | UnitType::Immortal => Some(Tech::IronWorking),
             UnitType::WarChariot => Some(Tech::TheWheel),
             UnitType::Catapult => Some(Tech::Mathematics),
-            UnitType::Knight => Some(Tech::HorsebackRiding),
+            UnitType::Knight => Some(Tech::Chivalry),
             UnitType::Pikeman => Some(Tech::Engineering),
             UnitType::Cannon | UnitType::Musketman | UnitType::Cavalry => Some(Tech::Gunpowder),
             UnitType::Rifleman => Some(Tech::Industrialization),
@@ -180,7 +199,9 @@ impl UnitType {
             UnitType::Frigate => Some(Tech::Gunpowder),
             UnitType::Ironclad => Some(Tech::SteamPower),
             UnitType::Destroyer => Some(Tech::Refining),
-            UnitType::Battleship | UnitType::Fighter | UnitType::Bomber => Some(Tech::MotorizedTransport),
+            UnitType::Battleship => Some(Tech::Steel),
+            UnitType::Fighter => Some(Tech::Flight),
+            UnitType::Bomber => Some(Tech::AdvancedFlight),
             UnitType::GreatGeneral | UnitType::GreatMerchant | UnitType::GreatScientist | UnitType::GreatArtist | UnitType::GreatEngineer => None,
         }
     }
@@ -206,6 +227,12 @@ impl UnitType {
             UnitType::Infantry => (6, 10, 1),
             UnitType::MechInfantry => (6, 14, 2),
             UnitType::ModernArmor => (20, 12, 3),
+            UnitType::Scout => (0, 0, 2),
+            UnitType::Longbowman => (4, 1, 1),
+            UnitType::Galleon => (2, 2, 5),
+            UnitType::Submarine => (10, 2, 5),
+            UnitType::Engineers => (0, 0, 2),
+            UnitType::RadarArtillery => (16, 2, 2),
             UnitType::Cavalry => (6, 2, 2),
             UnitType::Tank => (10, 5, 2),
             UnitType::Artillery => (8, 2, 1),
@@ -243,6 +270,12 @@ impl UnitType {
             UnitType::Infantry => 70,
             UnitType::MechInfantry => 110,
             UnitType::ModernArmor => 150,
+            UnitType::Scout => 10,
+            UnitType::Longbowman => 30,
+            UnitType::Galleon => 40,
+            UnitType::Submarine => 100,
+            UnitType::Engineers => 30,
+            UnitType::RadarArtillery => 120,
             UnitType::Cavalry => 60,
             UnitType::Tank => 100,
             UnitType::Artillery => 80,
@@ -280,6 +313,12 @@ impl UnitType {
             UnitType::Musketman => Color::srgb(0.7, 0.15, 0.12),
             UnitType::Infantry | UnitType::MechInfantry => Color::srgb(0.37, 0.42, 0.23),
             UnitType::ModernArmor => Color::srgb(0.72, 0.65, 0.48),
+            UnitType::Scout => Color::srgb(0.54, 0.42, 0.23),
+            UnitType::Longbowman => Color::srgb(0.18, 0.42, 0.23),
+            UnitType::Galleon => Color::srgb(0.42, 0.25, 0.12),
+            UnitType::Submarine => Color::srgb(0.37, 0.42, 0.46),
+            UnitType::Engineers => Color::srgb(0.85, 0.54, 0.17),
+            UnitType::RadarArtillery => Color::srgb(0.42, 0.46, 0.33),
             UnitType::Cavalry => Color::srgb(0.7, 0.5, 0.2),
             UnitType::Tank => Color::srgb(0.4, 0.4, 0.2),
             UnitType::Artillery => Color::srgb(0.5, 0.4, 0.3),
@@ -294,7 +333,7 @@ impl UnitType {
 
     pub fn domain(&self) -> Domain {
         match self {
-            UnitType::Galley | UnitType::Frigate | UnitType::Ironclad | UnitType::Destroyer | UnitType::Battleship => Domain::Sea,
+            UnitType::Galley | UnitType::Galleon | UnitType::Frigate | UnitType::Ironclad | UnitType::Destroyer | UnitType::Battleship | UnitType::Submarine => Domain::Sea,
             UnitType::Fighter | UnitType::Bomber => Domain::Air,
             _ => Domain::Land,
         }
@@ -306,11 +345,16 @@ impl UnitType {
     }
 
     pub fn is_worker(&self) -> bool {
-        matches!(self, UnitType::Worker)
+        matches!(self, UnitType::Worker | UnitType::Engineers)
+    }
+
+    /// Turns a worker of this kind takes over a job (Engineers work faster).
+    pub fn build_turns(&self) -> u32 {
+        if *self == UnitType::Engineers { 2 } else { 3 }
     }
 
     pub fn is_military(&self) -> bool {
-        !matches!(self, UnitType::Settler | UnitType::Worker | UnitType::Diplomat | UnitType::Caravan) && !self.is_great_person()
+        !matches!(self, UnitType::Settler | UnitType::Worker | UnitType::Engineers | UnitType::Scout | UnitType::Diplomat | UnitType::Caravan) && !self.is_great_person()
     }
 
     /// Strategic resources a city must have access to before it can train this unit.
@@ -327,7 +371,7 @@ impl UnitType {
             UnitType::Tank | UnitType::Bomber => &[Resource::Oil, Resource::Rubber],
             UnitType::Frigate => &[Resource::Iron, Resource::Saltpeter],
             UnitType::Ironclad => &[Resource::Coal, Resource::Iron],
-            UnitType::Destroyer | UnitType::Fighter => &[Resource::Oil],
+            UnitType::Destroyer | UnitType::Fighter | UnitType::Submarine => &[Resource::Oil],
             UnitType::Battleship => &[Resource::Oil, Resource::Iron],
             _ => &[],
         }
@@ -337,7 +381,7 @@ impl UnitType {
         match self {
             UnitType::Legion => 1.25,
             UnitType::WarChariot if matches!(terrain, crate::terrain::Terrain::Plains | crate::terrain::Terrain::Grassland) => 1.5,
-            UnitType::Catapult | UnitType::Cannon | UnitType::Artillery => 1.3,
+            UnitType::Catapult | UnitType::Cannon | UnitType::Artillery | UnitType::RadarArtillery => 1.3,
             _ => 1.0,
         }
     }
@@ -357,9 +401,15 @@ impl UnitType {
         use UnitType::*;
         Some(match self {
             Warrior => Spearman,
+            Worker => Engineers,
+            Archer => Longbowman,
+            Longbowman => Musketman,
+            Artillery => RadarArtillery,
+            Galley => Galleon,
+            Galleon => Frigate,
             Spearman => Phalanx,
             Phalanx => Pikeman,
-            Pikeman | Archer | Legion | Immortal => Musketman,
+            Pikeman | Legion | Immortal => Musketman,
             Musketman => Rifleman,
             Rifleman => Infantry,
             Infantry => MechInfantry,
@@ -369,7 +419,6 @@ impl UnitType {
             Cavalry => Tank,
             Catapult => Cannon,
             Cannon => Artillery,
-            Galley => Frigate,
             Frigate => Ironclad,
             Ironclad => Destroyer,
             Destroyer => Battleship,
@@ -384,7 +433,7 @@ impl UnitType {
 
     /// Artillery that can bombard a neighbouring tile without risk.
     pub fn can_bombard(&self) -> bool {
-        matches!(self, UnitType::Catapult | UnitType::Cannon | UnitType::Artillery | UnitType::Frigate | UnitType::Ironclad | UnitType::Battleship | UnitType::Bomber)
+        matches!(self, UnitType::Catapult | UnitType::Cannon | UnitType::Artillery | UnitType::RadarArtillery | UnitType::Frigate | UnitType::Ironclad | UnitType::Battleship | UnitType::Bomber)
     }
 
     pub fn unique_for_civ(civ_id: u32) -> Option<Self> {
@@ -400,7 +449,7 @@ impl Unit {
     pub fn start_build(&mut self, improvement: Improvement) {
         if self.unit_type.is_worker() {
             self.current_build = Some(improvement);
-            self.build_turns_left = Some(3);
+            self.build_turns_left = Some(self.unit_type.build_turns());
             self.end_move();
         }
     }

@@ -489,6 +489,65 @@ const UNITS = [
       )
     );
   },
+  // ---- filling the gaps (rows after the late defenders) ----
+  // Scout: light pack, spyglass raised
+  (f) => {
+    const glass = (bob, sway) => limb(5, -42 + bob, 12, -52 + bob, '#8a6a3a', 4) + `<g transform="rotate(${-20 + sway * 2} 12 ${-52 + bob})"><rect x="10" y="${-56 + bob}" width="18" height="5" rx="1.5" fill="#c9973f"/><rect x="26" y="${-57 + bob}" width="4" height="7" fill="#8a6a3a"/></g>`;
+    const pack = (bob) => `<rect x="-15" y="${-46 + bob}" width="9" height="15" rx="3" fill="#7a5a34"/>`;
+    return shadow(62, 24) + wrap(human(58, GROUND, { tunic: '#8a6a3a', sleeve: '#8a6a3a', legs: '#5a4a32', head: head.brim('#5a4a32'), back: pack, front: glass }, f));
+  },
+  // Longbowman: tall bow, hooded
+  (f) => {
+    const pull = [0, 2, 4, 2][f];
+    const bow = (bob) =>
+      limb(5, -42 + bob, 17, -40 + bob, '#2f5f2c', 4) +
+      `<path d="M18,${-74 + bob} Q36,${-40 + bob} 18,${-6 + bob}" fill="none" stroke-width="5"/><path d="M18,${-74 + bob} Q36,${-40 + bob} 18,${-6 + bob}" fill="none" stroke="#6b4424" stroke-width="2.5"/>` +
+      `<path d="M18,${-74 + bob} L${18 - pull},${-40 + bob} L18,${-6 + bob}" fill="none" stroke="#efe6d0" stroke-width="1"/><path d="M${6 - pull},${-40 + bob} H32" stroke="#efe6d0" stroke-width="1.6"/><path d="M32,${-43 + bob} l5,3 l-5,3 Z" fill="${STEEL}"/>`;
+    const quiver = (bob) => `<path d="M-13,${-50 + bob} l7,2 l-3,22 l-7,-2 Z" fill="#5b3a1c"/><path d="M-12,${-52 + bob} l1,-7 M-9,${-51 + bob} l2,-7 M-6,${-50 + bob} l2,-6" stroke="#efe6d0" stroke-width="1.6"/>`;
+    return shadow(62, 24) + wrap(human(56, GROUND, { tunic: '#2f6a3a', sleeve: '#2f6a3a', legs: '#5a4a32', trim: '#c9973f', head: head.hood('#24502a'), back: quiver, front: bow }, f));
+  },
+  // Galleon: deep hull, three masts with square sails
+  (f) => {
+    const fl = [0, 2, 4, 2][f];
+    const mast = (x, h, w) => `<path d="M${x},${GROUND - 34} V${GROUND - h}" stroke-width="4.5"/><path d="M${x},${GROUND - 34} V${GROUND - h}" stroke="${WOOD}" stroke-width="2"/>` +
+      `<path d="M${x - w},${GROUND - h + 6} h${w * 2} q${2 + fl},16 0,30 h${-w * 2} q${2 + fl},-14 0,-30 Z" fill="#efe2c2"/><path d="M${x},${GROUND - h + 10} v22" stroke="#b3261e" stroke-width="5"/>`;
+    return ship(f, 2,
+      mast(34, 80, 12) + mast(60, 94, 15) + mast(86, 78, 11) +
+      `<path d="M60,${GROUND - 94} l${12 + fl},4 l-${12 + fl},5 Z" fill="#e8c14a"/>` +
+      `<path d="M8,${GROUND - 44} h22 v10 h62 l8,-12 h18 l-8,24 q-6,20 -26,22 h-56 q-18,-2 -20,-44 Z" fill="#6b3f1e"/>` +
+      `<path d="M14,${GROUND - 24} h96" stroke="#e8c14a" stroke-width="3"/>` +
+      [30, 46, 62, 78].map((x) => `<rect x="${x}" y="${GROUND - 18}" width="6" height="5" fill="#1d1611" stroke="none"/>`).join(''));
+  },
+  // Submarine: low hull, conning tower, periscope
+  (f) => ship(f, 0,
+    `<path d="M54,${GROUND - 22} v-16 h22 l4,16 Z" fill="#4f5a64"/><path d="M64,${GROUND - 38} v-${14 + [0, 2, 4, 2][f]} h6" fill="none" stroke-width="2.5"/>` +
+    `<path d="M6,${GROUND - 12} q4,-12 22,-12 h76 q18,0 20,10 q-2,8 -20,10 h-76 q-18,0 -22,-8 Z" fill="#5f6b76"/><path d="M14,${GROUND - 12} h96" stroke="#3a434c" stroke-width="2"/><path d="M4,${GROUND - 14} l-6,-6 v14 Z" fill="#3a434c"/>`),
+  // Engineers: hard hat and shovel
+  (f) => {
+    const ang = [-40, -10, 20, -10][f];
+    const tool = (bob) =>
+      limb(5, -42 + bob, 14, -34 + bob, '#d98a2b', 4) +
+      `<g transform="rotate(${ang} 14 ${-34 + bob})"><path d="M14,${-30 + bob} v-34" stroke-width="5"/><path d="M14,${-30 + bob} v-34" stroke="${WOOD}" stroke-width="2.5"/><path d="M8,${-64 + bob} h12 v8 q-6,6 -12,0 Z" fill="${STEEL}"/></g>`;
+    const hat = (hx, hy) => `<path d="M${hx - 8},${hy - 1} a8,8 0 0 1 16,0 Z" fill="#f2c230"/><path d="M${hx - 11},${hy - 1} h22" stroke-width="3.5"/><path d="M${hx - 11},${hy - 1} h22" stroke="#f2c230" stroke-width="1.6"/>`;
+    return shadow(60, 24) + wrap(human(58, GROUND, { tunic: '#d98a2b', sleeve: '#d98a2b', legs: '#3f4f6a', boots: '#2a241c', head: hat, front: tool }, f));
+  },
+  // Radar Artillery: tracked rocket launcher with a radar dish
+  (f) => {
+    const jig = [0, -0.8, 0, 0.8][f];
+    let wheels = '';
+    for (let x = 30; x <= 98; x += 17) wheels += `<circle cx="${x}" cy="${GROUND - 10}" r="6.5" fill="#4a4f44"/>`;
+    const spin = [0, 30, 60, 30][f];
+    return (
+      shadow(64, 52, 7) +
+      wrap(
+        `<g transform="translate(0,${jig})"><path d="M18,${GROUND - 22} v-16 h88 l8,16 Z" fill="#6b7655"/>` +
+          `<g transform="rotate(-28 70 ${GROUND - 40})"><rect x="50" y="${GROUND - 54}" width="60" height="16" rx="2" fill="#59624a"/><path d="M54,${GROUND - 46} h52" stroke="#3f4636" stroke-width="2"/>` +
+          [56, 70, 84, 98].map((x) => `<circle cx="${x}" cy="${GROUND - 50}" r="2.5" fill="#d43c2c" stroke="none"/>`).join('') + `</g>` +
+          `<path d="M30,${GROUND - 38} v-16" stroke-width="2.5"/><ellipse cx="30" cy="${GROUND - 58}" rx="${11 - spin / 10}" ry="6" fill="#c4ccd6"/></g>` +
+          `<rect x="16" y="${GROUND - 22}" width="96" height="23" rx="11.5" fill="#33362e"/>` + wheels,
+      )
+    );
+  },
 ];
 
 /** A great person: a figure standing in a softly pulsing golden aura. */

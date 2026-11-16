@@ -992,7 +992,7 @@ pub fn rebuild_panels(
                     let wonder_tab = ui.city_tab == CityTab::Wonders;
                     Building::ALL
                         .into_iter()
-                        .filter(|b| b.is_wonder() == wonder_tab && known(b.required_tech()) && !buildings.buildings.contains(b) && (*b != Building::Harbor || coastal))
+                        .filter(|b| b.is_wonder() == wonder_tab && known(b.required_tech()) && !buildings.buildings.contains(b) && (!b.needs_coast() || coastal))
                         .filter(|b| !wonders.is_taken(*b))
                         .filter(|b| !b.is_spaceship_part() || (buildings.has(Building::Factory) && space.wants(PLAYER, *b)))
                         .filter(|b| b.required_building().is_none_or(|r| buildings.has(r)))

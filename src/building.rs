@@ -18,6 +18,15 @@ pub enum Building {
     Cathedral,
     SewerSystem,
     StockExchange,
+    Observatory,
+    ResearchLab,
+    PowerPlant,
+    PoliceStation,
+    Supermarket,
+    MassTransit,
+    RecyclingCenter,
+    CoastalFortress,
+    Airport,
     // Spaceship parts: each goes to its civilization's ship, not into the city
     SpaceStructure,
     SpaceComponent,
@@ -53,10 +62,11 @@ pub enum Building {
 }
 
 impl Building {
-    pub const ALL: [Building; 46] = [
+    pub const ALL: [Building; 55] = [
         Building::Granary, Building::Barracks, Building::Library, Building::Marketplace, Building::Walls,
         Building::Aqueduct, Building::University, Building::Bank, Building::Factory, Building::Harbor,
         Building::Temple, Building::Courthouse, Building::Colosseum, Building::Cathedral, Building::SewerSystem, Building::StockExchange,
+        Building::Observatory, Building::ResearchLab, Building::PowerPlant, Building::PoliceStation, Building::Supermarket, Building::MassTransit, Building::RecyclingCenter, Building::CoastalFortress, Building::Airport,
         Building::SpaceStructure, Building::SpaceComponent, Building::SpaceModule, Building::Pyramids,
         Building::GreatLibrary, Building::HangingGardens, Building::Colossus, Building::Oracle,
         Building::GreatLighthouse, Building::GreatWall, Building::StatueOfZeus, Building::Mausoleum, Building::Copernicus, Building::SunTzu, Building::MarcoPolo, Building::KingRichards, Building::Michelangelo, Building::Leonardo, Building::Bach, Building::Magellan, Building::Newton, Building::AdamSmith, Building::Shakespeare, Building::Darwin, Building::Liberty, Building::HooverDam, Building::Eiffel, Building::Internet, Building::Apollo, Building::CureForCancer,
@@ -73,6 +83,15 @@ impl Building {
             Building::University => "University",
             Building::Bank => "Bank",
             Building::StockExchange => "Stock Exchange",
+            Building::Observatory => "Observatory",
+            Building::ResearchLab => "Research Lab",
+            Building::PowerPlant => "Power Plant",
+            Building::PoliceStation => "Police Station",
+            Building::Supermarket => "Supermarket",
+            Building::MassTransit => "Mass Transit",
+            Building::RecyclingCenter => "Recycling Center",
+            Building::CoastalFortress => "Coastal Fortress",
+            Building::Airport => "Airport",
             Building::Factory => "Factory",
             Building::Harbor => "Harbor",
             Building::Temple => "Temple",
@@ -124,6 +143,15 @@ impl Building {
             Building::University => 100,
             Building::Bank => 120,
             Building::StockExchange => 160,
+            Building::Observatory => 80,
+            Building::ResearchLab => 160,
+            Building::PowerPlant => 160,
+            Building::PoliceStation => 60,
+            Building::Supermarket => 80,
+            Building::MassTransit => 120,
+            Building::RecyclingCenter => 140,
+            Building::CoastalFortress => 80,
+            Building::Airport => 120,
             Building::Factory => 150,
             Building::Harbor => 60,
             Building::Temple => 30,
@@ -175,6 +203,15 @@ impl Building {
             Building::University => Some(crate::tech::Tech::Philosophy),
             Building::Bank => Some(crate::tech::Tech::Banking),
             Building::StockExchange => Some(crate::tech::Tech::Economics),
+            Building::Observatory => Some(crate::tech::Tech::Astronomy),
+            Building::ResearchLab => Some(crate::tech::Tech::Computers),
+            Building::PowerPlant => Some(crate::tech::Tech::Electronics),
+            Building::PoliceStation => Some(crate::tech::Tech::Communism),
+            Building::Supermarket => Some(crate::tech::Tech::Sanitation),
+            Building::MassTransit => Some(crate::tech::Tech::MassProduction),
+            Building::RecyclingCenter => Some(crate::tech::Tech::Ecology),
+            Building::CoastalFortress => Some(crate::tech::Tech::Steel),
+            Building::Airport => Some(crate::tech::Tech::Flight),
             Building::Factory => Some(crate::tech::Tech::Industrialization),
             Building::Harbor => Some(crate::tech::Tech::Seafaring),
             Building::Temple => Some(crate::tech::Tech::Mysticism),
@@ -194,20 +231,20 @@ impl Building {
             Building::GreatWall => Some(crate::tech::Tech::Construction),
             Building::StatueOfZeus => Some(crate::tech::Tech::BronzeWorking),
             Building::Mausoleum => Some(crate::tech::Tech::Masonry),
-            Building::Copernicus => Some(crate::tech::Tech::Mathematics),
+            Building::Copernicus => Some(crate::tech::Tech::Astronomy),
             Building::SunTzu => Some(crate::tech::Tech::IronWorking),
             Building::MarcoPolo => Some(crate::tech::Tech::Currency),
             Building::KingRichards => Some(crate::tech::Tech::Monarchy),
             Building::Michelangelo => Some(crate::tech::Tech::Theology),
             Building::Leonardo => Some(crate::tech::Tech::Engineering),
             Building::Bach => Some(crate::tech::Tech::PrintingPress),
-            Building::Magellan => Some(crate::tech::Tech::Gunpowder),
-            Building::Newton => Some(crate::tech::Tech::SteamPower),
+            Building::Magellan => Some(crate::tech::Tech::Navigation),
+            Building::Newton => Some(crate::tech::Tech::TheoryOfGravity),
             Building::AdamSmith => Some(crate::tech::Tech::Economics),
-            Building::Shakespeare => Some(crate::tech::Tech::Sanitation),
+            Building::Shakespeare => Some(crate::tech::Tech::Medicine),
             Building::Darwin => Some(crate::tech::Tech::Electricity),
             Building::Liberty => Some(crate::tech::Tech::Democracy),
-            Building::HooverDam => Some(crate::tech::Tech::ReplaceableParts),
+            Building::HooverDam => Some(crate::tech::Tech::Electronics),
             Building::Eiffel => Some(crate::tech::Tech::Refining),
             Building::Internet => Some(crate::tech::Tech::Computers),
             Building::Apollo => Some(crate::tech::Tech::SpaceFlight),
@@ -235,6 +272,7 @@ impl Building {
         match self {
             Building::Temple => 2,
             Building::Colosseum | Building::Cathedral => 3,
+            Building::PoliceStation => 2,
             _ => 0,
         }
     }
@@ -263,6 +301,15 @@ impl Building {
             Building::University => "+4 science",
             Building::Bank => "+4 gold; interest on the treasury (needs a Marketplace)",
             Building::StockExchange => "+3 gold, +50% gold here; more interest (needs a Bank)",
+            Building::Observatory => "+3 science",
+            Building::ResearchLab => "+6 science (needs a University)",
+            Building::PowerPlant => "+4 shields (needs a Factory)",
+            Building::PoliceStation => "+2 content",
+            Building::Supermarket => "+3 food",
+            Building::MassTransit => "the city no longer pollutes",
+            Building::RecyclingCenter => "halves the city's pollution",
+            Building::CoastalFortress => "doubles defence against ships (coastal cities)",
+            Building::Airport => "aircraft trained here are veterans",
             Building::Factory => "+3 shields; needed for spaceship parts",
             Building::Harbor => "+1 food; links coasts",
             Building::Temple => "+2 content",
@@ -291,6 +338,7 @@ impl Building {
             Building::Granary => 2,
             Building::Harbor => 1,
             Building::HangingGardens => 2,
+            Building::Supermarket => 3,
             _ => 0,
         }
     }
@@ -302,6 +350,8 @@ impl Building {
             Building::GreatLibrary => 5,
             Building::Copernicus => 6,
             Building::Newton => 8,
+            Building::Observatory => 3,
+            Building::ResearchLab => 6,
             _ => 0,
         }
     }
@@ -312,6 +362,7 @@ impl Building {
             Building::Factory => 3,
             Building::Pyramids => 3,
             Building::KingRichards => 4,
+            Building::PowerPlant => 4,
             _ => 0,
         }
     }
@@ -328,11 +379,18 @@ impl Building {
 }
 
 impl Building {
+    /// Only a city on the coast can build it.
+    pub fn needs_coast(&self) -> bool {
+        matches!(self, Building::Harbor | Building::CoastalFortress)
+    }
+
     /// A building the city must already have before it can build this one.
     pub fn required_building(&self) -> Option<Building> {
         match self {
             Building::Bank => Some(Building::Marketplace),
             Building::StockExchange => Some(Building::Bank),
+            Building::ResearchLab => Some(Building::University),
+            Building::PowerPlant => Some(Building::Factory),
             _ => None,
         }
     }
