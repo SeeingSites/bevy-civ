@@ -736,6 +736,7 @@ pub fn rebuild_panels(
                 return;
             };
             let (attack, defense, moves) = unit.unit_type.stats();
+            let moves = moves.min(unit.troop_moves());
             let mine = unit.owner == PLAYER;
             p.spawn(Node { align_items: AlignItems::Center, column_gap: Val::Px(14.0), ..default() }).with_children(|r| {
                 r.spawn((
@@ -749,7 +750,8 @@ pub fn rebuild_panels(
                     ));
                 });
                 r.spawn(column(4.0)).with_children(|c| {
-                    c.spawn(label(&art.font_title, unit.unit_type.name(), 20.0, GOLD));
+                    let title = if unit.is_army_group() { format!("Army of {} units", 1 + unit.troops.len()) } else { unit.unit_type.name().to_string() };
+                    c.spawn(label(&art.font_title, title, 20.0, GOLD));
                     let status = match (unit.current_build, unit.build_turns_left) {
                         (Some(job), Some(turns)) => format!("Building {:?} ({} turns)", job, turns),
                         _ if !mine => String::new(),
@@ -771,6 +773,9 @@ pub fn rebuild_panels(
             });
             if unit.unit_type.is_great_person() {
                 p.spawn(label(&art.font_bold, great::ability(unit.unit_type), 14.0, GOLD));
+            }
+            if unit.is_army_group() {
+                p.spawn(label(&art.font_body, format!("{}: fights as its best unit, with the hit points of all.", unit.display_name()), 14.0, CREAM));
             }
             if mine && unit.unit_type == UnitType::Caravan {
                 p.spawn(label(&art.font_body, "In another of your cities, or next to a foreign one: T opens a trade route from its home city. In one of your cities building a wonder: U adds its shields.", 13.0, MUTED));
@@ -858,7 +863,9 @@ pub fn rebuild_panels(
                         button(r, art, "Trade Route (T)", Command::Game(Action::TradeRoute), GREEN, 15.0);
                         button(r, art, "Help Wonder (U)", Command::Game(Action::UseUnit), GREEN, 15.0);
                     }
-                    if unit.unit_type.is_great_person() && unit.unit_type != UnitType::GreatGeneral {
+                    if unit.unit_type == UnitType::GreatGeneral {
+                        button(r, art, "Form Army (U)", Command::Game(Action::UseUnit), GREEN, 15.0);
+                    } else if unit.unit_type.is_great_person() {
                         button(r, art, "Use (U)", Command::Game(Action::UseUnit), GREEN, 15.0);
                     }
                     if !unit.fortified {

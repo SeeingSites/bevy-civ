@@ -45,6 +45,16 @@ pub struct CityLabel;
 pub struct CityLabelBack;
 #[derive(Component)]
 pub struct BurstFx(Timer);
+/// The frame of a unit's health gauge (gold for an army).
+#[derive(Component)]
+pub struct HealthFrame;
+/// The filled part of a unit's health gauge.
+#[derive(Component)]
+pub struct HealthFill;
+const HEALTH_HEIGHT: f32 = 30.0;
+const HEALTH_X: f32 = -27.0;
+const HEALTH_Y: f32 = 6.0;
+
 /// The "×3" marker on a tile where several units stand.
 #[derive(Component)]
 pub struct StackBadge;
@@ -112,6 +122,20 @@ pub fn attach_unit_views(mut commands: Commands, art: Res<Art>, map: Res<MapData
                         ..default()
                     },
                     Transform::from_xyz(0.0, 5.0, -0.02),
+                ));
+                // Health gauge beside the figure (military units only).
+                let shown = if unit.unit_type.is_military() { Visibility::Inherited } else { Visibility::Hidden };
+                parent.spawn((
+                    HealthFrame,
+                    Sprite { color: Color::srgb(0.1, 0.08, 0.06), custom_size: Some(Vec2::new(8.0, HEALTH_HEIGHT + 2.0)), anchor: Anchor::BottomCenter, ..default() },
+                    Transform::from_xyz(HEALTH_X, HEALTH_Y - 1.0, 0.03),
+                    shown,
+                ));
+                parent.spawn((
+                    HealthFill,
+                    Sprite { color: Color::srgb(0.3, 0.85, 0.3), custom_size: Some(Vec2::new(5.0, HEALTH_HEIGHT)), anchor: Anchor::BottomCenter, ..default() },
+                    Transform::from_xyz(HEALTH_X, HEALTH_Y, 0.04),
+                    shown,
                 ));
             });
     }
@@ -182,6 +206,34 @@ pub fn animate_units(
         for child in children.iter() {
             if let Ok(mut base) = bases.get_mut(*child) {
                 base.color = owner_color(unit.owner).with_alpha(if spent { 0.45 } else { 1.0 });
+            }
+        }
+    }
+}
+
+/// Keeps each unit's health gauge in step with its hit points: green, yellow when hurt, red when
+/// badly hurt; an army's gauge has a gold frame.
+pub fn update_health_bars(
+    units: Query<(&Unit, &Children), Or<(Changed<Unit>, Changed<Children>)>>,
+    mut frames: Query<&mut Sprite, (With<HealthFrame>, Without<HealthFill>)>,
+    mut fills: Query<&mut Sprite, (With<HealthFill>, Without<HealthFrame>)>,
+) {
+    for (unit, children) in &units {
+        let share = unit.hp.min(unit.max_hp()) as f32 / unit.max_hp().max(1) as f32;
+        for child in children.iter() {
+            if let Ok(mut frame) = frames.get_mut(*child) {
+                frame.color = if unit.is_army_group() { Color::srgb(0.95, 0.78, 0.3) } else { Color::srgb(0.1, 0.08, 0.06) };
+                frame.custom_size = Some(Vec2::new(if unit.is_army_group() { 10.0 } else { 8.0 }, HEALTH_HEIGHT + 2.0));
+            }
+            if let Ok(mut fill) = fills.get_mut(*child) {
+                fill.color = if share > 0.67 {
+                    Color::srgb(0.3, 0.85, 0.3)
+                } else if share > 0.34 {
+                    Color::srgb(0.95, 0.8, 0.2)
+                } else {
+                    Color::srgb(0.9, 0.25, 0.2)
+                };
+                fill.custom_size = Some(Vec2::new(5.0, (HEALTH_HEIGHT * share).max(2.0)));
             }
         }
     }
