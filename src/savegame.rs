@@ -353,6 +353,8 @@ mod tests {
             is_capital: true,
             resistance: 0,
             queue: Vec::new(),
+            worked: Vec::new(),
+            land: (0, 0, 0),
         };
         let unit = Unit { unit_type: UnitType::Legion, movement_left: 1, owner: PLAYER, position: Hex::new(2, 2), build_turns_left: None, current_build: None, fortified: true, road_credit: 0, hp: 2, level: 1, troops: Vec::new() };
         SaveGame {

@@ -156,7 +156,7 @@ impl Plugin for ClientPlugin {
             .init_resource::<battles::BattleTheatre>()
             .add_systems(
                 Update,
-                (battles::queue_battles, battles::stage_battles, battles::animate_fallen, battles::animate_battle_text, map::update_villages)
+                (battles::queue_battles, battles::stage_battles, battles::animate_fallen, battles::animate_battle_text, map::update_villages, map::show_city_area)
                     .chain()
                     .after(GameLogic)
                     .run_if(in_state(crate::AppState::Playing)),

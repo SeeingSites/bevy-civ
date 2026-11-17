@@ -10,6 +10,7 @@ use hexx::Hex;
 use std::collections::{HashMap, HashSet};
 
 use bevy_civ::tech::Tech;
+#[allow(unused_imports)]
 use bevy_civ::terrain::{HexTile, Improvement, Resource as Good, ResourceKind};
 
 #[cfg(test)]
@@ -143,24 +144,13 @@ pub fn recompute<'a>(
         if tile.is_polluted() {
             continue;
         }
-        let Some((owner, city)) = supplies.territory.get(&tile.coord).copied() else { continue };
-        let entry = supplies.yields.entry(city).or_default();
-        if tile.improvements.contains(&Improvement::Farm) {
-            entry.0 += 1;
-        }
-        if tile.improvements.contains(&Improvement::Mine) {
-            entry.1 += 1;
-        }
+        // (What the land yields is counted tile by tile for the tiles a city works: see `tiles`.)
+        let Some((owner, _)) = supplies.territory.get(&tile.coord).copied() else { continue };
         let Some(good) = tile.resource else { continue };
         if !sees(owner, good) {
             continue;
         }
-        if good.kind() == ResourceKind::Bonus {
-            let (food, shields, gold) = good.bonus_yield();
-            entry.0 += food;
-            entry.1 += shields;
-            entry.2 += gold;
-        } else {
+        if good.kind() != ResourceKind::Bonus {
             *supplies.civs.entry(owner).or_default().sources.entry(good).or_default() += 1;
             usable.push((tile.coord, good, owner));
         }

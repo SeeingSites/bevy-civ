@@ -20,3 +20,4 @@ pub mod great;
 pub mod traits;
 pub mod religion;
 pub mod villages;
+pub mod tiles;

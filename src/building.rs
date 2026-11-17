@@ -311,7 +311,7 @@ impl Building {
             Building::CoastalFortress => "doubles defence against ships (coastal cities)",
             Building::Airport => "aircraft trained here are veterans",
             Building::Factory => "+3 shields; needed for spaceship parts",
-            Building::Harbor => "+1 food; links coasts",
+            Building::Harbor => "+1 food on worked ocean tiles; links coasts",
             Building::Temple => "+2 content",
             Building::Courthouse => "halves corruption",
             Building::Colosseum => "+3 content",
@@ -336,7 +336,6 @@ impl Building {
     pub fn food_bonus(&self) -> u32 {
         match self {
             Building::Granary => 2,
-            Building::Harbor => 1,
             Building::HangingGardens => 2,
             Building::Supermarket => 3,
             _ => 0,

@@ -157,7 +157,8 @@ fn help_lines(topic: HelpTopic) -> Vec<String> {
         HelpTopic::Cities => [
             "A city's first five citizens are content; every one beyond is unhappy. Temples (+2), Colosseums and Cathedrals (+3), wonders, masterpieces, entertainers and, under Despotism, Monarchy and Communism, troops in the city (martial law) calm them. Each different luxury the city can reach makes one citizen happy.",
             "When the unhappy outnumber the happy the city falls into disorder: no growth, production, science or taxes until it is calmed.",
-            "Cities grow when their granary fills and cannot pass size 8 without an Aqueduct, or 16 without a Sewer System. Specialists eat without farming: too many and the city starves.",
+            "Cities grow when their granary fills and cannot pass size 8 without an Aqueduct, or 16 without a Sewer System. Every citizen eats 2 food; specialists eat without working the land.",
+            "Each working citizen works one tile of its city's area, and the city's own tile is worked for free. Open a city to see each tile's food, shields and gold (worked tiles ringed in green); click a tile to move a citizen there or off it, or let the governor choose. Farms, mines, roads, railroads, resources and rivers make tiles richer.",
             "Culture from temples, cathedrals, colosseums, libraries, universities and wonders widens a city's borders over time (2 tiles, 3 at 100, 4 at 1,000, 5 at 5,000). Where borders meet, the land goes to the city with the stronger culture for its distance, so a great culture pushes its neighbours' borders back. A city in disorder next to a much greater culture may defect to it.",
             "Corruption grows with distance from the capital and is halved by a Courthouse. A city keeps training the same unit until told otherwise; a finished building or wonder leaves it waiting for its next project - unless its build queue holds more (switch the city panel to Add to queue and pick up to six projects).",
             "Projects other than wonders can be bought with gold, or rushed under Despotism and Communism by putting citizens to forced labour. Luxury (Empire advisor) makes one citizen happy for every 2 points.",
@@ -997,6 +998,24 @@ pub fn rebuild_panels(
             let grow_in = (city.food_to_grow().saturating_sub(city.food_storage) as f32 / food.max(1) as f32).ceil();
             p.spawn(label(&art.font_body, format!("Growth: {}/{} food  (about {} turns)", city.food_storage, city.food_to_grow(), grow_in), 14.0, MUTED));
             bar(p, city.food_storage as f32 / city.food_to_grow() as f32, Color::srgb(0.45, 0.78, 0.35));
+            // The land: what the city's tile and its worked tiles give, and who works them.
+            if mine {
+                p.spawn(row(6.0)).with_children(|r| {
+                    let (f, s, g) = city.land;
+                    r.spawn(label(
+                        &art.font_body,
+                        format!(
+                            "Land: {} of {} citizens work tiles ({f} food, {s} shields, {g} gold; {} eaten). Click a tile on the map to move a citizen.",
+                            city.worked.len(),
+                            city.population,
+                            city.population * bevy_civ::tiles::FOOD_PER_CITIZEN
+                        ),
+                        13.0,
+                        MUTED,
+                    ));
+                    button(r, art, "Governor picks tiles", Command::Game(Action::AutoTiles), BRONZE, 12.0);
+                });
+            }
             match &city.production_queue {
                 Some(item) => {
                     let left = (item.cost().saturating_sub(city.production_progress) as f32 / production.max(1) as f32).ceil();
@@ -1800,7 +1819,7 @@ pub fn update_tile_info(
     hovered: Res<Hovered>,
     fog: Res<FogOfWar>,
     tiles: Query<&HexTile>,
-    (tech, supplies): (Res<TechState>, Res<Supplies>),
+    (tech, supplies, rivers): (Res<TechState>, Res<Supplies>, Res<crate::Rivers>),
     mut info: Query<&mut Text, With<TileInfoText>>,
 ) {
     let Ok(mut text) = info.get_single_mut() else { return };
@@ -1813,7 +1832,9 @@ pub fn update_tile_info(
                 .map(|r| if supplies.unconnected.get(&tile.coord) == Some(&PLAYER) { format!("{} (needs a road)", r.name()) } else { r.name().to_string() })
                 .collect();
             extras.extend(tile.improvements.iter().map(|i| format!("{:?}", i)));
-            format!("{}  -  {} food, {} shields\n{}", tile.terrain.name(), tile.total_food(), tile.total_production(), extras.join(", "))
+            let seen = tile.resource.filter(|r| r.reveal_tech().is_none_or(|t| tech.researched.contains(&t)));
+            let (f, s, g) = bevy_civ::tiles::tile_yield(tile.terrain, &tile.improvements, seen, rivers.tiles.contains(&tile.coord));
+            format!("{}  -  {f} food, {s} shields, {g} gold\n{}", tile.terrain.name(), extras.join(", "))
         }
         Some(_) => "Unexplored".to_string(),
         None => String::new(),

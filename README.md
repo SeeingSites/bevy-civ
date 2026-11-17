@@ -296,6 +296,14 @@ working directory.
   halves it.
 - **Resistance**: a captured city produces nothing for 1 turn plus 1 per 3 citizens (up to 6); a
   garrison of two settles it twice as fast.
+- **Working the land**: every tile yields food, shields and gold - grassland 2/0/0, plains 1/1/0,
+  desert 0/1/0, hills 1/0/0, mountains 0/1/0, forest 1/2/0, ocean 1/0/2 - plus farms (+1 food),
+  mines (+2 shields on hills and mountains, +1 elsewhere), roads (+1 gold on flat land), railroads
+  (+1 shield), resources and rivers (+1 gold); a Harbor adds a food to worked ocean tiles. Each
+  working citizen works one tile of its city's area and every citizen eats 2 food; the city's own
+  tile is worked for free with a bonus. A governor picks tiles (food first until the city can grow,
+  then a balance); open a city and its area shows each tile's yield, the worked tiles ringed:
+  click a tile to move a citizen there or off it (to entertain), or let the governor choose again.
 - **Barbarians**: from turn 10, every 8 turns a band rises on wild land outside every border and
   away from any unit; it grows (one to three units) and re-arms with the age of the world, from
   warriors to infantry and artillery.
