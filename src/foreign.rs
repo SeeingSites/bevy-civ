@@ -90,6 +90,8 @@ pub enum OfferKind {
     Passage,
     /// They demand that we take our troops out of their lands.
     Withdraw,
+    /// They demand that we stop our smugglers carrying drugs into their cities.
+    Crackdown,
 }
 
 /// A message from another leader waiting for the player's answer.
@@ -134,6 +136,12 @@ pub struct Foreign {
     /// Peoples whose smugglers bring drugs into our cities (refreshed every turn).
     #[serde(skip)]
     pub smugglers: HashSet<u32>,
+    /// Peoples whose cities our own smugglers reach (refreshed every turn).
+    #[serde(skip)]
+    pub smuggled_by_us: HashSet<u32>,
+    /// Peoples we promised to stop our smugglers reaching, and until which turn.
+    #[serde(default, with = "bevy_civ::save::pairs")]
+    pub our_crackdown: HashMap<u32, u32>,
     /// Withdrawals agreed but not yet carried out: (whose troops, out of whose lands).
     #[serde(skip)]
     pub withdrawals: Vec<(u32, u32)>,
@@ -598,6 +606,16 @@ pub fn answer_offer(ctx: &mut Ctx, accept: bool) {
             "Our caravans leave at dawn."
         }
         (OfferKind::BuyFromUs(..) | OfferKind::SellToUs(..), false) => "Perhaps another time.",
+        (OfferKind::Crackdown, true) => {
+            ctx.foreign.our_crackdown.insert(civ, ctx.state.turn + bevy_civ::troubles::CRACKDOWN_TURNS);
+            shift(ctx, civ, 5);
+            ctx.log.push(format!("We promise {name} to stop the smugglers crossing from our cities for {} turns.", bevy_civ::troubles::CRACKDOWN_TURNS));
+            "Good. Our streets will be safer for it."
+        }
+        (OfferKind::Crackdown, false) => {
+            shift(ctx, civ, -7);
+            "Then the poison you sell is on your conscience."
+        }
         (OfferKind::Withdraw, true) => {
             ctx.foreign.withdrawals.push((PLAYER, civ));
             ctx.diplomacy.passage.remove(&pair(PLAYER, civ));
@@ -733,6 +751,8 @@ pub fn turn(ctx: &mut Ctx, fog: &FogOfWar, supplies: &Supplies, units: &[(Hex, u
         let offer = if treaty == Treaty::War {
             (age >= 8 && (theirs < ours * 0.8 || age >= 25))
                 .then(|| (OfferKind::Peace, "This war bleeds us both. Shall we put down our swords?".to_string(), 10))
+        } else if ctx.foreign.smuggled_by_us.contains(&id) && !ctx.foreign.our_crackdown.get(&id).is_some_and(|until| *until > turn) && rng.gen_bool(0.2) {
+            Some((OfferKind::Crackdown, "Drugs from your cities are poisoning ours. Stop your smugglers.".to_string(), 15))
         } else if our_troops >= 1 && treaty != Treaty::Alliance && !ctx.diplomacy.has_passage(PLAYER, id) && turn >= AI_GRACE_TURNS && rng.gen_bool(0.25) {
             let troops = if our_troops == 1 { "a unit".to_string() } else { format!("{our_troops} units") };
             Some((OfferKind::Withdraw, format!("You have {troops} of soldiers inside our borders. Withdraw them, or we will take it as a threat."), 12))

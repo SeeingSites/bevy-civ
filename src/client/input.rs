@@ -38,8 +38,11 @@ pub fn pointer_input(
     mut clicks: EventWriter<MapClick>,
     mut camera: Query<(&Camera, &GlobalTransform, &mut Transform, &mut OrthographicProjection), With<Camera2d>>,
     ui: Res<UiState>,
+    scrollables: Query<&bevy::ui::RelativeCursorPosition, With<super::ui::Scrollable>>,
 ) {
     let Ok(window) = windows.get_single() else { return };
+    // The wheel over a panel or window scrolls it (see `ui::scroll_panels`), not the map.
+    let over_scrollable = scrollables.iter().any(|c| c.mouse_over());
     // Shift (or the "move together" switch) orders the whole stack.
     let group = ui.group_move || keys.any_pressed([KeyCode::ShiftLeft, KeyCode::ShiftRight]);
     let Ok((cam, cam_global, mut cam_transform, mut projection)) = camera.get_single_mut() else { return };
@@ -125,7 +128,7 @@ pub fn pointer_input(
                 MouseScrollUnit::Line => event.y,
                 MouseScrollUnit::Pixel => event.y / 60.0,
             };
-            if !over_ui {
+            if !over_ui && !over_scrollable {
                 zoom *= 1.0 - lines.clamp(-3.0, 3.0) * 0.1;
             }
         }
@@ -189,6 +192,8 @@ pub fn keyboard_input(
         (KeyCode::KeyZ, Action::Sentry),
         (KeyCode::KeyJ, Action::JoinCity),
         (KeyCode::KeyI, Action::Board),
+        (KeyCode::BracketRight, Action::CycleCity(true)),
+        (KeyCode::BracketLeft, Action::CycleCity(false)),
         (KeyCode::Backspace, Action::Undo),
         (KeyCode::KeyB, Action::FoundCity),
         (KeyCode::KeyT, Action::TradeRoute),

@@ -6,6 +6,7 @@ pub mod actors;
 pub mod battles;
 pub mod input;
 pub mod map;
+pub mod relations;
 pub mod sfx;
 pub mod tips;
 pub mod ui;
@@ -149,8 +150,8 @@ impl Plugin for ClientPlugin {
             .init_resource::<ui::UiState>()
             .init_resource::<ui::MenuState>()
             .add_systems(PreStartup, load_art)
-            .add_systems(Startup, (map::setup_map_view, ui::setup_ui, ui::setup_menu))
-            .add_systems(Update, (ui::button_actions, ui::rebuild_menu, ui::button_visuals, ui::fit_ui_scale, ui::update_sound_button).chain().before(GameLogic))
+            .add_systems(Startup, (map::setup_map_view, ui::setup_ui, ui::setup_menu, relations::setup_web))
+            .add_systems(Update, (ui::button_actions, ui::rebuild_menu, ui::button_visuals, ui::fit_ui_scale, ui::scroll_panels, ui::update_sound_button, relations::draw_web).chain().before(GameLogic))
             .add_systems(Update, ui::poll_import.run_if(in_state(crate::AppState::Menu)))
             .init_resource::<tips::Tips>()
             .init_resource::<battles::BattleTheatre>()
