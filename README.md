@@ -6,7 +6,10 @@ Turn-based, Civilization-style empire building on a hex map, playable in the bro
 
 ## Current Features
 - Hex map with terrain, rivers, resources, roads, railroads, farms, mines and pollution
-- Hills and forest cost 2 moves, mountains 3; roads triple movement and railroads make it free
+- Terrain slows movement as in Civ: hills and forest cost 2 moves, mountains 3, and a unit that lacks
+  the moves still enters but is worn out for the turns it owes (a one-move unit takes 2 turns a hill,
+  3 a mountain); roads triple movement and railroads make it free. Wheeled units (chariots,
+  catapults, cannon, artillery) keep out of forest and mountains unless a road leads through
 - Cities that grow (up to 8, 16 with an Aqueduct or a river, beyond with a Sewer System), can
   starve, and need happy citizens: disorder stops growth, production, science and taxes
 - Specialists (entertainers, tax collectors, scientists) and corruption by distance

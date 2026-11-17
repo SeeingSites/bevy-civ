@@ -126,7 +126,7 @@ fn help_lines(topic: HelpTopic) -> Vec<String> {
             "Workers and Engineers: F farm, M mine, R road (railroad on a road, with Steam Power), O fortress (Construction), X clear land or clean pollution, K automate. Settlers: B found a city.",
             "U uses the selected unit: a great person's gift, a General forming an army, a Missionary preaching, a caravan helping a wonder. T opens a caravan's trade route. P pillages enemy land. Diplomats act from the unit panel next to a foreign city.",
             "Q science, E foreign affairs, G trade, Y empire (government, rates, cities, military, score), F1 this encyclopedia, V sound, F2 save a file (the game also saves itself every turn).",
-            "Roads triple movement for troops on foot; railroads make it free. Hills and forest cost 2 moves, mountains 3. Troops cross water in boats once you know Seafaring.",
+            "Terrain: hills and forest cost 2 moves, mountains 3. A unit without the moves still enters, but is worn out for as many turns as it owes (a one-move unit takes 2 turns a hill, 3 a mountain). Roads triple movement and railroads make it free. Wheeled units - chariots, catapults, cannon, artillery - cannot enter forest or mountains except along a road. Troops cross water in boats once you know Seafaring.",
             "Tribal villages dot the land: the first unit in finds gold, a technology, warriors who join you, maps of the area - or hostile tribesmen (Scouts rarely meet them).",
         ]
         .into_iter()
@@ -1907,7 +1907,13 @@ pub fn update_tile_info(
             extras.extend(tile.improvements.iter().map(|i| format!("{:?}", i)));
             let seen = tile.resource.filter(|r| r.reveal_tech().is_none_or(|t| tech.researched.contains(&t)));
             let (f, s, g) = bevy_civ::tiles::tile_yield(tile.terrain, &tile.improvements, seen, rivers.tiles.contains(&tile.coord));
-            format!("{}  -  {f} food, {s} shields, {g} gold\n{}", tile.terrain.name(), extras.join(", "))
+            let moves = match bevy_civ::pathfinding::terrain_cost(tile.terrain) {
+                _ if tile.has_road() => "road".to_string(),
+                Some(1) => "1 move".to_string(),
+                Some(n) => format!("{n} moves"),
+                None => "by sea".to_string(),
+            };
+            format!("{}  -  {f} food, {s} shields, {g} gold  ({moves})\n{}", tile.terrain.name(), extras.join(", "))
         }
         Some(_) => "Unexplored".to_string(),
         None => String::new(),

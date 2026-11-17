@@ -997,7 +997,7 @@ fn handle_map_click(
             log.push(reason);
             continue;
         }
-        let travel = player_travel(domain, sail, &ports);
+        let travel = player_travel(unit.unit_type, sail, &ports);
         let roads = road_network(tiles.iter(), cities.iter().map(|(_, c)| c.position));
         let Some(route) = find_route(unit.position, hex, tiles.iter().map(|t| (t.coord, t.terrain)), &roads, travel) else {
             log.push(if sail || domain != Domain::Land { "There is no route to that tile." } else { "There is no route to that tile. Crossing water needs Seafaring." });
@@ -1138,7 +1138,7 @@ fn handle_map_click(
                 if unit.build_turns_left.is_some() || !unit.can_move() {
                     continue;
                 }
-                let travel = player_travel(unit.unit_type.domain(), sail, &ports);
+                let travel = player_travel(unit.unit_type, sail, &ports);
                 let Some(route) = find_route(unit.position, hex, tiles.iter().map(|t| (t.coord, t.terrain)), &roads, travel) else { continue };
                 let approach = if enemy.is_some() { &route[..route.len() - 1] } else { &route[..] };
                 let mut trail = Vec::new();
@@ -1187,12 +1187,11 @@ pub fn spy_target(here: Hex, cities: impl Iterator<Item = (Hex, u32)>) -> Option
 }
 
 /// How the player's units of a kind travel, given whether Seafaring is known and where the ports are.
-fn player_travel(domain: Domain, sail: bool, ports: &HashSet<Hex>) -> Travel<'_> {
-    match domain {
+fn player_travel(unit: UnitType, sail: bool, ports: &HashSet<Hex>) -> Travel<'_> {
+    match unit.domain() {
         Domain::Sea => Travel::Sea(ports),
         Domain::Air => Travel::Air,
-        Domain::Land if sail => Travel::Amphibious,
-        Domain::Land => Travel::Land,
+        Domain::Land => bevy_civ::pathfinding::land_travel(unit.is_wheeled(), sail),
     }
 }
 
@@ -1271,7 +1270,7 @@ fn continue_orders(
             continue;
         }
         let name = unit.unit_type.name();
-        let travel = player_travel(unit.unit_type.domain(), sail, &ports);
+        let travel = player_travel(unit.unit_type, sail, &ports);
         let Some(route) = find_route(unit.position, target, land.iter().copied(), &roads, travel) else {
             log.push(format!("Your {name} can no longer reach its destination."));
             commands.entity(entity).remove::<GoTo>();
@@ -1405,7 +1404,7 @@ fn preview_route(
     }
     *planned = Some(key);
     let ports: HashSet<Hex> = cities.iter().filter(|c| c.owner == PLAYER).map(|c| c.position).collect();
-    let travel = player_travel(unit.unit_type.domain(), tech.researched.contains(&Tech::Seafaring), &ports);
+    let travel = player_travel(unit.unit_type, tech.researched.contains(&Tech::Seafaring), &ports);
     let roads = road_network(tiles.iter(), cities.iter().map(|c| c.position));
     let Some(route) = find_route(unit.position, target, tiles.iter().map(|t| (t.coord, t.terrain)), &roads, travel) else {
         path.set_if_neq(PathPreview::default());
@@ -4255,7 +4254,7 @@ mod tests {
     }
 
     fn legion(moves: u32) -> Unit {
-        Unit { unit_type: UnitType::Legion, movement_left: moves, owner: PLAYER, position: Hex::ZERO, build_turns_left: None, current_build: None, fortified: false, road_credit: 0, hp: 3, level: 0, troops: Vec::new() }
+        Unit { unit_type: UnitType::Legion, movement_left: moves, owner: PLAYER, position: Hex::ZERO, build_turns_left: None, current_build: None, fortified: false, road_credit: 0, hp: 3, level: 0, troops: Vec::new(), fatigue: 0 }
     }
 
     /// A minimal app that runs `apply_actions`, with the player's capital at the origin and a

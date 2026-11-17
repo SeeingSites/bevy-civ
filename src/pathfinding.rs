@@ -28,7 +28,7 @@ pub enum StepCost {
     /// Off the roads: a whole move.
     Full,
     /// Rough ground off the roads (hills and forest 2, mountains 3). A unit with fewer moves left can
-    /// still enter, using up the rest of its turn.
+    /// still enter, but what it cannot pay is owed from its next turns (it is worn out).
     Rough(u32),
     /// Road to road: a third of a move.
     Road,
@@ -74,6 +74,8 @@ pub fn step_cost(from: Hex, to: Hex, roads: &HashMap<Hex, Road>, on_foot: bool) 
 pub struct Budget {
     pub moves: u32,
     pub road_credit: u32,
+    /// Moves owed after entering rough ground without enough left: taken from the next turns.
+    pub debt: u32,
 }
 
 impl Budget {
@@ -93,10 +95,15 @@ impl Budget {
             StepCost::Full if self.moves > 0 => self.moves -= 1,
             StepCost::Full => self.road_credit = 0,
             StepCost::Rough(cost) if self.moves > 0 => {
+                self.debt += cost.saturating_sub(self.moves);
                 self.moves = self.moves.saturating_sub(cost);
                 self.road_credit = 0;
             }
-            StepCost::Rough(_) => self.road_credit = 0,
+            // Only a part-move left from the road: it counts as one move towards the climb.
+            StepCost::Rough(cost) => {
+                self.debt += cost.saturating_sub(1);
+                self.road_credit = 0;
+            }
             StepCost::EndsTurn => *self = Budget::default(),
         }
     }
@@ -125,6 +132,18 @@ pub enum Travel<'a> {
     Sea(&'a std::collections::HashSet<Hex>),
     /// An aircraft: anywhere on the map.
     Air,
+    /// On wheels (chariots, siege guns): like on foot, but forest and mountains only along a road;
+    /// `boats` lets it cross water too.
+    Wheels { boats: bool },
+}
+
+/// How a land unit travels: on foot or on wheels, by boat once its people can sail.
+pub fn land_travel(wheeled: bool, boats: bool) -> Travel<'static> {
+    match (wheeled, boats) {
+        (true, _) => Travel::Wheels { boats },
+        (false, true) => Travel::Amphibious,
+        (false, false) => Travel::Land,
+    }
 }
 
 /// Find a path from start to end using A*, respecting how the unit travels.
@@ -153,7 +172,7 @@ pub fn find_route(
     const SCALE: u32 = 6;
     a_star(start, end, |from, to| {
         let terrain = *tile_map.get(&to)?;
-        let on_foot = matches!(travel, Travel::Land | Travel::Amphibious);
+        let on_foot = matches!(travel, Travel::Land | Travel::Amphibious | Travel::Wheels { .. });
         if on_foot && terrain != Terrain::Water {
             match step_cost(from, to, roads, true) {
                 StepCost::Free => return Some(1),
@@ -166,6 +185,14 @@ pub fn find_route(
             Travel::Amphibious => if terrain == Terrain::Water { Some(3 * SCALE) } else { terrain_cost(terrain).map(|c| c * SCALE) },
             Travel::Sea(ports) => (terrain == Terrain::Water || ports.contains(&to) || to == end).then_some(SCALE),
             Travel::Air => Some(SCALE),
+            Travel::Wheels { .. } if matches!(terrain, Terrain::Forest | Terrain::Mountain) => None,
+            Travel::Wheels { boats } => {
+                if terrain == Terrain::Water {
+                    boats.then_some(3 * SCALE)
+                } else {
+                    terrain_cost(terrain).map(|c| c * SCALE)
+                }
+            }
         }
     })
 }
@@ -208,9 +235,12 @@ pub fn turns_along(
     route
         .windows(2)
         .map(|step| {
-            if !budget.can_step() {
+            // A new turn, paying off any moves owed for rough ground first.
+            while !budget.can_step() {
                 turn += 1;
-                budget = Budget { moves: moves_at(step[0]).max(1), road_credit: 0 };
+                let fresh = moves_at(step[0]).max(1);
+                let paid = fresh.min(budget.debt);
+                budget = Budget { moves: fresh - paid, road_credit: 0, debt: budget.debt - paid };
             }
             budget.spend(cost(step[0], step[1]));
             turn
@@ -223,7 +253,7 @@ mod tests {
     use super::*;
 
     fn moves(n: u32) -> Budget {
-        Budget { moves: n, road_credit: 0 }
+        Budget { moves: n, road_credit: 0, debt: 0 }
     }
 
     #[test]
@@ -262,6 +292,12 @@ mod tests {
         let mut tired = moves(1);
         tired.spend(land_step(route[0], route[1], Some(Terrain::Mountain), &HashMap::new(), true));
         assert!(!tired.can_step());
+        assert_eq!(tired.debt, 2, "a mountain wears a one-move unit out for two more turns");
+        // So a one-move unit takes two turns a hill and three a mountain, and one a tile on the flat.
+        let terrain = |h: Hex| if h.x == 2 { Terrain::Hills } else if h.x == 3 { Terrain::Mountain } else { Terrain::Plains };
+        let rough = |a: Hex, b: Hex| land_step(a, b, Some(terrain(b)), &HashMap::new(), true);
+        let walk: Vec<Hex> = (0..=4).map(|q| Hex::new(q, 0)).collect();
+        assert_eq!(turns_along(&walk, moves(1), |_| 1, rough), vec![0, 1, 3, 6]);
         assert_eq!(land_step(route[0], route[1], Some(Terrain::Mountain), &roads, true), StepCost::Free, "railroad over the pass");
         // Leaving the road with a part-move left still buys one step.
         let mut budget = moves(1);
@@ -318,5 +354,19 @@ mod tests {
         assert!(find_path(port, Hex::new(6, 0), strait().into_iter(), Travel::Sea(&ports)).is_none());
         // Inland tiles behind the port are out of reach.
         assert!(find_path(Hex::new(3, 0), Hex::new(0, 0), strait().into_iter(), Travel::Sea(&HashSet::new())).is_none());
+    }
+
+    #[test]
+    fn wheels_keep_to_open_ground_or_the_road() {
+        // A forest wall at x = 2 except for a road at (2, 0).
+        let tiles: Vec<(Hex, Terrain)> = (-1..=4)
+            .flat_map(|q| (-3..=3).map(move |r| (Hex::new(q, r), if q == 2 { Terrain::Forest } else { Terrain::Plains })))
+            .collect();
+        let none = HashMap::new();
+        assert!(find_route(Hex::new(0, 1), Hex::new(4, 1), tiles.iter().copied(), &none, land_travel(true, false)).is_none());
+        assert!(find_route(Hex::new(0, 1), Hex::new(4, 1), tiles.iter().copied(), &none, land_travel(false, false)).is_some());
+        let road: HashMap<Hex, Road> = [Hex::new(1, 0), Hex::new(2, 0), Hex::new(3, 0)].into_iter().map(|h| (h, Road::Road)).collect();
+        let route = find_route(Hex::new(0, 1), Hex::new(4, 1), tiles.iter().copied(), &road, land_travel(true, false)).expect("along the road");
+        assert!(route.contains(&Hex::new(2, 0)));
     }
 }

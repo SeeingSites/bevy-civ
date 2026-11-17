@@ -247,7 +247,7 @@ pub fn process_ai_turn(
                 .filter(|(pos, other, strength)| *other == owner && *strength > 0.0 && is_land(*pos))
                 .map(|(pos, _, _)| *pos)
                 .min_by_key(|pos| here.distance_to(*pos));
-            if let Some(path) = army.filter(|a| *a != here).and_then(|a| find_route(here, a, land.iter().copied(), &roads, Travel::Land)) {
+            if let Some(path) = army.filter(|a| *a != here).and_then(|a| find_route(here, a, land.iter().copied(), &roads, crate::pathfinding::land_travel(unit.unit_type.is_wheeled(), false))) {
                 for next in path.into_iter().skip(1) {
                     if !unit.can_move() || occupied.get(&next).is_some_and(|(other, _)| *other != owner) {
                         break;
@@ -482,7 +482,7 @@ pub fn process_ai_turn(
         };
 
         if let Some(target) = goal {
-            let travel = if can_sail { Travel::Amphibious } else { Travel::Land };
+            let travel = crate::pathfinding::land_travel(unit.unit_type.is_wheeled(), can_sail);
             let enemy_armies: std::collections::HashSet<Hex> =
                 unit_snapshots.iter().filter(|(_, other, strength)| hostile(owner, *other) && *strength > 0.0).map(|(pos, _, _)| *pos).collect();
             if let Some(path) = find_route(here, target, land.iter().copied(), &roads, travel) {
@@ -576,7 +576,7 @@ mod tests {
         }
         world.insert_resource(Civilizations { players: vec![rival()] });
         let worker = world
-            .spawn(Unit { unit_type: UnitType::Worker, movement_left: 1, owner: 1, position: Hex::ZERO, build_turns_left: None, current_build: None, fortified: false, road_credit: 0, hp: 3, level: 0, troops: Vec::new() })
+            .spawn(Unit { unit_type: UnitType::Worker, movement_left: 1, owner: 1, position: Hex::ZERO, build_turns_left: None, current_build: None, fortified: false, road_credit: 0, hp: 3, level: 0, troops: Vec::new(), fatigue: 0 })
             .id();
         (world, worker)
     }
@@ -655,7 +655,7 @@ mod tests {
 
     fn soldier(world: &mut World, kind: UnitType, owner: u32, q: i32) -> Entity {
         world
-            .spawn(Unit { unit_type: kind, movement_left: 1, owner, position: Hex::new(q, 0), build_turns_left: None, current_build: None, fortified: false, road_credit: 0, hp: 3, level: 0, troops: Vec::new() })
+            .spawn(Unit { unit_type: kind, movement_left: 1, owner, position: Hex::new(q, 0), build_turns_left: None, current_build: None, fortified: false, road_credit: 0, hp: 3, level: 0, troops: Vec::new(), fatigue: 0 })
             .id()
     }
 
