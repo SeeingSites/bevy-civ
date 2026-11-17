@@ -165,7 +165,7 @@ pub fn choose(city: &CityView, civ: &CivView, supplies: &Supplies, rng: &mut imp
     }
     // Expand while there is room: a settler at a time for a small empire, more for a big one.
     let settlers_wanted = 1 + civ.cities / 6;
-    if civ.room_to_expand && civ.settlers < settlers_wanted && civ.cities < 24 && city.population >= 3 && rng.gen_bool(0.5) {
+    if civ.room_to_expand && civ.settlers < settlers_wanted && civ.cities < 24 && city.population >= 3 && !city.threatened && rng.gen_bool(0.5) {
         return unit(UnitType::Settler);
     }
     // Caravans carry shields to a wonder going up elsewhere, or open trade routes.

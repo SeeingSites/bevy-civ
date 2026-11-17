@@ -650,18 +650,27 @@ pub fn spawn_unit(commands: &mut Commands, coord: Hex, unit_type: UnitType, owne
         .id()
 }
 
-/// Most units in one army (the leader and its troops).
-pub const ARMY_SIZE: usize = 3;
+/// Most units in one army (the leader and its troops); Sun Tzu's War Academy adds one more.
+pub const ARMY_SIZE: usize = 4;
+
+/// How many units an army of this owner can hold.
+pub fn army_capacity(sun_tzu: bool) -> usize {
+    ARMY_SIZE + usize::from(sun_tzu)
+}
+
+/// Each member beyond the first makes an army fight this much harder (on top of pooling their
+/// hit points).
+pub const ARMY_MEMBER_BONUS: f32 = 0.1;
 
 /// Units that can join an army: ground troops that are not already in one.
 pub fn can_join_army(unit: &Unit) -> bool {
     unit.unit_type.is_army() && unit.troops.is_empty()
 }
 
-/// Forms an army from units standing together: the strongest leads, up to two more march with it.
-/// Returns the leader's index in `units` and the indices of the units absorbed (to remove), or
-/// None if fewer than two units can join.
-pub fn plan_army(units: &[&Unit]) -> Option<(usize, Vec<usize>)> {
+/// Forms an army from units standing together: the strongest leads, and up to `capacity` in all
+/// march with it. Returns the leader's index in `units` and the indices of the units absorbed (to
+/// remove), or None if fewer than two units can join.
+pub fn plan_army(units: &[&Unit], capacity: usize) -> Option<(usize, Vec<usize>)> {
     let mut eligible: Vec<usize> = (0..units.len()).filter(|i| can_join_army(units[*i])).collect();
     if eligible.len() < 2 {
         return None;
@@ -671,8 +680,25 @@ pub fn plan_army(units: &[&Unit]) -> Option<(usize, Vec<usize>)> {
         (a + d) * 10 + u.level as u32
     };
     eligible.sort_by_key(|i| std::cmp::Reverse(power(units[*i])));
-    eligible.truncate(ARMY_SIZE);
+    eligible.truncate(capacity);
     Some((eligible[0], eligible[1..].to_vec()))
+}
+
+impl Unit {
+    /// Units in this army, the leader included (1 for a lone unit).
+    pub fn members(&self) -> u32 {
+        1 + self.troops.len() as u32
+    }
+
+    /// Takes a unit into this army, if there is room: its hit points come with it.
+    pub fn take_into_army(&mut self, recruit: &Unit, capacity: usize) -> bool {
+        if !self.is_army_group() || self.members() as usize >= capacity || !can_join_army(recruit) {
+            return false;
+        }
+        self.troops.push(recruit.unit_type);
+        self.hp = (self.hp + recruit.hp).min(self.max_hp());
+        true
+    }
 }
 
 /// Makes `leader` an army with `members` marching in it (their wounds come along).
@@ -696,7 +722,7 @@ mod army_tests {
     fn the_strongest_leads_and_the_army_pools_hit_points() {
         let units = [unit(UnitType::Spearman, 3, 0), unit(UnitType::Musketman, 2, 1), unit(UnitType::Worker, 3, 0), unit(UnitType::Knight, 3, 0), unit(UnitType::Warrior, 3, 0)];
         let refs: Vec<&Unit> = units.iter().collect();
-        let (leader, absorbed) = plan_army(&refs).unwrap();
+        let (leader, absorbed) = plan_army(&refs, 3).unwrap();
         assert_eq!(units[leader].unit_type, UnitType::Musketman);
         assert_eq!(absorbed.len(), 2);
         assert!(!absorbed.contains(&2), "workers do not join");
@@ -708,6 +734,12 @@ mod army_tests {
         assert_eq!(army.troop_moves(), 1);
         assert!(army.display_name().starts_with("Army (Musketman"));
         // An army does not join another.
-        assert!(plan_army(&[&army, &units[0]]).is_none());
+        assert!(plan_army(&[&army, &units[0]], 3).is_none());
+        // A unit joins the army while there is room: 4 units, or 5 with Sun Tzu.
+        assert!(army.take_into_army(&units[0], army_capacity(false)));
+        assert_eq!((army.members(), army.max_hp(), army.hp), (4, 16, 11));
+        assert!(!army.take_into_army(&units[4], army_capacity(false)), "full");
+        assert!(army.take_into_army(&units[4], army_capacity(true)));
+        assert!(!army.take_into_army(&units[2], army_capacity(true)), "workers never join");
     }
 }
