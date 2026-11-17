@@ -59,11 +59,18 @@ pub struct SoundSettings {
     pub enabled: bool,
     /// 0.0 to 1.0.
     pub volume: f32,
+    /// Background music (played only while sound is on).
+    #[serde(default = "music_default")]
+    pub music: bool,
+}
+
+fn music_default() -> bool {
+    true
 }
 
 impl Default for SoundSettings {
     fn default() -> Self {
-        Self { enabled: true, volume: 0.6 }
+        Self { enabled: true, volume: 0.6, music: true }
     }
 }
 
@@ -74,6 +81,15 @@ impl SoundSettings {
 
     pub fn toggle(&mut self) {
         self.enabled = !self.enabled;
+        self.save();
+    }
+
+    pub fn toggle_music(&mut self) {
+        self.music = !self.music;
+        self.save();
+    }
+
+    fn save(&self) {
         if let Ok(json) = serde_json::to_string(self) {
             write_setting(SETTINGS_KEY, &json);
         }
@@ -89,7 +105,7 @@ impl Plugin for SfxPlugin {
     fn build(&self, app: &mut App) {
         app.add_event::<Sfx>().insert_resource(SoundSettings::load());
         #[cfg(feature = "audio")]
-        app.add_systems(Startup, load_sounds).add_systems(Last, play_sounds);
+        app.add_systems(Startup, load_sounds).add_systems(Last, (play_sounds, play_music));
     }
 }
 
@@ -98,8 +114,47 @@ impl Plugin for SfxPlugin {
 struct Sounds(std::collections::HashMap<Sfx, Handle<AudioSource>>);
 
 #[cfg(feature = "audio")]
+#[derive(Resource)]
+struct MusicTrack(Handle<AudioSource>);
+
+/// The background music player, while it plays.
+#[cfg(feature = "audio")]
+#[derive(Component)]
+struct MusicPlayer;
+
+#[cfg(feature = "audio")]
 fn load_sounds(mut commands: Commands, assets: Res<AssetServer>) {
     commands.insert_resource(Sounds(Sfx::ALL.into_iter().map(|sfx| (sfx, assets.load(sfx.file()))).collect()));
+    commands.insert_resource(MusicTrack(assets.load("sounds/music.wav")));
+}
+
+/// Keeps the background music looping during a game while sound and music are on.
+#[cfg(feature = "audio")]
+fn play_music(
+    settings: Res<SoundSettings>,
+    track: Option<Res<MusicTrack>>,
+    state: Res<State<crate::AppState>>,
+    players: Query<Entity, With<MusicPlayer>>,
+    mut commands: Commands,
+) {
+    let wanted = settings.enabled && settings.music && settings.volume > 0.0 && *state.get() == crate::AppState::Playing;
+    match (wanted, players.is_empty()) {
+        (true, true) => {
+            if let Some(track) = track {
+                commands.spawn((
+                    MusicPlayer,
+                    AudioPlayer(track.0.clone()),
+                    PlaybackSettings::LOOP.with_volume(bevy::audio::Volume::new(settings.volume * 0.35)),
+                ));
+            }
+        }
+        (false, false) => {
+            for entity in &players {
+                commands.entity(entity).despawn_recursive();
+            }
+        }
+        _ => {}
+    }
 }
 
 /// Plays each requested sound once per frame, however many times it was asked for.

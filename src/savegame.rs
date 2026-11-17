@@ -267,7 +267,12 @@ pub fn restore_world(
     commands.insert_resource(game.rivers.clone());
     commands.insert_resource(game.religions.clone());
     commands.insert_resource(game.villages.clone());
-    let mut log = GameLog { lines: game.log.clone(), written: game.log.len() };
+    let mut log = GameLog {
+        lines: game.log.clone(),
+        written: game.log.len(),
+        history: game.log.iter().map(|l| (game.state.turn, l.clone())).collect(),
+        turn: game.state.turn,
+    };
     log.push(format!("Game loaded: turn {}.", game.state.turn));
     commands.insert_resource(log);
     commands.insert_resource(Dirty { map: true, ui: true });
@@ -356,7 +361,7 @@ mod tests {
             worked: Vec::new(),
             land: (0, 0, 0),
         };
-        let unit = Unit { unit_type: UnitType::Legion, movement_left: 1, owner: PLAYER, position: Hex::new(2, 2), build_turns_left: None, current_build: None, fortified: true, road_credit: 0, hp: 2, level: 1, troops: Vec::new() };
+        let unit = Unit { unit_type: UnitType::Legion, movement_left: 1, owner: PLAYER, position: Hex::new(2, 2), build_turns_left: None, current_build: None, fortified: true, road_credit: 0, hp: 2, level: 1, troops: Vec::new(), fatigue: 0 };
         SaveGame {
             version: VERSION,
             state: GameState { turn: 42, ..Default::default() },

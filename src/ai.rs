@@ -168,6 +168,7 @@ pub fn process_ai_turn(
     let roads = road_network(tiles.iter(), city_positions.iter().map(|(p, _)| *p));
     let terrain_at: HashMap<Hex, Terrain> = land.iter().copied().collect();
     let polluted: std::collections::HashSet<Hex> = tiles.iter().filter(|t| t.is_polluted()).map(|t| t.coord).collect();
+    let forts: std::collections::HashSet<Hex> = tiles.iter().filter(|t| t.improvements.contains(&Improvement::Fortress)).map(|t| t.coord).collect();
     let resources: std::collections::HashSet<Hex> = tiles.iter().filter(|t| t.resource.is_some()).map(|t| t.coord).collect();
     // How good a place is for a city: the land around it (grass and plains best), the sea for a
     // harbour, and any resources within reach.
@@ -247,7 +248,7 @@ pub fn process_ai_turn(
                 .filter(|(pos, other, strength)| *other == owner && *strength > 0.0 && is_land(*pos))
                 .map(|(pos, _, _)| *pos)
                 .min_by_key(|pos| here.distance_to(*pos));
-            if let Some(path) = army.filter(|a| *a != here).and_then(|a| find_route(here, a, land.iter().copied(), &roads, Travel::Land)) {
+            if let Some(path) = army.filter(|a| *a != here).and_then(|a| find_route(here, a, land.iter().copied(), &roads, crate::pathfinding::land_travel(unit.unit_type.is_wheeled(), false))) {
                 for next in path.into_iter().skip(1) {
                     if !unit.can_move() || occupied.get(&next).is_some_and(|(other, _)| *other != owner) {
                         break;
@@ -357,6 +358,14 @@ pub fn process_ai_turn(
             // Pollution is cleaned up where the worker stands.
             if polluted.contains(&here) && owns(here, owner) {
                 unit.start_build(Improvement::Pollution);
+                continue;
+            }
+            // A hill or mountain of ours with hostile armies close by: fortify it.
+            let high = matches!(terrain_at.get(&here), Some(Terrain::Hills | Terrain::Mountain));
+            let threatened = unit_snapshots.iter().any(|(pos, other, strength)| hostile(owner, *other) && *strength > 0.0 && pos.distance_to(here) <= 4);
+            let knows_construction = civs.players.iter().any(|c| c.id == owner && c.tech.researched.contains(&Tech::Construction));
+            if high && threatened && knows_construction && owns(here, owner) && !forts.contains(&here) && !city_positions.iter().any(|(p, _)| *p == here) {
+                unit.start_build(Improvement::Fortress);
                 continue;
             }
             // No road work: farm the flat land and mine the hills inside the borders.
@@ -482,7 +491,7 @@ pub fn process_ai_turn(
         };
 
         if let Some(target) = goal {
-            let travel = if can_sail { Travel::Amphibious } else { Travel::Land };
+            let travel = crate::pathfinding::land_travel(unit.unit_type.is_wheeled(), can_sail);
             let enemy_armies: std::collections::HashSet<Hex> =
                 unit_snapshots.iter().filter(|(_, other, strength)| hostile(owner, *other) && *strength > 0.0).map(|(pos, _, _)| *pos).collect();
             if let Some(path) = find_route(here, target, land.iter().copied(), &roads, travel) {
@@ -576,7 +585,7 @@ mod tests {
         }
         world.insert_resource(Civilizations { players: vec![rival()] });
         let worker = world
-            .spawn(Unit { unit_type: UnitType::Worker, movement_left: 1, owner: 1, position: Hex::ZERO, build_turns_left: None, current_build: None, fortified: false, road_credit: 0, hp: 3, level: 0, troops: Vec::new() })
+            .spawn(Unit { unit_type: UnitType::Worker, movement_left: 1, owner: 1, position: Hex::ZERO, build_turns_left: None, current_build: None, fortified: false, road_credit: 0, hp: 3, level: 0, troops: Vec::new(), fatigue: 0 })
             .id();
         (world, worker)
     }
@@ -655,7 +664,7 @@ mod tests {
 
     fn soldier(world: &mut World, kind: UnitType, owner: u32, q: i32) -> Entity {
         world
-            .spawn(Unit { unit_type: kind, movement_left: 1, owner, position: Hex::new(q, 0), build_turns_left: None, current_build: None, fortified: false, road_credit: 0, hp: 3, level: 0, troops: Vec::new() })
+            .spawn(Unit { unit_type: kind, movement_left: 1, owner, position: Hex::new(q, 0), build_turns_left: None, current_build: None, fortified: false, road_credit: 0, hp: 3, level: 0, troops: Vec::new(), fatigue: 0 })
             .id()
     }
 

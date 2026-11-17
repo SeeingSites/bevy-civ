@@ -186,12 +186,18 @@ pub fn keyboard_input(
         (KeyCode::KeyX, Action::Transform),
         (KeyCode::KeyO, Action::Build(Improvement::Fortress)),
         (KeyCode::KeyP, Action::Pillage),
+        (KeyCode::KeyZ, Action::Sentry),
+        (KeyCode::KeyJ, Action::JoinCity),
+        (KeyCode::Backspace, Action::Undo),
         (KeyCode::KeyB, Action::FoundCity),
         (KeyCode::KeyT, Action::TradeRoute),
         (KeyCode::F2, Action::Save),
     ];
+    let ctrl = keys.any_pressed([KeyCode::ControlLeft, KeyCode::ControlRight, KeyCode::SuperLeft, KeyCode::SuperRight]);
     for (key, action) in bindings {
         if keys.just_pressed(key) {
+            // Ctrl+Z (Cmd+Z) undoes the last move; Z alone is sentry.
+            let action = if key == KeyCode::KeyZ && ctrl { Action::Undo } else { action };
             actions.send(action);
         }
     }
@@ -207,6 +213,10 @@ pub fn keyboard_input(
     }
     if keys.just_pressed(KeyCode::KeyG) {
         toggle(Modal::Trade, &mut ui);
+    }
+    if keys.just_pressed(KeyCode::KeyL) {
+        ui.messages_page = 0;
+        toggle(Modal::Messages, &mut ui);
     }
     if keys.just_pressed(KeyCode::KeyY) {
         toggle(Modal::Empire, &mut ui);

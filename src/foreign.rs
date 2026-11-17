@@ -82,6 +82,8 @@ pub enum OfferKind {
     BuyFromUs(Good, i32),
     /// They offer to sell us a resource for this much gold a turn.
     SellToUs(Good, i32),
+    /// A right of passage between our peoples.
+    Passage,
 }
 
 /// A message from another leader waiting for the player's answer.
@@ -480,6 +482,12 @@ pub fn answer_offer(ctx: &mut Ctx, accept: bool) {
             "A wise choice."
         }
         (OfferKind::Peace, false) => "Then the war goes on.",
+        (OfferKind::Passage, true) => {
+            ctx.diplomacy.grant_passage(PLAYER, civ);
+            ctx.log.push(format!("We grant {name} a right of passage: our units may pass through and share tiles with theirs."));
+            "Our roads are open to each other."
+        }
+        (OfferKind::Passage, false) => "As you wish. Our soldiers will keep to our own lands.",
         (OfferKind::Tribute(amount), true) => {
             let paid = amount.min(ctx.state.gold);
             ctx.state.gold -= paid;
@@ -655,6 +663,8 @@ pub fn turn(ctx: &mut Ctx, fog: &FogOfWar, supplies: &Supplies, units: &[(Hex, u
                 (Some(get), Some(give)) => Some((OfferKind::TechSwap { give, get }, format!("Our scholars would trade {} for your knowledge of {}.", get.name(), give.name()), 12)),
                 _ => None,
             }
+        } else if treaty == Treaty::Peace && attitude >= 10 && !ctx.diplomacy.has_passage(PLAYER, id) && rng.gen_bool(0.08) {
+            Some((OfferKind::Passage, "Let our peoples pass through each other's lands as friends.".to_string(), 25))
         } else if attitude >= 15 && rng.gen_bool(0.15) {
             alive
                 .iter()

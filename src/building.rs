@@ -62,17 +62,18 @@ pub enum Building {
     Apollo,
     CureForCancer,
     Manhattan,
+    UnitedNations,
 }
 
 impl Building {
-    pub const ALL: [Building; 58] = [
+    pub const ALL: [Building; 59] = [
         Building::Granary, Building::Barracks, Building::Library, Building::Marketplace, Building::Walls,
         Building::Aqueduct, Building::University, Building::Bank, Building::Factory, Building::Harbor,
         Building::Temple, Building::Courthouse, Building::Colosseum, Building::Cathedral, Building::SewerSystem, Building::StockExchange,
         Building::Observatory, Building::ResearchLab, Building::PowerPlant, Building::PoliceStation, Building::Supermarket, Building::MassTransit, Building::RecyclingCenter, Building::CoastalFortress, Building::Airport, Building::SdiDefense, Building::ForbiddenPalace,
         Building::SpaceStructure, Building::SpaceComponent, Building::SpaceModule, Building::Pyramids,
         Building::GreatLibrary, Building::HangingGardens, Building::Colossus, Building::Oracle,
-        Building::GreatLighthouse, Building::GreatWall, Building::StatueOfZeus, Building::Mausoleum, Building::Copernicus, Building::SunTzu, Building::MarcoPolo, Building::KingRichards, Building::Michelangelo, Building::Leonardo, Building::Bach, Building::Magellan, Building::Newton, Building::AdamSmith, Building::Shakespeare, Building::Darwin, Building::Liberty, Building::HooverDam, Building::Eiffel, Building::Internet, Building::Apollo, Building::CureForCancer, Building::Manhattan,
+        Building::GreatLighthouse, Building::GreatWall, Building::StatueOfZeus, Building::Mausoleum, Building::Copernicus, Building::SunTzu, Building::MarcoPolo, Building::KingRichards, Building::Michelangelo, Building::Leonardo, Building::Bach, Building::Magellan, Building::Newton, Building::AdamSmith, Building::Shakespeare, Building::Darwin, Building::Liberty, Building::HooverDam, Building::Eiffel, Building::Internet, Building::Apollo, Building::CureForCancer, Building::Manhattan, Building::UnitedNations,
     ];
 
     pub fn name(&self) -> &'static str {
@@ -98,6 +99,7 @@ impl Building {
             Building::SdiDefense => "SDI Defense",
             Building::ForbiddenPalace => "Forbidden Palace",
             Building::Manhattan => "Manhattan Project",
+            Building::UnitedNations => "United Nations",
             Building::Factory => "Factory",
             Building::Harbor => "Harbor",
             Building::Temple => "Temple",
@@ -161,6 +163,7 @@ impl Building {
             Building::SdiDefense => 160,
             Building::ForbiddenPalace => 150,
             Building::Manhattan => 500,
+            Building::UnitedNations => 600,
             Building::Factory => 150,
             Building::Harbor => 60,
             Building::Temple => 30,
@@ -224,6 +227,7 @@ impl Building {
             Building::SdiDefense => Some(crate::tech::Tech::Superconductors),
             Building::ForbiddenPalace => Some(crate::tech::Tech::Monarchy),
             Building::Manhattan => Some(crate::tech::Tech::NuclearFission),
+            Building::UnitedNations => Some(crate::tech::Tech::Computers),
             Building::Factory => Some(crate::tech::Tech::Industrialization),
             Building::Harbor => Some(crate::tech::Tech::Seafaring),
             Building::Temple => Some(crate::tech::Tech::Mysticism),
@@ -340,7 +344,7 @@ impl Building {
 
     /// The wonders added after the first six (each with its own effect, mostly handled in the game's turn).
     fn is_later_wonder(&self) -> bool {
-        matches!(self, Building::GreatWall | Building::StatueOfZeus | Building::Mausoleum | Building::Copernicus | Building::SunTzu | Building::MarcoPolo | Building::KingRichards | Building::Michelangelo | Building::Leonardo | Building::Bach | Building::Magellan | Building::Newton | Building::AdamSmith | Building::Shakespeare | Building::Darwin | Building::Liberty | Building::HooverDam | Building::Eiffel | Building::Internet | Building::Apollo | Building::CureForCancer | Building::Manhattan)
+        matches!(self, Building::GreatWall | Building::StatueOfZeus | Building::Mausoleum | Building::Copernicus | Building::SunTzu | Building::MarcoPolo | Building::KingRichards | Building::Michelangelo | Building::Leonardo | Building::Bach | Building::Magellan | Building::Newton | Building::AdamSmith | Building::Shakespeare | Building::Darwin | Building::Liberty | Building::HooverDam | Building::Eiffel | Building::Internet | Building::Apollo | Building::CureForCancer | Building::Manhattan | Building::UnitedNations)
     }
 
     pub fn is_wonder(&self) -> bool {
@@ -453,6 +457,7 @@ impl Building {
             Building::Apollo => "the whole world revealed",
             Building::CureForCancer => "+2 content in every city",
             Building::Manhattan => "lets every people who knows Rocketry build Nuclear Missiles",
+            Building::UnitedNations => "every 10 turns the world votes for Secretary-General: two thirds of the votes win a diplomatic victory",
             _ => "",
         }
     }

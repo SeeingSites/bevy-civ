@@ -22,6 +22,9 @@ pub struct Unit {
     /// as its best unit with every member's hit points, and moves at its slowest member's pace.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub troops: Vec<UnitType>,
+    /// Moves still owed for climbing rough ground: taken from the next turns' allowance.
+    #[serde(default)]
+    pub fatigue: u32,
 }
 
 #[derive(Component)]
@@ -356,6 +359,17 @@ impl UnitType {
         }
     }
 
+    /// The odds that a fighter of this kind shoots down a bomber of that kind it intercepts.
+    pub fn interception_odds(fighter: UnitType, bomber: UnitType) -> f64 {
+        let (attack, defence) = (fighter.stats().0 as f64, bomber.stats().1 as f64);
+        attack / (attack + defence).max(1.0)
+    }
+
+    /// Wheeled: keeps to open ground unless a road leads through forest or mountains.
+    pub fn is_wheeled(&self) -> bool {
+        matches!(self, UnitType::WarChariot | UnitType::Catapult | UnitType::Cannon | UnitType::Artillery | UnitType::RadarArtillery)
+    }
+
     /// A military unit that fights on the ground: the only kind that holds or takes cities.
     pub fn is_army(&self) -> bool {
         self.is_military() && self.domain() == Domain::Land
@@ -515,7 +529,7 @@ impl Unit {
 
     /// What it can still move this turn.
     pub fn budget(&self) -> crate::pathfinding::Budget {
-        crate::pathfinding::Budget { moves: self.movement_left, road_credit: self.road_credit }
+        crate::pathfinding::Budget { moves: self.movement_left, road_credit: self.road_credit, debt: 0 }
     }
 
     /// Whether it can take another step this turn (part-moves left on a road count).
@@ -535,7 +549,9 @@ impl Unit {
         budget.spend(cost);
         self.movement_left = budget.moves;
         self.road_credit = budget.road_credit;
+        self.fatigue += budget.debt;
     }
+
 
     /// Gives up the rest of this turn's movement.
     pub fn end_move(&mut self) {
@@ -543,9 +559,11 @@ impl Unit {
         self.road_credit = 0;
     }
 
-    /// Starts a turn with a full allowance.
+    /// Starts a turn with a full allowance, less any moves still owed for rough ground.
     pub fn refresh(&mut self, moves: u32) {
-        self.movement_left = moves;
+        let paid = moves.min(self.fatigue);
+        self.fatigue -= paid;
+        self.movement_left = moves - paid;
         self.road_credit = 0;
     }
 
@@ -580,6 +598,7 @@ pub fn spawn_unit(commands: &mut Commands, coord: Hex, unit_type: UnitType, owne
             hp: 3,
             level: 0,
             troops: Vec::new(),
+            fatigue: 0,
         })
         .id()
 }
@@ -623,7 +642,7 @@ mod army_tests {
     use super::*;
 
     fn unit(kind: UnitType, hp: u32, level: u8) -> Unit {
-        Unit { unit_type: kind, movement_left: 1, owner: 0, position: Hex::ZERO, build_turns_left: None, current_build: None, fortified: false, road_credit: 0, hp, level, troops: Vec::new() }
+        Unit { unit_type: kind, movement_left: 1, owner: 0, position: Hex::ZERO, build_turns_left: None, current_build: None, fortified: false, road_credit: 0, hp, level, troops: Vec::new(), fatigue: 0 }
     }
 
     #[test]

@@ -50,6 +50,8 @@ pub enum Modal {
     Help,
     /// Save, sound, and leaving the game.
     Game,
+    /// Every message of the game so far (or only the great events).
+    Messages,
 }
 
 /// Pages of the empire advisor.
@@ -122,11 +124,11 @@ fn help_lines(topic: HelpTopic) -> Vec<String> {
     match topic {
         HelpTopic::Basics => [
             "Click a unit or city to select it; click again or press Tab for the next unit on that tile. Click a tile (or right-click) to move; far destinations become standing orders. Hover over a tile to see the route and how many turns it takes.",
-            "Space: skip a unit (or go to a city that needs a project, then end the turn). Enter: end the turn. N: next unit. H: fortify or sleep. Esc: close or deselect.",
+            "Space: skip a unit (or go to a city that needs a project, then end the turn). Enter: end the turn. N: next unit. H: fortify or sleep. Z: sentry (sleep until an enemy comes near). J: a worker or settler joins the city it stands in. Ctrl+Z or Backspace: take back the last move. L: messages. Esc: close or deselect.",
             "Workers and Engineers: F farm, M mine, R road (railroad on a road, with Steam Power), O fortress (Construction), X clear land or clean pollution, K automate. Settlers: B found a city.",
             "U uses the selected unit: a great person's gift, a General forming an army, a Missionary preaching, a caravan helping a wonder. T opens a caravan's trade route. P pillages enemy land. Diplomats act from the unit panel next to a foreign city.",
             "Q science, E foreign affairs, G trade, Y empire (government, rates, cities, military, score), F1 this encyclopedia, V sound, F2 save a file (the game also saves itself every turn).",
-            "Roads triple movement for troops on foot; railroads make it free. Hills and forest cost 2 moves, mountains 3. Troops cross water in boats once you know Seafaring.",
+            "Terrain: hills and forest cost 2 moves, mountains 3. A unit without the moves still enters, but is worn out for as many turns as it owes (a one-move unit takes 2 turns a hill, 3 a mountain). Roads triple movement and railroads make it free. Wheeled units - chariots, catapults, cannon, artillery - cannot enter forest or mountains except along a road. Troops cross water in boats once you know Seafaring.",
             "Tribal villages dot the land: the first unit in finds gold, a technology, warriors who join you, maps of the area - or hostile tribesmen (Scouts rarely meet them).",
         ]
         .into_iter()
@@ -163,6 +165,7 @@ fn help_lines(topic: HelpTopic) -> Vec<String> {
             "Each working citizen works one tile of its city's area, and the city's own tile is worked for free. Open a city to see each tile's food, shields and gold (worked tiles ringed in green); click a tile to move a citizen there or off it, or let the governor choose. Farms, mines, roads, railroads, resources and rivers make tiles richer.",
             "Culture from temples, cathedrals, colosseums, libraries, universities and wonders widens a city's borders over time (2 tiles, 3 at 100, 4 at 1,000, 5 at 5,000). Where borders meet, the land goes to the city with the stronger culture for its distance, so a great culture pushes its neighbours' borders back. A city in disorder next to a much greater culture may defect to it.",
             "Corruption grows with distance from the capital and is halved by a Courthouse. A city keeps training the same unit until told otherwise; a finished building or wonder leaves it waiting for its next project - unless its build queue holds more (switch the city panel to Add to queue and pick up to six projects).",
+            "Pollution and nuclear fallout foul the land; past 15 fouled tiles in the world, global warming now and then turns land drier. Clean it up with workers; Mass Transit and Recycling Centers prevent it.",
             "Projects other than wonders can be bought with gold, or rushed under Despotism and Communism by putting citizens to forced labour. Luxury (Empire advisor) makes one citizen happy for every 2 points.",
         ]
         .into_iter()
@@ -182,11 +185,13 @@ fn help_lines(topic: HelpTopic) -> Vec<String> {
             "Armies: a Great General in one of your cities forms up to three land units into one army that fights as its best unit with the hit points of all, and moves at its slowest member's pace.".to_string(),
             "Artillery, some ships and bombers bombard without risk. Troops cannot slip past enemy troops (zone of control). Pillage (P) wrecks improvements on enemy land; computer raiders do the same to yours.".to_string(),
             "A captured city resists for a while (longer for a big one; a garrison of two halves it) and produces nothing. Under a Republic or Democracy a long war makes citizens unhappy (a Police Station halves it).".to_string(),
-            "Older units are upgraded in your cities for gold once the better unit can be built there.".to_string(),
+            "Older units are upgraded in your cities for gold once the better unit can be built there. Under Monarchy, Republic, Communism or Fundamentalism, once you know Gunpowder, a city can draft a citizen into its best defender once a turn.".to_string(),
+            "Air: enemy fighters that have not flown this turn intercept bombers attacking within 3 tiles of them, shooting most down; a bomber that survives is damaged.".to_string(),
             "Nuclear weapons: once anyone has built the Manhattan Project (Nuclear Fission), every people that knows Rocketry can build Nuclear Missiles. Select a missile, click a target within 12 tiles, then click it again to launch: everything within a tile is destroyed, a city there loses half its people and two buildings, fallout spoils the land, the victim goes to war with you and every other people trusts you less. An SDI Defense (Superconductors) shoots down missiles aimed within 3 tiles of its city.".to_string(),
         ],
         HelpTopic::Victory => vec![
             "Conquest: take every rival city. Domination: hold two thirds of the cities in the world (at least five).".to_string(),
+            "Diplomacy: once the United Nations (Computers) stands, every 10 turns the world votes for Secretary-General between its owner and the highest-scoring other people. Each people votes for itself or for the candidate it likes better; two thirds of all the votes win.".to_string(),
             "Space: the race to Alpha Centauri, the nearest star. Research Space Flight, Plastics and Superconductors; cities with a Factory build 4 Space Structures, 2 to 4 Components (engines) and 2 Modules. Launch from the Empire advisor's Space page: the voyage takes 12 turns, 2 fewer for each extra engine. The first ship to arrive wins - unless its capital falls first.".to_string(),
             format!("Culture: reach {} culture points (in a game of {} turns; scaled to the game's length) and twice as much as any rival.", bevy_civ::culture::VICTORY_CULTURE, 400),
             "Score: if nobody has won by the last turn (chosen when the game begins), the highest score wins. Score counts 2 points a citizen, 10 a technology and 50 a wonder, for everyone alike. A rival who holds two thirds of the cities wins by domination.".to_string(),
@@ -209,6 +214,9 @@ pub struct UiState {
     pub end_dismissed: bool,
     /// Clicking a project adds it to the city's build queue instead of starting it now.
     pub queue_mode: bool,
+    /// The Messages window: page (0 = the latest), and whether only great events are shown.
+    pub messages_page: usize,
+    pub highlights_only: bool,
 }
 
 /// Pages of the city panel.
@@ -261,6 +269,9 @@ pub struct MenuState {
     pub difficulty: crate::Difficulty,
     /// Game length in turns (0 until chosen: the longest).
     pub last_turn: u32,
+    /// New World options (None until chosen: normal size, five peoples).
+    pub map_size: Option<usize>,
+    pub peoples: Option<usize>,
 }
 
 #[derive(Clone)]
@@ -279,6 +290,12 @@ pub enum Command {
     HelpTopic(HelpTopic),
     ToggleGroupMove,
     ToggleQueueMode,
+    ToggleMusic,
+    /// Messages window: older (+1) or newer (-1) page.
+    MessagesPage(i32),
+    ToggleHighlights,
+    /// From the end of the game: the chronicle of its great events.
+    Chronicle,
     /// Put the end-of-game window away (the outcome stays on screen).
     DismissEnd,
     /// Start menu: carry on from the automatic save.
@@ -290,6 +307,8 @@ pub enum Command {
     TipsOff,
     ToggleTips,
     PickLength(u32),
+    PickMapSize(usize),
+    PickPeoples(usize),
     StartGame,
     BackToPeoples,
 }
@@ -735,7 +754,7 @@ pub fn rebuild_panels(
     mut dirty: ResMut<Dirty>,
     selection: Res<Selection>,
     mut ui: ResMut<UiState>,
-    (foreign, supplies, map, religions): (Res<Foreign>, Res<Supplies>, Res<MapData>, Res<bevy_civ::religion::Religions>),
+    (foreign, supplies, map, religions, last_move, log, sound_on): (Res<Foreign>, Res<Supplies>, Res<MapData>, Res<bevy_civ::religion::Religions>, Res<crate::LastMove>, Res<crate::GameLog>, Res<SoundSettings>),
     art: Res<Art>,
     state: Res<GameState>,
     tech: Res<TechState>,
@@ -764,7 +783,7 @@ pub fn rebuild_panels(
     mut modal_root: Query<(Entity, &mut Node), (With<ModalRoot>, Without<CityPanel>)>,
     mut commands: Commands,
 ) {
-    if !(dirty.ui || selection.is_changed() || ui.is_changed() || foreign.is_changed() || supplies.is_changed() || tips_on.is_changed()) {
+    if !(dirty.ui || selection.is_changed() || ui.is_changed() || foreign.is_changed() || supplies.is_changed() || tips_on.is_changed() || sound_on.is_changed()) {
         return;
     }
     dirty.ui = false;
@@ -938,6 +957,16 @@ pub fn rebuild_panels(
                     if !unit.fortified {
                         let text = if unit.unit_type.is_military() { "Fortify (H)" } else { "Sleep (H)" };
                         button(r, art, text, Command::Game(Action::Fortify), BRONZE, 15.0);
+                        if unit.unit_type.is_military() {
+                            button(r, art, "Sentry (Z)", Command::Game(Action::Sentry), BRONZE, 15.0);
+                        }
+                    }
+                    let in_own_city = cities.iter().any(|(c, _, _)| c.position == unit.position && c.owner == PLAYER);
+                    if in_own_city && matches!(unit.unit_type, UnitType::Worker | UnitType::Engineers | UnitType::Settler) {
+                        button(r, art, "Join City (J)", Command::Game(Action::JoinCity), BRONZE, 15.0);
+                    }
+                    if last_move.0.as_ref().is_some_and(|(e, _)| Some(*e) == selection.unit) {
+                        button(r, art, "Undo move (Ctrl+Z)", Command::Game(Action::Undo), BRONZE, 15.0);
                     }
                     button(r, art, "Skip (Space)", Command::Game(Action::Skip), BRONZE, 15.0);
                     button(r, art, "Done", Command::Game(Action::Deselect), BRONZE, 15.0);
@@ -1050,6 +1079,12 @@ pub fn rebuild_panels(
                 None => {
                     p.spawn(label(&art.font_bold, "Building: nothing - choose something below", 14.0, RED));
                 }
+            }
+            // The draft: a citizen into the army at once.
+            if mine && state.government.allows_draft() && tech.researched.contains(&Tech::Gunpowder) && city.population >= 2 && !state.drafted.contains(&city.position) {
+                p.spawn(row(6.0)).with_children(|r| {
+                    button(r, art, "Draft a defender (-1 citizen)", Command::Game(Action::Draft), Color::srgb(0.9, 0.6, 0.5), 13.0);
+                });
             }
 
             // Tabs: what to build is split into units, buildings and wonders; the rest is on Overview.
@@ -1263,6 +1298,7 @@ pub fn rebuild_panels(
                         w.spawn(label(&art.font_body, format!("{name}: {score}"), 14.0, INK));
                     }
                     w.spawn(row(6.0)).with_children(|r| {
+                        button(r, art, "Chronicle", Command::Chronicle, BRONZE, 14.0);
                         button(r, art, "Look around the map", Command::DismissEnd, BRONZE, 14.0);
                         button(r, art, "Save to a file", Command::Game(Action::Save), BRONZE, 14.0);
                         button(r, art, "Back to the start menu", Command::QuitToMenu, GREEN, 14.0);
@@ -1287,6 +1323,7 @@ pub fn rebuild_panels(
                         OfferKind::Peace => "Accepting ends the war.".to_string(),
                         OfferKind::BuyFromUs(good, gold) => format!("We would send them our spare {} and receive {gold} gold a turn for {} turns.", good.name(), foreign::DEAL_TURNS),
                         OfferKind::SellToUs(good, gold) => format!("We would receive {} and pay {gold} gold a turn for {} turns. We have {} gold.", good.name(), foreign::DEAL_TURNS, state.gold),
+                        OfferKind::Passage => "Our units and theirs could then share tiles and pass through each other.".to_string(),
                         OfferKind::Notice => String::new(),
                     };
                     if !detail.is_empty() {
@@ -1348,6 +1385,16 @@ pub fn rebuild_panels(
                                     format!("Empire size: {ours} cities; {sprawl} more unhappy in every city (none up to 12 cities, then one more for every 6). A Forbidden Palace (Monarchy) is a second seat of government against corruption."),
                                     14.0,
                                     if sprawl > 0 { RED } else { INK_SOFT },
+                                ));
+                                let fouled = tiles.iter().filter(|t| t.is_polluted()).count();
+                                w.spawn(label(
+                                    &art.font_body,
+                                    format!(
+                                        "World pollution: {fouled} fouled tiles (global warming threatens past 15){}.",
+                                        if state.warming > 0 { format!("; global warming has struck {} times", state.warming) } else { String::new() }
+                                    ),
+                                    14.0,
+                                    if fouled > 15 { RED } else { INK_SOFT },
                                 ));
                                 let war = state.war_turns.get(&PLAYER).copied().unwrap_or(0);
                                 if war > 0 {
@@ -1541,12 +1588,47 @@ pub fn rebuild_panels(
                             c.spawn(Node::default()).with_children(|r| button(r, art, "Save to a file (F2)", Command::Game(Action::Save), GREEN, 15.0));
                             if SoundSettings::AVAILABLE {
                                 c.spawn(Node::default()).with_children(|r| sound_button(r, art));
+                                let music = if sound_on.music { "Music: On" } else { "Music: Off" };
+                                c.spawn(Node::default()).with_children(|r| button(r, art, music, Command::ToggleMusic, BRONZE, 15.0));
                             }
                             c.spawn(Node::default()).with_children(|r| button(r, art, "Encyclopedia (F1)", Command::Toggle(Modal::Help), BRONZE, 15.0));
+                            c.spawn(Node::default()).with_children(|r| button(r, art, "Messages (L)", Command::Toggle(Modal::Messages), BRONZE, 15.0));
                             let tips_label = if tips_on.enabled { "Tips for new players: On" } else { "Tips for new players: Off" };
                             c.spawn(Node::default()).with_children(|r| button(r, art, tips_label, Command::ToggleTips, BRONZE, 15.0));
                             c.spawn(Node::default()).with_children(|r| button(r, art, "Quit to the start menu", Command::QuitToMenu, Color::srgb(0.9, 0.6, 0.5), 15.0));
                         });
+                        w.spawn(row(6.0)).with_children(|r| button(r, art, "Close (Esc)", Command::CloseModal, BRONZE, 14.0));
+                    });
+                }
+                Modal::Messages => {
+                    const PER_PAGE: usize = 24;
+                    p.spawn(window(800.0)).with_children(|w| {
+                        w.spawn(label(&art.font_title, if ui.highlights_only { "Chronicle" } else { "Messages" }, 26.0, INK));
+                        let shown: Vec<&(u32, String)> = log
+                            .history
+                            .iter()
+                            .filter(|(_, line)| !ui.highlights_only || crate::HIGHLIGHTS.iter().any(|h| line.contains(h)))
+                            .collect();
+                        let pages = shown.len().div_ceil(PER_PAGE).max(1);
+                        let page = ui.messages_page.min(pages - 1);
+                        let end = shown.len().saturating_sub(page * PER_PAGE);
+                        let start = end.saturating_sub(PER_PAGE);
+                        w.spawn(row(6.0)).with_children(|r| {
+                            button(r, art, if ui.highlights_only { "Show all messages" } else { "Great events only" }, Command::ToggleHighlights, BRONZE, 13.0);
+                            if page + 1 < pages {
+                                button(r, art, "Older", Command::MessagesPage(1), BRONZE, 13.0);
+                            }
+                            if page > 0 {
+                                button(r, art, "Newer", Command::MessagesPage(-1), BRONZE, 13.0);
+                            }
+                            r.spawn(label(&art.font_body, format!("page {} of {pages}", page + 1), 13.0, INK_SOFT));
+                        });
+                        if shown.is_empty() {
+                            w.spawn(label(&art.font_body, "Nothing yet.", 14.0, INK_SOFT));
+                        }
+                        for (turn, line) in &shown[start..end] {
+                            w.spawn(label(&art.font_body, format!("Turn {turn}: {line}"), 13.0, INK));
+                        }
                         w.spawn(row(6.0)).with_children(|r| button(r, art, "Close (Esc)", Command::CloseModal, BRONZE, 14.0));
                     });
                 }
@@ -1899,7 +1981,13 @@ pub fn update_tile_info(
             extras.extend(tile.improvements.iter().map(|i| format!("{:?}", i)));
             let seen = tile.resource.filter(|r| r.reveal_tech().is_none_or(|t| tech.researched.contains(&t)));
             let (f, s, g) = bevy_civ::tiles::tile_yield(tile.terrain, &tile.improvements, seen, rivers.tiles.contains(&tile.coord));
-            format!("{}  -  {f} food, {s} shields, {g} gold\n{}", tile.terrain.name(), extras.join(", "))
+            let moves = match bevy_civ::pathfinding::terrain_cost(tile.terrain) {
+                _ if tile.has_road() => "road".to_string(),
+                Some(1) => "1 move".to_string(),
+                Some(n) => format!("{n} moves"),
+                None => "by sea".to_string(),
+            };
+            format!("{}  -  {f} food, {s} shields, {g} gold  ({moves})\n{}", tile.terrain.name(), extras.join(", "))
         }
         Some(_) => "Unexplored".to_string(),
         None => String::new(),
@@ -1972,6 +2060,18 @@ pub fn button_actions(
             Command::HelpTopic(topic) => ui.help_topic = *topic,
             Command::ToggleGroupMove => ui.group_move = !ui.group_move,
             Command::ToggleQueueMode => ui.queue_mode = !ui.queue_mode,
+            Command::ToggleMusic => sound.toggle_music(),
+            Command::MessagesPage(delta) => ui.messages_page = (ui.messages_page as i32 + delta).max(0) as usize,
+            Command::ToggleHighlights => {
+                ui.highlights_only = !ui.highlights_only;
+                ui.messages_page = 0;
+            }
+            Command::Chronicle => {
+                ui.end_dismissed = true;
+                ui.highlights_only = true;
+                ui.messages_page = 0;
+                ui.modal = Some(Modal::Messages);
+            }
             Command::TipDone => tips.done(),
             Command::TipsOff => tips.set_enabled(false),
             Command::ToggleTips => {
@@ -1993,10 +2093,19 @@ pub fn button_actions(
             Command::BackToPeoples => menu.civ = None,
             Command::PickDifficulty(level) => menu.difficulty = *level,
             Command::PickLength(turns) => menu.last_turn = *turns,
+            Command::PickMapSize(size) => menu.map_size = Some(*size),
+            Command::PickPeoples(n) => menu.peoples = Some(*n),
             Command::StartGame => {
                 if let (Some(scenario), Some(civ)) = (menu.scenario.and_then(|i| menu.catalog.get(i)), menu.civ) {
                     let last_turn = if menu.last_turn == 0 { crate::LAST_TURN } else { menu.last_turn };
-                    commands.insert_resource(NewGame { scenario: scenario.clone(), civ, difficulty: menu.difficulty, last_turn });
+                    commands.insert_resource(NewGame {
+                        scenario: scenario.clone(),
+                        civ,
+                        difficulty: menu.difficulty,
+                        last_turn,
+                        map_size: menu.map_size.unwrap_or(1),
+                        peoples: menu.peoples.unwrap_or(default_peoples()),
+                    });
                     menu.civ = None;
                     next.set(AppState::Playing);
                 }
@@ -2140,6 +2249,24 @@ pub fn rebuild_menu(
                         }
                     });
                     w.spawn(label(&art.font_body, "If nobody has won by the last turn, the highest score wins.", 14.0, INK_SOFT));
+                    // A New World can be made smaller or larger, with fewer or more peoples.
+                    if scenario.rows.is_empty() {
+                        let size = menu.map_size.unwrap_or(1);
+                        let peoples = menu.peoples.unwrap_or(default_peoples());
+                        w.spawn(label(&art.font_title, "World", 17.0, INK_SOFT));
+                        w.spawn(row(6.0)).with_children(|r| {
+                            for (i, (name, cols, rows)) in crate::scenario::MAP_SIZES.iter().enumerate() {
+                                let tint = if size == i { GREEN } else { BRONZE };
+                                button(r, art, format!("{name} ({cols}x{rows})"), Command::PickMapSize(i), tint, 14.0);
+                            }
+                        });
+                        w.spawn(row(6.0)).with_children(|r| {
+                            for n in crate::scenario::PEOPLE_CHOICES {
+                                let tint = if peoples == n { GREEN } else { BRONZE };
+                                button(r, art, format!("{n} peoples"), Command::PickPeoples(n), tint, 14.0);
+                            }
+                        });
+                    }
                     w.spawn(row(8.0)).with_children(|r| {
                         button(r, art, "Back", Command::BackToPeoples, BRONZE, 15.0);
                         button(r, art, "Begin", Command::StartGame, GREEN, 18.0);
@@ -2321,4 +2448,9 @@ pub fn update_turn_buttons(
             }
         }
     }
+}
+
+/// Peoples in a New World unless the player chooses otherwise.
+fn default_peoples() -> usize {
+    crate::scenario::DEFAULT_PEOPLES
 }
