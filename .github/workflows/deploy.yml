@@ -1,9 +1,9 @@
 name: Deploy to Cloudflare
 
+# Builds and deploys the browser game on every push to main (or on demand). Pull requests are not
+# built here: changes are tested before they are merged, and each build costs Actions minutes.
 on:
   push:
-    branches: [main]
-  pull_request:
     branches: [main]
   workflow_dispatch:
 
