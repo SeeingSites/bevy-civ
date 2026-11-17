@@ -143,6 +143,11 @@ impl Government {
     }
 
     /// Despotism and Communism let a city rush its project by working citizens to death.
+    /// Citizens can be drafted into the army (once Gunpowder is known).
+    pub fn allows_draft(&self) -> bool {
+        matches!(self, Government::Monarchy | Government::Communism | Government::Fundamentalism | Government::Republic)
+    }
+
     pub fn allows_forced_labour(&self) -> bool {
         matches!(self, Government::Despotism | Government::Communism)
     }

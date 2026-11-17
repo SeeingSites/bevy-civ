@@ -168,6 +168,7 @@ pub fn process_ai_turn(
     let roads = road_network(tiles.iter(), city_positions.iter().map(|(p, _)| *p));
     let terrain_at: HashMap<Hex, Terrain> = land.iter().copied().collect();
     let polluted: std::collections::HashSet<Hex> = tiles.iter().filter(|t| t.is_polluted()).map(|t| t.coord).collect();
+    let forts: std::collections::HashSet<Hex> = tiles.iter().filter(|t| t.improvements.contains(&Improvement::Fortress)).map(|t| t.coord).collect();
     let resources: std::collections::HashSet<Hex> = tiles.iter().filter(|t| t.resource.is_some()).map(|t| t.coord).collect();
     // How good a place is for a city: the land around it (grass and plains best), the sea for a
     // harbour, and any resources within reach.
@@ -357,6 +358,14 @@ pub fn process_ai_turn(
             // Pollution is cleaned up where the worker stands.
             if polluted.contains(&here) && owns(here, owner) {
                 unit.start_build(Improvement::Pollution);
+                continue;
+            }
+            // A hill or mountain of ours with hostile armies close by: fortify it.
+            let high = matches!(terrain_at.get(&here), Some(Terrain::Hills | Terrain::Mountain));
+            let threatened = unit_snapshots.iter().any(|(pos, other, strength)| hostile(owner, *other) && *strength > 0.0 && pos.distance_to(here) <= 4);
+            let knows_construction = civs.players.iter().any(|c| c.id == owner && c.tech.researched.contains(&Tech::Construction));
+            if high && threatened && knows_construction && owns(here, owner) && !forts.contains(&here) && !city_positions.iter().any(|(p, _)| *p == here) {
+                unit.start_build(Improvement::Fortress);
                 continue;
             }
             // No road work: farm the flat land and mine the hills inside the borders.

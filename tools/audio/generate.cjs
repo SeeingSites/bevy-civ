@@ -114,6 +114,56 @@ const sounds = {
   },
 };
 
+/**
+ * Background music: a calm 40-second loop. Pads move through D minor - C - B flat - C over a low
+ * drone, and a seeded pentatonic melody of soft plucked notes drifts above. Starts and ends quietly
+ * so the loop is seamless.
+ */
+function music() {
+  const seconds = 40;
+  const out = silence(seconds);
+  const hz = (midi) => 440 * Math.pow(2, (midi - 69) / 12);
+  // A pad: detuned sines with a slow swell and release.
+  const pad = (notes, start, length) => {
+    const n = Math.round(length * RATE);
+    const at = Math.round(start * RATE);
+    for (const note of notes) {
+      for (const detune of [0.997, 1.003]) {
+        const f = hz(note) * detune;
+        for (let i = 0; i < n && at + i < out.length; i++) {
+          const t = i / n;
+          const env = Math.min(1, t / 0.3) * Math.min(1, (1 - t) / 0.3);
+          out[at + i] += Math.sin((2 * Math.PI * f * i) / RATE) * env * 0.05;
+        }
+      }
+    }
+  };
+  const chords = [[50, 57, 62, 65], [48, 55, 60, 64], [46, 53, 58, 62], [48, 55, 60, 64]];
+  for (let bar = 0; bar < 8; bar++) pad(chords[bar % 4], bar * 5, 5.6);
+  // A drone on D, swelling and fading with the loop.
+  for (let i = 0; i < out.length; i++) {
+    const t = i / out.length;
+    out[i] += Math.sin((2 * Math.PI * hz(38) * i) / RATE) * 0.05 * Math.sin(Math.PI * t);
+  }
+  // The melody: D minor pentatonic, one note every 1.25 s or a rest.
+  const scale = [62, 65, 67, 69, 72, 74, 77];
+  const rand = noise(2024);
+  let step = 3;
+  for (let beat = 0; beat < 31; beat++) {
+    if (rand() < -0.2) continue;
+    step = Math.max(0, Math.min(scale.length - 1, step + Math.round(rand() * 2)));
+    mix(out, tone(hz(scale[step]), 1.6, { shape: 'triangle', attack: 0.02 }), 0.6 + beat * 1.25, 0.12);
+  }
+  // Fade the very ends so the loop joins quietly.
+  const edge = Math.round(1.0 * RATE);
+  for (let i = 0; i < edge; i++) {
+    out[i] *= i / edge;
+    out[out.length - 1 - i] *= i / edge;
+  }
+  return finish(out, 0.55);
+}
+sounds.music = music;
+
 /** 16-bit PCM mono WAV. */
 function wav(samples) {
   const data = Buffer.alloc(samples.length * 2);

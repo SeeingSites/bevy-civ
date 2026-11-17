@@ -73,7 +73,16 @@ pub struct NewGame {
     pub difficulty: crate::Difficulty,
     /// The game ends on this turn if nobody has won.
     pub last_turn: u32,
+    /// For the New World: the map's size (0 small, 1 normal, 2 large) and how many peoples share it.
+    pub map_size: usize,
+    pub peoples: usize,
 }
+
+/// The New World's map sizes: (name, columns, rows).
+pub const MAP_SIZES: [(&str, i32, i32); 3] = [("Small", 34, 22), ("Normal", 44, 28), ("Large", 56, 36)];
+/// How many peoples a New World may hold.
+pub const PEOPLE_CHOICES: [usize; 3] = [3, 5, 8];
+pub const DEFAULT_PEOPLES: usize = 5;
 
 /// Map cell (column, row; row 0 is the northern edge) to its hex. Odd columns sit half a row lower.
 pub fn offset_to_hex(col: i32, row: i32) -> Hex {
@@ -106,10 +115,11 @@ fn neighbours(col: i32, row: i32) -> [(i32, i32); 6] {
 
 /// Fills in a random map and start positions for the "New World" scenario.
 /// `player` is kept among the civilizations that take part; its new index is returned.
-pub fn generate_random(template: &Scenario, player: usize) -> (Scenario, usize) {
-    const COLS: i32 = 44;
-    const ROWS: i32 = 28;
-    const CIVS: usize = 5;
+pub fn generate_random(template: &Scenario, player: usize, map_size: usize, peoples: usize) -> (Scenario, usize) {
+    let (_, cols, rows) = MAP_SIZES[map_size.min(MAP_SIZES.len() - 1)];
+    #[allow(non_snake_case)]
+    let (COLS, ROWS) = (cols, rows);
+    let civs_wanted = peoples.clamp(2, template.civs.len().max(2));
     let mut rng = rand::thread_rng();
     let mut waves = |freq: f32| -> Vec<(f32, f32, f32, f32)> {
         (0..5)
@@ -161,7 +171,7 @@ pub fn generate_random(template: &Scenario, player: usize) -> (Scenario, usize) 
         .collect();
     sites.shuffle(&mut rng);
     let mut homes: Vec<(i32, i32)> = sites.first().copied().into_iter().collect();
-    while homes.len() < CIVS && homes.len() < sites.len() {
+    while homes.len() < civs_wanted && homes.len() < sites.len() {
         let best = sites
             .iter()
             .copied()

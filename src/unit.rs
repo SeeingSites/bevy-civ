@@ -359,6 +359,12 @@ impl UnitType {
         }
     }
 
+    /// The odds that a fighter of this kind shoots down a bomber of that kind it intercepts.
+    pub fn interception_odds(fighter: UnitType, bomber: UnitType) -> f64 {
+        let (attack, defence) = (fighter.stats().0 as f64, bomber.stats().1 as f64);
+        attack / (attack + defence).max(1.0)
+    }
+
     /// Wheeled: keeps to open ground unless a road leads through forest or mountains.
     pub fn is_wheeled(&self) -> bool {
         matches!(self, UnitType::WarChariot | UnitType::Catapult | UnitType::Cannon | UnitType::Artillery | UnitType::RadarArtillery)

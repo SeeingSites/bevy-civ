@@ -267,7 +267,12 @@ pub fn restore_world(
     commands.insert_resource(game.rivers.clone());
     commands.insert_resource(game.religions.clone());
     commands.insert_resource(game.villages.clone());
-    let mut log = GameLog { lines: game.log.clone(), written: game.log.len() };
+    let mut log = GameLog {
+        lines: game.log.clone(),
+        written: game.log.len(),
+        history: game.log.iter().map(|l| (game.state.turn, l.clone())).collect(),
+        turn: game.state.turn,
+    };
     log.push(format!("Game loaded: turn {}.", game.state.turn));
     commands.insert_resource(log);
     commands.insert_resource(Dirty { map: true, ui: true });

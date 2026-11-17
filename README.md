@@ -317,6 +317,14 @@ working directory.
 - **More orders**: Sentry (Z) sleeps a unit until an enemy comes within two tiles; Join City (J)
   settles a worker (+1) or settler (+2) into the city it stands in. Missionaries preach in or next
   to a city, and computer players now train them for their state religion.
+- **More of the classic rules**: drafting (a city turns a citizen into its best defender under
+  Monarchy, Republic, Communism or Fundamentalism once Gunpowder is known); fighters intercept
+  bombers within 3 tiles; global warming turns land drier once more than 15 tiles of the world are
+  fouled; computer players offer right of passage and fortify hills when enemies are near.
+- **Conveniences**: undo the last plain move (Ctrl+Z or Backspace); the Messages window (L) keeps
+  the game's last 2,000 messages, and its "great events" view is the chronicle offered at the end;
+  a New World can be Small, Normal or Large with 3, 5 or 8 peoples; generated background music
+  plays during the game (Music on/off in the Game menu).
 - **Big empires**: past 12 cities, every 6 more make one more citizen unhappy in every city; a
   Forbidden Palace (Monarchy, one per people) is a second seat of government, corruption counting
   from the nearer of it and the capital. Great people grow rarer: 60 points for the first, then
