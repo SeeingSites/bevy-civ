@@ -1,7 +1,7 @@
 {
   "name": "bevy-civ",
   "private": true,
-  "license": "MIT OR WTFPL",
+  "license": "MIT",
   "scripts": {
     "build": "./scripts/build-web.sh",
     "dev": "wrangler dev",

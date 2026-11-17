@@ -2,7 +2,7 @@
 name = "bevy-civ"
 version = "0.1.0"
 edition = "2021"
-license = "MIT OR WTFPL"
+license = "MIT"
 
 [features]
 default = ["full", "audio"]
