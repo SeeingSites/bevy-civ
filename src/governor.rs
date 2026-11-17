@@ -58,6 +58,10 @@ pub struct CivView<'a> {
     pub room_to_expand: bool,
     /// Already has a Forbidden Palace somewhere.
     pub forbidden_palace: bool,
+    /// Ships it has (or is building) for carrying troops overseas.
+    pub ferries: usize,
+    /// Its units waiting in port for a ship.
+    pub ferry_wanted: usize,
 }
 
 /// Largest army a computer player keeps.
@@ -122,6 +126,13 @@ pub fn choose(city: &CityView, civ: &CivView, supplies: &Supplies, rng: &mut imp
     if (!city.linked || civ.cut_off > 0) && can_build(&Building::Harbor, city, civ, supplies) {
         return ProductionItem::Building(Building::Harbor);
     }
+    // Troops or settlers waiting in port and no ship to carry them: a coastal city builds one.
+    if city.coastal && civ.ferry_wanted > 0 && civ.ferries < civ.ferry_wanted.div_ceil(6).min(3) {
+        let ferry = [UnitType::Transport, UnitType::Galleon, UnitType::Galley].into_iter().find(|u| can_train(*u, city, civ, supplies));
+        if let Some(ferry) = ferry {
+            return unit(ferry);
+        }
+    }
     let cap = army_cap(civ.cities);
     let wanted_army = if civ.at_war { 2 * civ.cities + 2 } else { civ.cities + 1 }.min(cap);
     if civ.military < wanted_army {
@@ -131,7 +142,10 @@ pub fn choose(city: &CityView, civ: &CivView, supplies: &Supplies, rng: &mut imp
     // At war, a coastal city adds warships and an industrial power adds aircraft.
     if civ.at_war {
         let strongest = |domain: Domain| {
-            UnitType::ALL.into_iter().filter(|u| u.domain() == domain && can_train(*u, city, civ, supplies)).max_by_key(|u| u.stats().0 + u.stats().1)
+            UnitType::ALL
+                .into_iter()
+                .filter(|u| u.domain() == domain && !u.is_ferry() && *u != UnitType::Carrier && can_train(*u, city, civ, supplies))
+                .max_by_key(|u| u.stats().0 + u.stats().1)
         };
         if city.coastal && civ.navy < 2 {
             if let Some(ship) = strongest(Domain::Sea) {
@@ -231,7 +245,7 @@ mod tests {
     }
 
     fn civ(tech: &TechState) -> CivView<'_> {
-        CivView { tech, aggression: 0.4, cities: 2, workers: 1, settlers: 1, military: 3, navy: 0, air: 0, road_work: 0, cut_off: 0, at_war: false, wonders_taken: &NO_WONDERS, caravans: 2, diplomats: 1, missionaries: 0, faith_to_spread: false, wonder_elsewhere: false, space_parts: &[], room_to_expand: true, forbidden_palace: false }
+        CivView { tech, aggression: 0.4, cities: 2, workers: 1, settlers: 1, military: 3, navy: 0, air: 0, road_work: 0, cut_off: 0, at_war: false, wonders_taken: &NO_WONDERS, caravans: 2, diplomats: 1, missionaries: 0, faith_to_spread: false, wonder_elsewhere: false, space_parts: &[], room_to_expand: true, forbidden_palace: false, ferries: 0, ferry_wanted: 0 }
     }
 
     fn knowing(techs: &[Tech]) -> TechState {
@@ -305,11 +319,15 @@ mod tests {
     }
 
     #[test]
-    fn a_coastal_city_at_war_builds_warships_once_the_army_is_ready() {
+    fn a_coastal_city_builds_a_ferry_for_troops_waiting_in_port() {
         let tech = knowing(&[Tech::Pottery, Tech::Seafaring]);
-        let at_war = |coastal: bool| (CityView { coastal, ..city() }, CivView { at_war: true, military: 6, ..civ(&tech) });
+        let at_war = |coastal: bool| (CityView { coastal, ..city() }, CivView { at_war: true, military: 6, ferry_wanted: 3, ..civ(&tech) });
         let (port, state) = at_war(true);
         assert_eq!(choose(&port, &state, &Supplies::default(), &mut rand::thread_rng()), ProductionItem::Unit(UnitType::Galley));
+        // A Galley is a ferry, not a warship: none is built while nobody waits for one.
+        let idle = CivView { ferry_wanted: 0, ..civ(&tech) };
+        let idle = CivView { at_war: true, military: 6, ..idle };
+        assert!(!matches!(choose(&port, &idle, &Supplies::default(), &mut rand::thread_rng()), ProductionItem::Unit(UnitType::Galley)));
         let (inland, state) = at_war(false);
         assert!(!matches!(choose(&inland, &state, &Supplies::default(), &mut rand::thread_rng()), ProductionItem::Unit(u) if u.domain() == Domain::Sea));
     }

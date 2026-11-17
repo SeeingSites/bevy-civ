@@ -188,6 +188,7 @@ pub fn keyboard_input(
         (KeyCode::KeyP, Action::Pillage),
         (KeyCode::KeyZ, Action::Sentry),
         (KeyCode::KeyJ, Action::JoinCity),
+        (KeyCode::KeyI, Action::Board),
         (KeyCode::Backspace, Action::Undo),
         (KeyCode::KeyB, Action::FoundCity),
         (KeyCode::KeyT, Action::TradeRoute),

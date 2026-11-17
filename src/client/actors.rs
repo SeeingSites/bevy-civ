@@ -20,7 +20,7 @@ const UNIT_SIZE: f32 = 76.0;
 /// Feet of the figure inside its 128px frame, relative to the frame centre.
 const UNIT_ANCHOR: Anchor = Anchor::Custom(Vec2::new(0.0, -0.39));
 const UNIT_OFFSET: Vec2 = Vec2::new(0.0, -10.0);
-/// Row of the transport boat in the unit atlas.
+/// Row of the old transport boat in the unit atlas (no longer drawn).
 const BOAT_ROW: usize = 19;
 const CITY_OFFSET: Vec2 = Vec2::new(0.0, -8.0);
 
@@ -30,7 +30,7 @@ pub struct UnitView {
     phase: f32,
     /// The tile the unit is on in the game, which the figure is standing on or walking to.
     at: Hex,
-    /// The last tile the figure itself reached (decides whether it is drawn in a boat).
+    /// The last tile the figure itself reached.
     shown: Hex,
     /// Tiles the figure still has to pass through, with their positions.
     waypoints: VecDeque<(Hex, Vec2)>,
@@ -84,7 +84,8 @@ fn stack_offset(slot: usize) -> Vec2 {
     Vec2::new(side * 17.0 * reach, 9.0 + 3.0 * reach)
 }
 
-/// Row of a unit type in the atlas; the transport boat sits between the land units and the rest.
+/// Row of a unit type in the atlas (an unused boat row, from before ships carried troops, sits
+/// between the land units and the rest).
 pub fn unit_row(unit_type: UnitType) -> usize {
     let index = UnitType::ALL.iter().position(|u| *u == unit_type).unwrap_or(0);
     if index >= BOAT_ROW { index + 1 } else { index }
@@ -151,7 +152,9 @@ pub fn animate_units(
     mut commands: Commands,
 ) {
     let place = |hex: Hex| map.layout.hex_to_world_pos(hex) + UNIT_OFFSET;
-    let stacked = stacks(units.iter().map(|(e, u, ..)| (e, u)), selection.unit);
+    // Units carried at sea are hidden inside their ship (unless selected).
+    let stowed = |entity: Entity, unit: &Unit| unit.carrier.is_some() && map.water.contains(&unit.position) && selection.unit != Some(entity);
+    let stacked = stacks(units.iter().map(|(e, u, ..)| (e, u)).filter(|(e, u)| !stowed(*e, u)), selection.unit);
     for (entity, unit, mut transform, mut sprite, mut view, mut visibility, children, trail, mut lunge) in &mut units {
         // Take off last frame's lunge before the figure's own movement.
         if let Some(lunge) = lunge.as_mut() {
@@ -215,12 +218,9 @@ pub fn animate_units(
         let speed = if moving { 11.0 } else if unit.build_turns_left.is_some() { 7.0 } else { 3.5 };
         let frame = (time.elapsed_secs() * speed + view.phase) as usize % 4;
         if let Some(atlas) = sprite.texture_atlas.as_mut() {
-            // Land units are shown as a transport boat while at sea.
-            let embarked = unit.unit_type.domain() == bevy_civ::unit::Domain::Land && map.water.contains(&view.shown);
-            let row = if embarked { BOAT_ROW } else { unit_row(unit.unit_type) };
-            atlas.index = row * 4 + frame;
+            atlas.index = unit_row(unit.unit_type) * 4 + frame;
         }
-        let shown = unit.owner == PLAYER || fog.visible.contains(&unit.position);
+        let shown = (unit.owner == PLAYER || fog.visible.contains(&unit.position)) && !stowed(entity, unit);
         *visibility = if shown { Visibility::Inherited } else { Visibility::Hidden };
         // Units that have spent their moves get a faded disc.
         let spent = unit.owner == PLAYER && !unit.can_move();

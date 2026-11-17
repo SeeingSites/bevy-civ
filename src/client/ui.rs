@@ -124,11 +124,13 @@ fn help_lines(topic: HelpTopic) -> Vec<String> {
     match topic {
         HelpTopic::Basics => [
             "Click a unit or city to select it; click again or press Tab for the next unit on that tile. Click a tile (or right-click) to move; far destinations become standing orders. Hover over a tile to see the route and how many turns it takes.",
-            "Space: skip a unit (or go to a city that needs a project, then end the turn). Enter: end the turn. N: next unit. H: fortify or sleep. Z: sentry (sleep until an enemy comes near). J: a worker or settler joins the city it stands in. Ctrl+Z or Backspace: take back the last move. L: messages. Esc: close or deselect.",
+            "Space: skip a unit (or go to a city that needs a project, then end the turn). Enter: end the turn. N: next unit. H: fortify or sleep. Z: sentry (sleep until an enemy comes near). J: a worker or settler joins the city it stands in. I: board a ship in port. Ctrl+Z or Backspace: take back the last move. L: messages. Esc: close or deselect.",
             "Workers and Engineers: F farm, M mine, R road (railroad on a road, with Steam Power), O fortress (Construction), X clear land or clean pollution, K automate. Settlers: B found a city.",
             "U uses the selected unit: a great person's gift, a General forming an army, a Missionary preaching, a caravan helping a wonder. T opens a caravan's trade route. P pillages enemy land. Diplomats act from the unit panel next to a foreign city.",
             "Q science, E foreign affairs, G trade, Y empire (government, rates, cities, military, score), F1 this encyclopedia, V sound, F2 save a file (the game also saves itself every turn).",
-            "Terrain: hills and forest cost 2 moves, mountains 3. A unit without the moves still enters, but is worn out for as many turns as it owes (a one-move unit takes 2 turns a hill, 3 a mountain). Roads triple movement and railroads make it free. Wheeled units - chariots, catapults, cannon, artillery - cannot enter forest or mountains except along a road. Troops cross water in boats once you know Seafaring.",
+            "Terrain: hills and forest cost 2 moves, mountains 3. A unit without the moves still enters, but is worn out for as many turns as it owes (a one-move unit takes 2 turns a hill, 3 a mountain). Roads triple movement and railroads make it free. Wheeled units - chariots, catapults, cannon, artillery - cannot enter forest or mountains except along a road.",
+            "Ships carry troops: a Galley or Frigate holds 2, a Galleon 4, a Transport 8. Move troops onto a ship of yours with room, or press I (Board ship) in a port where one lies; sail the ship and its troops go with it. To land, select a unit aboard (click the ship's tile again or press Tab) and click a land tile next to the ship - going ashore, like boarding from the shore, takes the rest of the unit's turn. Troops cannot attack from a ship, and go down with it if it sinks.",
+            "A Carrier holds 4 aircraft and serves as an airfield: aircraft may fly within 8 tiles of your cities or carriers, and land on a carrier by flying to its tile. Aircraft on a carrier sail with it.",
             "Tribal villages dot the land: the first unit in finds gold, a technology, warriors who join you, maps of the area - or hostile tribesmen (Scouts rarely meet them).",
         ]
         .into_iter()
@@ -143,6 +145,9 @@ fn help_lines(topic: HelpTopic) -> Vec<String> {
                 let res = if res.is_empty() { String::new() } else { format!(" and {}", res.join(", ")) };
                 if u.is_great_person() {
                     format!("{}: {}", u.name(), great::ability(u))
+                } else if u.capacity() > 0 {
+                    let kind = if u == UnitType::Carrier { "aircraft" } else { "troops" };
+                    format!("{}: attack {a}, defence {d}, moves {m}; carries {} {kind}; {} shields{needs}{res}", u.name(), u.capacity(), u.cost())
                 } else {
                     format!("{}: attack {a}, defence {d}, moves {m}; {} shields{needs}{res}", u.name(), u.cost())
                 }
@@ -909,8 +914,47 @@ pub fn rebuild_panels(
                     });
                 }
             }
+            // Ships and their cargo.
+            let berths: Vec<bevy_civ::cargo::Berth> = unit_entities.iter().filter_map(|e| units.get(e).ok().map(|u| bevy_civ::cargo::Berth::of(e, u))).collect();
+            let at_sea = map.water.contains(&unit.position);
+            let in_port = cities.iter().any(|(c, _, _)| c.position == unit.position && c.owner == PLAYER);
+            let mut can_board = false;
+            let mut can_leave = false;
+            if mine && unit.unit_type.capacity() > 0 {
+                let cargo: Vec<&str> = berths.iter().filter(|b| b.carrier.map(|c| c.0) == selection.unit).map(|b| b.unit_type.name()).collect();
+                let kind = if unit.unit_type == UnitType::Carrier { "aircraft" } else { "troops" };
+                let text = if cargo.is_empty() {
+                    format!("Carries up to {} {kind}; none aboard. Move {kind} onto it to board{}.", unit.unit_type.capacity(), if kind == "troops" { " (or Board in port)" } else { "" })
+                } else {
+                    format!("Aboard ({} of {}): {}.", cargo.len(), unit.unit_type.capacity(), cargo.join(", "))
+                };
+                p.spawn(label(&art.font_body, text, 13.0, MUTED));
+                can_leave = in_port && !cargo.is_empty();
+            }
+            if mine {
+                if let Some((ship, _)) = unit.carrier {
+                    let ship_name = units.get(ship).map(|s| s.unit_type.name()).unwrap_or("ship");
+                    let text = if unit.unit_type.domain() == bevy_civ::unit::Domain::Air {
+                        format!("Based on the {ship_name}: it sails with the ship, and can strike anything within {} tiles of it.", bevy_civ::unit::AIR_RANGE)
+                    } else if at_sea {
+                        format!("Aboard the {ship_name}. Select it on this tile and click a land tile next to the ship to go ashore (that takes the rest of the turn).")
+                    } else {
+                        format!("Aboard the {ship_name}, in port: it sails with the ship.")
+                    };
+                    p.spawn(label(&art.font_body, text, 13.0, MUTED));
+                    can_leave = !at_sea;
+                } else if in_port && unit.unit_type.domain() != bevy_civ::unit::Domain::Sea {
+                    can_board = bevy_civ::cargo::ship_with_room(&berths, PLAYER, unit.position, unit.unit_type).is_some();
+                }
+            }
             if mine {
                 p.spawn(row(6.0)).with_children(|r| {
+                    if can_board {
+                        button(r, art, "Board ship (I)", Command::Game(Action::Board), GREEN, 15.0);
+                    }
+                    if can_leave {
+                        button(r, art, if unit.carrier.is_some() { "Leave ship" } else { "Unload all" }, Command::Game(Action::Unload), BRONZE, 15.0);
+                    }
                     if unit.unit_type == UnitType::Settler {
                         button(r, art, "Found City (B)", Command::Game(Action::FoundCity), GREEN, 15.0);
                     }
