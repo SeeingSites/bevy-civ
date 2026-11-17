@@ -21,6 +21,12 @@ pub struct City {
     /// Projects to take up, in order, after the current one.
     #[serde(default)]
     pub queue: Vec<ProductionItem>,
+    /// The tiles its working citizens work (its own tile is always worked and not listed).
+    #[serde(default)]
+    pub worked: Vec<hexx::Hex>,
+    /// What its own tile and the worked tiles give: food, shields, gold.
+    #[serde(default)]
+    pub land: (u32, u32, u32),
 }
 
 /// Most projects a city can have waiting.
@@ -120,15 +126,15 @@ impl City {
     }
 
     pub fn production_per_turn(&self, buildings: &CityBuildings, gov: Government, dist_to_capital: u32) -> u32 {
-        let base = 2 + self.workers() + buildings.total_production_bonus();
+        let base = self.land.1 + buildings.total_production_bonus();
         let corruption = self.corruption(buildings, gov, dist_to_capital);
         ((base as f32) * gov.production_modifier() * (1.0 - corruption)).max(0.0) as u32
     }
 
-    /// Food left over each turn once everyone has eaten: the land feeds its workers with a little to
-    /// spare, buildings add more, and every specialist is a mouth that does not farm. Can be negative.
+    /// Food left over each turn once everyone has eaten (two each): the worked land and the
+    /// buildings feed the city, and specialists eat without farming. Can be negative.
     pub fn food_balance(&self, buildings: &CityBuildings) -> i32 {
-        2 + buildings.total_food_bonus() as i32 + self.workers() as i32 / 4 - self.specialists.len() as i32
+        (self.land.0 + buildings.total_food_bonus()) as i32 - (self.population * crate::tiles::FOOD_PER_CITIZEN) as i32
     }
 
     /// The surplus shown in the city panel (never below zero; see `food_balance`).
@@ -151,7 +157,7 @@ impl City {
     }
 
     pub fn gold_per_turn(&self, buildings: &CityBuildings) -> u32 {
-        let base = buildings.total_gold_bonus();
+        let base = buildings.total_gold_bonus() + self.land.2;
         let specialist_gold = self.specialists.iter().filter(|s| matches!(s, Specialist::TaxCollector)).count() as u32 * 3;
         base + specialist_gold
     }
@@ -258,6 +264,8 @@ pub fn spawn_city(
                 is_capital,
                 resistance: 0,
                 queue: Vec::new(),
+                worked: Vec::new(),
+                land: (0, 0, 0),
             },
             Name::new(name),
             CityBuildings { buildings: vec![] },
@@ -285,6 +293,8 @@ mod hurry_tests {
             is_capital: true,
             resistance: 0,
             queue: Vec::new(),
+            worked: Vec::new(),
+            land: (0, 0, 0),
         }
     }
 

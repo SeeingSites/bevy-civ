@@ -296,6 +296,14 @@ working directory.
   halves it.
 - **Resistance**: a captured city produces nothing for 1 turn plus 1 per 3 citizens (up to 6); a
   garrison of two settles it twice as fast.
+- **Working the land**: every tile yields food, shields and gold - grassland 2/0/0, plains 1/1/0,
+  desert 0/1/0, hills 1/0/0, mountains 0/1/0, forest 1/2/0, ocean 1/0/2 - plus farms (+1 food),
+  mines (+2 shields on hills and mountains, +1 elsewhere), roads (+1 gold on flat land), railroads
+  (+1 shield), resources and rivers (+1 gold); a Harbor adds a food to worked ocean tiles. Each
+  working citizen works one tile of its city's area and every citizen eats 2 food; the city's own
+  tile is worked for free with a bonus. A governor picks tiles (food first until the city can grow,
+  then a balance); open a city and its area shows each tile's yield, the worked tiles ringed:
+  click a tile to move a citizen there or off it (to entertain), or let the governor choose again.
 - **Barbarians**: from turn 10, every 8 turns a band rises on wild land outside every border and
   away from any unit; it grows (one to three units) and re-arms with the age of the world, from
   warriors to infantry and artillery.
@@ -348,9 +356,16 @@ working directory.
   U (Form Army). The strongest unit leads; the army fights with its strength and the hit points of
   every member, moves at its slowest member's pace and cannot be upgraded. The general is used up.
   Computer players form armies too.
-- **Space race**: research Space Flight, Plastics and Superconductors; cities with a Factory build 4
-  structures, 2 components and 2 modules; the ship arrives 12 turns after launch unless the capital
-  falls.
+- **Space race to the nearest star**: research Space Flight, Plastics and Superconductors; cities
+  with a Factory build 4 structures, 2 to 4 components (engines) and 2 modules. Launch from the
+  Empire advisor's Space page, which shows every known ship's voyage from Sol to Alpha Centauri
+  (4.37 light-years): 12 turns, 2 fewer per extra engine. Computer players launch when ready. The
+  first ship to arrive wins; a ship in flight is lost with its capital.
+- **Nuclear weapons**: the Manhattan Project (Nuclear Fission) lets everyone who knows Rocketry build
+  Nuclear Missiles. Select one, click a target within 12 tiles and click again to launch: every unit
+  within a tile dies, a city there loses half its people and two buildings, fallout spoils the land,
+  the victim declares war and the world trusts the attacker less. SDI Defense (Superconductors)
+  shoots down missiles aimed within 3 tiles. Computer players at war build and fire them.
 
 Every order also has a button, so the game is playable with a mouse or touch screen alone.
 City production is chosen from the city panel, whose tabs split **Units**, **Buildings** and

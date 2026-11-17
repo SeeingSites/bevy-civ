@@ -81,6 +81,7 @@ pub enum UnitType {
     Engineers,
     RadarArtillery,
     Missionary,
+    NuclearMissile,
 }
 
 /// Where a unit can go: over land (boarding a boat to cross water), on the sea, or through the air.
@@ -96,7 +97,7 @@ pub const AIR_RANGE: i32 = 8;
 
 impl UnitType {
     /// Every unit type, in declaration order (also the row order of the sprite atlas).
-    pub const ALL: [UnitType; 43] = [
+    pub const ALL: [UnitType; 44] = [
         UnitType::Settler, UnitType::Worker, UnitType::Warrior, UnitType::Spearman, UnitType::Archer,
         UnitType::Horseman, UnitType::Legion, UnitType::WarChariot, UnitType::Immortal, UnitType::Phalanx,
         UnitType::Catapult, UnitType::Knight, UnitType::Cannon, UnitType::Rifleman, UnitType::Cavalry,
@@ -105,7 +106,7 @@ impl UnitType {
         UnitType::Bomber, UnitType::GreatGeneral, UnitType::GreatMerchant, UnitType::GreatScientist,
         UnitType::GreatArtist, UnitType::GreatEngineer, UnitType::Pikeman, UnitType::Musketman, UnitType::Infantry,
         UnitType::MechInfantry, UnitType::ModernArmor, UnitType::Scout, UnitType::Longbowman, UnitType::Galleon,
-        UnitType::Submarine, UnitType::Engineers, UnitType::RadarArtillery, UnitType::Missionary,
+        UnitType::Submarine, UnitType::Engineers, UnitType::RadarArtillery, UnitType::Missionary, UnitType::NuclearMissile,
     ];
 
     /// The five kinds of great person.
@@ -120,6 +121,11 @@ impl UnitType {
     /// Whether a city can put this unit into production.
     pub fn is_trainable(&self) -> bool {
         !self.is_great_person()
+    }
+
+    /// A world wonder that must stand somewhere in the world before anyone can build this unit.
+    pub fn required_wonder(&self) -> Option<crate::building::Building> {
+        (*self == UnitType::NuclearMissile).then_some(crate::building::Building::Manhattan)
     }
 
     pub fn name(&self) -> &'static str {
@@ -167,6 +173,7 @@ impl UnitType {
             UnitType::Engineers => "Engineers",
             UnitType::RadarArtillery => "Radar Artillery",
             UnitType::Missionary => "Missionary",
+            UnitType::NuclearMissile => "Nuclear Missile",
         }
     }
 
@@ -181,6 +188,7 @@ impl UnitType {
             UnitType::Engineers => Some(Tech::SteamPower),
             UnitType::RadarArtillery => Some(Tech::Rocketry),
             UnitType::Missionary => Some(Tech::Mysticism),
+            UnitType::NuclearMissile => Some(Tech::Rocketry),
             UnitType::Spearman | UnitType::Phalanx => Some(Tech::BronzeWorking),
             UnitType::Archer => Some(Tech::Mining),
             UnitType::Horseman => Some(Tech::HorsebackRiding),
@@ -237,6 +245,7 @@ impl UnitType {
             UnitType::Engineers => (0, 0, 2),
             UnitType::RadarArtillery => (16, 2, 2),
             UnitType::Missionary => (0, 0, 2),
+            UnitType::NuclearMissile => (0, 0, 0),
             UnitType::Cavalry => (6, 2, 2),
             UnitType::Tank => (10, 5, 2),
             UnitType::Artillery => (8, 2, 1),
@@ -281,6 +290,7 @@ impl UnitType {
             UnitType::Engineers => 30,
             UnitType::RadarArtillery => 120,
             UnitType::Missionary => 30,
+            UnitType::NuclearMissile => 160,
             UnitType::Cavalry => 60,
             UnitType::Tank => 100,
             UnitType::Artillery => 80,
@@ -325,6 +335,7 @@ impl UnitType {
             UnitType::Engineers => Color::srgb(0.85, 0.54, 0.17),
             UnitType::RadarArtillery => Color::srgb(0.42, 0.46, 0.33),
             UnitType::Missionary => Color::srgb(0.94, 0.9, 0.82),
+            UnitType::NuclearMissile => Color::srgb(0.9, 0.9, 0.85),
             UnitType::Cavalry => Color::srgb(0.7, 0.5, 0.2),
             UnitType::Tank => Color::srgb(0.4, 0.4, 0.2),
             UnitType::Artillery => Color::srgb(0.5, 0.4, 0.3),
@@ -360,7 +371,7 @@ impl UnitType {
     }
 
     pub fn is_military(&self) -> bool {
-        !matches!(self, UnitType::Settler | UnitType::Worker | UnitType::Engineers | UnitType::Scout | UnitType::Diplomat | UnitType::Caravan | UnitType::Missionary) && !self.is_great_person()
+        !matches!(self, UnitType::Settler | UnitType::Worker | UnitType::Engineers | UnitType::Scout | UnitType::Diplomat | UnitType::Caravan | UnitType::Missionary | UnitType::NuclearMissile) && !self.is_great_person()
     }
 
     /// Strategic resources a city must have access to before it can train this unit.

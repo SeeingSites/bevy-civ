@@ -248,6 +248,90 @@ pub fn animate_water(
 }
 
 /// Positions the hover outline and the pulsing ring under the selection.
+/// Marks drawn over the area of the selected city: each tile's yield, and a ring on worked tiles.
+#[derive(Component)]
+pub struct AreaMark;
+
+/// While one of the player's cities is selected, shows what every tile of its area yields (food,
+/// shield and gold icons) and which tiles its citizens work; clicking a tile moves a citizen.
+#[allow(clippy::too_many_arguments)]
+pub fn show_city_area(
+    selection: Res<Selection>,
+    cities: Query<(&City, &bevy_civ::building::CityBuildings)>,
+    changed: Query<(), Changed<City>>,
+    supplies: Res<crate::supply::Supplies>,
+    tiles: Query<&HexTile>,
+    rivers: Res<crate::Rivers>,
+    tech: Res<TechState>,
+    art: Res<Art>,
+    map: Res<MapData>,
+    marks: Query<Entity, With<AreaMark>>,
+    mut commands: Commands,
+) {
+    if !(selection.is_changed() || supplies.is_changed() || !changed.is_empty()) {
+        return;
+    }
+    for entity in &marks {
+        commands.entity(entity).despawn_recursive();
+    }
+    let Some((city, buildings)) = selection.city.and_then(|e| cities.get(e).ok()).filter(|(c, _)| c.owner == PLAYER) else { return };
+    let harbor = buildings.has(bevy_civ::building::Building::Harbor);
+    for (hex, _) in supplies.territory.iter().filter(|(_, (o, home))| *o == PLAYER && *home == city.position) {
+        let Some(tile) = tiles.iter().find(|t| t.coord == *hex) else { continue };
+        let resource = tile.resource.filter(|r| r.reveal_tech().is_none_or(|t| tech.researched.contains(&t)));
+        let mut y = bevy_civ::tiles::tile_yield(tile.terrain, &tile.improvements, resource, rivers.tiles.contains(hex));
+        if harbor && tile.terrain == Terrain::Water {
+            y.0 += 1;
+        }
+        let centre = *hex == city.position;
+        if centre {
+            y = bevy_civ::tiles::centre_yield(y);
+        }
+        let worked = centre || city.worked.contains(hex);
+        let pos = map.layout.hex_to_world_pos(*hex);
+        let z = 6.5;
+        // A ring: bright on worked tiles, faint on the others.
+        commands.spawn((
+            AreaMark,
+            Sprite {
+                image: art.overlays.clone(),
+                texture_atlas: Some(art.atlas(&art.overlays_layout, overlay::SELECT)),
+                custom_size: Some(HEX_SPRITE),
+                color: if worked { Color::srgba(0.55, 1.0, 0.5, 0.95) } else { Color::srgba(1.0, 1.0, 1.0, 0.25) },
+                ..default()
+            },
+            Transform::from_xyz(pos.x, pos.y, z),
+        ));
+        // The yield: a row of small icons (food, then shields, then gold).
+        let icons: Vec<usize> = std::iter::repeat_n(super::icon::FOOD, y.0 as usize)
+            .chain(std::iter::repeat_n(super::icon::PRODUCTION, y.1 as usize))
+            .chain(std::iter::repeat_n(super::icon::GOLD, y.2 as usize))
+            .collect();
+        let size = if icons.len() > 5 { 13.0 } else { 17.0 };
+        let width = size * icons.len() as f32;
+        if !icons.is_empty() {
+            commands.spawn((
+                AreaMark,
+                Sprite { color: Color::srgba(0.08, 0.06, 0.04, if worked { 0.75 } else { 0.5 }), custom_size: Some(Vec2::new(width + 6.0, size + 4.0)), ..default() },
+                Transform::from_xyz(pos.x, pos.y - 22.0, z + 0.05),
+            ));
+        }
+        for (i, icon) in icons.iter().enumerate() {
+            commands.spawn((
+                AreaMark,
+                Sprite {
+                    image: art.icons.clone(),
+                    texture_atlas: Some(art.atlas(&art.icons_layout, *icon)),
+                    custom_size: Some(Vec2::splat(size)),
+                    color: if worked { Color::WHITE } else { Color::srgba(1.0, 1.0, 1.0, 0.6) },
+                    ..default()
+                },
+                Transform::from_xyz(pos.x - width / 2.0 + size * (i as f32 + 0.5), pos.y - 22.0, z + 0.1),
+            ));
+        }
+    }
+}
+
 /// A tribal village on the map (shown once the land around it has been explored).
 #[derive(Component)]
 pub struct VillageMark(Hex);

@@ -244,10 +244,13 @@ pub struct Selection {
 #[derive(Resource, Default)]
 pub struct GameLog {
     pub lines: Vec<String>,
+    /// Every line ever written (the log keeps only the latest).
+    pub written: usize,
 }
 
 impl GameLog {
     pub fn push(&mut self, line: impl Into<String>) {
+        self.written += 1;
         self.lines.push(line.into());
         if self.lines.len() > 60 {
             self.lines.remove(0);
@@ -317,6 +320,10 @@ pub enum Action {
     Upgrade,
     /// Burn the selected city, taken this turn, to the ground.
     Raze,
+    /// Let the governor choose all the selected city's worked tiles again.
+    AutoTiles,
+    /// Launch our completed spaceship.
+    LaunchShip,
     /// Add a project to the end of the selected city's build queue.
     QueueProduction(ProductionItem),
     /// Take the project at this place out of the selected city's build queue.
@@ -505,6 +512,21 @@ pub struct Burst(pub Hex);
 /// A battle to show the player: the attacker lunges from `from` at `at`, blows are exchanged and
 /// the result floats over the tile. `ours` marks battles the player fought (the camera goes to
 /// them); `good` colours the result for the player (None when neither side is theirs).
+/// A nuclear missile launched by `by` at `at` (the missile itself is already gone).
+#[derive(Event, Clone, Copy, Debug)]
+pub struct Detonation {
+    pub at: Hex,
+    pub by: u32,
+}
+
+/// How far a nuclear missile flies, and how near an SDI Defense must be to shoot one down.
+pub const MISSILE_RANGE: i32 = 12;
+pub const SDI_RANGE: i32 = 3;
+
+/// The tile the player's selected missile is aimed at (a second click there launches it).
+#[derive(Resource, Default)]
+pub struct NukeAim(pub Option<Hex>);
+
 #[derive(Event, Clone, Debug)]
 pub struct BattleShown {
     pub from: Hex,
@@ -565,7 +587,7 @@ fn main() {
         .add_systems(OnExit(AppState::Playing), cleanup_world)
         .add_systems(
             Update,
-            (handle_map_click, apply_actions, process_turn, religion_turn, continue_orders, visit_villages, automate_workers, advance_selection, preview_route, refresh_supplies)
+            (handle_map_click, apply_actions, process_turn, religion_turn, continue_orders, visit_villages, automate_workers, advance_selection, preview_route, refresh_supplies, work_tiles, nuclear_strikes)
                 .chain()
                 .in_set(GameLogic)
                 .run_if(in_state(AppState::Playing)),
@@ -607,6 +629,8 @@ pub fn init_game(app: &mut App) {
         .add_event::<MapClick>()
         .add_event::<Burst>()
         .add_event::<BattleShown>()
+        .add_event::<Detonation>()
+        .init_resource::<NukeAim>()
         .add_event::<savegame::SaveRequest>();
 }
 
@@ -801,7 +825,7 @@ fn handle_map_click(
     mut selection: ResMut<Selection>,
     mut units: Query<(Entity, &mut Unit)>,
     mut cities: Query<(Entity, &mut City)>,
-    (tiles, walls_of, rivers, civs): (Query<&HexTile>, Query<&CityBuildings>, Res<Rivers>, Res<Civilizations>),
+    (tiles, walls_of, rivers, civs, supplies): (Query<&HexTile>, Query<&CityBuildings>, Res<Rivers>, Res<Civilizations>, Res<Supplies>),
     state: Res<GameState>,
     map: Res<MapData>,
     tech: Res<TechState>,
@@ -810,7 +834,7 @@ fn handle_map_click(
     mut log: ResMut<GameLog>,
     mut dirty: ResMut<Dirty>,
     (mut cycle, mut wonders, mut great, mut taken): (ResMut<Cycle>, ResMut<WorldWonders>, ResMut<GreatPeople>, ResMut<JustCaptured>),
-    (mut sounds, mut battles): (EventWriter<Sfx>, EventWriter<BattleShown>),
+    (mut sounds, mut battles, mut strikes, mut aim): (EventWriter<Sfx>, EventWriter<BattleShown>, EventWriter<Detonation>, ResMut<NukeAim>),
     mut commands: Commands,
 ) {
     for click in clicks.read() {
@@ -826,6 +850,43 @@ fn handle_map_click(
             }
             continue;
         };
+        // A selected nuclear missile: the first click aims, a second click on the same tile launches.
+        if let Some(missile) = selection.unit.filter(|e| units.get(*e).is_ok_and(|(_, u)| u.owner == PLAYER && u.unit_type == UnitType::NuclearMissile)) {
+            let from = units.get(missile).map(|(_, u)| u.position).unwrap_or(hex);
+            if from.distance_to(hex) > MISSILE_RANGE {
+                log.push(format!("That is beyond the missile's range ({MISSILE_RANGE} tiles)."));
+                continue;
+            }
+            if aim.0 == Some(hex) {
+                aim.0 = None;
+                commands.entity(missile).try_despawn_recursive();
+                selection.unit = None;
+                strikes.send(Detonation { at: hex, by: PLAYER });
+            } else {
+                aim.0 = Some(hex);
+                log.push("Target set. Click the same tile again to launch the missile - everything within a tile of it will be destroyed. (Esc to stand down.)");
+            }
+            continue;
+        }
+        aim.0 = None;
+        // With one of our cities open, a click on a tile of its area moves a citizen there (or off it).
+        if let Some(city_entity) = selection.city.filter(|_| selection.unit.is_none() && !click.secondary) {
+            let own_units_here = units.iter().any(|(_, u)| u.position == hex && u.owner == PLAYER);
+            if let Ok((_, mut city)) = cities.get_mut(city_entity) {
+                let in_area = supplies.territory.get(&hex).is_some_and(|(o, home)| *o == PLAYER && *home == city.position);
+                if city.owner == PLAYER && in_area && hex != city.position && !own_units_here {
+                    let value = |h: Hex| tiles.iter().find(|t| t.coord == h).map(|t| {
+                        let y = bevy_civ::tiles::tile_yield(t.terrain, &t.improvements, None, rivers.tiles.contains(&h));
+                        y.0 * 2 + y.1 * 2 + y.2
+                    }).unwrap_or(0);
+                    if let Some(message) = toggle_worked(&mut city, hex, value) {
+                        log.push(message);
+                    }
+                    sounds.send(Sfx::Select);
+                    continue;
+                }
+            }
+        }
 
         let snapshot: Vec<(Entity, Hex, u32, UnitType)> =
             units.iter().map(|(e, u)| (e, u.position, u.owner, u.unit_type)).collect();
@@ -1386,7 +1447,7 @@ fn apply_actions(
     mut log: ResMut<GameLog>,
     mut dirty: ResMut<Dirty>,
     (mut cycle, supplies, mut map, mut end_turn, mut focus): (ResMut<Cycle>, Res<Supplies>, ResMut<MapData>, EventWriter<EndTurnNow>, EventWriter<Focus>),
-    (unit_entities, mut sounds, mut wonders, mut great, mut spies, homes, walled, mut taken, automated, rivers, mut saves, mut religions): (
+    (unit_entities, mut sounds, mut wonders, mut great, mut spies, homes, walled, mut taken, automated, rivers, mut saves, mut religions, mut space): (
         Query<Entity, With<Unit>>,
         EventWriter<Sfx>,
         ResMut<WorldWonders>,
@@ -1399,6 +1460,7 @@ fn apply_actions(
         Res<Rivers>,
         EventWriter<savegame::SaveRequest>,
         ResMut<Religions>,
+        ResMut<SpaceRace>,
     ),
     mut commands: Commands,
 ) {
@@ -2057,6 +2119,17 @@ fn apply_actions(
                     city.queue.push(item.clone());
                 }
             }
+            Action::LaunchShip => {
+                if let Some(arrives) = space.launch(PLAYER, state.turn) {
+                    log.push(format!("Our spaceship lifts off for {}, {} light-years away! It arrives on turn {arrives} - unless our capital falls.", bevy_civ::space::DESTINATION, bevy_civ::space::LIGHT_YEARS));
+                }
+            }
+            Action::AutoTiles => {
+                let Some(mut city) = selection.city.and_then(|e| cities.get_mut(e).ok()) else { continue };
+                if city.owner == PLAYER {
+                    city.worked.clear();
+                }
+            }
             Action::Unqueue(index) => {
                 let Some(mut city) = selection.city.and_then(|e| cities.get_mut(e).ok()) else { continue };
                 if city.owner == PLAYER && *index < city.queue.len() {
@@ -2163,7 +2236,7 @@ fn process_turn(
     (mut trade, map, supplies, religions): (ResMut<TradeRoutes>, Res<MapData>, Res<Supplies>, Res<Religions>),
     (mut space, mut wonders, mut great, mut spies): (ResMut<SpaceRace>, ResMut<WorldWonders>, ResMut<GreatPeople>, ResMut<Espionage>),
     (mut log, mut dirty, mut cycle): (ResMut<GameLog>, ResMut<Dirty>, ResMut<Cycle>),
-    mut battles: EventWriter<BattleShown>,
+    (mut battles, mut strikes): (EventWriter<BattleShown>, EventWriter<Detonation>),
     (homes, mut history, mut culture, mut golden, mut taken, rivers, mut saves, observer): (
         Query<&HomeCity>,
         ResMut<History>,
@@ -2230,7 +2303,7 @@ fn process_turn(
     let space_wanted: HashMap<u32, Vec<Building>> = civs
         .players
         .iter()
-        .map(|c| (c.id, [Building::SpaceStructure, Building::SpaceComponent, Building::SpaceModule].into_iter().filter(|p| p.required_tech().is_some_and(|t| c.tech.researched.contains(&t)) && space.wants(c.id, *p)).collect()))
+        .map(|c| (c.id, [Building::SpaceStructure, Building::SpaceComponent, Building::SpaceModule].into_iter().filter(|p| p.required_tech().is_some_and(|t| c.tech.researched.contains(&t)) && space.wants(c.id, *p, false)).collect()))
         .collect();
     let wonder_sites: Vec<(Hex, u32)> = cities
         .iter()
@@ -2414,8 +2487,8 @@ fn process_turn(
         }
         city.food_storage += extra_food;
         city.production_progress += extra_shields;
-        // Trade along the rivers in the city's land: a gold for every river tile.
-        let river_gold = supplies.territory.iter().filter(|(at, (_, home))| *home == city.position && rivers.tiles.contains(at)).count() as i32;
+        // (River trade is counted on the worked tiles; see `tiles`.)
+        let river_gold = 0;
         if mine {
             total_gold += extra_gold as i32 + river_gold;
         } else if owner != BARBARIANS {
@@ -2585,18 +2658,29 @@ fn process_turn(
                     }
                 }
                 ProductionItem::Building(b) if b.is_spaceship_part() => {
-                    match space.add_part(city.owner, b, state.turn) {
+                    match space.add_part(city.owner, b, state.turn, !mine) {
                         Some(arrives) => {
-                            let who = civs.players.iter().find(|c| c.id == city.owner).map(|c| c.name.clone()).unwrap_or_else(|| "We".into());
-                            log.push(if mine {
-                                format!("Our spaceship is complete and launches! It reaches Alpha Centauri on turn {arrives} unless our capital falls.")
-                            } else {
-                                format!("{who} have launched a spaceship! It arrives on turn {arrives} unless their capital falls.")
-                            });
+                            let who = civs.players.iter().find(|c| c.id == city.owner).map(|c| c.name.clone()).unwrap_or_else(|| "They".into());
+                            log.push(format!(
+                                "{} have launched a spaceship for {}! It arrives on turn {arrives} unless their capital falls.",
+                                capitalised(&who),
+                                bevy_civ::space::DESTINATION
+                            ));
                         }
                         None if mine => {
-                            let missing = space.ships.get(&PLAYER).map(|s| s.missing()).unwrap_or_default();
-                            log.push(format!("{} completes a {}. Still needed: {missing}.", city.name, b.name()));
+                            let ship = space.ships.get(&PLAYER).cloned().unwrap_or_default();
+                            log.push(if ship.is_ready() {
+                                format!(
+                                    "{} completes a {}. Our ship is ready: launch it from the Empire advisor (Space), {} turns to {} - or add components (up to {}) to fly faster.",
+                                    city.name,
+                                    b.name(),
+                                    ship.flight_turns(),
+                                    bevy_civ::space::DESTINATION,
+                                    bevy_civ::space::MOST[1]
+                                )
+                            } else {
+                                format!("{} completes a {}. Still needed: {}.", city.name, b.name(), ship.missing())
+                            });
                         }
                         None => {}
                     }
@@ -3218,6 +3302,33 @@ fn process_turn(
             }
         }
     }
+    // Computer players at war fire their nuclear missiles at the largest enemy city in range that no
+    // SDI Defense protects.
+    {
+        let missiles: Vec<(Entity, u32, Hex)> = units
+            .iter()
+            .filter(|(e, u)| !dead.contains(e) && u.owner != PLAYER && u.unit_type == UnitType::NuclearMissile)
+            .map(|(e, u)| (e, u.owner, u.position))
+            .collect();
+        for (entity, owner, at) in missiles {
+            if !rng.gen_bool(0.3) {
+                continue;
+            }
+            let shielded = |hex: Hex| cities.iter().any(|(c, b, _)| c.owner != owner && b.has(Building::SdiDefense) && c.position.distance_to(hex) <= SDI_RANGE);
+            let target = cities
+                .iter()
+                .filter(|(c, _, _)| c.owner != owner && c.position.distance_to(at) <= MISSILE_RANGE)
+                .filter(|(c, _, _)| c.owner == BARBARIANS || diplomacy.get_treaty(owner, c.owner) == Treaty::War)
+                .filter(|(c, _, _)| !shielded(c.position))
+                .max_by_key(|(c, _, _)| c.population)
+                .map(|(c, _, _)| c.position);
+            if let Some(target) = target {
+                dead.insert(entity);
+                commands.entity(entity).try_despawn_recursive();
+                strikes.send(Detonation { at: target, by: owner });
+            }
+        }
+    }
     // Computer troops standing on improved enemy land they are at war with sometimes pillage it.
     {
         let city_tiles: HashSet<Hex> = cities.iter().map(|(c, _, _)| c.position).collect();
@@ -3780,6 +3891,138 @@ pub fn visit_villages(
     }
 }
 
+/// Puts every city's working citizens on tiles of its area: the player's own choices are kept (and
+/// gaps filled by the governor); computer players' cities are re-planned each time. Runs whenever
+/// borders, cities, the land or units change, and stores each city's worked tiles and their yield.
+#[allow(clippy::too_many_arguments)]
+pub fn work_tiles(
+    (supplies, rivers, tech, civs, diplomacy): (Res<Supplies>, Res<Rivers>, Res<TechState>, Res<Civilizations>, Res<Diplomacy>),
+    tiles: Query<&HexTile>,
+    units: Query<&Unit>,
+    mut cities: Query<(&mut City, &CityBuildings)>,
+    (changed_tiles, changed_units): (Query<(), Changed<HexTile>>, Query<(), Changed<Unit>>),
+) {
+    let city_changed = cities.iter_mut().any(|(c, _)| c.is_changed());
+    if !(supplies.is_changed() || city_changed || !changed_tiles.is_empty() || !changed_units.is_empty()) {
+        return;
+    }
+    let tile_at: HashMap<Hex, &HexTile> = tiles.iter().map(|t| (t.coord, t)).collect();
+    let knows = |owner: u32, t: Tech| if owner == PLAYER { tech.researched.contains(&t) } else { civs.players.iter().any(|c| c.id == owner && c.tech.researched.contains(&t)) };
+    let yield_for = |owner: u32, hex: Hex| -> Option<bevy_civ::tiles::Yield> {
+        let t = tile_at.get(&hex)?;
+        let resource = t.resource.filter(|r| r.reveal_tech().is_none_or(|need| knows(owner, need)));
+        Some(bevy_civ::tiles::tile_yield(t.terrain, &t.improvements, resource, rivers.tiles.contains(&hex)))
+    };
+    let mut areas: HashMap<Hex, Vec<Hex>> = HashMap::new();
+    for (hex, (_, home)) in &supplies.territory {
+        areas.entry(*home).or_default().push(*hex);
+    }
+    let occupants: Vec<(Hex, u32)> = units.iter().filter(|u| u.unit_type.is_army()).map(|u| (u.position, u.owner)).collect();
+    for (mut city, buildings) in &mut cities {
+        let owner = city.owner;
+        // A Harbor makes every worked ocean tile one food richer.
+        let harbor = buildings.has(Building::Harbor);
+        let yield_for = |owner: u32, hex: Hex| yield_for(owner, hex).map(|y| if harbor && tile_at.get(&hex).is_some_and(|t| t.terrain == Terrain::Water) { (y.0 + 1, y.1, y.2) } else { y });
+        let enemy_on = |h: &Hex| occupants.iter().any(|(p, o)| p == h && *o != owner && (*o == BARBARIANS || owner == BARBARIANS || diplomacy.get_treaty(owner, *o) == Treaty::War));
+        let centre = bevy_civ::tiles::centre_yield(yield_for(owner, city.position).unwrap_or((2, 0, 0)));
+        let mut candidates: Vec<(Hex, bevy_civ::tiles::Yield)> = areas
+            .get(&city.position)
+            .map(|area| area.iter().filter(|h| **h != city.position && !enemy_on(h)).filter_map(|h| yield_for(owner, *h).map(|y| (*h, y))).collect())
+            .unwrap_or_default();
+        candidates.sort_by_key(|(h, _)| (h.x, h.y));
+        let keep = if owner == PLAYER { city.worked.clone() } else { Vec::new() };
+        let worked = bevy_civ::tiles::assign(&candidates, &keep, centre, city.workers(), city.population);
+        let land = bevy_civ::tiles::total(&candidates, &worked, centre);
+        if city.worked != worked {
+            city.worked = worked;
+        }
+        if city.land != land {
+            city.land = land;
+        }
+    }
+}
+
+/// The player moves a citizen: off a worked tile (to become an entertainer), or onto a free tile of
+/// the city's area (taking a specialist back to work, or else the least useful worked tile's
+/// citizen). Returns a note for the log when something worth saying happened.
+fn toggle_worked(city: &mut City, hex: Hex, value: impl Fn(Hex) -> u32) -> Option<String> {
+    use bevy_civ::city::Specialist;
+    if let Some(i) = city.worked.iter().position(|h| *h == hex) {
+        city.worked.remove(i);
+        city.add_specialist(Specialist::Entertainer);
+        return Some(format!("A citizen of {} leaves that tile to entertain (+2 luxury).", city.name));
+    }
+    if let Some(i) = city.specialists.iter().position(|s| *s == Specialist::Entertainer).or((!city.specialists.is_empty()).then_some(0)) {
+        city.specialists.remove(i);
+    } else if let Some(i) = city.worked.iter().enumerate().min_by_key(|(_, h)| value(**h)).map(|(i, _)| i) {
+        city.worked.remove(i);
+    } else {
+        return None;
+    }
+    city.worked.push(hex);
+    None
+}
+
+/// Nuclear strikes: unless an SDI Defense within reach shoots the missile down, everything within a
+/// tile of the target is destroyed, a city there loses half its people and two buildings, fallout
+/// spoils the land around, the victim goes to war with the attacker and the world turns against it.
+#[allow(clippy::too_many_arguments)]
+pub fn nuclear_strikes(
+    mut strikes: EventReader<Detonation>,
+    units: Query<(Entity, &Unit)>,
+    mut cities: Query<(&mut City, &mut CityBuildings)>,
+    mut tiles: Query<&mut HexTile>,
+    (mut diplomacy, civs, supplies): (ResMut<Diplomacy>, Res<Civilizations>, Res<Supplies>),
+    (mut log, mut dirty, mut bursts): (ResMut<GameLog>, ResMut<Dirty>, EventWriter<Burst>),
+    mut commands: Commands,
+) {
+    let name_of = |id: u32| if id == PLAYER { "We".to_string() } else { civs.players.iter().find(|c| c.id == id).map(|c| capitalised(&c.name)).unwrap_or_else(|| "Someone".into()) };
+    let mut rng = rand::thread_rng();
+    for strike in strikes.read() {
+        dirty.map = true;
+        let target_city = cities.iter().find(|(c, _)| c.position == strike.at).map(|(c, _)| (c.owner, c.name.clone()));
+        let victim = target_city.as_ref().map(|(o, _)| *o).or_else(|| supplies.territory.get(&strike.at).map(|(o, _)| *o));
+        let place = target_city.as_ref().map(|(_, n)| n.clone()).unwrap_or_else(|| "open country".into());
+        // An SDI Defense of anyone but the attacker shoots the missile down.
+        let shield = cities.iter().find(|(c, b)| c.owner != strike.by && b.has(Building::SdiDefense) && c.position.distance_to(strike.at) <= SDI_RANGE).map(|(c, _)| c.name.clone());
+        if let Some(defender) = shield {
+            log.push(format!("A nuclear missile aimed at {place} is shot down by the SDI Defense of {defender}."));
+            continue;
+        }
+        for hex in hexx::shapes::hexagon(strike.at, 1) {
+            bursts.send(Burst(hex));
+            for (entity, unit) in units.iter().filter(|(_, u)| u.position == hex) {
+                let _ = unit;
+                commands.entity(entity).try_despawn_recursive();
+            }
+            if let Some((mut city, mut buildings)) = cities.iter_mut().find(|(c, _)| c.position == hex) {
+                city.population = (city.population / 2).max(1);
+                city.food_storage = 0;
+                for _ in 0..2 {
+                    let ordinary: Vec<usize> = buildings.buildings.iter().enumerate().filter(|(_, b)| !b.is_wonder()).map(|(i, _)| i).collect();
+                    if ordinary.is_empty() {
+                        break;
+                    }
+                    let index = ordinary[rng.gen_range(0..ordinary.len())];
+                    buildings.buildings.remove(index);
+                }
+            } else if let Some(mut tile) = tiles.iter_mut().find(|t| t.coord == hex && t.terrain != Terrain::Water) {
+                if rng.gen_bool(0.7) {
+                    tile.add_improvement(Improvement::Pollution);
+                }
+            }
+        }
+        log.push(format!("{} launched a nuclear missile at {place}! Everything within a tile is destroyed, and fallout spoils the land.", name_of(strike.by)));
+        // The victim fights back; every other people recoils.
+        if let Some(victim) = victim.filter(|v| *v != strike.by && *v != BARBARIANS) {
+            diplomacy.set_treaty(strike.by, victim, Treaty::War);
+        }
+        for civ in civs.players.iter().filter(|c| c.id != strike.by && !c.eliminated) {
+            diplomacy.change_attitude(civ.id, strike.by, -25);
+        }
+    }
+}
+
 /// What a city does after finishing a building: the next project in its queue, or wait for orders.
 fn next_hint(city: &City) -> String {
     match city.queue.first() {
@@ -3882,6 +4125,7 @@ mod tests {
             .init_resource::<Espionage>()
             .init_resource::<Religions>()
             .init_resource::<Villages>()
+            .init_resource::<SpaceRace>()
             .init_resource::<JustCaptured>()
             .init_resource::<Rivers>()
             .add_systems(Update, apply_actions);

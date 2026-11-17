@@ -89,7 +89,7 @@ fn load_art(mut commands: Commands, assets: Res<AssetServer>, mut layouts: ResMu
         resources: assets.load("sprites/resources.png"),
         resources_layout: grid(96, 96, 18, 1),
         units: assets.load("sprites/units.png"),
-        units_layout: grid(128, 128, 4, 44),
+        units_layout: grid(128, 128, 4, 45),
         cities: assets.load("sprites/cities.png"),
         cities_layout: grid(192, 192, 4, 1),
         flag: assets.load("sprites/flag.png"),
@@ -156,7 +156,7 @@ impl Plugin for ClientPlugin {
             .init_resource::<battles::BattleTheatre>()
             .add_systems(
                 Update,
-                (battles::queue_battles, battles::stage_battles, battles::animate_fallen, battles::animate_battle_text, map::update_villages)
+                (battles::queue_battles, battles::stage_battles, battles::animate_fallen, battles::animate_battle_text, map::update_villages, map::show_city_area)
                     .chain()
                     .after(GameLogic)
                     .run_if(in_state(crate::AppState::Playing)),
