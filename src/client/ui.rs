@@ -38,6 +38,8 @@ const INK: Color = Color::srgb(0.16, 0.11, 0.07);
 const INK_SOFT: Color = Color::srgb(0.36, 0.27, 0.18);
 const BRONZE: Color = Color::srgb(0.86, 0.68, 0.36);
 const GREEN: Color = Color::srgb(0.56, 0.8, 0.42);
+/// A button that cannot be used just now.
+const SPENT: Color = Color::srgb(0.6, 0.57, 0.52);
 const MM: u32 = 176;
 const RED: Color = Color::srgb(0.9, 0.45, 0.38);
 
@@ -214,7 +216,7 @@ fn help_lines(topic: HelpTopic) -> Vec<String> {
         ],
         HelpTopic::Victory => vec![
             "Conquest: take every rival city. Domination: hold two thirds of the cities in the world (at least five).".to_string(),
-            "Diplomacy: once the United Nations (Computers) stands, every 10 turns the world votes for Secretary-General between its owner and the highest-scoring other people. Each people votes for itself or for the candidate it likes better; two thirds of all the votes win.".to_string(),
+            "Diplomacy: once the United Nations (Computers) stands, every 10 turns the world votes for Secretary-General between its owner and the highest-scoring other people. Each candidate votes for itself; every other people backs the candidate it likes better, but only one it is friendly with (peace treaties, alliances, gifts, trade and a shared faith build goodwill) - otherwise it abstains. Two thirds of all the votes win.".to_string(),
             "Space: the race to Alpha Centauri, the nearest star. Research Space Flight, Plastics and Superconductors; cities with a Factory build 4 Space Structures, 2 to 4 Components (engines) and 2 Modules. Launch from the Empire advisor's Space page: the voyage takes 12 turns, 2 fewer for each extra engine. The first ship to arrive wins - unless its capital falls first.".to_string(),
             format!("Culture: reach {} culture points (in a game of {} turns; scaled to the game's length) and twice as much as any rival.", bevy_civ::culture::VICTORY_CULTURE, 400),
             "Score: if nobody has won by the last turn (chosen when the game begins), the highest score wins. Score counts 2 points a citizen, 10 a technology and 50 a wonder, for everyone alike. A rival who holds two thirds of the cities wins by domination.".to_string(),
@@ -588,26 +590,44 @@ fn portrait(art: &Art, index: usize, size: f32) -> impl Bundle {
 
 // ---- static layout -----------------------------------------------------------------------------
 
+/// The status bar across the top of the screen.
+#[derive(Component)]
+pub struct StatusBar;
+
+/// The status bar's figures (left), which give way before the buttons (right) on a wide screen.
+#[derive(Component)]
+pub struct StatusFigures;
+
 pub fn setup_ui(mut commands: Commands, art: Res<Art>, mut images: ResMut<Assets<Image>>) {
-    // Status bar
+    // Status bar: the figures on the left, the advisors' buttons on the right. On a wide screen
+    // they share one row and the figures are clipped if they run long; on a narrow one the buttons
+    // wrap onto a second row (see `fit_ui_scale`).
     commands
-        .spawn(panel(
-            &art.panel,
-            Node {
-                position_type: PositionType::Absolute,
-                top: Val::Px(0.0),
-                left: Val::Px(0.0),
-                right: Val::Px(0.0),
-                min_height: Val::Px(52.0),
-                padding: UiRect::axes(Val::Px(20.0), Val::Px(8.0)),
-                align_items: AlignItems::Center,
-                column_gap: Val::Px(13.0),
-                row_gap: Val::Px(4.0),
-                flex_wrap: FlexWrap::Wrap,
-                ..default()
-            },
+        .spawn((
+            StatusBar,
+            panel(
+                &art.panel,
+                Node {
+                    position_type: PositionType::Absolute,
+                    top: Val::Px(0.0),
+                    left: Val::Px(0.0),
+                    right: Val::Px(0.0),
+                    min_height: Val::Px(52.0),
+                    padding: UiRect::axes(Val::Px(16.0), Val::Px(8.0)),
+                    align_items: AlignItems::Center,
+                    column_gap: Val::Px(12.0),
+                    row_gap: Val::Px(4.0),
+                    flex_wrap: FlexWrap::Wrap,
+                    ..default()
+                },
+            ),
         ))
-        .with_children(|bar| {
+        .with_children(|top| {
+            top.spawn((
+                StatusFigures,
+                Node { align_items: AlignItems::Center, column_gap: Val::Px(11.0), row_gap: Val::Px(4.0), flex_wrap: FlexWrap::Wrap, flex_shrink: 1.0, flex_grow: 1.0, min_width: Val::Px(0.0), overflow: Overflow::clip_x(), ..default() },
+            ))
+            .with_children(|bar| {
             bar.spawn((label(&art.font_title, "", 20.0, GOLD), StatText::Title));
             for (index, kind) in [
                 (icon::TURN, StatText::Turn),
@@ -622,13 +642,15 @@ pub fn setup_ui(mut commands: Commands, art: Res<Art>, mut images: ResMut<Assets
                 });
             }
             bar.spawn((label(&art.font_body, "", 16.0, MUTED), StatText::Government));
-            bar.spawn(Node { flex_grow: 1.0, ..default() });
-            button(bar, &art, "Science (Q)", Command::Toggle(Modal::Science), BRONZE, 14.0);
-            button(bar, &art, "Diplomacy (E)", Command::Toggle(Modal::Diplomacy), BRONZE, 14.0);
-            button(bar, &art, "Trade (G)", Command::Toggle(Modal::Trade), BRONZE, 14.0);
-            button(bar, &art, "Empire (Y)", Command::Toggle(Modal::Empire), BRONZE, 14.0);
-            button(bar, &art, "Help (F1)", Command::Toggle(Modal::Help), BRONZE, 14.0);
-            button(bar, &art, "Game", Command::Toggle(Modal::Game), BRONZE, 14.0);
+            });
+            top.spawn(Node { column_gap: Val::Px(8.0), row_gap: Val::Px(4.0), flex_wrap: FlexWrap::Wrap, flex_shrink: 0.0, ..default() }).with_children(|bar| {
+                button(bar, &art, "Science (Q)", Command::Toggle(Modal::Science), BRONZE, 14.0);
+                button(bar, &art, "Diplomacy (E)", Command::Toggle(Modal::Diplomacy), BRONZE, 14.0);
+                button(bar, &art, "Trade (G)", Command::Toggle(Modal::Trade), BRONZE, 14.0);
+                button(bar, &art, "Empire (Y)", Command::Toggle(Modal::Empire), BRONZE, 14.0);
+                button(bar, &art, "Help (F1)", Command::Toggle(Modal::Help), BRONZE, 14.0);
+                button(bar, &art, "Game", Command::Toggle(Modal::Game), BRONZE, 14.0);
+            });
         });
 
     // Message log stacked on the unit panel (bottom left)
@@ -1485,8 +1507,14 @@ pub fn rebuild_panels(
                                         });
                                         for (text, change) in [("-10%", less), ("+10%", more)] {
                                             r.spawn(Node { width: Val::Px(64.0), ..default() }).with_children(|slot| {
-                                                if let Some((s, l)) = change {
-                                                    button(slot, art, text, Command::Game(Action::SetRates(s, l)), BRONZE, 13.0);
+                                                // Taxes take the rest, so they have no buttons; elsewhere a step that is
+                                                // not allowed shows greyed, keeping the buttons in place.
+                                                if name == "Taxes" {
+                                                    return;
+                                                }
+                                                match change {
+                                                    Some((s, l)) => button(slot, art, text, Command::Game(Action::SetRates(s, l)), BRONZE, 13.0),
+                                                    None => button(slot, art, text, Command::Game(Action::SetRates(sci, lux)), SPENT, 13.0),
                                                 }
                                             });
                                         }
@@ -1531,17 +1559,18 @@ pub fn rebuild_panels(
                                     let Some((_, buildings, happiness)) = cities.iter().find(|(c, _, _)| c.position == city.position) else { continue };
                                     let making = city.production_queue.as_ref().map(|i| i.name().to_string()).unwrap_or_else(|| "nothing!".into());
                                     let mood = if happiness.in_disorder() { "DISORDER" } else if spies.in_unrest(city.position) { "unrest" } else { "calm" };
+                                    let food = city.food_balance(buildings);
+                                    let food = if food < 0 { format!("starving ({food} food)") } else { format!("{food:+} food") };
                                     let text = format!(
-                                        "{} (size {}) - {:+} food, building {} - {} happy, {} unhappy, {}",
+                                        "{} (size {}): {food}, building {} - {} happy, {} unhappy, {}",
                                         city.name,
                                         city.population,
-                                        city.food_balance(buildings),
                                         making,
                                         happiness.happy,
                                         happiness.unhappy,
                                         mood
                                     );
-                                    let tint = if city.production_queue.is_none() || happiness.in_disorder() { Color::srgb(0.95, 0.6, 0.5) } else { BRONZE };
+                                    let tint = if city.production_queue.is_none() || happiness.in_disorder() || city.food_balance(buildings) < 0 { Color::srgb(0.95, 0.6, 0.5) } else { BRONZE };
                                     w.spawn(Node { ..default() }).with_children(|r| button(r, art, text, Command::Game(Action::SelectCity(entity)), tint, 13.0));
                                 }
                             }
@@ -1716,7 +1745,9 @@ pub fn rebuild_panels(
                             Some(current) => {
                                 let cost = tech.cost_of(current);
                                 let left = (cost.saturating_sub(tech.progress) as f32 / tech.science_per_turn.max(1) as f32).ceil();
-                                w.spawn(label(&art.font_bold, format!("Researching {}  -  {}/{} beakers, about {} turns", current.name(), tech.progress, cost, left), 16.0, INK));
+                                // The pace is only known once the first turn's science is counted.
+                                let pace = if state.turn <= 1 { "the pace shows after the first turn".to_string() } else { format!("about {left} turns") };
+                                w.spawn(label(&art.font_bold, format!("Researching {}  -  {}/{} beakers, {pace}", current.name(), tech.progress, cost), 16.0, INK));
                                 bar(w, tech.progress as f32 / cost as f32, Color::srgb(0.25, 0.6, 0.9));
                             }
                             None => {
@@ -2075,8 +2106,16 @@ pub fn fit_ui_scale(
     mut scale: ResMut<UiScale>,
     mut minimap: Query<&mut Node, With<MinimapNode>>,
     mut left: Query<&mut Node, (With<LeftColumn>, Without<MinimapNode>)>,
+    mut bar: Query<&mut Node, (With<StatusBar>, Without<LeftColumn>, Without<MinimapNode>)>,
 ) {
     let Ok(window) = windows.get_single() else { return };
+    // The status bar keeps to one row unless the screen is too narrow for its buttons.
+    let wrap = if window.width() < 1000.0 { FlexWrap::Wrap } else { FlexWrap::NoWrap };
+    for mut node in &mut bar {
+        if node.flex_wrap != wrap {
+            node.flex_wrap = wrap;
+        }
+    }
     // Narrow (phone) screens get a bigger interface than a straight fit would give: panels wrap and
     // stack instead, and text stays readable.
     let target = (window.width() / 520.0).clamp(0.6, 1.0);

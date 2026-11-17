@@ -126,7 +126,7 @@ pub fn queue_tips(
 
 /// Shows (or hides) the tip panel. It sits in the top-left corner, clear of the city panel and the
 /// windows in the middle of the screen, and steps aside while a window is open.
-pub fn show_tip(tips: Res<Tips>, ui: Res<UiState>, art: Res<Art>, panel: Query<Entity, With<TipPanel>>, mut commands: Commands) {
+pub fn show_tip(tips: Res<Tips>, ui: Res<UiState>, art: Res<Art>, panel: Query<Entity, With<TipPanel>>, bar: Query<&ComputedNode, With<super::ui::StatusBar>>, mut commands: Commands) {
     if !tips.is_changed() && !ui.is_changed() {
         return;
     }
@@ -142,7 +142,7 @@ pub fn show_tip(tips: Res<Tips>, ui: Res<UiState>, art: Res<Art>, panel: Query<E
             TipPanel,
             Node {
                 position_type: PositionType::Absolute,
-                top: Val::Px(62.0),
+                top: Val::Px(bar.get_single().map_or(52.0, |b| b.size().y * b.inverse_scale_factor()) + 10.0),
                 left: Val::Px(10.0),
                 width: Val::Px(380.0),
                 max_width: Val::Percent(94.0),

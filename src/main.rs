@@ -658,7 +658,7 @@ pub fn init_game(app: &mut App) {
         .init_resource::<SpaceRace>()
         .init_resource::<Foreign>()
         .init_resource::<Supplies>()
-        .init_resource::<Cycle>()
+        .insert_resource(Cycle { advance: true, force: false })
         .init_resource::<WorldWonders>()
         .init_resource::<GreatPeople>()
         .init_resource::<Espionage>()
@@ -766,11 +766,29 @@ fn setup_world(
         .collect();
     *tech = TechState::knowing(&defs[0].techs);
 
+    // Every starting city's land: the tiles within two of it that are nearer to it than to any other.
+    let sites: Vec<Hex> = defs.iter().flat_map(|d| d.cities.iter().map(|c| scenario::offset_to_hex(c.col, c.row))).collect();
     for (id, def) in defs.iter().enumerate() {
         let owner = id as u32;
         for city in &def.cities {
             let hex = scenario::offset_to_hex(city.col, city.row);
-            spawn_city(&mut commands, hex, city.name.clone(), city.pop.max(1), owner, city.capital);
+            let land: Vec<Terrain> = hexx::shapes::hexagon(hex, 2)
+                .filter(|h| *h != hex && sites.iter().min_by_key(|s| (s.distance_to(*h), s.x, s.y)) == Some(&hex))
+                .filter_map(|h| map.terrain.get(&h).copied())
+                .collect();
+            let centre = bevy_civ::tiles::centre_yield(bevy_civ::tiles::tile_yield(map.terrain.get(&hex).copied().unwrap_or(Terrain::Plains), &[], None, false)).0;
+            let foods = |harbour: bool| -> Vec<u32> {
+                land.iter().map(|t| bevy_civ::tiles::tile_yield(*t, &[], None, false).0 + u32::from(harbour && *t == Terrain::Water)).collect()
+            };
+            // A port that could not feed its people has a harbour; a city that still could not starts smaller.
+            let wanted = city.pop.max(1);
+            let coastal = land.contains(&Terrain::Water);
+            let harbour = coastal && bevy_civ::tiles::sustainable(wanted, centre, foods(false)) < wanted;
+            let pop = bevy_civ::tiles::sustainable(wanted, centre, foods(harbour));
+            let entity = spawn_city(&mut commands, hex, city.name.clone(), pop, owner, city.capital);
+            if harbour {
+                commands.entity(entity).insert(CityBuildings { buildings: vec![Building::Harbor] });
+            }
             if owner == PLAYER {
                 fog.reveal(hex, 3);
             }
@@ -4099,6 +4117,10 @@ fn advance_selection(
     if !cycle.advance || fought || theatre.is_some_and(|t| t.busy()) {
         return;
     }
+    // A new game's units are not in the world yet: wait for them, then select the first.
+    if !units.iter().any(|(_, u)| u.owner == PLAYER) {
+        return;
+    }
     let force = std::mem::take(&mut cycle.force);
     cycle.advance = false;
     if selection.city.is_some() || state.victory.is_some() {
@@ -4576,7 +4598,7 @@ mod tests {
             .init_resource::<FogOfWar>()
             .init_resource::<Civilizations>()
             .init_resource::<GameLog>()
-            .init_resource::<Cycle>()
+            .insert_resource(Cycle { advance: true, force: false })
             .init_resource::<Supplies>()
             .init_resource::<WorldWonders>()
             .init_resource::<GreatPeople>()
