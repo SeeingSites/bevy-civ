@@ -118,6 +118,11 @@ pub fn choose(city: &CityView, civ: &CivView, supplies: &Supplies, rng: &mut imp
     if !city.defended {
         return unit(best_defender(city, civ, supplies));
     }
+    // A young empire with land to fill expands first: two settlers at a time, from any city that
+    // has grown past its first citizen (unless an enemy is close).
+    if civ.room_to_expand && civ.cities < 6 && civ.settlers < 2 && city.population >= 2 && !city.threatened {
+        return unit(UnitType::Settler);
+    }
     let wanted_workers = (civ.cities.div_ceil(2) + usize::from(civ.road_work > 3 * civ.workers.max(1))).min(civ.cities.max(1));
     if civ.workers < wanted_workers {
         return unit(worker_kind(civ));
@@ -245,7 +250,7 @@ mod tests {
     }
 
     fn civ(tech: &TechState) -> CivView<'_> {
-        CivView { tech, aggression: 0.4, cities: 2, workers: 1, settlers: 1, military: 3, navy: 0, air: 0, road_work: 0, cut_off: 0, at_war: false, wonders_taken: &NO_WONDERS, caravans: 2, diplomats: 1, missionaries: 0, faith_to_spread: false, wonder_elsewhere: false, space_parts: &[], room_to_expand: true, forbidden_palace: false, ferries: 0, ferry_wanted: 0 }
+        CivView { tech, aggression: 0.4, cities: 2, workers: 1, settlers: 2, military: 3, navy: 0, air: 0, road_work: 0, cut_off: 0, at_war: false, wonders_taken: &NO_WONDERS, caravans: 2, diplomats: 1, missionaries: 0, faith_to_spread: false, wonder_elsewhere: false, space_parts: &[], room_to_expand: true, forbidden_palace: false, ferries: 0, ferry_wanted: 0 }
     }
 
     fn knowing(techs: &[Tech]) -> TechState {
@@ -275,6 +280,18 @@ mod tests {
         let at_war = CivView { at_war: true, military: 0, ..civ(&tech) };
         assert_ne!(best_attacker(&view, &at_war, &Supplies::default()), UnitType::Legion);
         assert_eq!(best_attacker(&view, &at_war, &supplies_with(&[Good::Iron])), UnitType::Legion);
+    }
+
+    #[test]
+    fn a_young_empire_with_room_expands_first() {
+        let tech = knowing(&[Tech::Pottery]);
+        let young = CivView { settlers: 0, ..civ(&tech) };
+        assert_eq!(choose(&city(), &young, &Supplies::default(), &mut rand::thread_rng()), ProductionItem::Unit(UnitType::Settler));
+        // Not with an enemy close, nor once the land is full.
+        let threatened = CityView { threatened: true, ..city() };
+        assert_ne!(choose(&threatened, &young, &Supplies::default(), &mut rand::thread_rng()), ProductionItem::Unit(UnitType::Settler));
+        let full = CivView { room_to_expand: false, ..young };
+        assert_ne!(choose(&city(), &full, &Supplies::default(), &mut rand::thread_rng()), ProductionItem::Unit(UnitType::Settler));
     }
 
     #[test]

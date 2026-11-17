@@ -26,8 +26,12 @@ pub fn sprawl_unhappiness(cities: u32) -> u32 {
     cities.saturating_sub(12) / 6
 }
 
+/// Goodwill a voter needs towards a candidate to back it at the United Nations.
+pub const UN_GOODWILL: i32 = 10;
+
 /// A United Nations vote for Secretary-General between two candidates: each candidate votes for
-/// itself, every other voter for the candidate it likes better (abstaining if it dislikes both).
+/// itself, every other voter for the candidate it likes better - if it is friendly with that one
+/// (otherwise, or with no preference, it abstains).
 /// Returns each candidate's votes and the winner, if one has two thirds of all the voters.
 pub fn un_vote(voters: &[u32], candidates: [u32; 2], attitude: impl Fn(u32, u32) -> i32) -> ([usize; 2], Option<u32>) {
     let mut tally = [0usize; 2];
@@ -37,10 +41,12 @@ pub fn un_vote(voters: &[u32], candidates: [u32; 2], attitude: impl Fn(u32, u32)
             continue;
         }
         let (a, b) = (attitude(*voter, candidates[0]), attitude(*voter, candidates[1]));
-        if a.max(b) < -20 {
+        // A voter backs only a candidate it is friendly with (and likes better than the other);
+        // otherwise it abstains.
+        if a.max(b) < UN_GOODWILL || a == b {
             continue;
         }
-        tally[if a >= b { 0 } else { 1 }] += 1;
+        tally[if a > b { 0 } else { 1 }] += 1;
     }
     let needed = (voters.len() * 2).div_ceil(3);
     let winner = (0..2).find(|i| tally[*i] >= needed).map(|i| candidates[i]);
@@ -179,5 +185,8 @@ mod un_tests {
         assert_eq!(winner, Some(0));
         let split = |v: u32, c: u32| if (v % 2 == 0) == (c == 0) { 10 } else { 0 };
         assert_eq!(un_vote(&voters, [0, 1], split).1, None);
+        // Mild preference is not support: voters only lukewarm towards both abstain.
+        let lukewarm = |_: u32, c: u32| if c == 0 { 5 } else { 0 };
+        assert_eq!(un_vote(&voters, [0, 1], lukewarm).0, [1, 1]);
     }
 }

@@ -96,6 +96,13 @@ pub fn assign(candidates: &[(Hex, Yield)], keep: &[Hex], centre: Yield, workers:
     chosen
 }
 
+/// The most citizens (up to `population`) the best of these tiles feed, besides the city's own
+/// tile (which gives `centre` food): a scenario's starting city is no bigger than its land feeds.
+pub fn sustainable(population: u32, centre: u32, mut foods: Vec<u32>) -> u32 {
+    foods.sort_unstable_by(|a, b| b.cmp(a));
+    (1..=population).rev().find(|n| centre + foods.iter().take(*n as usize).sum::<u32>() >= n * FOOD_PER_CITIZEN).unwrap_or(1)
+}
+
 /// Everything the city's land gives: its own tile plus the worked ones.
 pub fn total(candidates: &[(Hex, Yield)], worked: &[Hex], centre: Yield) -> Yield {
     worked
@@ -116,6 +123,15 @@ mod tests {
         assert_eq!(tile_yield(Terrain::Plains, &[Improvement::Farm, Improvement::Pollution], None, false), (0, 0, 0));
         assert_eq!(tile_yield(Terrain::Water, &[], Some(Resource::Fish), false), (3, 0, 2));
         assert_eq!(centre_yield((2, 0, 0)), (3, 2, 1));
+    }
+
+    #[test]
+    fn a_city_is_no_bigger_than_its_land_feeds() {
+        // Three hills and the sea around a plains town: 2 from the centre, 1 a tile.
+        assert_eq!(sustainable(5, 2, vec![1, 1, 1, 1, 1, 1]), 2);
+        // With a harbour the sea gives 2: all five are fed.
+        assert_eq!(sustainable(5, 2, vec![2, 2, 2, 2, 2, 1]), 5);
+        assert_eq!(sustainable(3, 3, vec![]), 1);
     }
 
     #[test]
