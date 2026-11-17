@@ -21,9 +21,10 @@ pub type Points = [u32; 4];
 /// The great people a city can give birth to (generals come from battle).
 pub const CITY_KINDS: [UnitType; 4] = [UnitType::GreatMerchant, UnitType::GreatScientist, UnitType::GreatArtist, UnitType::GreatEngineer];
 
-/// Points needed for a civilization's first great person; each one born adds [`THRESHOLD_STEP`].
-pub const FIRST_THRESHOLD: u32 = 40;
-pub const THRESHOLD_STEP: u32 = 30;
+/// Points needed for a civilization's first great person; each later one needs [`THRESHOLD_STEP`]
+/// times one more than the one before (60, 180, 360, 600...), so great people grow rarer.
+pub const FIRST_THRESHOLD: u32 = 60;
+pub const THRESHOLD_STEP: u32 = 60;
 /// General points per battle won, and the points needed for each general.
 pub const GENERAL_PER_VICTORY: u32 = 10;
 pub const GENERAL_THRESHOLD: u32 = 40;
@@ -117,7 +118,8 @@ pub struct GreatPeople {
 impl GreatPeople {
     /// Points a city of `owner` needs for the next great person.
     pub fn threshold(&self, owner: u32) -> u32 {
-        FIRST_THRESHOLD + THRESHOLD_STEP * self.born.get(&owner).copied().unwrap_or(0)
+        let born = self.born.get(&owner).copied().unwrap_or(0);
+        FIRST_THRESHOLD + THRESHOLD_STEP * born * (born + 3) / 2
     }
 
     /// Adds a turn's points to a city. Returns the great person born there, if any.
@@ -193,7 +195,7 @@ mod tests {
         }
         assert_eq!(born, Some(UnitType::GreatScientist));
         assert_eq!(people.progress(city), 0);
-        assert_eq!(people.threshold(1), FIRST_THRESHOLD + THRESHOLD_STEP);
+        assert_eq!(people.threshold(1), 180);
         // Another civilization's threshold is untouched.
         assert_eq!(people.threshold(2), FIRST_THRESHOLD);
     }

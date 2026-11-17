@@ -20,6 +20,12 @@ pub enum Treaty {
     War,
 }
 
+/// Citizens made unhappy in every city of an empire of `cities` cities: none up to 12, then one
+/// more for every 6.
+pub fn sprawl_unhappiness(cities: u32) -> u32 {
+    cities.saturating_sub(12) / 6
+}
+
 impl Default for Diplomacy {
     fn default() -> Self {
         Self {

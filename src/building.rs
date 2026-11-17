@@ -28,6 +28,7 @@ pub enum Building {
     CoastalFortress,
     Airport,
     SdiDefense,
+    ForbiddenPalace,
     // Spaceship parts: each goes to its civilization's ship, not into the city
     SpaceStructure,
     SpaceComponent,
@@ -64,11 +65,11 @@ pub enum Building {
 }
 
 impl Building {
-    pub const ALL: [Building; 57] = [
+    pub const ALL: [Building; 58] = [
         Building::Granary, Building::Barracks, Building::Library, Building::Marketplace, Building::Walls,
         Building::Aqueduct, Building::University, Building::Bank, Building::Factory, Building::Harbor,
         Building::Temple, Building::Courthouse, Building::Colosseum, Building::Cathedral, Building::SewerSystem, Building::StockExchange,
-        Building::Observatory, Building::ResearchLab, Building::PowerPlant, Building::PoliceStation, Building::Supermarket, Building::MassTransit, Building::RecyclingCenter, Building::CoastalFortress, Building::Airport, Building::SdiDefense,
+        Building::Observatory, Building::ResearchLab, Building::PowerPlant, Building::PoliceStation, Building::Supermarket, Building::MassTransit, Building::RecyclingCenter, Building::CoastalFortress, Building::Airport, Building::SdiDefense, Building::ForbiddenPalace,
         Building::SpaceStructure, Building::SpaceComponent, Building::SpaceModule, Building::Pyramids,
         Building::GreatLibrary, Building::HangingGardens, Building::Colossus, Building::Oracle,
         Building::GreatLighthouse, Building::GreatWall, Building::StatueOfZeus, Building::Mausoleum, Building::Copernicus, Building::SunTzu, Building::MarcoPolo, Building::KingRichards, Building::Michelangelo, Building::Leonardo, Building::Bach, Building::Magellan, Building::Newton, Building::AdamSmith, Building::Shakespeare, Building::Darwin, Building::Liberty, Building::HooverDam, Building::Eiffel, Building::Internet, Building::Apollo, Building::CureForCancer, Building::Manhattan,
@@ -95,6 +96,7 @@ impl Building {
             Building::CoastalFortress => "Coastal Fortress",
             Building::Airport => "Airport",
             Building::SdiDefense => "SDI Defense",
+            Building::ForbiddenPalace => "Forbidden Palace",
             Building::Manhattan => "Manhattan Project",
             Building::Factory => "Factory",
             Building::Harbor => "Harbor",
@@ -157,6 +159,7 @@ impl Building {
             Building::CoastalFortress => 80,
             Building::Airport => 120,
             Building::SdiDefense => 160,
+            Building::ForbiddenPalace => 150,
             Building::Manhattan => 500,
             Building::Factory => 150,
             Building::Harbor => 60,
@@ -219,6 +222,7 @@ impl Building {
             Building::CoastalFortress => Some(crate::tech::Tech::Steel),
             Building::Airport => Some(crate::tech::Tech::Flight),
             Building::SdiDefense => Some(crate::tech::Tech::Superconductors),
+            Building::ForbiddenPalace => Some(crate::tech::Tech::Monarchy),
             Building::Manhattan => Some(crate::tech::Tech::NuclearFission),
             Building::Factory => Some(crate::tech::Tech::Industrialization),
             Building::Harbor => Some(crate::tech::Tech::Seafaring),
@@ -319,6 +323,7 @@ impl Building {
             Building::CoastalFortress => "doubles defence against ships (coastal cities)",
             Building::Airport => "aircraft trained here are veterans",
             Building::SdiDefense => "shoots down nuclear missiles aimed within 3 tiles",
+            Building::ForbiddenPalace => "a second seat of government: corruption counts from here too (one per people)",
             Building::Factory => "+3 shields; needed for spaceship parts",
             Building::Harbor => "+1 food on worked ocean tiles; links coasts",
             Building::Temple => "+2 content",
@@ -387,6 +392,11 @@ impl Building {
 }
 
 impl Building {
+    /// Only one in each people's empire.
+    pub fn one_per_people(&self) -> bool {
+        *self == Building::ForbiddenPalace
+    }
+
     /// Only a city on the coast can build it.
     pub fn needs_coast(&self) -> bool {
         matches!(self, Building::Harbor | Building::CoastalFortress)

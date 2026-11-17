@@ -188,7 +188,7 @@ fn help_lines(topic: HelpTopic) -> Vec<String> {
         HelpTopic::Victory => vec![
             "Conquest: take every rival city. Domination: hold two thirds of the cities in the world (at least five).".to_string(),
             "Space: the race to Alpha Centauri, the nearest star. Research Space Flight, Plastics and Superconductors; cities with a Factory build 4 Space Structures, 2 to 4 Components (engines) and 2 Modules. Launch from the Empire advisor's Space page: the voyage takes 12 turns, 2 fewer for each extra engine. The first ship to arrive wins - unless its capital falls first.".to_string(),
-            format!("Culture: reach {} culture points and half as much again as any rival.", bevy_civ::culture::VICTORY_CULTURE),
+            format!("Culture: reach {} culture points (in a game of {} turns; scaled to the game's length) and twice as much as any rival.", bevy_civ::culture::VICTORY_CULTURE, 400),
             "Score: if nobody has won by the last turn (chosen when the game begins), the highest score wins. Score counts 2 points a citizen, 10 a technology and 50 a wonder, for everyone alike. A rival who holds two thirds of the cities wins by domination.".to_string(),
         ],
     }
@@ -951,6 +951,9 @@ pub fn rebuild_panels(
         let city = selection.city.and_then(|e| cities.get(e).ok());
         node.display = if city.is_some() { Display::Flex } else { Display::None };
         let capital = cities.iter().find(|(c, _, _)| c.is_capital && c.owner == PLAYER).map(|(c, _, _)| c.position);
+        // Seats of government (capital and Forbidden Palace): corruption counts from the nearer.
+        let seats: Vec<hexx::Hex> = cities.iter().filter(|(c, b, _)| c.owner == PLAYER && (c.is_capital || b.has(Building::ForbiddenPalace))).map(|(c, _, _)| c.position).collect();
+        let has_forbidden_palace = cities.iter().any(|(c, b, _)| c.owner == PLAYER && b.has(Building::ForbiddenPalace));
         commands.entity(root).despawn_descendants().with_children(|p| {
             let Some((city, buildings, happiness)) = city else { return };
             let mine = city.owner == PLAYER;
@@ -981,7 +984,7 @@ pub fn rebuild_panels(
             if routes > 0 {
                 p.spawn(label(&art.font_body, format!("Trade routes: {routes} of {}", bevy_civ::trade::MAX_ROUTES_PER_CITY), 14.0, CREAM));
             }
-            let dist = capital.map(|c| city.position.distance_to(c) as u32).unwrap_or(0);
+            let dist = seats.iter().map(|s| city.position.distance_to(*s) as u32).min().or(capital.map(|c| city.position.distance_to(c) as u32)).unwrap_or(0);
             let gov = state.government;
             let (extra_food, extra_shields, extra_gold) = supplies.yields.get(&city.position).copied().unwrap_or_default();
             let food = city.food_per_turn(buildings, gov, dist) + extra_food;
@@ -1082,6 +1085,7 @@ pub fn rebuild_panels(
                         .filter(|b| !wonders.is_taken(*b))
                         .filter(|b| !b.is_spaceship_part() || (buildings.has(Building::Factory) && space.wants(PLAYER, *b, true)))
                         .filter(|b| b.required_building().is_none_or(|r| buildings.has(r)))
+                        .filter(|b| !(b.one_per_people() && has_forbidden_palace))
                         .map(|b| {
                             let effect = b.effect().to_string();
                             (ProductionItem::Building(b), effect)
@@ -1337,6 +1341,14 @@ pub fn rebuild_panels(
                                     None => format!("Our capital follows no faith yet. Faiths of the world: {}.", founded.join("; ")),
                                 };
                                 w.spawn(label(&art.font_body, faith_text, 14.0, INK_SOFT));
+                                let ours = city_list.iter().filter(|(_, c)| c.owner == PLAYER).count() as u32;
+                                let sprawl = bevy_civ::diplomacy::sprawl_unhappiness(ours);
+                                w.spawn(label(
+                                    &art.font_body,
+                                    format!("Empire size: {ours} cities; {sprawl} more unhappy in every city (none up to 12 cities, then one more for every 6). A Forbidden Palace (Monarchy) is a second seat of government against corruption."),
+                                    14.0,
+                                    if sprawl > 0 { RED } else { INK_SOFT },
+                                ));
                                 let war = state.war_turns.get(&PLAYER).copied().unwrap_or(0);
                                 if war > 0 {
                                     let weary = state.government.war_weariness(war);

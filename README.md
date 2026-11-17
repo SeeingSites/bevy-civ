@@ -31,7 +31,7 @@ Turn-based, Civilization-style empire building on a hex map, playable in the bro
 - Caravans (trade routes, help with wonders) and diplomats (embassies and espionage)
 - Diplomacy: treaties, attitude and reputation, tribute, tech exchange, resource deals
 - Computer players that research, expand, build, trade, spy, race for wonders and the stars
-- Victory by conquest, domination, culture, space race, or score at turn 400
+- Victory by conquest, domination, culture (20,000 points and twice any rival, scaled to the game's length), space race, or score at the last turn
 - Multi-turn orders, route preview, worker automation, stack moves, raze or keep captured cities
 - Advisors (science, foreign, trade, empire: government, cities, military, score) and an encyclopedia
 - Saved games: automatic every turn, and as files that anyone can load
@@ -307,6 +307,10 @@ working directory.
 - **Barbarians**: from turn 10, every 8 turns a band rises on wild land outside every border and
   away from any unit; it grows (one to three units) and re-arms with the age of the world, from
   warriors to infantry and artillery.
+- **Big empires**: past 12 cities, every 6 more make one more citizen unhappy in every city; a
+  Forbidden Palace (Monarchy, one per people) is a second seat of government, corruption counting
+  from the nearer of it and the capital. Great people grow rarer: 60 points for the first, then
+  180, 360, 600 and so on. Computer players spend their gold more freely.
 - **Capitals and the fallen**: a people that loses its capital moves the palace to its largest
   city (corruption and the state religion follow it). A people with no city and no settler left
   is out of the game: its troops disband and it leaves diplomacy. Scores count citizens (2),

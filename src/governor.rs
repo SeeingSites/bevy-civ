@@ -23,6 +23,8 @@ pub struct CityView {
     pub defended: bool,
     /// An enemy army is close.
     pub threatened: bool,
+    /// Within 6 tiles of its people's capital (no place for a second seat of government).
+    pub near_capital: bool,
 }
 
 /// The state of the civilization as a whole, including what its other cities have already queued.
@@ -51,6 +53,8 @@ pub struct CivView<'a> {
     pub space_parts: &'a [Building],
     /// Free land for new cities lies within reach of its cities.
     pub room_to_expand: bool,
+    /// Already has a Forbidden Palace somewhere.
+    pub forbidden_palace: bool,
 }
 
 /// Largest army a computer player keeps.
@@ -72,6 +76,7 @@ pub fn can_build(building: &Building, city: &CityView, civ: &CivView, supplies: 
         && building.required_tech().is_none_or(|t| civ.tech.researched.contains(&t))
         && supplies.has(city.position, building.required_resources())
         && (!building.needs_coast() || city.coastal)
+        && !(building.one_per_people() && civ.forbidden_palace)
         && building.required_building().is_none_or(|b| city.built.contains(&b))
 }
 
@@ -165,6 +170,7 @@ pub fn choose(city: &CityView, civ: &CivView, supplies: &Supplies, rng: &mut imp
         (Building::Marketplace, true),
         (Building::Harbor, true),
         (Building::Courthouse, civ.cities >= 4),
+        (Building::ForbiddenPalace, civ.cities >= 8 && !city.near_capital),
         (Building::Colosseum, city.population >= 8),
         (Building::Cathedral, city.population >= 10),
         (Building::SewerSystem, city.population >= 15),
@@ -215,11 +221,11 @@ mod tests {
     use std::collections::HashSet;
 
     fn city() -> CityView {
-        CityView { position: Hex::ZERO, population: 4, built: vec![], coastal: false, linked: true, defended: true, threatened: false }
+        CityView { position: Hex::ZERO, population: 4, built: vec![], coastal: false, linked: true, defended: true, threatened: false, near_capital: true }
     }
 
     fn civ(tech: &TechState) -> CivView<'_> {
-        CivView { tech, aggression: 0.4, cities: 2, workers: 1, settlers: 1, military: 3, navy: 0, air: 0, road_work: 0, cut_off: 0, at_war: false, wonders_taken: &NO_WONDERS, caravans: 2, diplomats: 1, wonder_elsewhere: false, space_parts: &[], room_to_expand: true }
+        CivView { tech, aggression: 0.4, cities: 2, workers: 1, settlers: 1, military: 3, navy: 0, air: 0, road_work: 0, cut_off: 0, at_war: false, wonders_taken: &NO_WONDERS, caravans: 2, diplomats: 1, wonder_elsewhere: false, space_parts: &[], room_to_expand: true, forbidden_palace: false }
     }
 
     fn knowing(techs: &[Tech]) -> TechState {
