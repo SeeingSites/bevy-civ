@@ -23,6 +23,10 @@ pub enum Building {
     PowerPlant,
     PoliceStation,
     Supermarket,
+    /// Inspects the food trade: no adulterated-food scandals, and GM food is trusted.
+    FoodSafety,
+    /// Engineered crops: +1 food on every farmed tile worked.
+    GmFarms,
     MassTransit,
     RecyclingCenter,
     CoastalFortress,
@@ -66,11 +70,11 @@ pub enum Building {
 }
 
 impl Building {
-    pub const ALL: [Building; 59] = [
+    pub const ALL: [Building; 61] = [
         Building::Granary, Building::Barracks, Building::Library, Building::Marketplace, Building::Walls,
         Building::Aqueduct, Building::University, Building::Bank, Building::Factory, Building::Harbor,
         Building::Temple, Building::Courthouse, Building::Colosseum, Building::Cathedral, Building::SewerSystem, Building::StockExchange,
-        Building::Observatory, Building::ResearchLab, Building::PowerPlant, Building::PoliceStation, Building::Supermarket, Building::MassTransit, Building::RecyclingCenter, Building::CoastalFortress, Building::Airport, Building::SdiDefense, Building::ForbiddenPalace,
+        Building::Observatory, Building::ResearchLab, Building::PowerPlant, Building::PoliceStation, Building::Supermarket, Building::FoodSafety, Building::GmFarms, Building::MassTransit, Building::RecyclingCenter, Building::CoastalFortress, Building::Airport, Building::SdiDefense, Building::ForbiddenPalace,
         Building::SpaceStructure, Building::SpaceComponent, Building::SpaceModule, Building::Pyramids,
         Building::GreatLibrary, Building::HangingGardens, Building::Colossus, Building::Oracle,
         Building::GreatLighthouse, Building::GreatWall, Building::StatueOfZeus, Building::Mausoleum, Building::Copernicus, Building::SunTzu, Building::MarcoPolo, Building::KingRichards, Building::Michelangelo, Building::Leonardo, Building::Bach, Building::Magellan, Building::Newton, Building::AdamSmith, Building::Shakespeare, Building::Darwin, Building::Liberty, Building::HooverDam, Building::Eiffel, Building::Internet, Building::Apollo, Building::CureForCancer, Building::Manhattan, Building::UnitedNations,
@@ -92,6 +96,8 @@ impl Building {
             Building::PowerPlant => "Power Plant",
             Building::PoliceStation => "Police Station",
             Building::Supermarket => "Supermarket",
+            Building::FoodSafety => "Food Safety Agency",
+            Building::GmFarms => "GM Farms",
             Building::MassTransit => "Mass Transit",
             Building::RecyclingCenter => "Recycling Center",
             Building::CoastalFortress => "Coastal Fortress",
@@ -156,6 +162,8 @@ impl Building {
             Building::PowerPlant => 160,
             Building::PoliceStation => 60,
             Building::Supermarket => 80,
+            Building::FoodSafety => 70,
+            Building::GmFarms => 110,
             Building::MassTransit => 120,
             Building::RecyclingCenter => 140,
             Building::CoastalFortress => 80,
@@ -218,8 +226,10 @@ impl Building {
             Building::Observatory => Some(crate::tech::Tech::Astronomy),
             Building::ResearchLab => Some(crate::tech::Tech::Computers),
             Building::PowerPlant => Some(crate::tech::Tech::Electronics),
-            Building::PoliceStation => Some(crate::tech::Tech::Communism),
+            Building::PoliceStation => Some(crate::tech::Tech::Sanitation),
             Building::Supermarket => Some(crate::tech::Tech::Sanitation),
+            Building::FoodSafety => Some(crate::tech::Tech::Industrialization),
+            Building::GmFarms => Some(crate::tech::Tech::GeneticEngineering),
             Building::MassTransit => Some(crate::tech::Tech::MassProduction),
             Building::RecyclingCenter => Some(crate::tech::Tech::Ecology),
             Building::CoastalFortress => Some(crate::tech::Tech::Steel),
@@ -320,7 +330,9 @@ impl Building {
             Building::Observatory => "+3 science",
             Building::ResearchLab => "+6 science (needs a University)",
             Building::PowerPlant => "+4 shields (needs a Factory)",
-            Building::PoliceStation => "+2 content",
+            Building::PoliceStation => "+2 content; halves war weariness; stops narcotics and roots them out",
+            Building::FoodSafety => "no adulterated-food scandals; GM food is trusted",
+            Building::GmFarms => "+1 food on every farmed tile worked (distrusted without a Food Safety Agency)",
             Building::Supermarket => "+3 food",
             Building::MassTransit => "the city no longer pollutes",
             Building::RecyclingCenter => "halves the city's pollution",
@@ -413,6 +425,7 @@ impl Building {
             Building::StockExchange => Some(Building::Bank),
             Building::ResearchLab => Some(Building::University),
             Building::PowerPlant => Some(Building::Factory),
+            Building::GmFarms => Some(Building::Granary),
             _ => None,
         }
     }

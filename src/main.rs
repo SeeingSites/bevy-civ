@@ -184,6 +184,12 @@ pub struct GameState {
     /// Cities that drafted a citizen this turn.
     #[serde(default)]
     pub drafted: HashSet<Hex>,
+    /// Foreign migrants may settle in our cities.
+    #[serde(default = "welcome_by_default")]
+    pub welcome_migrants: bool,
+    /// Citizens who have moved between cities so far, and how many of them crossed a border.
+    #[serde(default)]
+    pub migrations: (u32, u32),
     /// How the player's commerce is split, in percent: science and luxury; taxes take the rest.
     #[serde(default = "default_science_rate")]
     pub science_rate: u32,
@@ -217,6 +223,10 @@ fn default_last_turn() -> u32 {
     LAST_TURN
 }
 
+fn welcome_by_default() -> bool {
+    true
+}
+
 impl Default for GameState {
     fn default() -> Self {
         Self {
@@ -235,6 +245,8 @@ impl Default for GameState {
             war_turns: HashMap::new(),
             warming: 0,
             drafted: HashSet::new(),
+            welcome_migrants: true,
+            migrations: (0, 0),
             last_turn: LAST_TURN,
             science_rate: 60,
             luxury_rate: 0,
@@ -370,6 +382,8 @@ pub enum Action {
     Pillage,
     /// Set the share of commerce going to science and to luxury (percent; taxes take the rest).
     SetRates(u32, u32),
+    /// Whether foreign migrants may settle in our cities.
+    SetMigration(bool),
     /// Buy the rest of the selected city's project with gold (not wonders).
     Hurry,
     /// Rush the selected city's project with citizens' labour (Despotism and Communism).
@@ -637,7 +651,7 @@ fn main() {
         .add_systems(OnExit(AppState::Playing), cleanup_world)
         .add_systems(
             Update,
-            (handle_map_click, apply_actions, stow_cargo, process_turn, religion_turn, continue_orders, stow_cargo, visit_villages, automate_workers, advance_selection, preview_route, refresh_supplies, work_tiles, nuclear_strikes)
+            (handle_map_click, apply_actions, withdraw_troops, stow_cargo, process_turn, religion_turn, continue_orders, stow_cargo, visit_villages, automate_workers, advance_selection, preview_route, refresh_supplies, work_tiles, nuclear_strikes)
                 .chain()
                 .in_set(GameLogic)
                 .run_if(in_state(AppState::Playing)),
@@ -1333,6 +1347,45 @@ fn move_cost(domain: Domain, from: Hex, to: Hex, map: &MapData, roads: &HashMap<
     }
 }
 
+/// Carries out agreed withdrawals: the troops of one people standing in another's lands march back
+/// to their nearest city (ships to their nearest port).
+fn withdraw_troops(mut foreign: ResMut<Foreign>, mut units: Query<&mut Unit>, cities: Query<&City>, supplies: Res<Supplies>, map: Res<MapData>, mut log: ResMut<GameLog>) {
+    if foreign.withdrawals.is_empty() {
+        return;
+    }
+    for (whose, lands) in std::mem::take(&mut foreign.withdrawals) {
+        let homes: Vec<(Hex, bool)> = cities
+            .iter()
+            .filter(|c| c.owner == whose)
+            .map(|c| (c.position, c.position.all_neighbors().iter().any(|n| map.water.contains(n))))
+            .collect();
+        let mut moved = 0;
+        for mut unit in units.iter_mut() {
+            if unit.owner != whose || !unit.unit_type.is_military() || unit.carrier.is_some() {
+                continue;
+            }
+            if supplies.territory.get(&unit.position).map(|(o, _)| *o) != Some(lands) {
+                continue;
+            }
+            let sea = unit.unit_type.domain() == Domain::Sea;
+            let here = unit.position;
+            let Some((home, _)) = homes.iter().filter(|(_, port)| !sea || *port).min_by_key(|(p, _)| (p.distance_to(here), p.x, p.y)) else { continue };
+            unit.position = *home;
+            unit.fortified = false;
+            unit.end_move();
+            moved += 1;
+        }
+        if whose == PLAYER && moved > 0 {
+            log.push(format!("{moved} of our units have returned to our cities."));
+        }
+        if lands == PLAYER {
+            foreign.trespass.remove(&whose);
+        } else if whose == PLAYER {
+            foreign.our_trespass.remove(&lands);
+        }
+    }
+}
+
 /// Keeps carried units with their ships: ships that sailed take their cargo along, units that left
 /// the ship's tile by themselves are ashore, units that stepped onto a ship go aboard, and troops
 /// whose ship went down are lost (see `bevy_civ::cargo`).
@@ -1985,6 +2038,15 @@ fn apply_actions(
                     log.push("The worker will look after our land by itself from next turn (K again to take it back).");
                     cycle.advance = true;
                 }
+            }
+            Action::SetMigration(welcome) => {
+                state.welcome_migrants = *welcome;
+                log.push(if *welcome {
+                    "Our borders are open to migrants: they settle in our cities and grow them (their rulers resent it)."
+                } else {
+                    "Our borders are closed to migrants from abroad."
+                });
+                dirty.ui = true;
             }
             Action::SetRates(science, luxury) => {
                 let cap = state.government.science_cap();
@@ -2799,12 +2861,66 @@ fn process_turn(
     }
     let war_turns = state.war_turns.clone();
 
+    // The troubles of the modern city (see `bevy_civ::troubles`): who knows enough to have them,
+    // and where drugs are rife (smugglers carry them across borders, unless a crackdown was agreed).
+    let knows_tech = |owner: u32, t: Tech| if owner == PLAYER { tech.researched.contains(&t) } else { civs.players.iter().any(|c| c.id == owner && c.tech.researched.contains(&t)) };
+    let urban: HashSet<u32> = civs.players.iter().map(|c| c.id).filter(|o| knows_tech(*o, Tech::Sanitation)).collect();
+    let industrial: HashSet<u32> = civs.players.iter().map(|c| c.id).filter(|o| knows_tech(*o, Tech::Industrialization)).collect();
+    let drug_dens: Vec<(Hex, u32)> = cities.iter().filter(|(c, _, _)| c.narcotics >= 2).map(|(c, _, _)| (c.position, c.owner)).collect();
+    let crackdown = foreign.crackdown.clone();
+    let turn_now = state.turn;
+    let smuggled_into = |at: Hex, owner: u32| {
+        drug_dens.iter().find(|(p, o)| *o != owner && p.distance_to(at) <= bevy_civ::troubles::SMUGGLING_RANGE && !(owner == PLAYER && crackdown.get(o).is_some_and(|until| *until > turn_now))).map(|(_, o)| *o)
+    };
+    let mut smugglers: HashSet<u32> = HashSet::new();
+
     for (mut city, mut buildings, mut happiness) in &mut cities {
         let mine = city.owner == PLAYER;
         if mine {
             player_cities += 1;
         }
         let dist = seats.get(&city.owner).and_then(|s| s.iter().map(|cp| city.position.distance_to(*cp) as u32).min()).unwrap_or(0);
+
+        // Drugs, food scandals and distrust of engineered food.
+        {
+            let owner = city.owner;
+            let gov = governments.get(&owner).copied().unwrap_or(Government::Despotism);
+            if urban.contains(&owner) || city.narcotics > 0 {
+                let smuggler = smuggled_into(city.position, owner);
+                if mine {
+                    if let Some(s) = smuggler {
+                        smugglers.insert(s);
+                    }
+                }
+                let restless = happiness.unhappy > happiness.happy;
+                let before = city.narcotics;
+                city.narcotics = bevy_civ::troubles::narcotics_turn(before, city.population, restless, smuggler.is_some(), buildings.has(Building::PoliceStation), &mut rng);
+                if mine && city.narcotics > before {
+                    log.push(format!(
+                        "A drug trade takes hold in {} (level {} of {}): its people grow restless and the black market takes its cut. A Police Station roots it out.",
+                        city.name,
+                        city.narcotics,
+                        bevy_civ::troubles::NARCOTICS_MAX
+                    ));
+                } else if mine && city.narcotics < before && city.narcotics == 0 {
+                    log.push(format!("The police have cleared the drug trade out of {}.", city.name));
+                }
+            }
+            city.scandal = city.scandal.saturating_sub(1);
+            if industrial.contains(&owner) && !buildings.has(Building::FoodSafety) && city.scandal == 0 {
+                let chance = bevy_civ::troubles::scandal_chance(city.population, city.corruption(&buildings, gov, dist));
+                if rng.gen_bool(chance) {
+                    city.scandal = bevy_civ::troubles::SCANDAL_TURNS;
+                    city.food_storage /= 2;
+                    if mine {
+                        log.push(format!(
+                            "Adulterated food in {}! Dealers have cut the bread with chalk and the milk with water: half the granary is spoiled and the people are angry. A Food Safety Agency prevents it.",
+                            city.name
+                        ));
+                    }
+                }
+            }
+        }
 
         // What a computer player's governor sees of this city.
         let owner = city.owner;
@@ -2818,6 +2934,7 @@ fn process_turn(
             defended: armies.iter().any(|(p, o)| *p == city.position && *o == owner),
             threatened: armies.iter().any(|(p, o)| enemies(owner, *o) && p.distance_to(city.position) <= 3),
             near_capital: capitals.get(&owner).is_none_or(|cp| cp.distance_to(city.position) <= 6),
+            narcotics: city.narcotics,
         };
         let mut needs_orders = false;
         let mut just_trained = false;
@@ -2895,14 +3012,17 @@ fn process_turn(
             + if mine { state.difficulty.player_content() } else { 0 };
         // The player's commerce (what the city's science and taxes would be) is split by the rates;
         // every two points of luxury make one citizen happy.
-        let commerce = city.science_per_turn(&buildings, gov, dist) + city.gold_per_turn(&buildings) + 1;
+        // The black market takes a gold of trade for each level of the drug trade.
+        let commerce = (city.science_per_turn(&buildings, gov, dist) + city.gold_per_turn(&buildings) + 1).saturating_sub(city.narcotics);
         let (rate_science, rate_luxury, rate_gold) = if mine { state.split_commerce(commerce) } else { (0, 0, 0) };
         let joy = supply::luxury_happiness(supplies.luxuries(city.position), has_market) + rate_luxury / 2;
         // A long war wears on a republic or democracy (a Police Station halves it in its city).
         let weary = gov.war_weariness(war_turns.get(&owner).copied().unwrap_or(0));
         let weary = if buildings.has(Building::PoliceStation) { weary / 2 } else { weary };
         let sprawl = bevy_civ::diplomacy::sprawl_unhappiness(empire_sizes.get(&owner).copied().unwrap_or(1));
-        let calm = calm.saturating_sub(weary + sprawl);
+        let gm_distrusted = buildings.has(Building::GmFarms) && !buildings.has(Building::FoodSafety);
+        let troubled = bevy_civ::troubles::unhappiness(city.narcotics, city.scandal, gm_distrusted);
+        let calm = calm.saturating_sub(weary + sprawl + troubled);
         happiness.update(city.population, calm, joy);
         // A computer player's governor turns workers into entertainers to end disorder, and back again.
         if !mine && owner != BARBARIANS {
@@ -3256,7 +3376,7 @@ fn process_turn(
         if !mine && !idle {
             let income = ai_income.entry(owner).or_default();
             income.0 += city.science_per_turn(&buildings, gov, dist);
-            income.1 += city.gold_per_turn(&buildings) as i32 + 2 + supplies.yields.get(&city.position).map(|y| y.2 as i32).unwrap_or(0);
+            income.1 += city.gold_per_turn(&buildings) as i32 + 2 + supplies.yields.get(&city.position).map(|y| y.2 as i32).unwrap_or(0) - city.narcotics as i32;
         }
 
         if mine && !idle {
@@ -3265,6 +3385,84 @@ fn process_turn(
         }
     }
 
+    foreign.smugglers = smugglers;
+
+    // Migration: every few turns, citizens leave troubled cities for better ones nearby that welcome
+    // them - at home, or abroad in peoples that know Industrialization.
+    if state.turn % bevy_civ::troubles::MIGRATION_EVERY == 0 {
+        use bevy_civ::troubles::Prospect;
+        let prospects: Vec<Prospect> = cities
+            .iter()
+            .map(|(c, b, h)| {
+                let fresh_water = rivers.tiles.contains(&c.position) || c.position.all_neighbors().iter().any(|n| rivers.tiles.contains(n));
+                Prospect {
+                    at: c.position,
+                    owner: c.owner,
+                    population: c.population,
+                    mood: h.happy as i32 - h.unhappy as i32,
+                    food_balance: c.food_balance(&b),
+                    narcotics: c.narcotics,
+                    scandal: c.scandal > 0,
+                    room: c.population < Building::size_limit(&b.buildings, fresh_water),
+                }
+            })
+            .collect();
+        let welcome_ours = state.welcome_migrants;
+        let welcomes = |to: u32, from: u32| {
+            if to == from {
+                return true;
+            }
+            if to == BARBARIANS || from == BARBARIANS || !industrial.contains(&to) || diplomacy.get_treaty(to, from) == Treaty::War {
+                return false;
+            }
+            if to == PLAYER { welcome_ours } else { !matches!(governments.get(&to), Some(Government::Communism | Government::Fundamentalism)) }
+        };
+        let mut moves: Vec<(Hex, Hex)> = Vec::new();
+        for from in prospects.iter().filter(|p| p.pushes() && p.owner != BARBARIANS) {
+            if rng.gen_bool(0.4) {
+                if let Some(to) = bevy_civ::troubles::destination(from, &prospects, welcomes) {
+                    moves.push((from.at, to));
+                }
+            }
+        }
+        let owner_at = |at: Hex| prospects.iter().find(|p| p.at == at).map(|p| p.owner).unwrap_or(BARBARIANS);
+        let name_at = |at: Hex| cities.iter().find(|(c, _, _)| c.position == at).map(|(c, _, _)| c.name.clone()).unwrap_or_default();
+        let people = |id: u32| civs.players.iter().find(|c| c.id == id).map(|c| c.name.clone()).unwrap_or_default();
+        let mut news = Vec::new();
+        for (from, to) in &moves {
+            let (a, b) = (owner_at(*from), owner_at(*to));
+            if a == PLAYER && b != PLAYER {
+                news.push(format!("Citizens of {} emigrate to {} ({}), seeking a better life.", name_at(*from), name_at(*to), people(b)));
+            } else if b == PLAYER && a != PLAYER {
+                news.push(format!("Migrants from {} ({}) settle in {} (+1 citizen).", name_at(*from), people(a), name_at(*to)));
+                // Their rulers resent losing their people to us.
+                diplomacy.change_attitude(PLAYER, a, -1);
+            } else if a == PLAYER && b == PLAYER {
+                news.push(format!("Citizens move from troubled {} to {}.", name_at(*from), name_at(*to)));
+            }
+        }
+        for (from, to) in &moves {
+            state.migrations.0 += 1;
+            if owner_at(*from) != owner_at(*to) {
+                state.migrations.1 += 1;
+            }
+        }
+        for (from, to) in moves {
+            let left = cities.iter_mut().find(|(c, _, _)| c.position == from).map(|(mut c, _, _)| {
+                c.population -= 1;
+                let size = c.population as usize;
+                c.specialists.truncate(size);
+            });
+            if left.is_some() {
+                if let Some((mut c, _, _)) = cities.iter_mut().find(|(c, _, _)| c.position == to) {
+                    c.population += 1;
+                }
+            }
+        }
+        for line in news {
+            log.push(line);
+        }
+    }
     let difficulty = state.difficulty;
     for civ in civs.players.iter_mut().filter(|c| !c.is_human) {
         let (science, gold) = ai_income.get(&civ.id).copied().unwrap_or_default();
@@ -4019,6 +4217,17 @@ fn process_turn(
     // --- Diplomacy -----------------------------------------------------------------------------
     let city_owners: Vec<(Hex, u32)> = cities.iter().map(|(c, _, _)| (c.position, c.owner)).collect();
     let unit_owners: Vec<(Hex, u32)> = units.iter().filter(|(e, _)| !dead.contains(e)).map(|(_, u)| (u.position, u.owner)).collect();
+    // Troops standing in someone else's lands: theirs in ours, and ours in theirs.
+    foreign.trespass.clear();
+    foreign.our_trespass.clear();
+    for (_, unit) in units.iter().filter(|(e, u)| !dead.contains(e) && u.unit_type.is_military() && u.carrier.is_none()) {
+        let Some(&(land_owner, _)) = supplies.territory.get(&unit.position) else { continue };
+        if land_owner == PLAYER && unit.owner != PLAYER && unit.owner != BARBARIANS {
+            *foreign.trespass.entry(unit.owner).or_default() += 1;
+        } else if unit.owner == PLAYER && land_owner != PLAYER && land_owner != BARBARIANS {
+            *foreign.our_trespass.entry(land_owner).or_default() += 1;
+        }
+    }
     foreign.strength.clear();
     for (entity, unit) in units.iter() {
         if !dead.contains(&entity) {
@@ -4513,7 +4722,16 @@ pub fn work_tiles(
         let focus = effective_focus(&city, &city_situation(&city, buildings, happiness, at_war.contains(&owner), &rivers));
         // A Harbor makes every worked ocean tile one food richer.
         let harbor = buildings.has(Building::Harbor);
-        let yield_for = |owner: u32, hex: Hex| yield_for(owner, hex).map(|y| if harbor && tile_at.get(&hex).is_some_and(|t| t.terrain == Terrain::Water) { (y.0 + 1, y.1, y.2) } else { y });
+        // GM Farms make every farmed tile one food richer.
+        let engineered = buildings.has(Building::GmFarms);
+        let yield_for = |owner: u32, hex: Hex| {
+            yield_for(owner, hex).map(|y| {
+                let tile = tile_at.get(&hex);
+                let sea = harbor && tile.is_some_and(|t| t.terrain == Terrain::Water);
+                let farmed = engineered && tile.is_some_and(|t| t.improvements.contains(&Improvement::Farm));
+                (y.0 + u32::from(sea) + u32::from(farmed), y.1, y.2)
+            })
+        };
         let enemy_on = |h: &Hex| occupants.iter().any(|(p, o)| p == h && *o != owner && (*o == BARBARIANS || owner == BARBARIANS || diplomacy.get_treaty(owner, *o) == Treaty::War));
         let centre = bevy_civ::tiles::centre_yield(yield_for(owner, city.position).unwrap_or((2, 0, 0)));
         let mut candidates: Vec<(Hex, bevy_civ::tiles::Yield)> = areas

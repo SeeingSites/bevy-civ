@@ -70,10 +70,12 @@ pub enum Tech {
     MassProduction,
     Ecology,
     NuclearFission,
+    /// Engineered crops: GM Farms.
+    GeneticEngineering,
 }
 
 impl Tech {
-    pub const ALL: [Tech; 52] = [
+    pub const ALL: [Tech; 53] = [
         Tech::Pottery, Tech::AnimalHusbandry, Tech::Mining, Tech::BronzeWorking, Tech::Masonry,
         Tech::Alphabet, Tech::TheWheel, Tech::Writing, Tech::CodeOfLaws, Tech::Mysticism, Tech::Seafaring,
         Tech::IronWorking, Tech::Mathematics, Tech::HorsebackRiding, Tech::Construction,
@@ -84,6 +86,7 @@ impl Tech {
         Tech::Electricity, Tech::Computers, Tech::Rocketry, Tech::SpaceFlight, Tech::Plastics, Tech::Superconductors,
         Tech::Banking, Tech::Economics,
         Tech::Astronomy, Tech::Chivalry, Tech::Navigation, Tech::TheoryOfGravity, Tech::Medicine, Tech::Steel, Tech::Electronics, Tech::Flight, Tech::AdvancedFlight, Tech::MassProduction, Tech::Ecology, Tech::NuclearFission,
+        Tech::GeneticEngineering,
     ];
 
     pub fn cost(&self) -> u32 {
@@ -125,6 +128,7 @@ impl Tech {
             Tech::MassProduction => 110,
             Tech::Ecology => 130,
             Tech::NuclearFission => 115,
+            Tech::GeneticEngineering => 120,
         }
     }
 
@@ -175,6 +179,7 @@ impl Tech {
             Tech::MassProduction => vec![Tech::MotorizedTransport, Tech::Economics],
             Tech::Ecology => vec![Tech::Computers, Tech::Sanitation],
             Tech::NuclearFission => vec![Tech::Electronics, Tech::MassProduction],
+            Tech::GeneticEngineering => vec![Tech::Medicine, Tech::Computers],
             _ => vec![],
         }
     }
@@ -233,6 +238,7 @@ impl Tech {
             Tech::MassProduction => "Mass Production",
             Tech::Ecology => "Ecology",
             Tech::NuclearFission => "Nuclear Fission",
+            Tech::GeneticEngineering => "Genetic Engineering",
         }
     }
 }
