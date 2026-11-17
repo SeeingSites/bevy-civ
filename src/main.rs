@@ -2175,6 +2175,12 @@ fn apply_actions(
                 sounds.send(Sfx::Battle);
             }
             Action::SetProduction(item) => {
+                if let ProductionItem::Building(b) = item {
+                    if b.one_per_people() && walled.iter().any(|(e, built)| built.has(*b) && cities.get(e).is_ok_and(|c| c.owner == PLAYER)) {
+                        log.push(format!("We already have a {}.", b.name()));
+                        continue;
+                    }
+                }
                 let Some(mut city) = selection.city.and_then(|e| cities.get_mut(e).ok()) else { continue };
                 let missing = supplies.missing(city.position, item.required_resources());
                 if city.owner != PLAYER {
@@ -2365,6 +2371,17 @@ fn process_turn(
     }
     let capitals: HashMap<u32, Hex> =
         cities.iter().filter(|(c, _, _)| c.is_capital).map(|(c, _, _)| (c.owner, c.position)).collect();
+    // Seats of government: the capital and a Forbidden Palace. Corruption counts from the nearer.
+    let mut seats: HashMap<u32, Vec<Hex>> = HashMap::new();
+    for (city, buildings, _) in cities.iter().filter(|(c, b, _)| c.is_capital || b.has(Building::ForbiddenPalace)) {
+        seats.entry(city.owner).or_default().push(city.position);
+    }
+    // A sprawling empire is harder to keep content: past 12 cities, every 6 more make one more
+    // citizen unhappy in each city.
+    let mut empire_sizes: HashMap<u32, u32> = HashMap::new();
+    for (city, _, _) in cities.iter() {
+        *empire_sizes.entry(city.owner).or_default() += 1;
+    }
     let mut army_sizes: HashMap<u32, usize> = HashMap::new();
     let mut worker_counts: HashMap<u32, usize> = HashMap::new();
     let mut navy_sizes: HashMap<u32, usize> = HashMap::new();
@@ -2402,7 +2419,7 @@ fn process_turn(
     let mut finance: HashMap<u32, (u32, u32)> = HashMap::new();
     // Each civilization's traits and unique unit.
     let characters: HashMap<u32, bevy_civ::traits::Character> = civs.players.iter().map(|c| (c.id, bevy_civ::traits::of(&c.name))).collect();
-    let mut hurried: HashSet<u32> = HashSet::new();
+    let mut hurried: HashMap<u32, u32> = HashMap::new();
     let mut city_counts: HashMap<u32, usize> = HashMap::new();
     for (city, _, _) in cities.iter() {
         *city_counts.entry(city.owner).or_default() += 1;
@@ -2430,7 +2447,7 @@ fn process_turn(
         if mine {
             player_cities += 1;
         }
-        let dist = capitals.get(&city.owner).map(|cp| city.position.distance_to(*cp) as u32).unwrap_or(0);
+        let dist = seats.get(&city.owner).and_then(|s| s.iter().map(|cp| city.position.distance_to(*cp) as u32).min()).unwrap_or(0);
 
         // What a computer player's governor sees of this city.
         let owner = city.owner;
@@ -2443,6 +2460,7 @@ fn process_turn(
             linked: supplies.linked.contains(&city.position),
             defended: armies.iter().any(|(p, o)| *p == city.position && *o == owner),
             threatened: armies.iter().any(|(p, o)| enemies(owner, *o) && p.distance_to(city.position) <= 3),
+            near_capital: capitals.get(&owner).is_none_or(|cp| cp.distance_to(city.position) <= 6),
         };
         let mut needs_orders = false;
         let mut just_trained = false;
@@ -2451,7 +2469,7 @@ fn process_turn(
                 // An empty city drops everything for a defender, and pays to hurry it when in danger.
                 let already = matches!(&city.production_queue, Some(ProductionItem::Unit(u)) if u.is_army());
                 if !already {
-                    let civ_view = governor::CivView { tech: &civ.tech, aggression: civ.aggression, cities: 1, workers: 1, settlers: 1, military: 0, navy: 0, air: 0, road_work: 0, cut_off: 0, at_war: true, wonders_taken: &wonders_taken, caravans: 1, diplomats: 1, wonder_elsewhere: false, space_parts: &[], room_to_expand: false };
+                    let civ_view = governor::CivView { tech: &civ.tech, aggression: civ.aggression, cities: 1, workers: 1, settlers: 1, military: 0, navy: 0, air: 0, road_work: 0, cut_off: 0, at_war: true, wonders_taken: &wonders_taken, caravans: 1, diplomats: 1, wonder_elsewhere: false, space_parts: &[], room_to_expand: false, forbidden_palace: true };
                     city.production_queue = Some(ProductionItem::Unit(governor::best_defender(&view, &civ_view, &supplies)));
                 }
                 let remaining = city.production_queue.as_ref().map(|i| i.cost()).unwrap_or(0).saturating_sub(city.production_progress) as i32;
@@ -2462,14 +2480,17 @@ fn process_turn(
             }
         }
 
-        // A rich treasury hurries along whatever a city is working on (one purchase per civilization per turn).
-        if !mine && owner != BARBARIANS && !hurried.contains(&owner) {
+        // A rich treasury hurries along what cities are working on: one purchase a turn, and one more
+        // for every 500 gold in the treasury, always keeping a reserve.
+        if !mine && owner != BARBARIANS {
             if let Some(civ) = civs.players.iter_mut().find(|c| c.id == owner) {
+                let allowed = 1 + (civ.gold / 500).max(0) as u32;
+                let done = hurried.get(&owner).copied().unwrap_or(0);
                 let remaining = city.production_queue.as_ref().map(|i| i.cost()).unwrap_or(0).saturating_sub(city.production_progress) as i32;
-                if remaining > 0 && civ.gold >= 150 + remaining * 2 {
+                if done < allowed && remaining > 0 && civ.gold >= 150 + remaining * 2 {
                     civ.gold -= remaining * 2;
                     city.production_progress += remaining as u32;
-                    hurried.insert(owner);
+                    *hurried.entry(owner).or_default() += 1;
                 }
             }
         }
@@ -2523,7 +2544,8 @@ fn process_turn(
         // A long war wears on a republic or democracy (a Police Station halves it in its city).
         let weary = gov.war_weariness(war_turns.get(&owner).copied().unwrap_or(0));
         let weary = if buildings.has(Building::PoliceStation) { weary / 2 } else { weary };
-        let calm = calm.saturating_sub(weary);
+        let sprawl = bevy_civ::diplomacy::sprawl_unhappiness(empire_sizes.get(&owner).copied().unwrap_or(1));
+        let calm = calm.saturating_sub(weary + sprawl);
         happiness.update(city.population, calm, joy);
         // A computer player's governor turns workers into entertainers to end disorder, and back again.
         if !mine && owner != BARBARIANS {
@@ -2829,6 +2851,7 @@ fn process_turn(
                     wonder_elsewhere: wonder_sites.iter().any(|(at, o)| *o == owner && *at != city.position),
                     space_parts: &space_wanted.get(&owner).cloned().unwrap_or_default(),
                     room_to_expand: room.contains(&owner),
+                    forbidden_palace: seats.get(&owner).is_some_and(|s| s.len() > 1),
                 };
                 // The unit just trained (if any) now holds the city.
                 let view = governor::CityView { built: buildings.buildings.clone(), defended: view.defended || just_trained, ..view };
@@ -2888,7 +2911,7 @@ fn process_turn(
         let (banks, exchanges) = finance.get(&civ.id).copied().unwrap_or_default();
         civ.gold += gold + bevy_civ::building::interest(civ.gold, banks, exchanges);
         // Savings beyond a reserve are invested in research.
-        let invested = ((civ.gold - 250) / 10).max(0);
+        let invested = ((civ.gold - 300) / 3).max(0);
         civ.gold -= invested;
         civ.tech.science_per_turn = (science + invested as u32 / 2).max(1);
     }
@@ -3594,7 +3617,7 @@ fn process_turn(
             *held.entry(city.owner).or_default() += 1;
         }
         let leader = held.iter().max_by_key(|(_, n)| **n).map(|(o, n)| (*o, *n));
-        let culture_winner = culture_rules::cultural_winner(&culture.totals(cities.iter().map(|(c, _, _)| (c.position, c.owner))));
+        let culture_winner = culture_rules::cultural_winner(&culture.totals(cities.iter().map(|(c, _, _)| (c.position, c.owner))), culture_rules::victory_culture(state.last_turn));
         state.victory = if held.len() == 1 {
             leader.map(|(o, _)| format!("Conquest victory for {}.", civ_named(o)))
         } else if let Some((o, n)) = leader.filter(|(_, n)| *n >= 5 && n * 3 >= total_cities * 2) {
@@ -3624,7 +3647,7 @@ fn process_turn(
         state.victory = Some("Conquest Victory!".into());
     } else if player_cities >= 5 && player_cities * 3 >= total_cities * 2 {
         state.victory = Some("Domination Victory!".into());
-    } else if let Some(winner) = culture_rules::cultural_winner(&culture.totals(cities.iter().map(|(c, _, _)| (c.position, c.owner)))) {
+    } else if let Some(winner) = culture_rules::cultural_winner(&culture.totals(cities.iter().map(|(c, _, _)| (c.position, c.owner))), culture_rules::victory_culture(state.last_turn)) {
         state.victory = Some(if winner == PLAYER {
             "Cultural Victory! Our civilization is the envy of the world.".to_string()
         } else {
