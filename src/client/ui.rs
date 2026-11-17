@@ -144,7 +144,7 @@ fn help_lines(topic: HelpTopic) -> Vec<String> {
         .collect(),
         HelpTopic::Basics => [
             "Click a unit or city to select it; click again or press Tab (Shift+Tab back) for the next unit on that tile - or pick one from the cards in the unit panel. Click a tile (or right-click) to move; far destinations become standing orders. Hover over a tile to see the route and how many turns it takes.",
-            "Space: skip a unit (or go to a city that needs a project, then end the turn). Enter: end the turn. N: next unit. H: fortify or sleep. Z: sentry (sleep until an enemy comes near). J: a worker or settler joins the city it stands in. I: board a ship in port. Ctrl+Z or Backspace: take back the last move. L: messages. Esc: close or deselect.",
+            "Space: skip a unit (or go to a city that needs a project, then end the turn). Enter: end the turn. N: next unit. H: fortify or sleep. Z: sentry (sleep until an enemy comes near). J: a worker or settler joins the city it stands in. I: board a ship in port. [ and ]: previous and next city. Ctrl+Z or Backspace: take back the last move. L: messages. Esc: close or deselect.",
             "Workers and Engineers: F farm, M mine, R road (railroad on a road, with Steam Power), O fortress (Construction), X clear land or clean pollution, K automate. Settlers: B found a city.",
             "U uses the selected unit: a great person's gift, a General forming an army, a Missionary preaching, a caravan helping a wonder. T opens a caravan's trade route. P pillages enemy land. Diplomats act from the unit panel next to a foreign city.",
             "Q science, E foreign affairs, G trade, Y empire (government, rates, cities, military, score), F1 this encyclopedia, V sound, F2 save a file (the game also saves itself every turn).",
@@ -402,6 +402,14 @@ pub struct LogText;
 pub struct VictoryText;
 #[derive(Component)]
 pub struct MinimapNode;
+
+/// The minimap's frame: put away while a city is open, to leave the city panel room.
+#[derive(Component)]
+pub struct MinimapFrame;
+
+/// The bottom-right panel (minimap, Next Unit, End Turn): the city panel stops above it.
+#[derive(Component)]
+pub struct TurnPanel;
 /// The message log and unit panel (bottom left), narrowed on phones.
 #[derive(Component)]
 pub struct LeftColumn;
@@ -746,7 +754,7 @@ pub fn setup_ui(mut commands: Commands, art: Res<Art>, mut images: ResMut<Assets
     let minimap = images.add(image);
     commands.insert_resource(MinimapImage(minimap.clone()));
     commands
-        .spawn(panel(
+        .spawn((TurnPanel, panel(
             &art.panel,
             Node {
                 position_type: PositionType::Absolute,
@@ -759,9 +767,9 @@ pub fn setup_ui(mut commands: Commands, art: Res<Art>, mut images: ResMut<Assets
                 row_gap: Val::Px(8.0),
                 ..default()
             },
-        ))
+        )))
         .with_children(|p| {
-            p.spawn((Node { padding: UiRect::all(Val::Px(2.0)), ..default() }, BackgroundColor(Color::srgb(0.42, 0.29, 0.11)))).with_children(|frame| {
+            p.spawn((MinimapFrame, Node { padding: UiRect::all(Val::Px(2.0)), ..default() }, BackgroundColor(Color::srgb(0.42, 0.29, 0.11)))).with_children(|frame| {
                 frame.spawn((
                     MinimapNode,
                     Node { width: Val::Px(176.0), height: Val::Px(176.0), ..default() },
@@ -798,6 +806,11 @@ pub fn setup_ui(mut commands: Commands, art: Res<Art>, mut images: ResMut<Assets
     // City panel (right)
     commands.spawn((
         CityPanel,
+        // Scrolls (mouse wheel) when it is taller than the room between the status bar and the
+        // End Turn panel (the wheel over it does not zoom the map).
+        Scrollable,
+        RelativeCursorPosition::default(),
+        ScrollPosition::default(),
         panel(
             &art.panel,
             Node {
@@ -809,6 +822,7 @@ pub fn setup_ui(mut commands: Commands, art: Res<Art>, mut images: ResMut<Assets
                 padding: UiRect::all(Val::Px(18.0)),
                 flex_direction: FlexDirection::Column,
                 row_gap: Val::Px(7.0),
+                overflow: Overflow::scroll_y(),
                 display: Display::None,
                 ..default()
             },
@@ -867,7 +881,7 @@ pub fn rebuild_panels(
         Res<TradeRoutes>,
     ),
     cities: Query<(&City, &CityBuildings, &Happiness)>,
-    (city_list, space, history, culture, taken, tips_on, rivers): (
+    (city_list, space, history, culture, taken, tips_on, rivers, web): (
         Query<(Entity, &City)>,
         Res<bevy_civ::space::SpaceRace>,
         Res<crate::History>,
@@ -875,6 +889,7 @@ pub fn rebuild_panels(
         Res<crate::JustCaptured>,
         Res<super::tips::Tips>,
         Res<crate::Rivers>,
+        Res<super::relations::RelationsWeb>,
     ),
     unit_panel: Query<Entity, With<UnitPanel>>,
     mut city_panel: Query<(Entity, &mut Node), (With<CityPanel>, Without<ModalRoot>)>,
@@ -1151,9 +1166,22 @@ pub fn rebuild_panels(
         commands.entity(root).despawn_descendants().with_children(|p| {
             let Some((city, buildings, happiness)) = city else { return };
             let mine = city.owner == PLAYER;
-            p.spawn(Node { justify_content: JustifyContent::SpaceBetween, align_items: AlignItems::Center, ..default() }).with_children(|r| {
+            p.spawn(Node { justify_content: JustifyContent::SpaceBetween, align_items: AlignItems::Center, column_gap: Val::Px(6.0), ..default() }).with_children(|r| {
                 r.spawn(label(&art.font_title, city.name.clone(), 23.0, GOLD));
-                button(r, art, "Close", Command::Game(Action::Deselect), BRONZE, 13.0);
+                r.spawn(Node { column_gap: Val::Px(5.0), align_items: AlignItems::Center, ..default() }).with_children(|nav| {
+                    // Step through our cities without going back to the map.
+                    if mine {
+                        let mut ours: Vec<(Entity, hexx::Hex)> = city_list.iter().filter(|(_, c)| c.owner == PLAYER).map(|(e, c)| (e, c.position)).collect();
+                        ours.sort_by_key(|(e, _)| e.index());
+                        if ours.len() > 1 {
+                            let index = ours.iter().position(|(_, at)| *at == city.position).unwrap_or(0);
+                            button(nav, art, "< [", Command::Game(Action::CycleCity(false)), BRONZE, 13.0);
+                            nav.spawn(label(&art.font_body, format!("{} of {}", index + 1, ours.len()), 13.0, CREAM));
+                            button(nav, art, "] >", Command::Game(Action::CycleCity(true)), BRONZE, 13.0);
+                        }
+                    }
+                    button(nav, art, "Close", Command::Game(Action::Deselect), BRONZE, 13.0);
+                });
             });
             let kind = if city.is_capital { "capital" } else { "city" };
             p.spawn(label(&art.font_body, format!("{} {}  -  size {}", owner_name(city.owner, &civs), kind, city.population), 15.0, owner_color(city.owner).mix(&Color::WHITE, 0.55)));
@@ -1471,10 +1499,25 @@ pub fn rebuild_panels(
         let ended = state.victory.is_some() && !ui.end_dismissed;
         node.display = if ended || ui.modal.is_some() || (foreign.offer.is_some() && state.victory.is_none()) { Display::Flex } else { Display::None };
         commands.entity(root).despawn_descendants().with_children(|p| {
+            // A window no taller than the screen: the mouse wheel scrolls what does not fit.
             let window = |width: f32| {
-                panel(
-                    &art.parchment,
-                    Node { width: Val::Px(width), max_width: Val::Percent(96.0), padding: UiRect::all(Val::Px(26.0)), flex_direction: FlexDirection::Column, row_gap: Val::Px(10.0), ..default() },
+                (
+                    Scrollable,
+                    RelativeCursorPosition::default(),
+                    ScrollPosition::default(),
+                    panel(
+                        &art.parchment,
+                        Node {
+                            width: Val::Px(width),
+                            max_width: Val::Percent(96.0),
+                            max_height: Val::Percent(90.0),
+                            overflow: Overflow::scroll_y(),
+                            padding: UiRect::all(Val::Px(26.0)),
+                            flex_direction: FlexDirection::Column,
+                            row_gap: Val::Px(10.0),
+                            ..default()
+                        },
+                    ),
                 )
             };
             // A waiting proposal takes priority over the advisors.
@@ -1523,6 +1566,7 @@ pub fn rebuild_panels(
                         OfferKind::BuyFromUs(good, gold) => format!("We would send them our spare {} and receive {gold} gold a turn for {} turns.", good.name(), foreign::DEAL_TURNS),
                         OfferKind::SellToUs(good, gold) => format!("We would receive {} and pay {gold} gold a turn for {} turns. We have {} gold.", good.name(), foreign::DEAL_TURNS, state.gold),
                         OfferKind::Passage => "Our units and theirs could then share tiles and pass through each other.".to_string(),
+                        OfferKind::Crackdown => format!("Accepting keeps smugglers from our cities out of theirs for {} turns. Refusing angers them.", bevy_civ::troubles::CRACKDOWN_TURNS),
                         OfferKind::Withdraw => "Accepting sends our troops in their lands back to our nearest city (and ends any right of passage). Refusing angers them, and they may fight.".to_string(),
                         OfferKind::Notice => String::new(),
                     };
@@ -2017,7 +2061,7 @@ pub fn rebuild_panels(
                         });
                         match ui.diplo_page {
                             DiploPage::Relations => {
-                                relations_page(w, art, &known, &diplomacy, &spies, &foreign, state.turn);
+                                relations_page(w, art, &civs.players, &known, &web.0, &diplomacy, &foreign, state.turn);
                                 w.spawn(row(6.0)).with_children(|r| button(r, art, "Close (Esc)", Command::CloseModal, BRONZE, 14.0));
                                 return;
                             }
@@ -2036,7 +2080,9 @@ pub fn rebuild_panels(
                                         wonders: wonders.built.iter().filter(|(_, (o, _))| *o == civ.id).map(|(b, _)| b.name()).collect(),
                                     });
                                 }
-                                intelligence_page(w, art, &known, &report, latest(PLAYER), &diplomacy, &spies, &foreign, &tech);
+                                let our_cities: Vec<&City> = city_list.iter().map(|(_, c)| c).filter(|c| c.owner == PLAYER).collect();
+                                let ours = (latest(PLAYER), our_cities.len(), our_cities.iter().map(|c| c.population).sum(), state.gold);
+                                intelligence_page(w, art, &civs.players, &known, &report, ours, &diplomacy, &spies, &foreign, &tech);
                                 w.spawn(row(6.0)).with_children(|r| button(r, art, "Close (Esc)", Command::CloseModal, BRONZE, 14.0));
                                 return;
                             }
@@ -2200,65 +2246,78 @@ fn short_name(name: &str) -> String {
     if name.chars().count() > 9 { format!("{}.", name.chars().take(8).collect::<String>()) } else { name.to_string() }
 }
 
-/// The relations page: a table of treaties between every two peoples we know (and us), with
-/// attitudes where an embassy lets us see them, and the wars and alliances in words.
+/// The relations page: a ring of every people we know (and us), joined by a line for each treaty
+/// - painted by `relations::draw_web` - beside how each of them feels about us; then the wars and
+/// alliances in words.
 #[allow(clippy::too_many_arguments)]
-fn relations_page(w: &mut ChildBuilder, art: &Art, known: &[&bevy_civ::ai::Civ], diplomacy: &Diplomacy, spies: &Espionage, foreign: &Foreign, turn: u32) {
-    w.spawn(label(
-        &art.font_body,
-        "Treaties between peoples are known to all; how they feel about each other we learn only through an embassy with one of them (otherwise ?). Green: allied; red: at war; numbers: attitude, from -100 (hatred) to +100.",
-        14.0,
-        INK_SOFT,
-    ));
-    let mut ids: Vec<(u32, String)> = vec![(PLAYER, "Us".to_string())];
-    ids.extend(known.iter().map(|c| (c.id, short_name(&c.name))));
-    let cell = |r: &mut ChildBuilder, text: String, colour: Color, width: f32| {
-        r.spawn(Node { width: Val::Px(width), justify_content: JustifyContent::Center, ..default() }).with_children(|c| {
-            c.spawn(label(&art.font_bold, text, 12.0, colour));
-        });
-    };
-    let width = (640.0 / ids.len() as f32).clamp(48.0, 90.0);
-    w.spawn(Node { flex_direction: FlexDirection::Column, row_gap: Val::Px(4.0), ..default() }).with_children(|table| {
-        table.spawn(row(0.0)).with_children(|r| {
-            cell(r, String::new(), INK, 96.0);
-            for (_, name) in &ids {
-                cell(r, name.clone(), INK, width);
+fn relations_page(w: &mut ChildBuilder, art: &Art, all: &[bevy_civ::ai::Civ], known: &[&bevy_civ::ai::Civ], web: &Handle<Image>, diplomacy: &Diplomacy, foreign: &Foreign, turn: u32) {
+    let ids: Vec<u32> = std::iter::once(PLAYER).chain(known.iter().map(|c| c.id)).collect();
+    let civ_of = |id: u32| all.iter().find(|c| c.id == id);
+    let name = |id: u32| if id == PLAYER { "Us".to_string() } else { civ_of(id).map(|c| short_name(&c.name)).unwrap_or_default() };
+    let at = super::relations::positions(ids.len());
+    let size = super::relations::WEB as f32;
+    w.spawn(Node { column_gap: Val::Px(18.0), align_items: AlignItems::Start, flex_wrap: FlexWrap::Wrap, ..default() }).with_children(|r| {
+        // The web: lines underneath, portraits on top.
+        r.spawn((Node { width: Val::Px(size), height: Val::Px(size), flex_shrink: 0.0, ..default() }, ImageNode::new(web.clone()))).with_children(|ring| {
+            for (i, id) in ids.iter().enumerate() {
+                let p = at[i];
+                let tint = owner_color(*id);
+                ring.spawn((
+                    Node { position_type: PositionType::Absolute, left: Val::Px(p.x - 23.0), top: Val::Px(p.y - 23.0), padding: UiRect::all(Val::Px(2.0)), ..default() },
+                    BackgroundColor(tint),
+                    BorderRadius::all(Val::Px(6.0)),
+                ))
+                .with_children(|frame| {
+                    frame.spawn(portrait(art, civ_of(*id).map_or(0, |c| c.portrait), 42.0));
+                });
+                ring.spawn((
+                    Node { position_type: PositionType::Absolute, left: Val::Px(p.x - 45.0), top: Val::Px(p.y + 23.0), width: Val::Px(90.0), justify_content: JustifyContent::Center, ..default() },
+                ))
+                .with_children(|tag| {
+                    tag.spawn(label(&art.font_bold, name(*id), 12.0, INK));
+                });
             }
         });
-        for (a, a_name) in &ids {
-            table.spawn(row(0.0)).with_children(|r| {
-                cell(r, a_name.clone(), INK, 96.0);
-                for (b, _) in &ids {
-                    if a == b {
-                        cell(r, "-".into(), INK_SOFT, width);
-                        continue;
-                    }
-                    let seen = *a == PLAYER || *b == PLAYER || spies.has_embassy(PLAYER, *a) || spies.has_embassy(PLAYER, *b);
-                    let attitude = diplomacy.get_attitude(*a, *b);
-                    let mood = if seen { format!(" {attitude:+}") } else { String::new() };
-                    let (text, colour) = match diplomacy.get_treaty(*a, *b) {
-                        Treaty::War => ("War", Color::srgb(0.72, 0.15, 0.1)),
-                        Treaty::Alliance => ("Ally", Color::srgb(0.18, 0.5, 0.15)),
-                        Treaty::Peace => ("Peace", INK),
-                        // No treaty: how they feel, if we can see it.
-                        Treaty::None if seen => (foreign::mood(attitude), INK_SOFT),
-                        Treaty::None => ("?", INK_SOFT),
-                    };
-                    cell(r, format!("{text}{mood}"), colour, width);
+        // Beside it: the legend, and how each people feels about us.
+        r.spawn(Node { flex_direction: FlexDirection::Column, row_gap: Val::Px(6.0), flex_grow: 1.0, min_width: Val::Px(300.0), ..default() }).with_children(|side| {
+            side.spawn(row(10.0)).with_children(|legend| {
+                for (text, colour, thick) in [("War", Color::srgb(0.78, 0.18, 0.14), 5.0), ("Alliance", Color::srgb(0.22, 0.59, 0.22), 5.0), ("Peace", Color::srgb(0.49, 0.41, 0.29), 2.0)] {
+                    legend.spawn(Node { align_items: AlignItems::Center, column_gap: Val::Px(4.0), ..default() }).with_children(|item| {
+                        item.spawn((Node { width: Val::Px(22.0), height: Val::Px(thick), ..default() }, BackgroundColor(colour)));
+                        item.spawn(label(&art.font_body, text, 13.0, INK));
+                    });
                 }
             });
-        }
+            side.spawn(label(&art.font_bold, "How they feel about us", 15.0, INK));
+            for civ in known {
+                let attitude = diplomacy.get_attitude(PLAYER, civ.id);
+                side.spawn(Node { align_items: AlignItems::Center, column_gap: Val::Px(6.0), ..default() }).with_children(|line| {
+                    line.spawn(portrait(art, civ.portrait, 24.0));
+                    line.spawn(Node { width: Val::Px(78.0), ..default() }).with_children(|n| {
+                        n.spawn(label(&art.font_bold, short_name(&civ.name), 12.0, INK));
+                    });
+                    // A bar from -100 to +100, the middle marked.
+                    let share = ((attitude + 100) as f32 / 200.0).clamp(0.0, 1.0);
+                    let colour = if attitude < -14 { Color::srgb(0.8, 0.25, 0.2) } else if attitude < 15 { Color::srgb(0.85, 0.7, 0.25) } else { Color::srgb(0.35, 0.7, 0.3) };
+                    line.spawn((Node { width: Val::Px(120.0), height: Val::Px(10.0), ..default() }, BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.18)))).with_children(|track| {
+                        track.spawn((Node { width: Val::Percent(share * 100.0), height: Val::Percent(100.0), ..default() }, BackgroundColor(colour)));
+                        track.spawn((Node { position_type: PositionType::Absolute, left: Val::Percent(50.0), width: Val::Px(1.0), height: Val::Percent(100.0), ..default() }, BackgroundColor(INK)));
+                    });
+                    line.spawn(label(&art.font_body, format!("{} {attitude:+}", foreign::mood(attitude)), 12.0, INK_SOFT));
+                });
+            }
+        });
     });
     // The same in words: who fights whom, who stands together.
-    let name = |id: u32| ids.iter().find(|(i, _)| *i == id).map(|(_, n)| if id == PLAYER { "we".to_string() } else { n.clone() }).unwrap_or_default();
     let mut wars = Vec::new();
     let mut alliances = Vec::new();
-    for (i, (a, _)) in ids.iter().enumerate() {
-        for (b, _) in ids.iter().skip(i + 1) {
+    for (i, a) in ids.iter().enumerate() {
+        for b in ids.iter().skip(i + 1) {
             let age = foreign.treaty_age(*a, *b, turn);
+            let pair = |x: u32, y: u32| format!("{} and {}", if x == PLAYER { "we".to_string() } else { name(x) }, name(y));
             match diplomacy.get_treaty(*a, *b) {
-                Treaty::War => wars.push(format!("{} and {} ({age} turns)", name(*a), name(*b))),
-                Treaty::Alliance => alliances.push(format!("{} and {}", name(*a), name(*b))),
+                Treaty::War => wars.push(format!("{} ({age} turns)", pair(*a, *b))),
+                Treaty::Alliance => alliances.push(pair(*a, *b)),
                 _ => {}
             }
         }
@@ -2268,43 +2327,63 @@ fn relations_page(w: &mut ChildBuilder, art: &Art, known: &[&bevy_civ::ai::Civ],
     w.spawn(label(&art.font_bold, format!("Allied: {}.", line(&alliances, "nobody")), 14.0, INK));
 }
 
-/// The intelligence page: a card for each people we know - its size, standing, faith and wonders
-/// from what travellers tell, and its research and treasury if we have an embassy there.
+/// One measure on an intelligence card: an icon, a bar against the largest among the peoples we
+/// know, and the figure (a grey "?" bar when we cannot know it).
+fn measure(parent: &mut ChildBuilder, art: &Art, icon_index: usize, share: Option<f32>, text: String, colour: Color) {
+    parent.spawn(Node { align_items: AlignItems::Center, column_gap: Val::Px(5.0), width: Val::Px(205.0), ..default() }).with_children(|m| {
+        m.spawn(icon_node(art, icon_index, 18.0));
+        m.spawn((Node { width: Val::Px(90.0), height: Val::Px(9.0), ..default() }, BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.18)))).with_children(|track| {
+            if let Some(share) = share {
+                track.spawn((Node { width: Val::Percent(share.clamp(0.0, 1.0) * 100.0), height: Val::Percent(100.0), ..default() }, BackgroundColor(colour)));
+            }
+        });
+        m.spawn(label(&art.font_body, text, 12.0, if share.is_some() { INK } else { INK_SOFT }));
+    });
+}
+
+/// What the intelligence page shows of one people (us included, for comparison).
+struct Dossier {
+    id: u32,
+    portrait: usize,
+    title: String,
+    line: String,
+    score: u32,
+    cities: usize,
+    citizens: u32,
+    army: f32,
+    techs: Option<usize>,
+    gold: Option<i32>,
+    note: String,
+}
+
+/// The intelligence page: a card for each people - us first - with bars for score, people, army,
+/// knowledge and treasury against the largest among them. Research and treasury need an embassy.
 #[allow(clippy::too_many_arguments)]
-fn intelligence_page(w: &mut ChildBuilder, art: &Art, known: &[&bevy_civ::ai::Civ], report: &[Intel], our_score: u32, diplomacy: &Diplomacy, spies: &Espionage, foreign: &Foreign, tech: &TechState) {
+fn intelligence_page(w: &mut ChildBuilder, art: &Art, all: &[bevy_civ::ai::Civ], known: &[&bevy_civ::ai::Civ], report: &[Intel], ours: (u32, usize, u32, i32), diplomacy: &Diplomacy, spies: &Espionage, foreign: &Foreign, tech: &TechState) {
     if known.is_empty() {
         w.spawn(label(&art.font_bold, "We have not met any other people yet.", 15.0, INK));
         return;
     }
-    let ours = foreign.strength.get(&PLAYER).copied().unwrap_or(1.0).max(1.0);
-    w.spawn(label(&art.font_bold, format!("Our score: {our_score}. What travellers tell of each people, and what our embassies report:"), 14.0, INK));
+    let strength = |id: u32| foreign.strength.get(&id).copied().unwrap_or(1.0).max(1.0);
+    let me = all.iter().find(|c| c.id == PLAYER);
+    let mut dossiers = vec![Dossier {
+        id: PLAYER,
+        portrait: me.map_or(0, |c| c.portrait),
+        title: "Us".to_string(),
+        line: String::new(),
+        score: ours.0,
+        cities: ours.1,
+        citizens: ours.2,
+        army: strength(PLAYER),
+        techs: Some(tech.researched.len()),
+        gold: Some(ours.3),
+        note: String::new(),
+    }];
     for civ in known {
         let Some(intel) = report.iter().find(|r| r.id == civ.id) else { continue };
-        let theirs = foreign.strength.get(&civ.id).copied().unwrap_or(1.0).max(1.0);
-        let power = match theirs / ours {
-            r if r > 1.8 => "far stronger than ours",
-            r if r > 1.2 => "stronger than ours",
-            r if r > 0.8 => "about equal to ours",
-            r if r > 0.5 => "weaker than ours",
-            _ => "far weaker than ours",
-        };
-        let standing = if intel.score > our_score { "ahead of us" } else { "behind us" };
+        let embassy = spies.has_embassy(PLAYER, civ.id);
         let at_war: Vec<String> = known.iter().filter(|o| o.id != civ.id && diplomacy.get_treaty(civ.id, o.id) == Treaty::War).map(|o| short_name(&o.name)).collect();
         let allies: Vec<String> = known.iter().filter(|o| o.id != civ.id && diplomacy.get_treaty(civ.id, o.id) == Treaty::Alliance).map(|o| short_name(&o.name)).collect();
-        let mut lines = vec![
-            format!(
-                "{}, {} cities and {} citizens; score {} ({standing}). Their army is {power}.",
-                civ.government.name(),
-                intel.cities,
-                intel.citizens,
-                intel.score
-            ),
-            format!(
-                "Faith: {}. Wonders: {}.",
-                intel.faith.unwrap_or("none"),
-                if intel.wonders.is_empty() { "none".to_string() } else { intel.wonders.join(", ") }
-            ),
-        ];
         let mut ties = Vec::new();
         if !at_war.is_empty() {
             ties.push(format!("at war with {}", at_war.join(", ")));
@@ -2312,26 +2391,50 @@ fn intelligence_page(w: &mut ChildBuilder, art: &Art, known: &[&bevy_civ::ai::Ci
         if !allies.is_empty() {
             ties.push(format!("allied with {}", allies.join(", ")));
         }
-        if !ties.is_empty() {
-            lines.push(format!("They are {}.", ties.join("; ")));
-        }
-        lines.push(if spies.has_embassy(PLAYER, civ.id) {
-            let lacking = espionage::stealable(tech, &civ.tech).len();
-            format!(
-                "Embassy report: {} technologies ({lacking} we lack), researching {}; {} gold in the treasury.",
-                civ.tech.researched.len(),
-                civ.tech.current.map(|t| t.name()).unwrap_or("nothing"),
-                civ.gold
-            )
-        } else {
-            "No embassy: their research and treasury are hidden. A Diplomat at one of their cities can open one.".to_string()
+        let wonders = if intel.wonders.is_empty() { "no wonders".to_string() } else { intel.wonders.join(", ") };
+        dossiers.push(Dossier {
+            id: civ.id,
+            portrait: civ.portrait,
+            title: format!("{} of {}", civ.leader, civ.name),
+            line: format!("{} - faith: {} - {wonders}{}", civ.government.name(), intel.faith.unwrap_or("none"), if ties.is_empty() { String::new() } else { format!(" - {}", ties.join("; ")) }),
+            score: intel.score,
+            cities: intel.cities,
+            citizens: intel.citizens,
+            army: strength(civ.id),
+            techs: embassy.then(|| civ.tech.researched.len()),
+            gold: embassy.then_some(civ.gold),
+            note: if embassy {
+                let lacking = espionage::stealable(tech, &civ.tech).len();
+                format!("Embassy: researching {}; {lacking} technologies we lack.", civ.tech.current.map(|t| t.name()).unwrap_or("nothing"))
+            } else {
+                "No embassy: research and treasury hidden (a Diplomat at one of their cities can open one).".to_string()
+            },
         });
-        w.spawn(Node { column_gap: Val::Px(10.0), align_items: AlignItems::Center, ..default() }).with_children(|r| {
-            r.spawn(portrait(art, civ.portrait, 52.0));
-            r.spawn(Node { flex_direction: FlexDirection::Column, row_gap: Val::Px(2.0), flex_shrink: 1.0, ..default() }).with_children(|c| {
-                c.spawn(label(&art.font_bold, format!("{} of {}", civ.leader, civ.name), 15.0, INK));
-                for line in lines {
-                    c.spawn(label(&art.font_body, line, 13.0, INK_SOFT));
+    }
+    let most = |f: &dyn Fn(&Dossier) -> f32| dossiers.iter().map(f).fold(1.0f32, f32::max);
+    let (top_score, top_people, top_army) = (most(&|d| d.score as f32), most(&|d| d.citizens as f32), most(&|d| d.army));
+    let top_techs = most(&|d| d.techs.unwrap_or(0) as f32);
+    let top_gold = most(&|d| d.gold.unwrap_or(0).max(0) as f32);
+    for d in &dossiers {
+        let colour = owner_color(d.id);
+        w.spawn(Node { column_gap: Val::Px(10.0), align_items: AlignItems::Center, ..default() }).with_children(|card| {
+            card.spawn((Node { padding: UiRect::all(Val::Px(2.0)), ..default() }, BackgroundColor(colour), BorderRadius::all(Val::Px(6.0)))).with_children(|frame| {
+                frame.spawn(portrait(art, d.portrait, 46.0));
+            });
+            card.spawn(Node { flex_direction: FlexDirection::Column, row_gap: Val::Px(3.0), flex_shrink: 1.0, ..default() }).with_children(|c| {
+                c.spawn(label(&art.font_bold, d.title.clone(), 14.0, INK));
+                if !d.line.is_empty() {
+                    c.spawn(label(&art.font_body, d.line.clone(), 12.0, INK_SOFT));
+                }
+                c.spawn(Node { flex_wrap: FlexWrap::Wrap, column_gap: Val::Px(6.0), row_gap: Val::Px(2.0), ..default() }).with_children(|bars| {
+                    measure(bars, art, icon::CULTURE, Some(d.score as f32 / top_score), format!("score {}", d.score), colour);
+                    measure(bars, art, icon::POPULATION, Some(d.citizens as f32 / top_people), format!("{} in {} cities", d.citizens, d.cities), colour);
+                    measure(bars, art, icon::ATTACK, Some(d.army / top_army), format!("army {:.0}", d.army), colour);
+                    measure(bars, art, icon::SCIENCE, d.techs.map(|t| t as f32 / top_techs), d.techs.map_or("techs ?".to_string(), |t| format!("{t} techs")), colour);
+                    measure(bars, art, icon::GOLD, d.gold.map(|g| g.max(0) as f32 / top_gold), d.gold.map_or("gold ?".to_string(), |g| format!("{g} gold")), colour);
+                });
+                if !d.note.is_empty() {
+                    c.spawn(label(&art.font_body, d.note.clone(), 12.0, INK_SOFT));
                 }
             });
         });
@@ -2422,13 +2525,47 @@ pub fn update_log(log: Res<GameLog>, mut text: Query<&mut Text, With<LogText>>) 
     }
 }
 
+/// A panel or window whose contents scroll with the mouse wheel when they do not fit.
+#[derive(Component)]
+pub struct Scrollable;
+
+/// The mouse wheel scrolls whichever panel or window the pointer is over; a newly opened city
+/// starts at the top.
+pub fn scroll_panels(
+    mut wheel: EventReader<bevy::input::mouse::MouseWheel>,
+    selection: Res<Selection>,
+    mut panels: Query<(&RelativeCursorPosition, &mut ScrollPosition, Has<CityPanel>), With<Scrollable>>,
+    mut shown: Local<Option<Entity>>,
+) {
+    let opened = *shown != selection.city;
+    *shown = selection.city;
+    let delta: f32 = wheel
+        .read()
+        .map(|event| match event.unit {
+            bevy::input::mouse::MouseScrollUnit::Line => event.y * 40.0,
+            bevy::input::mouse::MouseScrollUnit::Pixel => event.y,
+        })
+        .sum();
+    for (cursor, mut scroll, city) in &mut panels {
+        if city && opened {
+            scroll.offset_y = 0.0;
+        }
+        if delta != 0.0 && cursor.mouse_over() {
+            scroll.offset_y = (scroll.offset_y - delta).max(0.0);
+        }
+    }
+}
+
 /// Shrinks the whole interface on narrow (phone) screens so the panels never collide.
 pub fn fit_ui_scale(
     windows: Query<&Window>,
     mut scale: ResMut<UiScale>,
-    mut minimap: Query<&mut Node, With<MinimapNode>>,
-    mut left: Query<&mut Node, (With<LeftColumn>, Without<MinimapNode>)>,
-    mut bar: Query<&mut Node, (With<StatusBar>, Without<LeftColumn>, Without<MinimapNode>)>,
+    mut minimap: Query<&mut Node, With<MinimapFrame>>,
+    mut left: Query<&mut Node, (With<LeftColumn>, Without<MinimapFrame>)>,
+    mut bar: Query<&mut Node, (With<StatusBar>, Without<LeftColumn>, Without<MinimapFrame>)>,
+    mut city_panel: Query<&mut Node, (With<CityPanel>, Without<StatusBar>, Without<LeftColumn>, Without<MinimapFrame>)>,
+    turn_panel: Query<&ComputedNode, With<TurnPanel>>,
+    selection: Res<Selection>,
 ) {
     let Ok(window) = windows.get_single() else { return };
     // The status bar keeps to one row unless the screen is too narrow for its buttons.
@@ -2446,7 +2583,15 @@ pub fn fit_ui_scale(
     }
     // On a phone the minimap gives way, and the unit panel narrows, so the bottom panels sit side by side.
     let narrow = window.width() < 640.0;
-    let minimap_display = if narrow { Display::None } else { Display::Flex };
+    // The minimap also steps aside while a city is open, so the city panel has room above Next
+    // Unit and End Turn.
+    let minimap_display = if narrow || selection.city.is_some() { Display::None } else { Display::Flex };
+    if let (Ok(turn), Ok(mut node)) = (turn_panel.get_single(), city_panel.get_single_mut()) {
+        let bottom = Val::Px(turn.size().y * turn.inverse_scale_factor() + 20.0);
+        if node.bottom != bottom {
+            node.bottom = bottom;
+        }
+    }
     for mut node in &mut minimap {
         if node.display != minimap_display {
             node.display = minimap_display;

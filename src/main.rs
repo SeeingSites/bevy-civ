@@ -398,6 +398,8 @@ pub enum Action {
     CycleStack,
     /// Shift+Tab: the previous unit on the tile.
     CycleStackBack,
+    /// The next (true) or previous of our cities, in the order they were founded.
+    CycleCity(bool),
     /// Fortify (true) or wake (false) every unit of ours on the selected unit's tile.
     StackOrder(bool),
     SetProduction(ProductionItem),
@@ -651,7 +653,7 @@ fn main() {
         .add_systems(OnExit(AppState::Playing), cleanup_world)
         .add_systems(
             Update,
-            (handle_map_click, apply_actions, withdraw_troops, stow_cargo, process_turn, religion_turn, continue_orders, stow_cargo, visit_villages, automate_workers, advance_selection, preview_route, refresh_supplies, work_tiles, nuclear_strikes)
+            (handle_map_click, apply_actions, cycle_cities, withdraw_troops, stow_cargo, process_turn, religion_turn, continue_orders, stow_cargo, visit_villages, automate_workers, advance_selection, preview_route, refresh_supplies, work_tiles, nuclear_strikes)
                 .chain()
                 .in_set(GameLogic)
                 .run_if(in_state(AppState::Playing)),
@@ -1344,6 +1346,30 @@ fn move_cost(domain: Domain, from: Hex, to: Hex, map: &MapData, roads: &HashMap<
         StepCost::EndsTurn
     } else {
         land_step(from, to, map.terrain.get(&to).copied(), roads, domain == Domain::Land)
+    }
+}
+
+/// Steps through our cities ([ and ], or the arrows in the city panel), opening each and looking at it.
+fn cycle_cities(mut actions: EventReader<Action>, mut selection: ResMut<Selection>, cities: Query<(Entity, &City)>, mut focus: EventWriter<Focus>, mut dirty: ResMut<Dirty>) {
+    for action in actions.read() {
+        let Action::CycleCity(forward) = action else { continue };
+        let mut ours: Vec<(Entity, Hex)> = cities.iter().filter(|(_, c)| c.owner == PLAYER).map(|(e, c)| (e, c.position)).collect();
+        if ours.is_empty() {
+            continue;
+        }
+        ours.sort_by_key(|(e, _)| e.index());
+        let len = ours.len();
+        let next = match selection.city.and_then(|s| ours.iter().position(|(e, _)| *e == s)) {
+            Some(i) if *forward => (i + 1) % len,
+            Some(i) => (i + len - 1) % len,
+            None if *forward => 0,
+            None => len - 1,
+        };
+        let (entity, at) = ours[next];
+        selection.city = Some(entity);
+        selection.unit = None;
+        focus.send(Focus(at));
+        dirty.ui = true;
     }
 }
 
@@ -2203,6 +2229,8 @@ fn apply_actions(
                     sounds.send(Sfx::Select);
                 }
             }
+            // Handled by `cycle_cities`.
+            Action::CycleCity(_) => {}
             Action::StackOrder(fortify) => {
                 let Some(here) = selected_unit.and_then(|e| units.get(e).ok().map(|u| u.position)) else { continue };
                 let stack = own_stack(here, unit_entities.iter(), |e| units.get(e).ok().map(|u| (u.position, u.owner)));
@@ -2868,11 +2896,21 @@ fn process_turn(
     let industrial: HashSet<u32> = civs.players.iter().map(|c| c.id).filter(|o| knows_tech(*o, Tech::Industrialization)).collect();
     let drug_dens: Vec<(Hex, u32)> = cities.iter().filter(|(c, _, _)| c.narcotics >= 2).map(|(c, _, _)| (c.position, c.owner)).collect();
     let crackdown = foreign.crackdown.clone();
+    let our_crackdown = foreign.our_crackdown.clone();
     let turn_now = state.turn;
+    // Smugglers from a drug-ridden foreign city nearby - unless their rulers promised to stop them.
     let smuggled_into = |at: Hex, owner: u32| {
-        drug_dens.iter().find(|(p, o)| *o != owner && p.distance_to(at) <= bevy_civ::troubles::SMUGGLING_RANGE && !(owner == PLAYER && crackdown.get(o).is_some_and(|until| *until > turn_now))).map(|(_, o)| *o)
+        drug_dens
+            .iter()
+            .find(|(p, o)| {
+                let stopped = (owner == PLAYER && crackdown.get(o).is_some_and(|until| *until > turn_now))
+                    || (*o == PLAYER && our_crackdown.get(&owner).is_some_and(|until| *until > turn_now));
+                *o != owner && p.distance_to(at) <= bevy_civ::troubles::SMUGGLING_RANGE && !stopped
+            })
+            .map(|(_, o)| *o)
     };
     let mut smugglers: HashSet<u32> = HashSet::new();
+    let mut smuggled_by_us: HashSet<u32> = HashSet::new();
 
     for (mut city, mut buildings, mut happiness) in &mut cities {
         let mine = city.owner == PLAYER;
@@ -2891,6 +2929,8 @@ fn process_turn(
                     if let Some(s) = smuggler {
                         smugglers.insert(s);
                     }
+                } else if smuggler == Some(PLAYER) {
+                    smuggled_by_us.insert(owner);
                 }
                 let restless = happiness.unhappy > happiness.happy;
                 let before = city.narcotics;
@@ -3386,6 +3426,7 @@ fn process_turn(
     }
 
     foreign.smugglers = smugglers;
+    foreign.smuggled_by_us = smuggled_by_us;
 
     // Migration: every few turns, citizens leave troubled cities for better ones nearby that welcome
     // them - at home, or abroad in peoples that know Industrialization.
