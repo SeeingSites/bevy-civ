@@ -296,6 +296,14 @@ working directory.
   halves it.
 - **Resistance**: a captured city produces nothing for 1 turn plus 1 per 3 citizens (up to 6); a
   garrison of two settles it twice as fast.
+- **Barbarians**: from turn 10, every 8 turns a band rises on wild land outside every border and
+  away from any unit; it grows (one to three units) and re-arms with the age of the world, from
+  warriors to infantry and artillery.
+- **Capitals and the fallen**: a people that loses its capital moves the palace to its largest
+  city (corruption and the state religion follow it). A people with no city and no settler left
+  is out of the game: its troops disband and it leaves diplomacy. Scores count citizens (2),
+  technologies (10) and wonders (50) the same way for everyone, and a rival holding two thirds of
+  the world's cities (at least five) wins by domination.
 - **Build queue**: in the city panel, switch "Click to" from *Build now* to *Add to queue* and pick
   up to six projects; each starts when the one before is done (a unit in production gives way to
   the queue, otherwise units keep repeating). Click a queued project to take it off.

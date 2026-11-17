@@ -211,7 +211,7 @@ fn declare_war(ctx: &mut Ctx, civ: u32, name: &str) {
     let treaty = ctx.diplomacy.get_treaty(PLAYER, civ);
     if matches!(treaty, Treaty::Peace | Treaty::Alliance) {
         ctx.foreign.reputation -= 15;
-        let others: Vec<u32> = ctx.civs.players.iter().filter(|c| !c.is_human && c.id != civ).map(|c| c.id).collect();
+        let others: Vec<u32> = ctx.civs.players.iter().filter(|c| !c.is_human && !c.eliminated && c.id != civ).map(|c| c.id).collect();
         for other in others {
             shift(ctx, other, -8);
         }
@@ -540,7 +540,7 @@ pub fn turn(ctx: &mut Ctx, fog: &FogOfWar, supplies: &Supplies, units: &[(Hex, u
     let mut rng = rand::thread_rng();
     let turn = ctx.state.turn;
     let roster: Vec<(u32, String, String, f32)> =
-        ctx.civs.players.iter().filter(|c| !c.is_human).map(|c| (c.id, c.name.clone(), c.leader.clone(), c.aggression)).collect();
+        ctx.civs.players.iter().filter(|c| !c.is_human && !c.eliminated).map(|c| (c.id, c.name.clone(), c.leader.clone(), c.aggression)).collect();
     let city_count = |owner: u32| cities.iter().filter(|(_, o)| *o == owner).count();
     let nearest = |a: u32, b: u32| {
         cities
@@ -803,6 +803,7 @@ mod tests {
             government: bevy_civ::government::Government::Despotism,
             anarchy: 0,
             pending_government: None,
+            eliminated: false,
         }
     }
 

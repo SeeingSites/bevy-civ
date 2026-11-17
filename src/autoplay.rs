@@ -96,7 +96,7 @@ pub fn run(which: &str, turns: u32) -> bool {
                 }
                 owners.insert(*at, *owner);
             }
-            let holding: HashSet<u32> = now.iter().map(|(_, o)| *o).collect();
+            let holding: HashSet<u32> = now.iter().map(|(_, o)| *o).filter(|o| *o != bevy_civ::barbarians::BARBARIANS).collect();
             if alive.is_empty() {
                 alive = holding.clone();
             }
