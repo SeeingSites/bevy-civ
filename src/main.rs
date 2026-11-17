@@ -23,6 +23,7 @@ use bevy_civ::fog::FogOfWar;
 use bevy_civ::government::Government;
 use bevy_civ::pathfinding::{find_path, find_route, land_step, road_network, turns_along, Road, StepCost, Travel};
 use bevy_civ::unit::{Domain, AIR_RANGE};
+use bevy_civ::cargo::{self, Berth};
 use bevy_civ::score::Score;
 use bevy_civ::space::SpaceRace;
 use bevy_civ::tech::{Tech, TechState};
@@ -318,6 +319,10 @@ pub enum Action {
     Sentry,
     /// A worker or settler settles in the city it stands in, adding to its people.
     JoinCity,
+    /// Troops (or aircraft) in port go aboard a ship there with room.
+    Board,
+    /// Units aboard a ship in port leave it (a ship lets all of its cargo off).
+    Unload,
     /// A resource deal proposed to another leader.
     Trade(u32, TradeAsk),
     Build(Improvement),
@@ -626,7 +631,7 @@ fn main() {
         .add_systems(OnExit(AppState::Playing), cleanup_world)
         .add_systems(
             Update,
-            (handle_map_click, apply_actions, process_turn, religion_turn, continue_orders, visit_villages, automate_workers, advance_selection, preview_route, refresh_supplies, work_tiles, nuclear_strikes)
+            (handle_map_click, apply_actions, stow_cargo, process_turn, religion_turn, continue_orders, stow_cargo, visit_villages, automate_workers, advance_selection, preview_route, refresh_supplies, work_tiles, nuclear_strikes)
                 .chain()
                 .in_set(GameLogic)
                 .run_if(in_state(AppState::Playing)),
@@ -671,6 +676,7 @@ pub fn init_game(app: &mut App) {
         .add_event::<Detonation>()
         .init_resource::<NukeAim>()
         .init_resource::<LastMove>()
+        .init_resource::<bevy_civ::ai::Ferries>()
         .add_event::<savegame::SaveRequest>();
 }
 
@@ -869,7 +875,6 @@ fn handle_map_click(
     (tiles, walls_of, rivers, civs, supplies): (Query<&HexTile>, Query<&CityBuildings>, Res<Rivers>, Res<Civilizations>, Res<Supplies>),
     state: Res<GameState>,
     map: Res<MapData>,
-    tech: Res<TechState>,
     mut fog: ResMut<FogOfWar>,
     mut diplomacy: ResMut<Diplomacy>,
     mut log: ResMut<GameLog>,
@@ -931,6 +936,7 @@ fn handle_map_click(
 
         let snapshot: Vec<(Entity, Hex, u32, UnitType)> =
             units.iter().map(|(e, u)| (e, u.position, u.owner, u.unit_type)).collect();
+        let berths: Vec<Berth> = units.iter().map(|(e, u)| Berth::of(e, &u)).collect();
         // Hit points, level and whether dug in, for whoever has to defend.
         let vitals: HashMap<Entity, (u32, u8, bool)> = units.iter().map(|(e, u)| (e, (u.hp, u.level, u.fortified))).collect();
         // Enemy fighters that have not flown this turn, ready to intercept our bombers.
@@ -1005,14 +1011,13 @@ fn handle_map_click(
             log.push(format!("{} has no moves left this turn.", unit.unit_type.name()));
             continue;
         }
-        let sail = tech.researched.contains(&Tech::Seafaring);
         let domain = unit.unit_type.domain();
         // The strongest defender on the tile meets an attack.
         // Units of a people who grant us passage are not in the way: we share the tile.
         let enemy = snapshot
             .iter()
             .filter(|u| u.1 == hex && u.2 != unit.owner && (u.2 == BARBARIANS || !diplomacy.has_passage(PLAYER, u.2)))
-            .max_by_key(|u| u.3.stats().1 * 10 + vitals.get(&u.0).map_or(0, |v| v.0))
+            .max_by_key(|u| defending_as(u.3, u.1, &map).stats().1 * 10 + vitals.get(&u.0).map_or(0, |v| v.0))
             .copied();
         // Walking into the units of a people at peace with us would be war: that takes a declaration.
         if let Some((_, _, owner, _)) = enemy {
@@ -1027,11 +1032,16 @@ fn handle_map_click(
             continue;
         }
         let ports: HashSet<Hex> = cities.iter().filter(|(_, c)| c.owner == PLAYER).map(|(_, c)| c.position).collect();
+        let airfields = cargo::airfields(ports.iter().copied(), &berths, PLAYER);
+        let boarding = domain == Domain::Land && enemy.is_none() && map.water.contains(&hex);
         // Where each kind of unit may go.
         let refusal = match domain {
             Domain::Sea if enemy.is_none() && !map.water.contains(&hex) && !ports.contains(&hex) => Some("Ships can only enter water and your own coastal cities."),
-            Domain::Air if !ports.iter().any(|p| p.distance_to(hex) <= AIR_RANGE) => Some("That is beyond the range of our airfields."),
-            Domain::Land if enemy.is_some() && map.water.contains(&unit.position) => Some("Troops cannot attack from their boats; land them first."),
+            Domain::Air if !airfields.iter().any(|p| p.distance_to(hex) <= AIR_RANGE) => Some("That is beyond the range of our airfields (our cities and carriers)."),
+            Domain::Land if boarding && cargo::ship_with_room(&berths, PLAYER, hex, unit.unit_type).is_none() => {
+                Some("Troops cross the sea aboard ships: move them onto a ship of ours with room (a Galley, Galleon, Frigate or Transport), or board one in port.")
+            }
+            Domain::Land if enemy.is_some() && map.water.contains(&unit.position) => Some("Troops cannot attack from a ship; land them first."),
             Domain::Land if enemy.is_some() && map.water.contains(&hex) => Some("Land units cannot attack ships at sea."),
             _ => None,
         };
@@ -1039,10 +1049,10 @@ fn handle_map_click(
             log.push(reason);
             continue;
         }
-        let travel = player_travel(unit.unit_type, sail, &ports);
+        let travel = player_travel(unit.unit_type, &ports);
         let roads = road_network(tiles.iter(), cities.iter().map(|(_, c)| c.position));
         let Some(route) = find_route(unit.position, hex, tiles.iter().map(|t| (t.coord, t.terrain)), &roads, travel) else {
-            log.push(if sail || domain != Domain::Land { "There is no route to that tile." } else { "There is no route to that tile. Crossing water needs Seafaring." });
+            log.push(if domain != Domain::Land { "There is no route to that tile." } else { "There is no route over land to that tile: troops cross the sea aboard ships." });
             continue;
         };
         dirty.map = true;
@@ -1203,12 +1213,25 @@ fn handle_map_click(
                 .filter(|u| u.2 != PLAYER && u.3.is_army() && (u.2 == BARBARIANS || diplomacy.get_treaty(PLAYER, u.2) == Treaty::War))
                 .map(|u| u.1)
                 .collect();
+            // Boarding together: only as many as the ships there have room for.
+            let load = cargo::loads(&berths);
+            let mut seats: usize = if boarding {
+                berths
+                    .iter()
+                    .filter(|s| s.owner == PLAYER && s.position == hex && s.unit_type.carries(UnitType::Warrior))
+                    .map(|s| s.unit_type.capacity().saturating_sub(load.get(&s.entity).copied().unwrap_or(0)) as usize)
+                    .sum::<usize>()
+                    .saturating_sub(1)
+            } else {
+                usize::MAX
+            };
             for follower in followers {
                 let Ok((_, mut unit)) = units.get_mut(follower) else { continue };
-                if unit.build_turns_left.is_some() || !unit.can_move() {
+                if unit.build_turns_left.is_some() || !unit.can_move() || seats == 0 {
                     continue;
                 }
-                let travel = player_travel(unit.unit_type, sail, &ports);
+                seats = seats.saturating_sub(usize::from(boarding));
+                let travel = player_travel(unit.unit_type, &ports);
                 let Some(route) = find_route(unit.position, hex, tiles.iter().map(|t| (t.coord, t.terrain)), &roads, travel) else { continue };
                 let approach = if enemy.is_some() { &route[..route.len() - 1] } else { &route[..] };
                 let mut trail = Vec::new();
@@ -1256,22 +1279,23 @@ pub fn spy_target(here: Hex, cities: impl Iterator<Item = (Hex, u32)>) -> Option
     cities.filter(|(at, owner)| *owner != PLAYER && *owner != BARBARIANS && at.distance_to(here) <= 1).min_by_key(|(at, _)| at.distance_to(here))
 }
 
-/// How the player's units of a kind travel, given whether Seafaring is known and where the ports are.
-fn player_travel(unit: UnitType, sail: bool, ports: &HashSet<Hex>) -> Travel<'_> {
+/// How the player's units of a kind travel, given where the ports are. Troops cross the sea only
+/// aboard ships, so their routes keep to the land (a route may end on a ship's tile, to board it).
+fn player_travel(unit: UnitType, ports: &HashSet<Hex>) -> Travel<'_> {
     match unit.domain() {
         Domain::Sea => Travel::Sea(ports),
         Domain::Air => Travel::Air,
-        Domain::Land => bevy_civ::pathfinding::land_travel(unit.is_wheeled(), sail),
+        Domain::Land => bevy_civ::pathfinding::land_travel(unit.is_wheeled(), false),
     }
 }
 
-/// Boarding or leaving a boat takes the rest of the turn (ships and aircraft are unaffected).
+/// Boarding a ship or going ashore takes the rest of the turn (ships and aircraft are unaffected).
 fn ends_move(domain: Domain, from: Hex, to: Hex, map: &MapData) -> bool {
     domain == Domain::Land && map.water.contains(&from) != map.water.contains(&to)
 }
 
 /// What a step costs: rough ground slows troops on foot, roads and railroads speed them; boarding a
-/// boat ends the turn.
+/// ship or going ashore ends the turn.
 fn move_cost(domain: Domain, from: Hex, to: Hex, map: &MapData, roads: &HashMap<Hex, Road>) -> StepCost {
     if ends_move(domain, from, to, map) {
         StepCost::EndsTurn
@@ -1280,19 +1304,35 @@ fn move_cost(domain: Domain, from: Hex, to: Hex, map: &MapData, roads: &HashMap<
     }
 }
 
-/// A unit's moves for a turn starting at `at`. Ships and aircraft move at their own speed; troops
-/// crossing the water in boats move at the boats' (3); the Lighthouse and Magellan's add to
-/// everything afloat.
-fn moves_per_turn(unit_type: UnitType, at: Hex, map: &MapData, sea_bonus: u32) -> u32 {
-    let domain = unit_type.domain();
-    let embarked = domain == Domain::Land && map.water.contains(&at);
-    let base = if embarked { BOAT_MOVES } else { unit_type.stats().2 };
-    let afloat = embarked || domain == Domain::Sea;
-    base + if afloat { sea_bonus } else { 0 }
+/// Keeps carried units with their ships: ships that sailed take their cargo along, units that left
+/// the ship's tile by themselves are ashore, units that stepped onto a ship go aboard, and troops
+/// whose ship went down are lost (see `bevy_civ::cargo`).
+fn stow_cargo(mut units: Query<(Entity, &mut Unit)>, map: Res<MapData>, mut log: ResMut<GameLog>, mut commands: Commands) {
+    let berths: Vec<Berth> = units.iter().map(|(e, u)| Berth::of(e, &u)).collect();
+    for change in cargo::stow(&berths, &map.water) {
+        match change {
+            cargo::Change::Lost { entity } => {
+                if let Ok((_, unit)) = units.get(entity) {
+                    if unit.owner == PLAYER {
+                        log.push(format!("Our {} went down with its ship.", unit.unit_type.name()));
+                    }
+                }
+                commands.entity(entity).try_despawn_recursive();
+            }
+            cargo::Change::Carried { entity, .. } | cargo::Change::Ashore { entity } | cargo::Change::Aboard { entity, .. } => {
+                if let Ok((_, mut unit)) = units.get_mut(entity) {
+                    cargo::apply(&mut unit, change, &map.water);
+                }
+            }
+        }
+    }
 }
 
-/// Moves a turn for troops crossing the water in boats.
-const BOAT_MOVES: u32 = 3;
+/// A unit's moves for a turn: its own speed, plus what the Lighthouse and Magellan's add to ships.
+/// (Troops aboard a ship keep their own moves, for going ashore.)
+fn moves_per_turn(unit_type: UnitType, _at: Hex, _map: &MapData, sea_bonus: u32) -> u32 {
+    unit_type.stats().2 + if unit_type.domain() == Domain::Sea { sea_bonus } else { 0 }
+}
 
 /// Moves a unit along `route` (which starts where it stands) while it has moves left, revealing the
 /// land around each tile entered and adding it to `trail`.
@@ -1320,7 +1360,7 @@ fn continue_orders(
     mut units: Query<(Entity, &mut Unit, Option<&GoTo>)>,
     mut cities: Query<&mut City>,
     tiles: Query<&HexTile>,
-    (map, tech, diplomacy): (Res<MapData>, Res<TechState>, Res<Diplomacy>),
+    (map, diplomacy): (Res<MapData>, Res<Diplomacy>),
     mut fog: ResMut<FogOfWar>,
     (mut log, mut wonders, mut taken): (ResMut<GameLog>, ResMut<WorldWonders>, ResMut<JustCaptured>),
     mut dirty: ResMut<Dirty>,
@@ -1338,7 +1378,7 @@ fn continue_orders(
     let ports: HashSet<Hex> = cities.iter().filter(|c| c.owner == PLAYER).map(|c| c.position).collect();
     let land: Vec<(Hex, Terrain)> = tiles.iter().map(|t| (t.coord, t.terrain)).collect();
     let roads = road_network(tiles.iter(), cities.iter().map(|c| c.position));
-    let sail = tech.researched.contains(&Tech::Seafaring);
+    let berths: Vec<Berth> = units.iter().map(|(e, u, _)| Berth::of(e, &u)).collect();
     let mut arrived = Vec::new();
     for (entity, mut unit, order) in &mut units {
         let Some(&GoTo(target)) = order else { continue };
@@ -1346,7 +1386,13 @@ fn continue_orders(
             continue;
         }
         let name = unit.unit_type.name();
-        let travel = player_travel(unit.unit_type, sail, &ports);
+        // Troops bound for a ship: it must still be there, with room.
+        if unit.unit_type.domain() == Domain::Land && map.water.contains(&target) && cargo::ship_with_room(&berths, PLAYER, target, unit.unit_type).is_none() {
+            log.push(format!("Your {name} stops: the ship it was to board has gone or is full."));
+            commands.entity(entity).remove::<GoTo>();
+            continue;
+        }
+        let travel = player_travel(unit.unit_type, &ports);
         let Some(route) = find_route(unit.position, target, land.iter().copied(), &roads, travel) else {
             log.push(format!("Your {name} can no longer reach its destination."));
             commands.entity(entity).remove::<GoTo>();
@@ -1456,7 +1502,7 @@ fn preview_route(
     units: Query<(&Unit, Option<&GoTo>)>,
     cities: Query<&City>,
     tiles: Query<&HexTile>,
-    (map, tech, fog, wonders): (Res<MapData>, Res<TechState>, Res<FogOfWar>, Res<WorldWonders>),
+    (map, fog, wonders): (Res<MapData>, Res<FogOfWar>, Res<WorldWonders>),
     mut path: ResMut<PathPreview>,
     mut planned: Local<Option<(Hex, bevy_civ::pathfinding::Budget, Hex)>>,
 ) {
@@ -1480,7 +1526,7 @@ fn preview_route(
     }
     *planned = Some(key);
     let ports: HashSet<Hex> = cities.iter().filter(|c| c.owner == PLAYER).map(|c| c.position).collect();
-    let travel = player_travel(unit.unit_type, tech.researched.contains(&Tech::Seafaring), &ports);
+    let travel = player_travel(unit.unit_type, &ports);
     let roads = road_network(tiles.iter(), cities.iter().map(|c| c.position));
     let Some(route) = find_route(unit.position, target, tiles.iter().map(|t| (t.coord, t.terrain)), &roads, travel) else {
         path.set_if_neq(PathPreview::default());
@@ -1491,9 +1537,9 @@ fn preview_route(
     path.set_if_neq(PathPreview { start: Some(unit.position), steps: route[1..].iter().copied().zip(turns).collect() });
 }
 
-/// Troops caught in their transport boats cannot fight back.
+/// Troops in a ship and aircraft on a carrier cannot fight back at sea: the ship defends them.
 fn defending_as(unit: UnitType, at: Hex, map: &MapData) -> UnitType {
-    if unit.domain() == Domain::Land && map.water.contains(&at) { UnitType::Worker } else { unit }
+    if unit.domain() != Domain::Sea && map.water.contains(&at) { UnitType::Worker } else { unit }
 }
 
 /// Whether a victorious attacker can move onto the tile it cleared.
@@ -1598,6 +1644,44 @@ fn apply_actions(
                 if let Some(entity) = selected_unit {
                     commands.entity(entity).remove::<GoTo>().insert(Sentry);
                 }
+            }
+            Action::Board => {
+                let Some(entity) = selected_unit else { continue };
+                let berths: Vec<Berth> = unit_entities.iter().filter_map(|e| units.get(e).ok().map(|u| Berth::of(e, &u))).collect();
+                let Ok(mut unit) = units.get_mut(entity) else { continue };
+                let ship = cargo::ship_with_room(&berths, PLAYER, unit.position, unit.unit_type).filter(|s| *s != entity);
+                let Some(ship) = ship else {
+                    log.push("There is no ship of ours here with room for it.");
+                    continue;
+                };
+                unit.carrier = Some((ship, unit.position));
+                unit.fortified = unit.unit_type.domain() == Domain::Land;
+                let name = unit.unit_type.name();
+                let ship_name = units.get(ship).map(|s| s.unit_type.name()).unwrap_or("ship");
+                log.push(format!("Our {name} goes aboard the {ship_name}. Sail the ship, then select the {name} and click a shore tile next to it to land."));
+                commands.entity(entity).remove::<GoTo>();
+                cycle.advance = true;
+                dirty.ui = true;
+            }
+            Action::Unload => {
+                let Some(entity) = selected_unit else { continue };
+                let aboard: Vec<Entity> = unit_entities
+                    .iter()
+                    .filter(|e| *e == entity || units.get(*e).is_ok_and(|u| u.carrier.map(|c| c.0) == Some(entity)))
+                    .collect();
+                let mut count = 0;
+                for e in aboard {
+                    let Ok(mut unit) = units.get_mut(e) else { continue };
+                    if unit.carrier.is_some() && !map.water.contains(&unit.position) {
+                        unit.carrier = None;
+                        unit.fortified = false;
+                        count += 1;
+                    }
+                }
+                if count == 0 {
+                    log.push("Only units aboard a ship in port can leave it here; at sea, select them and click a shore tile next to the ship.");
+                }
+                dirty.ui = true;
             }
             Action::JoinCity => {
                 let Some(entity) = selected_unit else { continue };
@@ -1968,7 +2052,7 @@ fn apply_actions(
                     .iter()
                     .filter_map(|e| units.get(e).ok().map(|u| (e, u)))
                     .filter(|(_, u)| u.position.distance_to(here) == 1 && u.owner != PLAYER && (u.owner == BARBARIANS || diplomacy.get_treaty(PLAYER, u.owner) == Treaty::War))
-                    .max_by_key(|(_, u)| u.unit_type.stats().1 * 10 + u.hp)
+                    .max_by_key(|(_, u)| defending_as(u.unit_type, u.position, &map).stats().1 * 10 + u.hp)
                     .map(|(e, u)| (e, u.unit_type, u.hp, u.level, u.fortified, u.position));
                 let Some((target, their_kind, their_hp, their_level, dug_in, at)) = target else {
                     log.push("There is no enemy we are at war with next to us to bombard.");
@@ -2420,7 +2504,7 @@ fn process_turn(
     (mut space, mut wonders, mut great, mut spies): (ResMut<SpaceRace>, ResMut<WorldWonders>, ResMut<GreatPeople>, ResMut<Espionage>),
     (mut log, mut dirty, mut cycle): (ResMut<GameLog>, ResMut<Dirty>, ResMut<Cycle>),
     (mut battles, mut strikes, sentries): (EventWriter<BattleShown>, EventWriter<Detonation>, Query<Entity, With<Sentry>>),
-    (homes, mut history, mut culture, mut golden, mut taken, rivers, mut saves, observer): (
+    (homes, mut history, mut culture, mut golden, mut taken, rivers, mut saves, observer, mut ferries): (
         Query<&HomeCity>,
         ResMut<History>,
         ResMut<CultureLedger>,
@@ -2429,6 +2513,7 @@ fn process_turn(
         Res<Rivers>,
         EventWriter<savegame::SaveRequest>,
         Option<Res<Observer>>,
+        ResMut<bevy_civ::ai::Ferries>,
     ),
     mut commands: Commands,
 ) {
@@ -2569,10 +2654,13 @@ fn process_turn(
     let mut army_sizes: HashMap<u32, usize> = HashMap::new();
     let mut worker_counts: HashMap<u32, usize> = HashMap::new();
     let mut navy_sizes: HashMap<u32, usize> = HashMap::new();
+    let mut ferry_counts: HashMap<u32, usize> = HashMap::new();
     let mut air_sizes: HashMap<u32, usize> = HashMap::new();
     for (_, unit) in units.iter() {
         if unit.unit_type.is_army() {
             *army_sizes.entry(unit.owner).or_default() += 1;
+        } else if unit.unit_type.is_ferry() {
+            *ferry_counts.entry(unit.owner).or_default() += 1;
         } else if unit.unit_type.domain() == Domain::Sea {
             *navy_sizes.entry(unit.owner).or_default() += 1;
         } else if unit.unit_type.domain() == Domain::Air {
@@ -2653,7 +2741,7 @@ fn process_turn(
                 // An empty city drops everything for a defender, and pays to hurry it when in danger.
                 let already = matches!(&city.production_queue, Some(ProductionItem::Unit(u)) if u.is_army());
                 if !already {
-                    let civ_view = governor::CivView { tech: &civ.tech, aggression: civ.aggression, cities: 1, workers: 1, settlers: 1, military: 0, navy: 0, air: 0, road_work: 0, cut_off: 0, at_war: true, wonders_taken: &wonders_taken, caravans: 1, diplomats: 1, missionaries: 1, faith_to_spread: false, wonder_elsewhere: false, space_parts: &[], room_to_expand: false, forbidden_palace: true };
+                    let civ_view = governor::CivView { tech: &civ.tech, aggression: civ.aggression, cities: 1, workers: 1, settlers: 1, military: 0, navy: 0, air: 0, road_work: 0, cut_off: 0, at_war: true, wonders_taken: &wonders_taken, caravans: 1, diplomats: 1, missionaries: 1, faith_to_spread: false, wonder_elsewhere: false, space_parts: &[], room_to_expand: false, forbidden_palace: true, ferries: 1, ferry_wanted: 0 };
                     city.production_queue = Some(ProductionItem::Unit(governor::best_defender(&view, &civ_view, &supplies)));
                 }
                 let remaining = city.production_queue.as_ref().map(|i| i.cost()).unwrap_or(0).saturating_sub(city.production_progress) as i32;
@@ -3038,6 +3126,8 @@ fn process_turn(
                     space_parts: &space_wanted.get(&owner).cloned().unwrap_or_default(),
                     room_to_expand: room.contains(&owner),
                     forbidden_palace: seats.get(&owner).is_some_and(|s| s.len() > 1),
+                    ferries: ferry_counts.get(&owner).copied().unwrap_or(0),
+                    ferry_wanted: ferries.wanted.get(&owner).copied().unwrap_or(0),
                 };
                 // The unit just trained (if any) now holds the city.
                 let view = governor::CityView { built: buildings.buildings.clone(), defended: view.defended || just_trained, ..view };
@@ -3046,6 +3136,7 @@ fn process_turn(
                 match &next {
                     ProductionItem::Unit(UnitType::Worker | UnitType::Engineers) => *worker_counts.entry(owner).or_default() += 1,
                     ProductionItem::Unit(UnitType::Settler) => *settler_counts.entry(owner).or_default() += 1,
+                    ProductionItem::Unit(u) if u.is_ferry() => *ferry_counts.entry(owner).or_default() += 1,
                     ProductionItem::Unit(u) if u.domain() == Domain::Sea => *navy_sizes.entry(owner).or_default() += 1,
                     ProductionItem::Unit(u) if u.domain() == Domain::Air => *air_sizes.entry(owner).or_default() += 1,
                     _ => {}
@@ -3305,7 +3396,7 @@ fn process_turn(
         }
     }
     let owns = |hex: Hex, owner: u32| supplies.territory.get(&hex).is_some_and(|(o, _)| *o == owner);
-    let attacks = process_ai_turn(&mut civs, &mut units, &city_owners, &tiles, &hostile, &mut road_jobs, &owns, &mut commands);
+    let attacks = process_ai_turn(&mut civs, &mut units, &city_owners, &tiles, &hostile, &mut road_jobs, &owns, &mut ferries, &mut commands);
     let names: HashMap<u32, String> = civs.players.iter().map(|c| (c.id, c.adjective.clone())).collect();
     let civ_name = |owner: u32| names.get(&owner).cloned().unwrap_or_else(|| "Barbarian".to_string());
 
@@ -3323,7 +3414,7 @@ fn process_turn(
         let defender = units
             .iter()
             .filter(|(e, u)| u.position == attack.target && u.owner != a_owner && !dead.contains(e))
-            .max_by_key(|(_, u)| u.unit_type.stats().1 * 10 + u.hp)
+            .max_by_key(|(_, u)| defending_as(u.unit_type, u.position, &map).stats().1 * 10 + u.hp)
             .map(|(e, u)| (e, u.unit_type, u.owner, u.fortified));
         let a_vitals = (attacker.hp, attacker.level);
         let own_cities: HashSet<Hex> = city_owners.iter().filter(|(_, o)| *o == a_owner).map(|(p, _)| *p).collect();
@@ -3701,9 +3792,7 @@ fn process_turn(
             let foreign_goal = city_info.iter().any(|c| c.0 == goal && c.1 != owner);
             let arrived = if foreign_goal { here.distance_to(goal) <= 1 } else { here == goal };
             if !arrived {
-                let sail = civs.players[civ_index].tech.researched.contains(&Tech::Seafaring);
-                let travel = if sail { Travel::Amphibious } else { Travel::Land };
-                if let Some(route) = find_route(here, goal, land.iter().copied(), &roads, travel) {
+                if let Some(route) = find_route(here, goal, land.iter().copied(), &roads, Travel::Land) {
                     let stop = if foreign_goal { route.len().saturating_sub(1) } else { route.len() };
                     // Never into a tile someone else holds.
                     let blocked = route.iter().skip(1).position(|h| units.iter().any(|(e, u)| !dead.contains(&e) && u.position == *h && u.owner != owner)).map(|i| i + 1);
@@ -4430,7 +4519,7 @@ mod tests {
         assert_eq!(moves_per_turn(UnitType::Galleon, sea, &map, 1), 6, "Lighthouse bonus at sea");
         assert_eq!(moves_per_turn(UnitType::Galley, land, &map, 1), 4, "a ship in port is afloat too");
         assert_eq!(moves_per_turn(UnitType::Fighter, sea, &map, 1), 8, "aircraft ignore the sea");
-        assert_eq!(moves_per_turn(UnitType::Rifleman, sea, &map, 0), 3, "troops in boats");
+        assert_eq!(moves_per_turn(UnitType::Rifleman, sea, &map, 1), 1, "troops aboard keep their own moves");
         assert_eq!(moves_per_turn(UnitType::Cavalry, land, &map, 1), 2);
     }
 
@@ -4463,7 +4552,7 @@ mod tests {
     }
 
     fn legion(moves: u32) -> Unit {
-        Unit { unit_type: UnitType::Legion, movement_left: moves, owner: PLAYER, position: Hex::ZERO, build_turns_left: None, current_build: None, fortified: false, road_credit: 0, hp: 3, level: 0, troops: Vec::new(), fatigue: 0 }
+        Unit { unit_type: UnitType::Legion, movement_left: moves, owner: PLAYER, position: Hex::ZERO, build_turns_left: None, current_build: None, fortified: false, road_credit: 0, hp: 3, level: 0, troops: Vec::new(), fatigue: 0, carrier: None }
     }
 
     /// A minimal app that runs `apply_actions`, with the player's capital at the origin and a
@@ -4496,6 +4585,7 @@ mod tests {
             .init_resource::<Villages>()
             .init_resource::<SpaceRace>()
             .init_resource::<LastMove>()
+            .init_resource::<bevy_civ::ai::Ferries>()
             .init_resource::<JustCaptured>()
             .init_resource::<Rivers>()
             .add_systems(Update, apply_actions);

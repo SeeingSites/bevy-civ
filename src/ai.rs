@@ -7,6 +7,44 @@ use crate::tech::{Tech, TechState};
 use crate::pathfinding::{find_path, find_route, land_step, road_network, zoc_blocks, StepCost, Travel};
 use crate::unit::{Domain, AIR_RANGE};
 use rand::Rng;
+use crate::cargo::Berth;
+use std::collections::HashSet;
+
+/// What the computer players' ferries are doing: where each loaded ship is taking its troops, and
+/// how many units each civilization has waiting in port for a ship (its cities build ferries when
+/// none is coming).
+#[derive(Resource, Default)]
+pub struct Ferries {
+    pub plans: HashMap<Entity, Hex>,
+    pub wanted: HashMap<u32, usize>,
+    /// Units each civilization has landed overseas so far (for the autoplay report).
+    pub landed: HashMap<u32, u32>,
+}
+
+/// Numbers each land tile by the landmass it belongs to.
+pub fn continents(land: &HashSet<Hex>) -> HashMap<Hex, u32> {
+    let mut id: HashMap<Hex, u32> = HashMap::new();
+    let mut next = 0;
+    let mut tiles: Vec<Hex> = land.iter().copied().collect();
+    tiles.sort_by_key(|h| (h.x, h.y));
+    for start in tiles {
+        if id.contains_key(&start) {
+            continue;
+        }
+        let mut stack = vec![start];
+        id.insert(start, next);
+        while let Some(at) = stack.pop() {
+            for n in at.all_neighbors() {
+                if land.contains(&n) && !id.contains_key(&n) {
+                    id.insert(n, next);
+                    stack.push(n);
+                }
+            }
+        }
+        next += 1;
+    }
+    id
+}
 
 #[derive(Resource, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Civilizations {
@@ -137,6 +175,7 @@ pub fn process_ai_turn(
     hostile: &dyn Fn(u32, u32) -> bool,
     road_jobs: &mut HashMap<u32, Vec<Hex>>,
     owns: &dyn Fn(Hex, u32) -> bool,
+    ferries: &mut Ferries,
     commands: &mut Commands,
 ) -> Vec<AiAttack> {
     let mut rng = rand::thread_rng();
@@ -165,6 +204,20 @@ pub fn process_ai_turn(
     let land: Vec<(Hex, Terrain)> = tiles.iter().map(|t| (t.coord, t.terrain)).collect();
     let land_set: std::collections::HashSet<Hex> = land.iter().filter(|(_, t)| *t != Terrain::Water).map(|(c, _)| *c).collect();
     let is_land = |hex: Hex| land_set.contains(&hex);
+    let continent = continents(&land_set);
+    let water_set: HashSet<Hex> = land.iter().filter(|(_, t)| *t == Terrain::Water).map(|(c, _)| *c).collect();
+    let same_land = |a: Hex, b: Hex| continent.get(&a).is_some_and(|c| continent.get(&b) == Some(c));
+    // Coastal cities: where troops wait for a ship and ferries put in.
+    let harbours: Vec<(Hex, u32)> =
+        city_positions.iter().copied().filter(|(p, _)| p.all_neighbors().iter().any(|n| water_set.contains(n))).collect();
+    // The port on this landmass from which a ship best carries a unit at `from` towards `goal`.
+    let port_for = |owner: u32, from: Hex, goal: Hex| {
+        harbours.iter().filter(|(p, o)| *o == owner && same_land(*p, from)).min_by_key(|(p, _)| (from.distance_to(*p) + p.distance_to(goal), p.x, p.y)).map(|(p, _)| *p)
+    };
+    // Units that want a ship: (unit, where it is going, the port it waits in).
+    let mut requests: Vec<(Entity, u32, Hex, Hex)> = Vec::new();
+    // Each civilization's airfields: its cities and its carriers.
+    let carriers: Vec<(Hex, u32)> = units.iter().filter(|(_, u)| u.unit_type == UnitType::Carrier).map(|(_, u)| (u.position, u.owner)).collect();
     let roads = road_network(tiles.iter(), city_positions.iter().map(|(p, _)| *p));
     let terrain_at: HashMap<Hex, Terrain> = land.iter().copied().collect();
     let polluted: std::collections::HashSet<Hex> = tiles.iter().filter(|t| t.is_polluted()).map(|t| t.coord).collect();
@@ -230,6 +283,10 @@ pub fn process_ai_turn(
         if unit.owner == 0 || unit.movement_left == 0 || unit.build_turns_left.is_some() {
             continue;
         }
+        // Units at sea in a ship, and the ferries and carriers themselves, are moved below.
+        if unit.carrier.is_some() || unit.unit_type.is_ferry() || unit.unit_type == UnitType::Carrier {
+            continue;
+        }
         let owner = unit.owner;
         let civ = civs.players.iter().find(|c| c.id == owner);
         let aggression = civ.map(|c| c.aggression).unwrap_or(0.8);
@@ -267,18 +324,36 @@ pub fn process_ai_turn(
             let crowded = |hex: Hex| {
                 city_positions.iter().any(|(p, _)| p.distance_to(hex) < 3) || founded.iter().any(|p| p.distance_to(hex) < 3)
             };
-            // The best free site within reach (by land, or by sea once Seafaring is known).
-            let reach = if can_sail { 14 } else { 10 };
-            let target = land_set
-                .iter()
-                .copied()
-                .filter(|h| h.distance_to(here) <= reach && !crowded(*h) && !occupied.get(h).is_some_and(|(o, _)| *o != owner))
-                .max_by_key(|h| (site_value(*h) * 4 - h.distance_to(here) * 3, h.x, h.y));
+            // The best free site on this landmass; failing that, one overseas once Seafaring is known
+            // (a ship carries the settler there from the nearest port).
+            let free = |h: &Hex| !crowded(*h) && !occupied.get(h).is_some_and(|(o, _)| *o != owner);
+            let best = |near: &dyn Fn(Hex) -> bool| {
+                land_set.iter().copied().filter(|h| near(*h) && free(h)).max_by_key(|h| (site_value(*h) * 4 - h.distance_to(here) * 3, h.x, h.y))
+            };
+            let target = best(&|h: Hex| h.distance_to(here) <= 10 && same_land(h, here));
+            if target.is_none() && can_sail && is_land(here) && !free(&here) {
+                let overseas = best(&|h: Hex| h.distance_to(here) <= 16 && !same_land(h, here));
+                if let Some((goal, port)) = overseas.and_then(|g| port_for(owner, here, g).map(|p| (g, p))) {
+                    requests.push((entity, owner, goal, port));
+                    if here != port {
+                        if let Some(path) = find_route(here, port, land.iter().copied(), &roads, Travel::Land) {
+                            for next in path.into_iter().skip(1) {
+                                if !unit.can_move() || occupied.get(&next).is_some_and(|(o, _)| *o != owner) {
+                                    break;
+                                }
+                                let cost = land_step(unit.position, next, terrain_at.get(&next).copied(), &roads, true);
+                                unit.step(next, cost);
+                            }
+                        }
+                    }
+                    unit.end_move();
+                    continue;
+                }
+            }
             let settle_here = is_land(here) && !crowded(here) && target.is_none_or(|t| t == here || site_value(here) * 4 >= site_value(t) * 4 - 6);
             if !settle_here {
                 if let Some(target) = target {
-                    let travel = if can_sail { Travel::Amphibious } else { Travel::Land };
-                    if let Some(path) = find_route(here, target, land.iter().copied(), &roads, travel) {
+                    if let Some(path) = find_route(here, target, land.iter().copied(), &roads, Travel::Land) {
                         for next in path.into_iter().skip(1) {
                             if !unit.can_move() || occupied.get(&next).is_some_and(|(o, _)| *o != owner) {
                                 break;
@@ -401,9 +476,10 @@ pub fn process_ai_turn(
         if unit.unit_type.domain() != Domain::Land {
             let flying = unit.unit_type.domain() == Domain::Air;
             let ports: std::collections::HashSet<Hex> = city_positions.iter().filter(|(_, o)| *o == owner).map(|(p, _)| *p).collect();
+            let airfields: Vec<Hex> = ports.iter().copied().chain(carriers.iter().filter(|(_, o)| *o == owner).map(|(p, _)| *p)).collect();
             let in_reach = |hex: Hex| {
                 if flying {
-                    ports.iter().any(|p| p.distance_to(hex) <= AIR_RANGE)
+                    airfields.iter().any(|p| p.distance_to(hex) <= AIR_RANGE)
                 } else {
                     // A ship can strike anything at sea or on the shore.
                     !is_land(hex) || hex.all_neighbors().iter().any(|n| !is_land(*n))
@@ -414,7 +490,7 @@ pub fn process_ai_turn(
                 .filter(|(pos, other, _)| hostile(owner, *other) && here.distance_to(*pos) <= 7 && in_reach(*pos))
                 .min_by_key(|(pos, _, _)| here.distance_to(*pos))
                 .map(|(pos, _, _)| *pos);
-            let base = ports.iter().copied().min_by_key(|p| here.distance_to(*p));
+            let base = if flying { airfields.iter().copied().min_by_key(|p| here.distance_to(*p)) } else { ports.iter().copied().min_by_key(|p| here.distance_to(*p)) };
             let travel = if flying { Travel::Air } else { Travel::Sea(&ports) };
             let Some(target) = prey.or(base.filter(|b| flying && *b != here)) else { continue };
             if let Some(path) = find_path(here, target, land.iter().copied(), travel) {
@@ -451,22 +527,46 @@ pub fn process_ai_turn(
         let relief = undefended
             .iter()
             .enumerate()
-            .filter(|(_, (p, o))| *o == owner && here.distance_to(*p) <= 8)
+            .filter(|(_, (p, o))| *o == owner && here.distance_to(*p) <= 8 && same_land(*p, here))
             .min_by_key(|(_, (p, _))| here.distance_to(*p))
             .map(|(index, (p, _))| (index, *p));
         let enemy_unit = unit_snapshots
             .iter()
             .filter(|(pos, other, strength)| {
-                hostile(owner, *other) && here.distance_to(*pos) <= 4 && my_strength > *strength * threshold
+                hostile(owner, *other) && here.distance_to(*pos) <= 4 && my_strength > *strength * threshold && same_land(*pos, here)
             })
             .min_by_key(|(pos, _, _)| here.distance_to(*pos))
             .map(|(pos, _, _)| *pos);
         let city_range = if aggression > 0.6 { 14 } else { 7 };
         let enemy_city = city_positions
             .iter()
-            .filter(|(pos, other)| hostile(owner, *other) && here.distance_to(*pos) <= city_range)
+            .filter(|(pos, other)| hostile(owner, *other) && here.distance_to(*pos) <= city_range && same_land(*pos, here))
             .min_by_key(|(pos, _)| here.distance_to(*pos))
             .map(|(pos, _)| *pos);
+        // Nothing to fight on this landmass: an enemy city overseas is reached by ship.
+        if relief.is_none() && enemy_unit.is_none() && enemy_city.is_none() && can_sail && is_land(here) {
+            let overseas = city_positions
+                .iter()
+                .filter(|(pos, other)| hostile(owner, *other) && *other != 99 && here.distance_to(*pos) <= 2 * city_range + 6 && !same_land(*pos, here))
+                .min_by_key(|(pos, _)| (here.distance_to(*pos), pos.x, pos.y))
+                .map(|(pos, _)| *pos);
+            if let Some((goal, port)) = overseas.and_then(|g| port_for(owner, here, g).map(|p| (g, p))) {
+                requests.push((entity, owner, goal, port));
+                if here != port {
+                    if let Some(path) = find_route(here, port, land.iter().copied(), &roads, crate::pathfinding::land_travel(unit.unit_type.is_wheeled(), false)) {
+                        for next in path.into_iter().skip(1) {
+                            if !unit.can_move() || occupied.get(&next).is_some_and(|(o, _)| *o != owner) {
+                                break;
+                            }
+                            let cost = land_step(unit.position, next, terrain_at.get(&next).copied(), &roads, true);
+                            unit.step(next, cost);
+                        }
+                    }
+                }
+                unit.end_move();
+                continue;
+            }
+        }
 
         let goal = if let Some((index, city)) = relief {
             undefended.remove(index);
@@ -491,7 +591,7 @@ pub fn process_ai_turn(
         };
 
         if let Some(target) = goal {
-            let travel = crate::pathfinding::land_travel(unit.unit_type.is_wheeled(), can_sail);
+            let travel = crate::pathfinding::land_travel(unit.unit_type.is_wheeled(), false);
             let enemy_armies: std::collections::HashSet<Hex> =
                 unit_snapshots.iter().filter(|(_, other, strength)| hostile(owner, *other) && *strength > 0.0).map(|(pos, _, _)| *pos).collect();
             if let Some(path) = find_route(here, target, land.iter().copied(), &roads, travel) {
@@ -510,7 +610,7 @@ pub fn process_ai_turn(
                             break;
                         }
                         _ => {
-                            // Roads speed the march; boarding or leaving a boat takes the rest of the turn.
+                            // Roads speed the march; boarding or leaving a ship takes the rest of the turn.
                             let cost = if boarding { StepCost::EndsTurn } else { land_step(unit.position, next, terrain_at.get(&next).copied(), &roads, true) };
                             unit.step(next, cost);
                         }
@@ -537,7 +637,140 @@ pub fn process_ai_turn(
         unit.position = step;
         unit.movement_left -= 1;
     }
+
+    sail_ferries(units, &requests, &land, (&land_set, &water_set), &continent, city_positions, &occupied, ferries);
     attacks
+}
+
+/// The computer players' ferries: an empty ship sails to the port where most troops wait and takes
+/// them aboard; a loaded one sails for the coast nearest its troops' goal and lands them there.
+#[allow(clippy::too_many_arguments)]
+fn sail_ferries(
+    units: &mut Query<(Entity, &mut Unit)>,
+    requests: &[(Entity, u32, Hex, Hex)],
+    land: &[(Hex, Terrain)],
+    (land_set, water): (&HashSet<Hex>, &HashSet<Hex>),
+    continent: &HashMap<Hex, u32>,
+    city_positions: &[(Hex, u32)],
+    occupied: &HashMap<Hex, (u32, f32)>,
+    ferries: &mut Ferries,
+) {
+    let berths: Vec<Berth> = units.iter().map(|(e, u)| Berth::of(e, &u)).collect();
+    let mut waiting: HashMap<(Hex, u32), Vec<(Entity, Hex)>> = HashMap::new();
+    ferries.wanted.clear();
+    for (entity, owner, goal, port) in requests {
+        *ferries.wanted.entry(*owner).or_default() += 1;
+        if berths.iter().any(|b| b.entity == *entity && b.position == *port) {
+            waiting.entry((*port, *owner)).or_default().push((*entity, *goal));
+        }
+    }
+    let alive: HashSet<Entity> = berths.iter().map(|b| b.entity).collect();
+    ferries.plans.retain(|ship, _| alive.contains(ship));
+    let ships: Vec<Entity> = berths.iter().filter(|b| b.owner != 0 && b.unit_type.is_ferry()).map(|b| b.entity).collect();
+    for ship in ships {
+        let Ok((_, unit)) = units.get(ship) else { continue };
+        let (owner, capacity) = (unit.owner, unit.unit_type.capacity());
+        let ports: HashSet<Hex> = city_positions.iter().filter(|(_, o)| *o == owner).map(|(p, _)| *p).collect();
+        let mut cargo: Vec<Entity> = berths.iter().filter(|b| b.carrier.map(|c| c.0) == Some(ship)).map(|b| b.entity).collect();
+        let here = unit.position;
+        // Empty in a port where troops wait: take them aboard.
+        if cargo.is_empty() {
+            if let Some(list) = waiting.get_mut(&(here, owner)) {
+                let take = list.len().min(capacity as usize);
+                let loaded: Vec<(Entity, Hex)> = list.drain(..take).collect();
+                if let Some((_, goal)) = loaded.first() {
+                    ferries.plans.insert(ship, *goal);
+                }
+                for (entity, _) in loaded {
+                    if let Ok((_, mut troop)) = units.get_mut(entity) {
+                        troop.carrier = Some((ship, here));
+                        cargo.push(entity);
+                    }
+                }
+            }
+        }
+        if cargo.is_empty() {
+            // Make for the port with the most troops waiting (or home).
+            let pickup = waiting
+                .iter()
+                .filter(|((_, o), list)| *o == owner && !list.is_empty())
+                .max_by_key(|((p, _), list)| (list.len(), -(here.distance_to(*p)), p.x, p.y))
+                .map(|((p, _), _)| *p);
+            let home = ports.iter().copied().filter(|p| p.all_neighbors().iter().any(|n| water.contains(n))).min_by_key(|p| (here.distance_to(*p), p.x, p.y));
+            if let Some(dest) = pickup.or(home).filter(|d| *d != here) {
+                sail(units, ship, dest, (land, water), &ports, occupied, &[]);
+            }
+            continue;
+        }
+        // Loaded: land the troops on the coast nearest their goal.
+        let goal = ferries.plans.get(&ship).copied().or_else(|| {
+            city_positions.iter().filter(|(_, o)| *o != owner).min_by_key(|(p, _)| here.distance_to(*p)).map(|(p, _)| *p)
+        });
+        let Some(goal) = goal else { continue };
+        let goal_land = continent.get(&goal).copied();
+        let foreign_city = |h: Hex| city_positions.iter().any(|(p, o)| *p == h && *o != owner);
+        let shore = |h: Hex| {
+            land_set.contains(&h) && continent.get(&h).copied() == goal_land && !foreign_city(h) && !occupied.get(&h).is_some_and(|(o, _)| *o != owner)
+        };
+        let beach = hexx::shapes::hexagon(goal, 6)
+            .filter(|h| shore(*h) && h.all_neighbors().iter().any(|n| water.contains(n)))
+            .min_by_key(|h| (h.distance_to(goal), here.distance_to(*h), h.x, h.y));
+        let Some(beach) = beach else {
+            ferries.plans.remove(&ship);
+            continue;
+        };
+        let near = |at: Hex| at.all_neighbors().into_iter().filter(|n| shore(*n)).min_by_key(|n| (n.distance_to(goal), n.x, n.y));
+        let landing_ok = |at: Hex| near(at).is_some_and(|n| n.distance_to(goal) <= beach.distance_to(goal) + 2);
+        if !landing_ok(here) {
+            let water_by_beach = beach.all_neighbors().into_iter().filter(|n| water.contains(n)).min_by_key(|n| (here.distance_to(*n), n.x, n.y));
+            if let Some(dest) = water_by_beach {
+                sail(units, ship, dest, (land, water), &ports, occupied, &cargo);
+            }
+        }
+        let Ok((_, unit)) = units.get(ship) else { continue };
+        let at = unit.position;
+        if landing_ok(at) && !ports.contains(&at) {
+            let Some(landing) = near(at) else { continue };
+            for entity in &cargo {
+                if let Ok((_, mut troop)) = units.get_mut(*entity) {
+                    troop.position = landing;
+                    troop.carrier = None;
+                    troop.fortified = false;
+                    troop.end_move();
+                    *ferries.landed.entry(owner).or_default() += 1;
+                }
+            }
+            ferries.plans.remove(&ship);
+        }
+    }
+}
+
+/// Moves a ship towards `dest` as far as its moves take it, its cargo with it.
+fn sail(
+    units: &mut Query<(Entity, &mut Unit)>,
+    ship: Entity,
+    dest: Hex,
+    (land, water): (&[(Hex, Terrain)], &HashSet<Hex>),
+    ports: &HashSet<Hex>,
+    occupied: &HashMap<Hex, (u32, f32)>,
+    cargo: &[Entity],
+) {
+    let Ok((_, mut unit)) = units.get_mut(ship) else { return };
+    let owner = unit.owner;
+    let Some(path) = find_path(unit.position, dest, land.iter().copied(), Travel::Sea(ports)) else { return };
+    for next in path.into_iter().skip(1) {
+        if !unit.can_move() || occupied.get(&next).is_some_and(|(o, _)| *o != owner) || !(water.contains(&next) || ports.contains(&next)) {
+            break;
+        }
+        unit.step(next, StepCost::Full);
+    }
+    let at = unit.position;
+    for entity in cargo {
+        if let Ok((_, mut troop)) = units.get_mut(*entity) {
+            troop.position = at;
+            troop.carrier = Some((ship, at));
+        }
+    }
 }
 
 #[cfg(test)]
@@ -556,7 +789,7 @@ mod tests {
         mut commands: Commands,
     ) {
         let cities = [(Hex::ZERO, 1)];
-        process_ai_turn(&mut civs, &mut units, &cities, &tiles, &|_, _| false, &mut jobs.0, &|hex, _| hex.distance_to(Hex::ZERO) <= 2, &mut commands);
+        process_ai_turn(&mut civs, &mut units, &cities, &tiles, &|_, _| false, &mut jobs.0, &|hex, _| hex.distance_to(Hex::ZERO) <= 2, &mut Ferries::default(), &mut commands);
     }
 
     fn rival() -> Civ {
@@ -585,7 +818,7 @@ mod tests {
         }
         world.insert_resource(Civilizations { players: vec![rival()] });
         let worker = world
-            .spawn(Unit { unit_type: UnitType::Worker, movement_left: 1, owner: 1, position: Hex::ZERO, build_turns_left: None, current_build: None, fortified: false, road_credit: 0, hp: 3, level: 0, troops: Vec::new(), fatigue: 0 })
+            .spawn(Unit { unit_type: UnitType::Worker, movement_left: 1, owner: 1, position: Hex::ZERO, build_turns_left: None, current_build: None, fortified: false, road_credit: 0, hp: 3, level: 0, troops: Vec::new(), fatigue: 0, carrier: None })
             .id();
         (world, worker)
     }
@@ -664,7 +897,7 @@ mod tests {
 
     fn soldier(world: &mut World, kind: UnitType, owner: u32, q: i32) -> Entity {
         world
-            .spawn(Unit { unit_type: kind, movement_left: 1, owner, position: Hex::new(q, 0), build_turns_left: None, current_build: None, fortified: false, road_credit: 0, hp: 3, level: 0, troops: Vec::new(), fatigue: 0 })
+            .spawn(Unit { unit_type: kind, movement_left: 1, owner, position: Hex::new(q, 0), build_turns_left: None, current_build: None, fortified: false, road_credit: 0, hp: 3, level: 0, troops: Vec::new(), fatigue: 0, carrier: None })
             .id()
     }
 
@@ -676,7 +909,7 @@ mod tests {
     ) {
         // Rival city at the origin, the player's city three tiles east; they are at war.
         let cities = [(Hex::ZERO, 1), (Hex::new(3, 0), 0)];
-        process_ai_turn(&mut civs, &mut units, &cities, &tiles, &|a, b| a != b, &mut HashMap::new(), &|_, _| false, &mut commands);
+        process_ai_turn(&mut civs, &mut units, &cities, &tiles, &|a, b| a != b, &mut HashMap::new(), &|_, _| false, &mut Ferries::default(), &mut commands);
     }
 
     #[test]
@@ -725,7 +958,7 @@ mod tests {
         }
         world.insert_resource(Civilizations { players: vec![rival()] });
         // The rival's port is at the origin; an enemy transport is two tiles out to sea.
-        let galley = soldier(&mut world, UnitType::Galley, 1, 0);
+        let galley = soldier(&mut world, UnitType::Frigate, 1, 0);
         world.get_mut::<Unit>(galley).unwrap().movement_left = 3;
         soldier(&mut world, UnitType::Warrior, 0, 2);
         world.insert_resource(Jobs(HashMap::new()));
@@ -739,14 +972,14 @@ mod tests {
             world.spawn(HexTile { coord: Hex::new(q, 0), terrain: if q >= 1 { Terrain::Water } else { Terrain::Plains }, improvements: vec![], resource: None });
         }
         world.insert_resource(Civilizations { players: vec![rival()] });
-        let galley = soldier(&mut world, UnitType::Galley, 1, 0);
+        let galley = soldier(&mut world, UnitType::Frigate, 1, 0);
         world.run_system_once(naval_phase).unwrap();
         assert_eq!(world.get::<Unit>(galley).unwrap().position, Hex::ZERO);
     }
 
     fn naval_phase(mut civs: ResMut<Civilizations>, mut units: Query<(Entity, &mut Unit)>, tiles: Query<&mut HexTile>, mut commands: Commands) -> Vec<Hex> {
         let cities = [(Hex::ZERO, 1)];
-        process_ai_turn(&mut civs, &mut units, &cities, &tiles, &|a, b| a != b, &mut HashMap::new(), &|_, _| false, &mut commands)
+        process_ai_turn(&mut civs, &mut units, &cities, &tiles, &|a, b| a != b, &mut HashMap::new(), &|_, _| false, &mut Ferries::default(), &mut commands)
             .into_iter()
             .map(|a| a.target)
             .collect()

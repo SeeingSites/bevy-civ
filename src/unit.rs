@@ -25,6 +25,11 @@ pub struct Unit {
     /// Moves still owed for climbing rough ground: taken from the next turns' allowance.
     #[serde(default)]
     pub fatigue: u32,
+    /// The ship this unit rides in (troops in a transport, aircraft on a carrier), and the tile the
+    /// ship stood on when the unit was last carried. A unit that moves off that tile by itself has
+    /// gone ashore (or taken off). Rebuilt from positions after loading a game.
+    #[serde(skip)]
+    pub carrier: Option<(Entity, Hex)>,
 }
 
 #[derive(Component)]
@@ -85,9 +90,13 @@ pub enum UnitType {
     RadarArtillery,
     Missionary,
     NuclearMissile,
+    /// Carries eight units of troops over the sea.
+    Transport,
+    /// Carries four aircraft and serves them as a moving airfield.
+    Carrier,
 }
 
-/// Where a unit can go: over land (boarding a boat to cross water), on the sea, or through the air.
+/// Where a unit can go: over land (crossing the sea aboard ships), on the sea, or through the air.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Domain {
     Land,
@@ -100,7 +109,7 @@ pub const AIR_RANGE: i32 = 8;
 
 impl UnitType {
     /// Every unit type, in declaration order (also the row order of the sprite atlas).
-    pub const ALL: [UnitType; 44] = [
+    pub const ALL: [UnitType; 46] = [
         UnitType::Settler, UnitType::Worker, UnitType::Warrior, UnitType::Spearman, UnitType::Archer,
         UnitType::Horseman, UnitType::Legion, UnitType::WarChariot, UnitType::Immortal, UnitType::Phalanx,
         UnitType::Catapult, UnitType::Knight, UnitType::Cannon, UnitType::Rifleman, UnitType::Cavalry,
@@ -110,6 +119,7 @@ impl UnitType {
         UnitType::GreatArtist, UnitType::GreatEngineer, UnitType::Pikeman, UnitType::Musketman, UnitType::Infantry,
         UnitType::MechInfantry, UnitType::ModernArmor, UnitType::Scout, UnitType::Longbowman, UnitType::Galleon,
         UnitType::Submarine, UnitType::Engineers, UnitType::RadarArtillery, UnitType::Missionary, UnitType::NuclearMissile,
+        UnitType::Transport, UnitType::Carrier,
     ];
 
     /// The five kinds of great person.
@@ -177,6 +187,8 @@ impl UnitType {
             UnitType::RadarArtillery => "Radar Artillery",
             UnitType::Missionary => "Missionary",
             UnitType::NuclearMissile => "Nuclear Missile",
+            UnitType::Transport => "Transport",
+            UnitType::Carrier => "Carrier",
         }
     }
 
@@ -192,6 +204,8 @@ impl UnitType {
             UnitType::RadarArtillery => Some(Tech::Rocketry),
             UnitType::Missionary => Some(Tech::Mysticism),
             UnitType::NuclearMissile => Some(Tech::Rocketry),
+            UnitType::Transport => Some(Tech::Industrialization),
+            UnitType::Carrier => Some(Tech::AdvancedFlight),
             UnitType::Spearman | UnitType::Phalanx => Some(Tech::BronzeWorking),
             UnitType::Archer => Some(Tech::Mining),
             UnitType::Horseman => Some(Tech::HorsebackRiding),
@@ -249,6 +263,8 @@ impl UnitType {
             UnitType::RadarArtillery => (16, 2, 2),
             UnitType::Missionary => (0, 0, 2),
             UnitType::NuclearMissile => (0, 0, 0),
+            UnitType::Transport => (0, 3, 5),
+            UnitType::Carrier => (1, 9, 5),
             UnitType::Cavalry => (6, 2, 2),
             UnitType::Tank => (10, 5, 2),
             UnitType::Artillery => (8, 2, 1),
@@ -294,6 +310,8 @@ impl UnitType {
             UnitType::RadarArtillery => 120,
             UnitType::Missionary => 30,
             UnitType::NuclearMissile => 160,
+            UnitType::Transport => 60,
+            UnitType::Carrier => 150,
             UnitType::Cavalry => 60,
             UnitType::Tank => 100,
             UnitType::Artillery => 80,
@@ -339,6 +357,8 @@ impl UnitType {
             UnitType::RadarArtillery => Color::srgb(0.42, 0.46, 0.33),
             UnitType::Missionary => Color::srgb(0.94, 0.9, 0.82),
             UnitType::NuclearMissile => Color::srgb(0.9, 0.9, 0.85),
+            UnitType::Transport => Color::srgb(0.45, 0.48, 0.5),
+            UnitType::Carrier => Color::srgb(0.4, 0.44, 0.48),
             UnitType::Cavalry => Color::srgb(0.7, 0.5, 0.2),
             UnitType::Tank => Color::srgb(0.4, 0.4, 0.2),
             UnitType::Artillery => Color::srgb(0.5, 0.4, 0.3),
@@ -353,7 +373,7 @@ impl UnitType {
 
     pub fn domain(&self) -> Domain {
         match self {
-            UnitType::Galley | UnitType::Galleon | UnitType::Frigate | UnitType::Ironclad | UnitType::Destroyer | UnitType::Battleship | UnitType::Submarine => Domain::Sea,
+            UnitType::Galley | UnitType::Galleon | UnitType::Frigate | UnitType::Ironclad | UnitType::Destroyer | UnitType::Battleship | UnitType::Submarine | UnitType::Transport | UnitType::Carrier => Domain::Sea,
             UnitType::Fighter | UnitType::Bomber => Domain::Air,
             _ => Domain::Land,
         }
@@ -385,7 +405,33 @@ impl UnitType {
     }
 
     pub fn is_military(&self) -> bool {
-        !matches!(self, UnitType::Settler | UnitType::Worker | UnitType::Engineers | UnitType::Scout | UnitType::Diplomat | UnitType::Caravan | UnitType::Missionary | UnitType::NuclearMissile) && !self.is_great_person()
+        !matches!(self, UnitType::Settler | UnitType::Worker | UnitType::Engineers | UnitType::Scout | UnitType::Diplomat | UnitType::Caravan | UnitType::Missionary | UnitType::NuclearMissile | UnitType::Transport) && !self.is_great_person()
+    }
+
+    /// How many units this ship carries: troops (any land unit) for the transports, aircraft for
+    /// the Carrier. Warships of the iron age and after carry none.
+    pub fn capacity(&self) -> u32 {
+        match self {
+            UnitType::Galley | UnitType::Frigate => 2,
+            UnitType::Galleon => 4,
+            UnitType::Transport => 8,
+            UnitType::Carrier => 4,
+            _ => 0,
+        }
+    }
+
+    /// Whether this ship can carry a unit of that kind.
+    pub fn carries(&self, cargo: UnitType) -> bool {
+        self.capacity() > 0
+            && match self {
+                UnitType::Carrier => cargo.domain() == Domain::Air,
+                _ => cargo.domain() == Domain::Land,
+            }
+    }
+
+    /// A ship the computer players use to ferry troops and settlers overseas.
+    pub fn is_ferry(&self) -> bool {
+        matches!(self, UnitType::Galley | UnitType::Galleon | UnitType::Transport)
     }
 
     /// Strategic resources a city must have access to before it can train this unit.
@@ -402,7 +448,7 @@ impl UnitType {
             UnitType::Tank | UnitType::Bomber => &[Resource::Oil, Resource::Rubber],
             UnitType::Frigate => &[Resource::Iron, Resource::Saltpeter],
             UnitType::Ironclad => &[Resource::Coal, Resource::Iron],
-            UnitType::Destroyer | UnitType::Fighter | UnitType::Submarine => &[Resource::Oil],
+            UnitType::Destroyer | UnitType::Fighter | UnitType::Submarine | UnitType::Carrier => &[Resource::Oil],
             UnitType::Battleship => &[Resource::Oil, Resource::Iron],
             _ => &[],
         }
@@ -437,7 +483,7 @@ impl UnitType {
             Longbowman => Musketman,
             Artillery => RadarArtillery,
             Galley => Galleon,
-            Galleon => Frigate,
+            Galleon => Transport,
             Spearman => Phalanx,
             Phalanx => Pikeman,
             Pikeman | Legion | Immortal => Musketman,
@@ -599,6 +645,7 @@ pub fn spawn_unit(commands: &mut Commands, coord: Hex, unit_type: UnitType, owne
             level: 0,
             troops: Vec::new(),
             fatigue: 0,
+            carrier: None,
         })
         .id()
 }
@@ -642,7 +689,7 @@ mod army_tests {
     use super::*;
 
     fn unit(kind: UnitType, hp: u32, level: u8) -> Unit {
-        Unit { unit_type: kind, movement_left: 1, owner: 0, position: Hex::ZERO, build_turns_left: None, current_build: None, fortified: false, road_credit: 0, hp, level, troops: Vec::new(), fatigue: 0 }
+        Unit { unit_type: kind, movement_left: 1, owner: 0, position: Hex::ZERO, build_turns_left: None, current_build: None, fortified: false, road_credit: 0, hp, level, troops: Vec::new(), fatigue: 0, carrier: None }
     }
 
     #[test]

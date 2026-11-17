@@ -241,6 +241,14 @@ pub fn restore_world(
             e.insert(Automated);
         }
     }
+    // Saves from before troops needed ships can have troops crossing the sea by themselves: give
+    // them a Galley (or a Transport for a large party), so they are not lost.
+    for (at, owner, troops) in stranded(&game.units, &map.water) {
+        let kind = if troops > bevy_civ::unit::UnitType::Galley.capacity() as usize { bevy_civ::unit::UnitType::Transport } else { bevy_civ::unit::UnitType::Galley };
+        for _ in 0..troops.div_ceil(kind.capacity() as usize) {
+            spawn_unit(&mut commands, at, kind, owner);
+        }
+    }
     if let Ok((mut transform, mut projection)) = camera.get_single_mut() {
         let capital = game.cities.iter().find(|c| c.city.owner == PLAYER && c.city.is_capital).or(game.cities.iter().find(|c| c.city.owner == PLAYER));
         if let Some(home) = capital {
@@ -332,8 +340,33 @@ mod platform {
     }
 }
 
+/// Tiles at sea where a people's troops have no ship to carry them, and how many troops are there.
+fn stranded(units: &[SavedUnit], water: &std::collections::HashSet<Hex>) -> Vec<(Hex, u32, usize)> {
+    let mut need: std::collections::BTreeMap<(i32, i32, u32), usize> = std::collections::BTreeMap::new();
+    for saved in units.iter().filter(|s| s.unit.unit_type.domain() == bevy_civ::unit::Domain::Land && water.contains(&s.unit.position)) {
+        let u = &saved.unit;
+        let room: u32 = units.iter().filter(|s| s.unit.owner == u.owner && s.unit.position == u.position && s.unit.unit_type.carries(u.unit_type)).map(|s| s.unit.unit_type.capacity()).sum();
+        if room == 0 {
+            *need.entry((u.position.x, u.position.y, u.owner)).or_default() += 1;
+        }
+    }
+    need.into_iter().map(|((x, y, owner), n)| (Hex::new(x, y), owner, n)).collect()
+}
+
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn troops_left_at_sea_by_an_old_save_are_given_a_ship() {
+        use bevy_civ::unit::UnitType;
+        let at = |kind: UnitType, x: i32, owner: u32| {
+            let unit = Unit { unit_type: kind, movement_left: 1, owner, position: Hex::new(x, 0), build_turns_left: None, current_build: None, fortified: false, road_credit: 0, hp: 3, level: 0, troops: Vec::new(), fatigue: 0, carrier: None };
+            SavedUnit { unit, home: None, goto: None, automated: false }
+        };
+        let water: HashSet<Hex> = [Hex::new(1, 0), Hex::new(2, 0)].into();
+        let units = vec![at(UnitType::Rifleman, 1, 2), at(UnitType::Rifleman, 1, 2), at(UnitType::Rifleman, 1, 2), at(UnitType::Rifleman, 2, 2), at(UnitType::Galleon, 2, 2), at(UnitType::Rifleman, 0, 2)];
+        assert_eq!(stranded(&units, &water), vec![(Hex::new(1, 0), 2, 3)]);
+    }
     use super::*;
     use bevy_civ::city::ProductionItem;
     use bevy_civ::diplomacy::Treaty;
@@ -361,7 +394,7 @@ mod tests {
             worked: Vec::new(),
             land: (0, 0, 0),
         };
-        let unit = Unit { unit_type: UnitType::Legion, movement_left: 1, owner: PLAYER, position: Hex::new(2, 2), build_turns_left: None, current_build: None, fortified: true, road_credit: 0, hp: 2, level: 1, troops: Vec::new(), fatigue: 0 };
+        let unit = Unit { unit_type: UnitType::Legion, movement_left: 1, owner: PLAYER, position: Hex::new(2, 2), build_turns_left: None, current_build: None, fortified: true, road_credit: 0, hp: 2, level: 1, troops: Vec::new(), fatigue: 0, carrier: None };
         SaveGame {
             version: VERSION,
             state: GameState { turn: 42, ..Default::default() },

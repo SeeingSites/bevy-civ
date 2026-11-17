@@ -21,3 +21,4 @@ pub mod traits;
 pub mod religion;
 pub mod villages;
 pub mod tiles;
+pub mod cargo;

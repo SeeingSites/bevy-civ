@@ -42,7 +42,7 @@ pub fn run(which: &str, turns: u32) -> bool {
     app.add_plugins(MinimalPlugins);
     crate::init_game(&mut app);
     app.insert_resource(Observer);
-    app.add_systems(Update, (crate::process_turn, crate::religion_turn, crate::visit_villages, crate::refresh_supplies, crate::work_tiles, crate::nuclear_strikes).chain());
+    app.add_systems(Update, (crate::stow_cargo, crate::process_turn, crate::religion_turn, crate::visit_villages, crate::refresh_supplies, crate::work_tiles, crate::nuclear_strikes).chain());
     app.insert_resource(NewGame { scenario, civ: 0, difficulty: crate::Difficulty::Regent, last_turn: turns.max(1), map_size: 1, peoples: scenario::DEFAULT_PEOPLES });
     if let Err(e) = app.world_mut().run_system_once(crate::setup_world) {
         eprintln!("The world could not be set up: {e}");
@@ -154,6 +154,9 @@ fn armies(world: &mut World) {
         let text: Vec<String> = list.iter().take(6).map(|(k, n)| format!("{n} {k}")).collect();
         println!("  {:<14} {}", civ.name.trim_start_matches("the "), text.join(", "));
     }
+    let ferries = world.resource::<bevy_civ::ai::Ferries>();
+    let landed: Vec<String> = civs.players.iter().filter_map(|c| ferries.landed.get(&c.id).map(|n| format!("{} {n}", c.name.trim_start_matches("the ")))).collect();
+    println!("--- landed overseas: {}", if landed.is_empty() { "none".to_string() } else { landed.join(", ") });
 }
 
 /// One line per civilization: cities, people, technologies, army, gold, government, culture, wonders.

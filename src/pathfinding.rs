@@ -171,6 +171,11 @@ pub fn find_route(
     // straight-line estimate the search uses, which keeps the routes it finds the shortest.
     const SCALE: u32 = 6;
     a_star(start, end, |from, to| {
+        // The search asks whether the start itself can be stood on: it can (troops aboard a ship
+        // start at sea).
+        if to == start {
+            return Some(0);
+        }
         let terrain = *tile_map.get(&to)?;
         let on_foot = matches!(travel, Travel::Land | Travel::Amphibious | Travel::Wheels { .. });
         if on_foot && terrain != Terrain::Water {
@@ -181,6 +186,8 @@ pub fn find_route(
             }
         }
         match travel {
+            // Troops may end a route on the sea only to board a ship there (the caller checks).
+            Travel::Land if terrain == Terrain::Water => (to == end).then_some(SCALE),
             Travel::Land => terrain_cost(terrain).map(|c| c * SCALE),
             Travel::Amphibious => if terrain == Terrain::Water { Some(3 * SCALE) } else { terrain_cost(terrain).map(|c| c * SCALE) },
             Travel::Sea(ports) => (terrain == Terrain::Water || ports.contains(&to) || to == end).then_some(SCALE),
@@ -188,7 +195,7 @@ pub fn find_route(
             Travel::Wheels { .. } if matches!(terrain, Terrain::Forest | Terrain::Mountain) => None,
             Travel::Wheels { boats } => {
                 if terrain == Terrain::Water {
-                    boats.then_some(3 * SCALE)
+                    if boats { Some(3 * SCALE) } else { (to == end).then_some(SCALE) }
                 } else {
                     terrain_cost(terrain).map(|c| c * SCALE)
                 }
@@ -341,6 +348,16 @@ mod tests {
         assert!(find_path(from, to, strait().into_iter(), Travel::Land).is_none());
         assert_eq!(find_path(from, to, strait().into_iter(), Travel::Amphibious).map(|p| p.len()), Some(7));
         assert_eq!(find_path(from, to, strait().into_iter(), Travel::Air).map(|p| p.len()), Some(7));
+    }
+
+    #[test]
+    fn troops_go_ashore_from_a_ship_and_board_one_at_the_end_of_a_route() {
+        // From a ship at sea onto the shore next to it.
+        let tiles = strait();
+        assert_eq!(find_route(Hex::new(2, 0), Hex::new(1, 0), tiles.iter().copied(), &HashMap::new(), Travel::Land), Some(vec![Hex::new(2, 0), Hex::new(1, 0)]));
+        // Onto a ship's tile at the end of a march, but never across the sea.
+        assert_eq!(find_route(Hex::new(0, 0), Hex::new(2, 0), tiles.iter().copied(), &HashMap::new(), Travel::Land).map(|p| p.len()), Some(3));
+        assert!(find_route(Hex::new(0, 0), Hex::new(3, 0), tiles.iter().copied(), &HashMap::new(), Travel::Land).is_none());
     }
 
     #[test]

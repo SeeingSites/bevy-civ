@@ -569,6 +569,26 @@ const UNITS = [
       )
     );
   },
+  // Transport: high-sided troopship, bridge aft, deck cargo and a crane
+  (f) => ship(f, 1,
+    smoke(92, GROUND - 66, f) +
+    `<path d="M86,${GROUND - 40} v-22 h12 v22 Z" fill="#59606b"/>` +
+    `<path d="M80,${GROUND - 40} v-14 h30 l4,14 Z" fill="#e3e6ea"/><path d="M84,${GROUND - 48} h22" stroke="#1d1611" stroke-width="3" stroke-dasharray="4 3"/>` +
+    `<path d="M30,${GROUND - 40} v-34 l22,14" fill="none" stroke-width="3"/><path d="M52,${GROUND - 60} v12" stroke-width="1.5"/>` +
+    `<rect x="18" y="${GROUND - 52}" width="18" height="12" fill="#6b7a4a"/><rect x="40" y="${GROUND - 48}" width="22" height="8" fill="#8a6a3a"/><rect x="62" y="${GROUND - 52}" width="14" height="12" fill="#6b7a4a"/>` +
+    `<path d="M4,${GROUND - 40} h110 l12,-8 l-10,26 q-6,18 -22,20 h-72 q-14,-2 -18,-38 Z" fill="#7d6b5a"/>` +
+    `<path d="M8,${GROUND - 14} h108" stroke="#4a3a2c" stroke-width="2.5"/>` +
+    [18, 32, 46, 60, 74, 88, 102].map((x) => `<circle cx="${x}" cy="${GROUND - 28}" r="2.6" fill="#f1e3a0" stroke="none"/>`).join('')),
+  // Carrier: long flat deck with an island and a parked plane
+  (f) => {
+    const blink = f % 2 === 0 ? '#ffd24a' : '#c8281c';
+    return ship(f, 0,
+      `<path d="M84,${GROUND - 38} v-24 h14 l3,24 Z" fill="#8a929d"/><path d="M86,${GROUND - 54} h12" stroke="#1d1611" stroke-width="2.5"/>` +
+      `<path d="M92,${GROUND - 62} v-14 M86,${GROUND - 72} h12" stroke-width="2.5"/><circle cx="92" cy="${GROUND - 78}" r="2.5" fill="${blink}" stroke="none"/>` +
+      `<g transform="translate(34 ${GROUND - 44})"><path d="M0,0 h26 l6,3 l-6,3 h-26 Z" fill="#c4ccd6"/><path d="M10,3 l4,-10 h4 l-2,10 Z M10,3 l4,10 h4 l-2,-10 Z" fill="#aab2bd"/><path d="M0,3 l-4,-6 h4 Z" fill="#aab2bd"/></g>` +
+      `<path d="M-2,${GROUND - 38} h122 l6,4 h-6 l-8,20 q-6,14 -20,16 h-70 q-14,-2 -18,-26 Z" fill="#7d8590"/>` +
+      `<path d="M4,${GROUND - 36} h112" stroke="#e8e4d8" stroke-width="1.6" stroke-dasharray="7 5"/><path d="M6,${GROUND - 18} h110" stroke="#4f5660" stroke-width="2.5"/>`);
+  },
 ];
 
 /** A great person: a figure standing in a softly pulsing golden aura. */
