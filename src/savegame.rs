@@ -393,6 +393,8 @@ mod tests {
             queue: Vec::new(),
             worked: Vec::new(),
             land: (0, 0, 0),
+            focus: Default::default(),
+            pinned: Vec::new(),
         };
         let unit = Unit { unit_type: UnitType::Legion, movement_left: 1, owner: PLAYER, position: Hex::new(2, 2), build_turns_left: None, current_build: None, fortified: true, road_credit: 0, hp: 2, level: 1, troops: Vec::new(), fatigue: 0, carrier: None };
         SaveGame {

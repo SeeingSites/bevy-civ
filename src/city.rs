@@ -27,6 +27,12 @@ pub struct City {
     /// What its own tile and the worked tiles give: food, shields, gold.
     #[serde(default)]
     pub land: (u32, u32, u32),
+    /// What its governor works the land for (Auto: the governor decides).
+    #[serde(default)]
+    pub focus: crate::tiles::Focus,
+    /// Tiles the player put a citizen on by hand: the governor leaves them worked.
+    #[serde(default)]
+    pub pinned: Vec<hexx::Hex>,
 }
 
 /// Most projects a city can have waiting.
@@ -266,6 +272,8 @@ pub fn spawn_city(
                 queue: Vec::new(),
                 worked: Vec::new(),
                 land: (0, 0, 0),
+                focus: Default::default(),
+                pinned: Vec::new(),
             },
             Name::new(name),
             CityBuildings { buildings: vec![] },
@@ -295,6 +303,8 @@ mod hurry_tests {
             queue: Vec::new(),
             worked: Vec::new(),
             land: (0, 0, 0),
+            focus: Default::default(),
+            pinned: Vec::new(),
         }
     }
 

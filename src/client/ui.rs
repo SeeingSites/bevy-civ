@@ -188,6 +188,7 @@ fn help_lines(topic: HelpTopic) -> Vec<String> {
             "When the unhappy outnumber the happy the city falls into disorder: no growth, production, science or taxes until it is calmed.",
             "Cities grow when their granary fills and cannot pass size 8 without an Aqueduct, or 16 without a Sewer System. Every citizen eats 2 food; specialists eat without working the land.",
             "Each working citizen works one tile of its city's area, and the city's own tile is worked for free. Open a city to see each tile's food, shields and gold (worked tiles ringed in green); click a tile to move a citizen there or off it, or let the governor choose. Farms, mines, roads, railroads, resources and rivers make tiles richer.",
+            "Each city's governor works the land for a focus, always feeding the city first: Growth (the most food), Production (shields), Trade (gold-rich tiles, for science and taxes) or Balanced. On Auto, the default, it picks one from the city's situation - production for a wonder or for troops in wartime, growth for a small city, trade for a big one with a library or market - and the city panel says why.",
             "Culture from temples, cathedrals, colosseums, libraries, universities and wonders widens a city's borders over time (2 tiles, 3 at 100, 4 at 1,000, 5 at 5,000). Where borders meet, the land goes to the city with the stronger culture for its distance, so a great culture pushes its neighbours' borders back. A city in disorder next to a much greater culture may defect to it.",
             "Corruption grows with distance from the capital and is halved by a Courthouse. A city keeps training the same unit until told otherwise; a finished building or wonder leaves it waiting for its next project - unless its build queue holds more (switch the city panel to Add to queue and pick up to six projects).",
             "Pollution and nuclear fallout foul the land; past 15 fouled tiles in the world, global warming now and then turns land drier. Clean it up with workers; Mass Transit and Recycling Centers prevent it.",
@@ -229,6 +230,8 @@ pub struct UiState {
     pub modal: Option<Modal>,
     /// The civilization shown in the foreign advisor window.
     pub diplo_target: Option<u32>,
+    /// The foreign advisor's page.
+    pub diplo_page: DiploPage,
     /// The page of the city panel being shown (kept from city to city).
     pub city_tab: CityTab,
     pub empire_tab: EmpireTab,
@@ -242,6 +245,30 @@ pub struct UiState {
     /// The Messages window: page (0 = the latest), and whether only great events are shown.
     pub messages_page: usize,
     pub highlights_only: bool,
+}
+
+/// Pages of the foreign advisor.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub enum DiploPage {
+    /// Talk to one leader: treaties, trade, demands.
+    #[default]
+    Talk,
+    /// Who stands where with whom.
+    Relations,
+    /// What we know of each people.
+    Intelligence,
+}
+
+impl DiploPage {
+    const ALL: [DiploPage; 3] = [DiploPage::Talk, DiploPage::Relations, DiploPage::Intelligence];
+
+    fn name(self) -> &'static str {
+        match self {
+            DiploPage::Talk => "Talk",
+            DiploPage::Relations => "Relations",
+            DiploPage::Intelligence => "Intelligence",
+        }
+    }
 }
 
 /// Pages of the city panel.
@@ -313,6 +340,7 @@ pub enum Command {
     CityTab(CityTab),
     EmpireTab(EmpireTab),
     HelpTopic(HelpTopic),
+    DiploPage(DiploPage),
     ToggleGroupMove,
     ToggleQueueMode,
     ToggleMusic,
@@ -837,13 +865,14 @@ pub fn rebuild_panels(
         Res<TradeRoutes>,
     ),
     cities: Query<(&City, &CityBuildings, &Happiness)>,
-    (city_list, space, history, culture, taken, tips_on): (
+    (city_list, space, history, culture, taken, tips_on, rivers): (
         Query<(Entity, &City)>,
         Res<bevy_civ::space::SpaceRace>,
         Res<crate::History>,
         Res<bevy_civ::culture::CultureLedger>,
         Res<crate::JustCaptured>,
         Res<super::tips::Tips>,
+        Res<crate::Rivers>,
     ),
     unit_panel: Query<Entity, With<UnitPanel>>,
     mut city_panel: Query<(Entity, &mut Node), (With<CityPanel>, Without<ModalRoot>)>,
@@ -1184,6 +1213,25 @@ pub fn rebuild_panels(
                     ));
                     button(r, art, "Governor picks tiles", Command::Game(Action::AutoTiles), BRONZE, 12.0);
                 });
+                // The governor's focus: what it works the land for, and on Auto what it chose and why.
+                let at_war = diplomacy.treaties.iter().any(|((a, b), t)| *t == Treaty::War && (*a == PLAYER || *b == PLAYER));
+                let situation = crate::city_situation(city, buildings, Some(happiness), at_war, &rivers);
+                let (suggested, why) = bevy_civ::tiles::suggest(&situation);
+                p.spawn(row(5.0)).with_children(|r| {
+                    r.spawn(label(&art.font_bold, "Focus:", 13.0, CREAM));
+                    for focus in bevy_civ::tiles::Focus::ALL {
+                        let tint = if city.focus == focus { GREEN } else { BRONZE };
+                        button(r, art, focus.name(), Command::Game(Action::SetFocus(focus)), tint, 12.0);
+                    }
+                });
+                let note = if city.focus == bevy_civ::tiles::Focus::Auto {
+                    format!("Auto: working for {} - {why}.", suggested.name())
+                } else if city.focus == suggested {
+                    format!("The governor agrees: {why}.")
+                } else {
+                    format!("The governor would suggest {}: {why}.", suggested.name())
+                };
+                p.spawn(label(&art.font_body, note, 13.0, MUTED));
             }
             match &city.production_queue {
                 Some(item) => {
@@ -1612,13 +1660,14 @@ pub fn rebuild_panels(
                                     let food = city.food_balance(buildings);
                                     let food = if food < 0 { format!("starving ({food} food)") } else { format!("{food:+} food") };
                                     let text = format!(
-                                        "{} (size {}): {food}, building {} - {} happy, {} unhappy, {}",
+                                        "{} (size {}): {food}, building {} - {} happy, {} unhappy, {} - focus {}",
                                         city.name,
                                         city.population,
                                         making,
                                         happiness.happy,
                                         happiness.unhappy,
-                                        mood
+                                        mood,
+                                        city.focus.name()
                                     );
                                     let tint = if city.production_queue.is_none() || happiness.in_disorder() || city.food_balance(buildings) < 0 { Color::srgb(0.95, 0.6, 0.5) } else { BRONZE };
                                     w.spawn(Node { ..default() }).with_children(|r| button(r, art, text, Command::Game(Action::SelectCity(entity)), tint, 13.0));
@@ -1927,8 +1976,41 @@ pub fn rebuild_panels(
                     });
                 }
                 Modal::Diplomacy => {
-                    p.spawn(window(760.0)).with_children(|w| {
+                    p.spawn(window(820.0)).with_children(|w| {
                         w.spawn(label(&art.font_title, "Foreign Advisor", 26.0, INK));
+                        w.spawn(row(6.0)).with_children(|r| {
+                            for page in DiploPage::ALL {
+                                let tint = if ui.diplo_page == page { GREEN } else { BRONZE };
+                                button(r, art, page.name(), Command::DiploPage(page), tint, 14.0);
+                            }
+                        });
+                        match ui.diplo_page {
+                            DiploPage::Relations => {
+                                relations_page(w, art, &known, &diplomacy, &spies, &foreign, state.turn);
+                                w.spawn(row(6.0)).with_children(|r| button(r, art, "Close (Esc)", Command::CloseModal, BRONZE, 14.0));
+                                return;
+                            }
+                            DiploPage::Intelligence => {
+                                let latest = |id: u32| history.scores.iter().rev().find(|(_, c, _)| *c == id).map(|(_, _, s)| s).copied().unwrap_or(0);
+                                let mut report = Vec::new();
+                                for civ in &known {
+                                    let owned: Vec<&City> = city_list.iter().map(|(_, c)| c).filter(|c| c.owner == civ.id).collect();
+                                    let capital = owned.iter().find(|c| c.is_capital).map(|c| c.position);
+                                    report.push(Intel {
+                                        id: civ.id,
+                                        cities: owned.len(),
+                                        citizens: owned.iter().map(|c| c.population).sum(),
+                                        score: latest(civ.id),
+                                        faith: capital.and_then(|cp| religions.of(cp)).map(|f| f.name()),
+                                        wonders: wonders.built.iter().filter(|(_, (o, _))| *o == civ.id).map(|(b, _)| b.name()).collect(),
+                                    });
+                                }
+                                intelligence_page(w, art, &known, &report, latest(PLAYER), &diplomacy, &spies, &foreign, &tech);
+                                w.spawn(row(6.0)).with_children(|r| button(r, art, "Close (Esc)", Command::CloseModal, BRONZE, 14.0));
+                                return;
+                            }
+                            DiploPage::Talk => {}
+                        }
                         let unknown = rivals.len() - known.len();
                         if known.is_empty() {
                             w.spawn(label(&art.font_bold, "We have not met any other people yet. Explore to find them.", 16.0, INK));
@@ -2062,6 +2144,159 @@ pub fn rebuild_panels(
                     });
                 }
             }
+        });
+    }
+}
+
+/// What the intelligence page reports of one people.
+struct Intel {
+    id: u32,
+    cities: usize,
+    citizens: u32,
+    score: u32,
+    faith: Option<&'static str>,
+    wonders: Vec<&'static str>,
+}
+
+fn short_name(name: &str) -> String {
+    let name = name.trim_start_matches("the ");
+    if name.chars().count() > 9 { format!("{}.", name.chars().take(8).collect::<String>()) } else { name.to_string() }
+}
+
+/// The relations page: a table of treaties between every two peoples we know (and us), with
+/// attitudes where an embassy lets us see them, and the wars and alliances in words.
+#[allow(clippy::too_many_arguments)]
+fn relations_page(w: &mut ChildBuilder, art: &Art, known: &[&bevy_civ::ai::Civ], diplomacy: &Diplomacy, spies: &Espionage, foreign: &Foreign, turn: u32) {
+    w.spawn(label(
+        &art.font_body,
+        "Treaties between peoples are known to all; how they feel about each other we learn only through an embassy with one of them (otherwise ?). Green: allied; red: at war; numbers: attitude, from -100 (hatred) to +100.",
+        14.0,
+        INK_SOFT,
+    ));
+    let mut ids: Vec<(u32, String)> = vec![(PLAYER, "Us".to_string())];
+    ids.extend(known.iter().map(|c| (c.id, short_name(&c.name))));
+    let cell = |r: &mut ChildBuilder, text: String, colour: Color, width: f32| {
+        r.spawn(Node { width: Val::Px(width), justify_content: JustifyContent::Center, ..default() }).with_children(|c| {
+            c.spawn(label(&art.font_bold, text, 12.0, colour));
+        });
+    };
+    let width = (640.0 / ids.len() as f32).clamp(48.0, 90.0);
+    w.spawn(Node { flex_direction: FlexDirection::Column, row_gap: Val::Px(4.0), ..default() }).with_children(|table| {
+        table.spawn(row(0.0)).with_children(|r| {
+            cell(r, String::new(), INK, 96.0);
+            for (_, name) in &ids {
+                cell(r, name.clone(), INK, width);
+            }
+        });
+        for (a, a_name) in &ids {
+            table.spawn(row(0.0)).with_children(|r| {
+                cell(r, a_name.clone(), INK, 96.0);
+                for (b, _) in &ids {
+                    if a == b {
+                        cell(r, "-".into(), INK_SOFT, width);
+                        continue;
+                    }
+                    let seen = *a == PLAYER || *b == PLAYER || spies.has_embassy(PLAYER, *a) || spies.has_embassy(PLAYER, *b);
+                    let attitude = diplomacy.get_attitude(*a, *b);
+                    let mood = if seen { format!(" {attitude:+}") } else { String::new() };
+                    let (text, colour) = match diplomacy.get_treaty(*a, *b) {
+                        Treaty::War => ("War", Color::srgb(0.72, 0.15, 0.1)),
+                        Treaty::Alliance => ("Ally", Color::srgb(0.18, 0.5, 0.15)),
+                        Treaty::Peace => ("Peace", INK),
+                        // No treaty: how they feel, if we can see it.
+                        Treaty::None if seen => (foreign::mood(attitude), INK_SOFT),
+                        Treaty::None => ("?", INK_SOFT),
+                    };
+                    cell(r, format!("{text}{mood}"), colour, width);
+                }
+            });
+        }
+    });
+    // The same in words: who fights whom, who stands together.
+    let name = |id: u32| ids.iter().find(|(i, _)| *i == id).map(|(_, n)| if id == PLAYER { "we".to_string() } else { n.clone() }).unwrap_or_default();
+    let mut wars = Vec::new();
+    let mut alliances = Vec::new();
+    for (i, (a, _)) in ids.iter().enumerate() {
+        for (b, _) in ids.iter().skip(i + 1) {
+            let age = foreign.treaty_age(*a, *b, turn);
+            match diplomacy.get_treaty(*a, *b) {
+                Treaty::War => wars.push(format!("{} and {} ({age} turns)", name(*a), name(*b))),
+                Treaty::Alliance => alliances.push(format!("{} and {}", name(*a), name(*b))),
+                _ => {}
+            }
+        }
+    }
+    let line = |items: &[String], none: &str| if items.is_empty() { none.to_string() } else { items.join("; ") };
+    w.spawn(label(&art.font_bold, format!("At war: {}.", line(&wars, "nobody")), 14.0, INK));
+    w.spawn(label(&art.font_bold, format!("Allied: {}.", line(&alliances, "nobody")), 14.0, INK));
+}
+
+/// The intelligence page: a card for each people we know - its size, standing, faith and wonders
+/// from what travellers tell, and its research and treasury if we have an embassy there.
+#[allow(clippy::too_many_arguments)]
+fn intelligence_page(w: &mut ChildBuilder, art: &Art, known: &[&bevy_civ::ai::Civ], report: &[Intel], our_score: u32, diplomacy: &Diplomacy, spies: &Espionage, foreign: &Foreign, tech: &TechState) {
+    if known.is_empty() {
+        w.spawn(label(&art.font_bold, "We have not met any other people yet.", 15.0, INK));
+        return;
+    }
+    let ours = foreign.strength.get(&PLAYER).copied().unwrap_or(1.0).max(1.0);
+    w.spawn(label(&art.font_bold, format!("Our score: {our_score}. What travellers tell of each people, and what our embassies report:"), 14.0, INK));
+    for civ in known {
+        let Some(intel) = report.iter().find(|r| r.id == civ.id) else { continue };
+        let theirs = foreign.strength.get(&civ.id).copied().unwrap_or(1.0).max(1.0);
+        let power = match theirs / ours {
+            r if r > 1.8 => "far stronger than ours",
+            r if r > 1.2 => "stronger than ours",
+            r if r > 0.8 => "about equal to ours",
+            r if r > 0.5 => "weaker than ours",
+            _ => "far weaker than ours",
+        };
+        let standing = if intel.score > our_score { "ahead of us" } else { "behind us" };
+        let at_war: Vec<String> = known.iter().filter(|o| o.id != civ.id && diplomacy.get_treaty(civ.id, o.id) == Treaty::War).map(|o| short_name(&o.name)).collect();
+        let allies: Vec<String> = known.iter().filter(|o| o.id != civ.id && diplomacy.get_treaty(civ.id, o.id) == Treaty::Alliance).map(|o| short_name(&o.name)).collect();
+        let mut lines = vec![
+            format!(
+                "{}, {} cities and {} citizens; score {} ({standing}). Their army is {power}.",
+                civ.government.name(),
+                intel.cities,
+                intel.citizens,
+                intel.score
+            ),
+            format!(
+                "Faith: {}. Wonders: {}.",
+                intel.faith.unwrap_or("none"),
+                if intel.wonders.is_empty() { "none".to_string() } else { intel.wonders.join(", ") }
+            ),
+        ];
+        let mut ties = Vec::new();
+        if !at_war.is_empty() {
+            ties.push(format!("at war with {}", at_war.join(", ")));
+        }
+        if !allies.is_empty() {
+            ties.push(format!("allied with {}", allies.join(", ")));
+        }
+        if !ties.is_empty() {
+            lines.push(format!("They are {}.", ties.join("; ")));
+        }
+        lines.push(if spies.has_embassy(PLAYER, civ.id) {
+            let lacking = espionage::stealable(tech, &civ.tech).len();
+            format!(
+                "Embassy report: {} technologies ({lacking} we lack), researching {}; {} gold in the treasury.",
+                civ.tech.researched.len(),
+                civ.tech.current.map(|t| t.name()).unwrap_or("nothing"),
+                civ.gold
+            )
+        } else {
+            "No embassy: their research and treasury are hidden. A Diplomat at one of their cities can open one.".to_string()
+        });
+        w.spawn(Node { column_gap: Val::Px(10.0), align_items: AlignItems::Center, ..default() }).with_children(|r| {
+            r.spawn(portrait(art, civ.portrait, 52.0));
+            r.spawn(Node { flex_direction: FlexDirection::Column, row_gap: Val::Px(2.0), flex_shrink: 1.0, ..default() }).with_children(|c| {
+                c.spawn(label(&art.font_bold, format!("{} of {}", civ.leader, civ.name), 15.0, INK));
+                for line in lines {
+                    c.spawn(label(&art.font_body, line, 13.0, INK_SOFT));
+                }
+            });
         });
     }
 }
@@ -2209,6 +2444,7 @@ pub fn button_actions(
             Command::CityTab(tab) => ui.city_tab = *tab,
             Command::EmpireTab(tab) => ui.empire_tab = *tab,
             Command::HelpTopic(topic) => ui.help_topic = *topic,
+            Command::DiploPage(page) => ui.diplo_page = *page,
             Command::ToggleGroupMove => ui.group_move = !ui.group_move,
             Command::ToggleQueueMode => ui.queue_mode = !ui.queue_mode,
             Command::ToggleMusic => sound.toggle_music(),

@@ -319,6 +319,8 @@ pub enum Action {
     Sentry,
     /// A worker or settler settles in the city it stands in, adding to its people.
     JoinCity,
+    /// The selected city's governor works the land for this focus.
+    SetFocus(bevy_civ::tiles::Focus),
     /// Troops (or aircraft) in port go aboard a ship there with room.
     Board,
     /// Units aboard a ship in port leave it (a ship lets all of its cargo off).
@@ -2457,10 +2459,21 @@ fn apply_actions(
                     log.push(format!("Our spaceship lifts off for {}, {} light-years away! It arrives on turn {arrives} - unless our capital falls.", bevy_civ::space::DESTINATION, bevy_civ::space::LIGHT_YEARS));
                 }
             }
+            Action::SetFocus(focus) => {
+                let Some(mut city) = selection.city.and_then(|e| cities.get_mut(e).ok()) else { continue };
+                if city.owner == PLAYER {
+                    city.focus = *focus;
+                    // The governor works the land afresh for the new focus.
+                    city.worked.clear();
+                    city.pinned.clear();
+                    dirty.ui = true;
+                }
+            }
             Action::AutoTiles => {
                 let Some(mut city) = selection.city.and_then(|e| cities.get_mut(e).ok()) else { continue };
                 if city.owner == PLAYER {
                     city.worked.clear();
+                    city.pinned.clear();
                 }
             }
             Action::Unqueue(index) => {
@@ -4442,14 +4455,43 @@ pub fn visit_villages(
 /// gaps filled by the governor); computer players' cities are re-planned each time. Runs whenever
 /// borders, cities, the land or units change, and stores each city's worked tiles and their yield.
 #[allow(clippy::too_many_arguments)]
+/// What a city's governor weighs in choosing its focus (see `bevy_civ::tiles::suggest`).
+pub fn city_situation(city: &City, buildings: &CityBuildings, happiness: Option<&Happiness>, at_war: bool, rivers: &Rivers) -> bevy_civ::tiles::Situation {
+    let fresh_water = rivers.tiles.contains(&city.position) || city.position.all_neighbors().iter().any(|n| rivers.tiles.contains(n));
+    let capped = city.population >= Building::size_limit(&buildings.buildings, fresh_water);
+    // One more citizen would tip the city into disorder.
+    let restless = happiness.is_some_and(|h| h.unhappy + 1 > h.happy && h.unhappy > 0);
+    let project_turns = city
+        .production_queue
+        .as_ref()
+        .map(|item| item.cost().saturating_sub(city.production_progress).div_ceil(city.land.1.max(1)))
+        .unwrap_or(0);
+    bevy_civ::tiles::Situation {
+        population: city.population,
+        growth_blocked: capped || restless,
+        project_turns,
+        building_wonder: matches!(&city.production_queue, Some(ProductionItem::Building(b)) if b.is_wonder()),
+        arming_for_war: at_war && matches!(&city.production_queue, Some(ProductionItem::Unit(u)) if u.is_military()),
+        trade_buildings: [Building::Library, Building::Marketplace, Building::University].iter().any(|b| buildings.has(*b)),
+    }
+}
+
+/// The focus a city's land is worked for: its own, or the governor's suggestion on Auto.
+pub fn effective_focus(city: &City, situation: &bevy_civ::tiles::Situation) -> bevy_civ::tiles::Focus {
+    match city.focus {
+        bevy_civ::tiles::Focus::Auto => bevy_civ::tiles::suggest(situation).0,
+        own => own,
+    }
+}
+
 pub fn work_tiles(
     (supplies, rivers, tech, civs, diplomacy): (Res<Supplies>, Res<Rivers>, Res<TechState>, Res<Civilizations>, Res<Diplomacy>),
     tiles: Query<&HexTile>,
     units: Query<&Unit>,
-    mut cities: Query<(&mut City, &CityBuildings)>,
+    mut cities: Query<(&mut City, &CityBuildings, Option<&Happiness>)>,
     (changed_tiles, changed_units): (Query<(), Changed<HexTile>>, Query<(), Changed<Unit>>),
 ) {
-    let city_changed = cities.iter_mut().any(|(c, _)| c.is_changed());
+    let city_changed = cities.iter_mut().any(|(c, _, _)| c.is_changed());
     if !(supplies.is_changed() || city_changed || !changed_tiles.is_empty() || !changed_units.is_empty()) {
         return;
     }
@@ -4465,8 +4507,10 @@ pub fn work_tiles(
         areas.entry(*home).or_default().push(*hex);
     }
     let occupants: Vec<(Hex, u32)> = units.iter().filter(|u| u.unit_type.is_army()).map(|u| (u.position, u.owner)).collect();
-    for (mut city, buildings) in &mut cities {
+    let at_war: HashSet<u32> = diplomacy.treaties.iter().filter(|(_, t)| **t == Treaty::War).flat_map(|((a, b), _)| [*a, *b]).collect();
+    for (mut city, buildings, happiness) in &mut cities {
         let owner = city.owner;
+        let focus = effective_focus(&city, &city_situation(&city, buildings, happiness, at_war.contains(&owner), &rivers));
         // A Harbor makes every worked ocean tile one food richer.
         let harbor = buildings.has(Building::Harbor);
         let yield_for = |owner: u32, hex: Hex| yield_for(owner, hex).map(|y| if harbor && tile_at.get(&hex).is_some_and(|t| t.terrain == Terrain::Water) { (y.0 + 1, y.1, y.2) } else { y });
@@ -4477,8 +4521,8 @@ pub fn work_tiles(
             .map(|area| area.iter().filter(|h| **h != city.position && !enemy_on(h)).filter_map(|h| yield_for(owner, *h).map(|y| (*h, y))).collect())
             .unwrap_or_default();
         candidates.sort_by_key(|(h, _)| (h.x, h.y));
-        let keep = if owner == PLAYER { city.worked.clone() } else { Vec::new() };
-        let worked = bevy_civ::tiles::assign(&candidates, &keep, centre, city.workers(), city.population);
+        let keep = if owner == PLAYER { city.pinned.clone() } else { Vec::new() };
+        let worked = bevy_civ::tiles::assign(&candidates, &keep, centre, city.workers(), city.population, focus);
         let land = bevy_civ::tiles::total(&candidates, &worked, centre);
         if city.worked != worked {
             city.worked = worked;
@@ -4496,17 +4540,22 @@ fn toggle_worked(city: &mut City, hex: Hex, value: impl Fn(Hex) -> u32) -> Optio
     use bevy_civ::city::Specialist;
     if let Some(i) = city.worked.iter().position(|h| *h == hex) {
         city.worked.remove(i);
+        city.pinned.retain(|h| *h != hex);
         city.add_specialist(Specialist::Entertainer);
         return Some(format!("A citizen of {} leaves that tile to entertain (+2 luxury).", city.name));
     }
     if let Some(i) = city.specialists.iter().position(|s| *s == Specialist::Entertainer).or((!city.specialists.is_empty()).then_some(0)) {
         city.specialists.remove(i);
-    } else if let Some(i) = city.worked.iter().enumerate().min_by_key(|(_, h)| value(**h)).map(|(i, _)| i) {
+    } else if let Some(i) = city.worked.iter().enumerate().filter(|(_, h)| !city.pinned.contains(h)).min_by_key(|(_, h)| value(**h)).map(|(i, _)| i) {
         city.worked.remove(i);
+    } else if let Some(i) = city.worked.iter().enumerate().min_by_key(|(_, h)| value(**h)).map(|(i, _)| i) {
+        let freed = city.worked.remove(i);
+        city.pinned.retain(|h| *h != freed);
     } else {
         return None;
     }
     city.worked.push(hex);
+    city.pinned.push(hex);
     None
 }
 
