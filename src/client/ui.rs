@@ -40,6 +40,10 @@ const BRONZE: Color = Color::srgb(0.86, 0.68, 0.36);
 const GREEN: Color = Color::srgb(0.56, 0.8, 0.42);
 /// A button that cannot be used just now.
 const SPENT: Color = Color::srgb(0.6, 0.57, 0.52);
+/// The tree of knowledge: technologies known, on the way to the goal, and the goal itself.
+const KNOWN: Color = Color::srgb(0.62, 0.78, 0.55);
+const PATH: Color = Color::srgb(0.98, 0.86, 0.5);
+const GOAL: Color = Color::srgb(0.95, 0.6, 0.3);
 const MM: u32 = 176;
 const RED: Color = Color::srgb(0.9, 0.45, 0.38);
 
@@ -133,7 +137,7 @@ fn help_lines(topic: HelpTopic) -> Vec<String> {
             "1. Found cities. Cities are everything: they grow, build units and buildings, and produce the gold and science that drive the rest. Move a Settler at least two tiles from other cities - rivers, coasts and grassland make good sites - and press B.",
             "2. Choose what each city builds. Click a city to open it: Units, Buildings and Wonders tabs list what it can make, with the turns each takes. Early on, a Warrior or Spearman to guard each city, a Worker, and Settlers to spread out are the usual start.",
             "3. Improve the land. Workers build farms (F, more food, so cities grow), mines (M, more shields, so cities build faster) and roads (R, faster travel and trade). Press K and a worker does it all by itself.",
-            "4. Research. Press Q to choose what your people learn next. Each discovery opens new units, buildings and wonders; the tree shows where each leads.",
+            "4. Research. Press Q to choose what your people learn next. Each discovery opens new units, buildings and wonders. Click any technology in the tree to make it a goal: your scholars research the way to it, in order, and the tree lights up the path.",
             "5. Explore. The map starts dark. Send a Warrior or Scout out to find good land, tribal villages (with gifts inside) and other peoples. Ships, once you know Seafaring, carry troops across the sea.",
             "6. Keep your people happy. Past a few citizens, a city needs temples, luxuries or entertainers, or it falls into disorder and stops working. The city panel shows content and unhappy faces.",
             "7. Meet your neighbours. Press E to make peace, trade resources and technology, or declare war. Defend your cities - a city with no troops in it is easily taken.",
@@ -1913,7 +1917,7 @@ pub fn rebuild_panels(
                     });
                 }
                 Modal::Science => {
-                    p.spawn(window(580.0)).with_children(|w| {
+                    p.spawn(window(760.0)).with_children(|w| {
                         w.spawn(label(&art.font_title, "Science Advisor", 26.0, INK));
                         match tech.current {
                             Some(current) => {
@@ -1935,24 +1939,63 @@ pub fn rebuild_panels(
                                 button(r, art, format!("{} ({})", t.name(), tech.cost_of(t)), Command::Game(Action::Research(t)), tint, 14.0);
                             }
                         });
-                        // The whole tree, era by era: known in green, open to study in ink, the rest with what they need.
+                        // The whole tree, era by era. Click any technology not yet known to make it the
+                        // goal: our scholars research the way to it, step by step.
                         w.spawn(label(&art.font_title, "The tree of knowledge", 16.0, INK_SOFT));
+                        let path = tech.goal.map(|g| tech.path_to(g)).unwrap_or_default();
+                        match tech.goal {
+                            Some(goal) => {
+                                let turns = (tech.beakers_to(goal) as f32 / tech.science_per_turn.max(1) as f32).ceil();
+                                let pace = if state.turn <= 1 { "the pace shows after the first turn".to_string() } else { format!("about {turns} turns") };
+                                let steps: Vec<&str> = path.iter().map(|t| t.name()).collect();
+                                w.spawn(row(8.0)).with_children(|r| {
+                                    r.spawn(label(
+                                        &art.font_bold,
+                                        format!("Goal: {} - {} discoveries, {pace}: {}", goal.name(), path.len(), steps.join(" > ")),
+                                        14.0,
+                                        INK,
+                                    ));
+                                    button(r, art, "Clear goal", Command::Game(Action::ClearResearchGoal), BRONZE, 12.0);
+                                });
+                            }
+                            None => {
+                                w.spawn(label(&art.font_body, "Click any technology below to make it our goal: the scholars will research the way to it, in order.", 13.0, INK_SOFT));
+                            }
+                        }
+                        // Legend: known, being studied, on the path, the goal, open, locked.
+                        w.spawn(row(8.0)).with_children(|r| {
+                            for (text, colour) in [("known", KNOWN), ("studying", GREEN), ("on the path", PATH), ("goal", GOAL), ("open", BRONZE), ("needs more first", SPENT)] {
+                                r.spawn(Node { align_items: AlignItems::Center, column_gap: Val::Px(4.0), ..default() }).with_children(|item| {
+                                    item.spawn((Node { width: Val::Px(12.0), height: Val::Px(12.0), ..default() }, BackgroundColor(colour), BorderRadius::all(Val::Px(3.0))));
+                                    item.spawn(label(&art.font_body, text, 12.0, INK_SOFT));
+                                });
+                            }
+                        });
                         let eras: [(&str, u32, u32); 4] = [("Ancient", 0, 25), ("Classical", 26, 45), ("Industrial", 46, 95), ("Modern", 96, u32::MAX)];
                         for (era, low, high) in eras {
-                            w.spawn(Node { column_gap: Val::Px(8.0), flex_wrap: FlexWrap::Wrap, row_gap: Val::Px(2.0), ..default() }).with_children(|r| {
-                                r.spawn(Node { width: Val::Px(90.0), ..default() }).with_children(|c| {
+                            w.spawn(Node { column_gap: Val::Px(5.0), flex_wrap: FlexWrap::Wrap, row_gap: Val::Px(4.0), align_items: AlignItems::Center, ..default() }).with_children(|r| {
+                                r.spawn(Node { width: Val::Px(78.0), ..default() }).with_children(|c| {
                                     c.spawn(label(&art.font_bold, era, 13.0, INK));
                                 });
                                 for t in Tech::ALL.into_iter().filter(|t| (low..=high).contains(&t.cost())) {
-                                    let (text, color) = if tech.researched.contains(&t) {
-                                        (t.name().to_string(), Color::srgb(0.2, 0.5, 0.2))
+                                    if tech.researched.contains(&t) {
+                                        r.spawn((Node { padding: UiRect::axes(Val::Px(7.0), Val::Px(4.0)), ..default() }, BackgroundColor(KNOWN), BorderRadius::all(Val::Px(5.0)))).with_children(|k| {
+                                            k.spawn(label(&art.font_body, t.name(), 12.0, INK));
+                                        });
+                                        continue;
+                                    }
+                                    let tint = if tech.current == Some(t) {
+                                        GREEN
+                                    } else if tech.goal == Some(t) {
+                                        GOAL
+                                    } else if path.contains(&t) {
+                                        PATH
                                     } else if tech.can_research(t) {
-                                        (format!("{} (open)", t.name()), INK)
+                                        BRONZE
                                     } else {
-                                        let needs: Vec<&str> = t.prerequisites().iter().filter(|p| !tech.researched.contains(p)).map(|p| p.name()).collect();
-                                        (format!("{} (needs {})", t.name(), needs.join(", ")), Color::srgb(0.55, 0.5, 0.45))
+                                        SPENT
                                     };
-                                    r.spawn(label(&art.font_body, text, 12.0, color));
+                                    button(r, art, t.name(), Command::Game(Action::ResearchGoal(t)), tint, 12.0);
                                 }
                             });
                         }

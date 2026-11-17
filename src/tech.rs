@@ -7,6 +7,9 @@ pub struct TechState {
     pub current: Option<Tech>,
     pub progress: u32,
     pub science_per_turn: u32,
+    /// A technology the scholars are working towards: research follows the path to it.
+    #[serde(default)]
+    pub goal: Option<Tech>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, serde::Serialize, serde::Deserialize)]
@@ -250,6 +253,7 @@ impl Default for TechState {
             current: Some(Tech::Pottery),
             progress: 0,
             science_per_turn: 2,
+            goal: None,
         }
     }
 }
@@ -257,7 +261,7 @@ impl Default for TechState {
 impl TechState {
     /// A fresh state that already knows the named technologies.
     pub fn knowing(names: &[String]) -> Self {
-        let mut state = Self { researched: HashSet::new(), current: None, progress: 0, science_per_turn: 2 };
+        let mut state = Self { researched: HashSet::new(), current: None, progress: 0, science_per_turn: 2, goal: None };
         state.researched.extend(Tech::ALL.into_iter().filter(|t| names.iter().any(|n| n == t.name())));
         state.current = Tech::ALL.into_iter().find(|t| state.can_research(*t));
         state
@@ -268,7 +272,7 @@ impl TechState {
         self.researched.insert(tech);
         if self.current == Some(tech) {
             self.progress = 0;
-            self.current = Tech::ALL.into_iter().find(|t| self.can_research(*t));
+            self.current = self.next_pick();
         }
     }
 
@@ -288,12 +292,55 @@ impl TechState {
             && tech.prerequisites().iter().all(|p| self.researched.contains(p))
     }
 
+    /// Everything still to learn on the way to `goal`, prerequisites before what needs them (the
+    /// goal itself last). Empty once the goal is known.
+    pub fn path_to(&self, goal: Tech) -> Vec<Tech> {
+        fn visit(state: &TechState, tech: Tech, path: &mut Vec<Tech>) {
+            if state.researched.contains(&tech) || path.contains(&tech) {
+                return;
+            }
+            for p in tech.prerequisites() {
+                visit(state, p, path);
+            }
+            path.push(tech);
+        }
+        let mut path = Vec::new();
+        visit(self, goal, &mut path);
+        path
+    }
+
+    /// What to study next: the next open step towards the goal (the goal is dropped once reached),
+    /// or else the first technology open to study.
+    pub fn next_pick(&mut self) -> Option<Tech> {
+        if self.goal.is_some_and(|g| self.researched.contains(&g)) {
+            self.goal = None;
+        }
+        let toward = self.goal.and_then(|g| self.path_to(g).into_iter().find(|t| self.can_research(*t)));
+        toward.or_else(|| Tech::ALL.into_iter().find(|t| self.can_research(*t)))
+    }
+
+    /// Works towards a goal: research turns to its first open step at once.
+    pub fn set_goal(&mut self, goal: Tech) {
+        if self.researched.contains(&goal) {
+            return;
+        }
+        self.goal = Some(goal);
+        if !self.current.is_some_and(|c| self.path_to(goal).contains(&c)) {
+            self.current = self.next_pick();
+        }
+    }
+
+    /// Beakers still needed for everything on the way to the goal (at today's costs).
+    pub fn beakers_to(&self, goal: Tech) -> u32 {
+        self.path_to(goal).iter().map(|t| self.cost_of(*t)).sum::<u32>().saturating_sub(self.progress)
+    }
+
     /// A great scientist's discovery: the current research is completed at once. Returns what was learned.
     pub fn discover(&mut self) -> Option<Tech> {
         let current = self.current?;
         self.researched.insert(current);
         self.progress = 0;
-        self.current = Tech::ALL.into_iter().find(|t| self.can_research(*t));
+        self.current = self.next_pick();
         Some(current)
     }
 
@@ -303,9 +350,8 @@ impl TechState {
         if self.progress >= self.cost_of(current) {
             self.researched.insert(current);
             self.progress = 0;
-            // Auto-pick the next available technology; the player can change it.
-            let next = Tech::ALL.into_iter().find(|t| self.can_research(*t));
-            self.current = next;
+            // On along the path to the goal, or else the next available technology.
+            self.current = self.next_pick();
             Some(current)
         } else {
             None
@@ -316,6 +362,29 @@ impl TechState {
 #[cfg(test)]
 mod tree_tests {
     use super::*;
+
+    #[test]
+    fn research_follows_the_path_to_a_goal() {
+        let mut state = TechState::knowing(&[]);
+        let goal = Tech::Monarchy;
+        let path = state.path_to(goal);
+        assert_eq!(path.last(), Some(&goal));
+        // Every step comes after what it needs.
+        for (i, t) in path.iter().enumerate() {
+            assert!(t.prerequisites().iter().all(|p| path[..i].contains(p)), "{t:?}");
+        }
+        state.set_goal(goal);
+        assert!(path.contains(&state.current.unwrap()) && state.can_research(state.current.unwrap()));
+        // Research walks the path and the goal is dropped once reached.
+        state.science_per_turn = 10_000;
+        while !state.researched.contains(&goal) {
+            let learned = state.process_turn().unwrap();
+            assert!(path.contains(&learned), "{learned:?} is off the path");
+        }
+        assert_eq!(state.next_pick().is_some(), true);
+        assert_eq!(state.goal, None);
+        assert_eq!(state.beakers_to(goal), 0);
+    }
 
     #[test]
     fn every_prerequisite_comes_earlier_and_every_tech_is_reachable() {
