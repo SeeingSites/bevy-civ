@@ -1280,13 +1280,19 @@ fn move_cost(domain: Domain, from: Hex, to: Hex, map: &MapData, roads: &HashMap<
     }
 }
 
-/// The moves a unit gets when a turn begins on `at`: boats make steady progress whatever they carry.
-/// `sea_bonus` is what the owner's wonders add at sea (the Great Lighthouse).
+/// A unit's moves for a turn starting at `at`. Ships and aircraft move at their own speed; troops
+/// crossing the water in boats move at the boats' (3); the Lighthouse and Magellan's add to
+/// everything afloat.
 fn moves_per_turn(unit_type: UnitType, at: Hex, map: &MapData, sea_bonus: u32) -> u32 {
-    let at_sea = map.water.contains(&at) || unit_type.domain() == Domain::Sea;
-    let base = if map.water.contains(&at) { 3 } else { unit_type.stats().2 };
-    base + if at_sea { sea_bonus } else { 0 }
+    let domain = unit_type.domain();
+    let embarked = domain == Domain::Land && map.water.contains(&at);
+    let base = if embarked { BOAT_MOVES } else { unit_type.stats().2 };
+    let afloat = embarked || domain == Domain::Sea;
+    base + if afloat { sea_bonus } else { 0 }
 }
+
+/// Moves a turn for troops crossing the water in boats.
+const BOAT_MOVES: u32 = 3;
 
 /// Moves a unit along `route` (which starts where it stands) while it has moves left, revealing the
 /// land around each tile entered and adding it to `trail`.
@@ -4413,6 +4419,20 @@ fn refresh_supplies(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn ships_and_aircraft_keep_their_own_speed_at_sea() {
+        let mut map = plain_map();
+        let sea = Hex::new(3, 0);
+        map.water.insert(sea);
+        let land = Hex::new(0, 0);
+        assert_eq!(moves_per_turn(UnitType::Destroyer, sea, &map, 0), 6);
+        assert_eq!(moves_per_turn(UnitType::Galleon, sea, &map, 1), 6, "Lighthouse bonus at sea");
+        assert_eq!(moves_per_turn(UnitType::Galley, land, &map, 1), 4, "a ship in port is afloat too");
+        assert_eq!(moves_per_turn(UnitType::Fighter, sea, &map, 1), 8, "aircraft ignore the sea");
+        assert_eq!(moves_per_turn(UnitType::Rifleman, sea, &map, 0), 3, "troops in boats");
+        assert_eq!(moves_per_turn(UnitType::Cavalry, land, &map, 1), 2);
+    }
 
     #[test]
     fn rates_split_commerce_within_the_government_cap() {
