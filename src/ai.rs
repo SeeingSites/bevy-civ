@@ -33,6 +33,9 @@ pub struct Civ {
     pub anarchy: u32,
     #[serde(default)]
     pub pending_government: Option<crate::government::Government>,
+    /// Lost every city (and has no settler left): out of the game.
+    #[serde(default)]
+    pub eliminated: bool,
 }
 
 impl Default for Civilizations {
@@ -561,6 +564,7 @@ mod tests {
             government: crate::government::Government::Despotism,
             anarchy: 0,
             pending_government: None,
+            eliminated: false,
         }
     }
 

@@ -105,12 +105,15 @@ impl Difficulty {
 }
 
 /// A computer player's score, counted the same way as the player's (population, cities' buildings).
-fn rival_score(owner: u32, cities: &Query<(&mut City, &mut CityBuildings, &mut Happiness)>) -> u32 {
-    cities
+/// A computer player's score, counted exactly as the player's is (see `Score::calculate`): two points
+/// a citizen, ten a technology, fifty a wonder.
+fn rival_score(civ: &bevy_civ::ai::Civ, cities: &Query<(&mut City, &mut CityBuildings, &mut Happiness)>) -> u32 {
+    let held: u32 = cities
         .iter()
-        .filter(|(c, _, _)| c.owner == owner)
+        .filter(|(c, _, _)| c.owner == civ.id)
         .map(|(c, b, _)| c.population * 2 + b.buildings.iter().map(|w| if w.is_wonder() { 50 } else { 0 }).sum::<u32>())
-        .sum()
+        .sum();
+    held + civ.tech.researched.len() as u32 * 10
 }
 
 /// "the Gauls" -> "The Gauls" at the start of a sentence.
@@ -688,6 +691,7 @@ fn setup_world(
             government: bevy_civ::government::Government::Despotism,
             anarchy: 0,
             pending_government: None,
+            eliminated: false,
         })
         .collect();
     *tech = TechState::knowing(&defs[0].techs);
@@ -2267,6 +2271,25 @@ fn process_turn(
     let mut total_gold = 0i32;
     let mut player_cities = 0;
 
+    // A people that has lost its capital moves the palace to its largest remaining city.
+    {
+        let with_capital: HashSet<u32> = cities.iter().filter(|(c, _, _)| c.is_capital).map(|(c, _, _)| c.owner).collect();
+        let mut largest: HashMap<u32, (Hex, u32)> = HashMap::new();
+        for (city, _, _) in cities.iter().filter(|(c, _, _)| c.owner != BARBARIANS && !with_capital.contains(&c.owner)) {
+            let best = largest.entry(city.owner).or_insert((city.position, city.population));
+            if city.population > best.1 || (city.population == best.1 && (city.position.x, city.position.y) < (best.0.x, best.0.y)) {
+                *best = (city.position, city.population);
+            }
+        }
+        for (owner, (at, _)) in largest {
+            if let Some((mut city, _, _)) = cities.iter_mut().find(|(c, _, _)| c.position == at) {
+                city.is_capital = true;
+                if owner == PLAYER {
+                    log.push(format!("{} is our new capital.", city.name));
+                }
+            }
+        }
+    }
     let capitals: HashMap<u32, Hex> =
         cities.iter().filter(|(c, _, _)| c.is_capital).map(|(c, _, _)| (c.owner, c.position)).collect();
     let mut army_sizes: HashMap<u32, usize> = HashMap::new();
@@ -3384,7 +3407,9 @@ fn process_turn(
     }
 
     let all_positions: Vec<Hex> = units.iter().filter(|(e, _)| !dead.contains(e)).map(|(_, u)| u.position).collect();
-    process_barbarians(&mut barbarians, &mut commands, &tiles, &all_positions);
+    let living: Vec<usize> = civs.players.iter().filter(|c| !c.eliminated && c.id != PLAYER).map(|c| c.tech.researched.len()).chain(std::iter::once(tech.researched.len())).collect();
+    let world_techs = living.iter().sum::<usize>() / living.len().max(1);
+    process_barbarians(&mut barbarians, &mut commands, &tiles, &all_positions, &supplies.territory, state.turn, world_techs);
 
     let unit_positions: Vec<Hex> = units.iter().filter(|(e, u)| u.owner == PLAYER && !dead.contains(e)).map(|(_, u)| u.position).collect();
     let city_positions: Vec<Hex> = cities.iter().filter(|(c, _, _)| c.owner == PLAYER).map(|(c, _, _)| c.position).collect();
@@ -3417,12 +3442,35 @@ fn process_turn(
         }
     }
 
+    // A people with no city and no settler left is out of the game: its last troops lay down
+    // their arms and it leaves the councils of the world.
+    {
+        let alive: HashSet<u32> = cities
+            .iter()
+            .map(|(c, _, _)| c.owner)
+            .chain(units.iter().filter(|(e, u)| !dead.contains(e) && u.unit_type == UnitType::Settler).map(|(_, u)| u.owner))
+            .collect();
+        for civ in civs.players.iter_mut().filter(|c| !c.is_human && !c.eliminated && !alive.contains(&c.id)) {
+            civ.eliminated = true;
+            for (entity, unit) in units.iter() {
+                if unit.owner == civ.id {
+                    commands.entity(entity).try_despawn_recursive();
+                }
+            }
+            if foreign.met.remove(&civ.id) {
+                log.push(format!("{} are no more: their last city has fallen.", capitalised(&civ.name)));
+            }
+            diplomacy.treaties.retain(|(a, b), _| *a != civ.id && *b != civ.id);
+            diplomacy.passage.retain(|(a, b)| *a != civ.id && *b != civ.id);
+        }
+    }
+
     // The automatic save, every turn.
     saves.send(savegame::SaveRequest { download: false });
     state.score = Score::calculate(cities.iter().map(|(c, b, _)| (c, b)), &tech);
     history.scores.push((state.turn, PLAYER, state.score.total));
     for civ in civs.players.iter().filter(|c| !c.is_human) {
-        history.scores.push((state.turn, civ.id, rival_score(civ.id, &cities)));
+        history.scores.push((state.turn, civ.id, rival_score(civ, &cities)));
     }
 
     let total_cities = cities.iter().count();
@@ -3445,13 +3493,22 @@ fn process_turn(
         } else if let Some(o) = space.arrived(state.turn) {
             Some(format!("Space race victory for {}.", civ_named(o)))
         } else if state.turn >= state.last_turn {
-            let best = civs.players.iter().filter(|c| !c.is_human).map(|c| (rival_score(c.id, &cities), c.name.clone())).max_by_key(|(s, _)| *s);
+            let best = civs.players.iter().filter(|c| !c.is_human).map(|c| (rival_score(c, &cities), c.name.clone())).max_by_key(|(s, _)| *s);
             best.map(|(s, name)| format!("Score victory for {name} ({s}) at the turn limit."))
         } else {
             None
         };
     } else if player_cities == 0 {
         state.victory = Some("Your civilization has fallen.".into());
+    } else if let Some((name, held)) = {
+        // A rival holding two thirds of the world's cities dominates it.
+        let mut held: HashMap<u32, usize> = HashMap::new();
+        for (city, _, _) in cities.iter().filter(|(c, _, _)| c.owner != PLAYER && c.owner != BARBARIANS) {
+            *held.entry(city.owner).or_default() += 1;
+        }
+        held.into_iter().filter(|(_, n)| *n >= 5 && n * 3 >= total_cities * 2).max_by_key(|(_, n)| *n).map(|(o, n)| (civ_named(o), n))
+    } {
+        state.victory = Some(format!("Defeat: {name} dominate the world, holding {held} of its {total_cities} cities."));
     } else if !rivals_remain {
         state.victory = Some("Conquest Victory!".into());
     } else if player_cities >= 5 && player_cities * 3 >= total_cities * 2 {
@@ -3473,7 +3530,7 @@ fn process_turn(
     } else if state.turn >= state.last_turn {
         // Time runs out: the highest score wins.
         let ours = state.score.total;
-        let best_rival = civs.players.iter().filter(|c| !c.is_human).map(|c| (rival_score(c.id, &cities), c.name.clone())).max_by_key(|(s, _)| *s);
+        let best_rival = civs.players.iter().filter(|c| !c.is_human).map(|c| (rival_score(c, &cities), c.name.clone())).max_by_key(|(s, _)| *s);
         state.victory = Some(match best_rival {
             Some((theirs, name)) if theirs > ours => format!("Time is up: {name} lead the world on score ({theirs} to our {ours})."),
             _ => format!("Score Victory! Time is up and we lead the world with {ours} points."),
@@ -3847,6 +3904,7 @@ mod tests {
             government: bevy_civ::government::Government::Despotism,
             anarchy: 0,
             pending_government: None,
+            eliminated: false,
         });
         app
     }

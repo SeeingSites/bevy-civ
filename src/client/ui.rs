@@ -185,7 +185,7 @@ fn help_lines(topic: HelpTopic) -> Vec<String> {
             "Conquest: take every rival city. Domination: hold two thirds of the cities in the world (at least five).".to_string(),
             "Space: research Space Flight, Plastics and Superconductors; cities with a Factory build 4 Space Structures, 2 Components and 2 Modules. The ship launches when complete and arrives 12 turns later - unless your capital falls first.".to_string(),
             format!("Culture: reach {} culture points and half as much again as any rival.", bevy_civ::culture::VICTORY_CULTURE),
-            "Score: if nobody has won by the last turn (chosen when the game begins), the highest score wins. Score counts citizens, technologies and wonders.".to_string(),
+            "Score: if nobody has won by the last turn (chosen when the game begins), the highest score wins. Score counts 2 points a citizen, 10 a technology and 50 a wonder, for everyone alike. A rival who holds two thirds of the cities wins by domination.".to_string(),
         ],
     }
 }
