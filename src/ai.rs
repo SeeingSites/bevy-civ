@@ -98,6 +98,7 @@ fn appeal(tech: Tech) -> (f32, f32) {
         Tech::AdvancedFlight => (4.0, 1.5),
         Tech::MassProduction => (1.5, 3.5),
         Tech::Ecology => (0.5, 3.0),
+        Tech::NuclearFission => (4.0, 1.5),
     }
 }
 

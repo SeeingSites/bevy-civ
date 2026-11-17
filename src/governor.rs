@@ -59,7 +59,10 @@ pub fn army_cap(cities: usize) -> usize {
 }
 
 fn can_train(unit: UnitType, city: &CityView, civ: &CivView, supplies: &Supplies) -> bool {
-    unit.is_trainable() && unit.required_tech().is_none_or(|t| civ.tech.researched.contains(&t)) && supplies.has(city.position, unit.required_resources())
+    unit.is_trainable()
+        && unit.required_tech().is_none_or(|t| civ.tech.researched.contains(&t))
+        && unit.required_wonder().is_none_or(|w| civ.wonders_taken.contains(&w))
+        && supplies.has(city.position, unit.required_resources())
 }
 
 pub fn can_build(building: &Building, city: &CityView, civ: &CivView, supplies: &Supplies) -> bool {
@@ -186,6 +189,10 @@ pub fn choose(city: &CityView, civ: &CivView, supplies: &Supplies, rng: &mut imp
         if let Some(wonder) = Building::ALL.into_iter().find(|b| b.is_wonder() && can_build(b, city, civ, supplies)) {
             return ProductionItem::Building(wonder);
         }
+    }
+    // At war, a people with the bomb now and then builds a missile.
+    if civ.at_war && can_train(UnitType::NuclearMissile, city, civ, supplies) && rng.gen_bool(0.04) {
+        return unit(UnitType::NuclearMissile);
     }
     if civ.military < cap {
         return unit(best_attacker(city, civ, supplies));

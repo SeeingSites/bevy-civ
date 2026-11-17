@@ -554,6 +554,21 @@ const UNITS = [
     const book = (bob) => `<rect x="-14" y="${-40 + bob}" width="10" height="13" rx="1.5" fill="#7a2a2a"/><path d="M-12,${-37 + bob} h6" stroke="#e8c14a" stroke-width="1.6"/>`;
     return shadow(62, 24) + wrap(human(58, GROUND, { robe: true, tunic: '#efe6d0', trim: '#c9973f', sleeve: '#efe6d0', head: head.hood('#d8ccb0'), beard: '#8a6a4a', back: book, front: staff }, f));
   },
+  // Nuclear Missile: on its launch cradle, venting
+  (f) => {
+    const vent = [0.5, 0.35, 0.2, 0.35][f];
+    return (
+      shadow(64, 34, 6) +
+      wrap(
+        `<path d="M40,${GROUND - 2} l12,-14 h24 l12,14 Z" fill="#5a6440"/>` +
+          `<path d="M56,${GROUND - 14} V${GROUND - 92} q8,-18 16,0 V${GROUND - 14} Z" fill="#e8e4d8"/>` +
+          `<path d="M56,${GROUND - 70} h16 M56,${GROUND - 64} h16" stroke="#c8281c" stroke-width="3"/>` +
+          `<path d="M56,${GROUND - 34} h16" stroke="#e8c14a" stroke-width="6"/><path d="M56,${GROUND - 34} h16" stroke="#1d1611" stroke-width="2" stroke-dasharray="3 3"/>` +
+          `<path d="M56,${GROUND - 14} l-8,6 v-18 Z M72,${GROUND - 14} l8,6 v-18 Z" fill="#9aa3ad"/>` +
+          `<g stroke="none" fill="rgba(220,220,220,${vent})"><circle cx="${50 - f * 2}" cy="${GROUND - 6}" r="${6 + f}"/><circle cx="${80 + f * 2}" cy="${GROUND - 6}" r="${6 + f}"/></g>`,
+      )
+    );
+  },
 ];
 
 /** A great person: a figure standing in a softly pulsing golden aura. */

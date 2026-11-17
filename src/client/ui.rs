@@ -60,10 +60,11 @@ pub enum EmpireTab {
     Cities,
     Military,
     Score,
+    Space,
 }
 
 impl EmpireTab {
-    const ALL: [EmpireTab; 4] = [EmpireTab::Government, EmpireTab::Cities, EmpireTab::Military, EmpireTab::Score];
+    const ALL: [EmpireTab; 5] = [EmpireTab::Government, EmpireTab::Cities, EmpireTab::Military, EmpireTab::Score, EmpireTab::Space];
 
     fn name(self) -> &'static str {
         match self {
@@ -71,6 +72,7 @@ impl EmpireTab {
             EmpireTab::Cities => "Cities",
             EmpireTab::Military => "Military",
             EmpireTab::Score => "Score",
+            EmpireTab::Space => "Space",
         }
     }
 }
@@ -181,10 +183,11 @@ fn help_lines(topic: HelpTopic) -> Vec<String> {
             "Artillery, some ships and bombers bombard without risk. Troops cannot slip past enemy troops (zone of control). Pillage (P) wrecks improvements on enemy land; computer raiders do the same to yours.".to_string(),
             "A captured city resists for a while (longer for a big one; a garrison of two halves it) and produces nothing. Under a Republic or Democracy a long war makes citizens unhappy (a Police Station halves it).".to_string(),
             "Older units are upgraded in your cities for gold once the better unit can be built there.".to_string(),
+            "Nuclear weapons: once anyone has built the Manhattan Project (Nuclear Fission), every people that knows Rocketry can build Nuclear Missiles. Select a missile, click a target within 12 tiles, then click it again to launch: everything within a tile is destroyed, a city there loses half its people and two buildings, fallout spoils the land, the victim goes to war with you and every other people trusts you less. An SDI Defense (Superconductors) shoots down missiles aimed within 3 tiles of its city.".to_string(),
         ],
         HelpTopic::Victory => vec![
             "Conquest: take every rival city. Domination: hold two thirds of the cities in the world (at least five).".to_string(),
-            "Space: research Space Flight, Plastics and Superconductors; cities with a Factory build 4 Space Structures, 2 Components and 2 Modules. The ship launches when complete and arrives 12 turns later - unless your capital falls first.".to_string(),
+            "Space: the race to Alpha Centauri, the nearest star. Research Space Flight, Plastics and Superconductors; cities with a Factory build 4 Space Structures, 2 to 4 Components (engines) and 2 Modules. Launch from the Empire advisor's Space page: the voyage takes 12 turns, 2 fewer for each extra engine. The first ship to arrive wins - unless its capital falls first.".to_string(),
             format!("Culture: reach {} culture points and half as much again as any rival.", bevy_civ::culture::VICTORY_CULTURE),
             "Score: if nobody has won by the last turn (chosen when the game begins), the highest score wins. Score counts 2 points a citizen, 10 a technology and 50 a wonder, for everyone alike. A rival who holds two thirds of the cities wins by domination.".to_string(),
         ],
@@ -1065,6 +1068,7 @@ pub fn rebuild_panels(
                 CityTab::Units => UnitType::ALL
                     .into_iter()
                     .filter(|u| u.is_trainable() && known(u.required_tech()) && (u.domain() != bevy_civ::unit::Domain::Sea || coastal))
+                    .filter(|u| u.required_wonder().is_none_or(|w| wonders.built.contains_key(&w)))
                     .map(|u| {
                         let (attack, defense, moves) = u.stats();
                         (ProductionItem::Unit(u), format!("A{attack} D{defense} M{moves}"))
@@ -1076,7 +1080,7 @@ pub fn rebuild_panels(
                         .into_iter()
                         .filter(|b| b.is_wonder() == wonder_tab && known(b.required_tech()) && !buildings.buildings.contains(b) && (!b.needs_coast() || coastal))
                         .filter(|b| !wonders.is_taken(*b))
-                        .filter(|b| !b.is_spaceship_part() || (buildings.has(Building::Factory) && space.wants(PLAYER, *b)))
+                        .filter(|b| !b.is_spaceship_part() || (buildings.has(Building::Factory) && space.wants(PLAYER, *b, true)))
                         .filter(|b| b.required_building().is_none_or(|r| buildings.has(r)))
                         .map(|b| {
                             let effect = b.effect().to_string();
@@ -1440,6 +1444,55 @@ pub fn rebuild_panels(
                                 let wounded = units.iter().filter(|u| u.owner == PLAYER && u.hp < u.max_hp()).count();
                                 let veterans = units.iter().filter(|u| u.owner == PLAYER && u.level > 0).count();
                                 w.spawn(label(&art.font_body, format!("{veterans} veterans or elite; {wounded} wounded (they heal while resting, fully in a city)."), 14.0, INK_SOFT));
+                            }
+                            EmpireTab::Space => {
+                                use bevy_civ::space::{DESTINATION, LIGHT_YEARS, MOST, NEEDED};
+                                w.spawn(label(
+                                    &art.font_body,
+                                    format!(
+                                        "The race to {DESTINATION}, the nearest star ({LIGHT_YEARS} light-years). Cities with a Factory build {} structures (Space Flight), {} to {} components - engines; each extra one saves two turns (Plastics) - and {} modules (Superconductors). The first ship to arrive wins; a ship in flight is lost if its capital falls.",
+                                        NEEDED[0], NEEDED[1], MOST[1], NEEDED[2]
+                                    ),
+                                    14.0,
+                                    INK_SOFT,
+                                ));
+                                let mut fleet: Vec<(u32, String)> = vec![(PLAYER, "Our ship".to_string())];
+                                fleet.extend(civs.players.iter().filter(|c| !c.is_human && foreign.met.contains(&c.id)).map(|c| (c.id, format!("{} ship", c.adjective))));
+                                let mut any = false;
+                                for (id, name) in fleet {
+                                    let Some(ship) = space.ships.get(&id) else { continue };
+                                    any = true;
+                                    let status = match ship.arrives {
+                                        Some(turn) => format!("in flight, arrives turn {turn}"),
+                                        None if ship.is_ready() => format!("ready to launch ({} turns to {DESTINATION})", ship.flight_turns()),
+                                        None => format!("being built: {} still needed", ship.missing()),
+                                    };
+                                    w.spawn(label(
+                                        &art.font_bold,
+                                        format!("{name}: {} of {} structures, {} components, {} of {} modules - {status}", ship.parts[0], NEEDED[0], ship.parts[1], ship.parts[2], NEEDED[2]),
+                                        15.0,
+                                        INK,
+                                    ));
+                                    // The voyage: Sol to the star, with the ship's progress.
+                                    w.spawn(Node { align_items: AlignItems::Center, column_gap: Val::Px(8.0), width: Val::Percent(100.0), ..default() }).with_children(|r| {
+                                        r.spawn(label(&art.font_body, "Sol", 13.0, INK_SOFT));
+                                        r.spawn(Node { flex_grow: 1.0, flex_direction: FlexDirection::Column, ..default() }).with_children(|b| {
+                                            bar(b, ship.progress(state.turn), if id == PLAYER { Color::srgb(0.35, 0.7, 0.95) } else { Color::srgb(0.85, 0.45, 0.35) });
+                                        });
+                                        r.spawn(label(&art.font_body, DESTINATION, 13.0, INK_SOFT));
+                                    });
+                                    if id == PLAYER && ship.arrives.is_none() && ship.is_ready() {
+                                        w.spawn(row(6.0)).with_children(|r| {
+                                            button(r, art, format!("Launch for {DESTINATION} ({} turns)", ship.flight_turns()), Command::Game(Action::LaunchShip), GREEN, 14.0);
+                                            if ship.parts[1] < MOST[1] {
+                                                r.spawn(label(&art.font_body, "or build more components first to fly faster", 13.0, INK_SOFT));
+                                            }
+                                        });
+                                    }
+                                }
+                                if !any {
+                                    w.spawn(label(&art.font_body, "No spaceship has been started yet.", 14.0, INK));
+                                }
                             }
                             EmpireTab::Score => {
                                 let mut civ_ids: Vec<u32> = vec![PLAYER];

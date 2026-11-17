@@ -27,6 +27,7 @@ pub enum Building {
     RecyclingCenter,
     CoastalFortress,
     Airport,
+    SdiDefense,
     // Spaceship parts: each goes to its civilization's ship, not into the city
     SpaceStructure,
     SpaceComponent,
@@ -59,17 +60,18 @@ pub enum Building {
     Internet,
     Apollo,
     CureForCancer,
+    Manhattan,
 }
 
 impl Building {
-    pub const ALL: [Building; 55] = [
+    pub const ALL: [Building; 57] = [
         Building::Granary, Building::Barracks, Building::Library, Building::Marketplace, Building::Walls,
         Building::Aqueduct, Building::University, Building::Bank, Building::Factory, Building::Harbor,
         Building::Temple, Building::Courthouse, Building::Colosseum, Building::Cathedral, Building::SewerSystem, Building::StockExchange,
-        Building::Observatory, Building::ResearchLab, Building::PowerPlant, Building::PoliceStation, Building::Supermarket, Building::MassTransit, Building::RecyclingCenter, Building::CoastalFortress, Building::Airport,
+        Building::Observatory, Building::ResearchLab, Building::PowerPlant, Building::PoliceStation, Building::Supermarket, Building::MassTransit, Building::RecyclingCenter, Building::CoastalFortress, Building::Airport, Building::SdiDefense,
         Building::SpaceStructure, Building::SpaceComponent, Building::SpaceModule, Building::Pyramids,
         Building::GreatLibrary, Building::HangingGardens, Building::Colossus, Building::Oracle,
-        Building::GreatLighthouse, Building::GreatWall, Building::StatueOfZeus, Building::Mausoleum, Building::Copernicus, Building::SunTzu, Building::MarcoPolo, Building::KingRichards, Building::Michelangelo, Building::Leonardo, Building::Bach, Building::Magellan, Building::Newton, Building::AdamSmith, Building::Shakespeare, Building::Darwin, Building::Liberty, Building::HooverDam, Building::Eiffel, Building::Internet, Building::Apollo, Building::CureForCancer,
+        Building::GreatLighthouse, Building::GreatWall, Building::StatueOfZeus, Building::Mausoleum, Building::Copernicus, Building::SunTzu, Building::MarcoPolo, Building::KingRichards, Building::Michelangelo, Building::Leonardo, Building::Bach, Building::Magellan, Building::Newton, Building::AdamSmith, Building::Shakespeare, Building::Darwin, Building::Liberty, Building::HooverDam, Building::Eiffel, Building::Internet, Building::Apollo, Building::CureForCancer, Building::Manhattan,
     ];
 
     pub fn name(&self) -> &'static str {
@@ -92,6 +94,8 @@ impl Building {
             Building::RecyclingCenter => "Recycling Center",
             Building::CoastalFortress => "Coastal Fortress",
             Building::Airport => "Airport",
+            Building::SdiDefense => "SDI Defense",
+            Building::Manhattan => "Manhattan Project",
             Building::Factory => "Factory",
             Building::Harbor => "Harbor",
             Building::Temple => "Temple",
@@ -152,6 +156,8 @@ impl Building {
             Building::RecyclingCenter => 140,
             Building::CoastalFortress => 80,
             Building::Airport => 120,
+            Building::SdiDefense => 160,
+            Building::Manhattan => 500,
             Building::Factory => 150,
             Building::Harbor => 60,
             Building::Temple => 30,
@@ -212,6 +218,8 @@ impl Building {
             Building::RecyclingCenter => Some(crate::tech::Tech::Ecology),
             Building::CoastalFortress => Some(crate::tech::Tech::Steel),
             Building::Airport => Some(crate::tech::Tech::Flight),
+            Building::SdiDefense => Some(crate::tech::Tech::Superconductors),
+            Building::Manhattan => Some(crate::tech::Tech::NuclearFission),
             Building::Factory => Some(crate::tech::Tech::Industrialization),
             Building::Harbor => Some(crate::tech::Tech::Seafaring),
             Building::Temple => Some(crate::tech::Tech::Mysticism),
@@ -310,6 +318,7 @@ impl Building {
             Building::RecyclingCenter => "halves the city's pollution",
             Building::CoastalFortress => "doubles defence against ships (coastal cities)",
             Building::Airport => "aircraft trained here are veterans",
+            Building::SdiDefense => "shoots down nuclear missiles aimed within 3 tiles",
             Building::Factory => "+3 shields; needed for spaceship parts",
             Building::Harbor => "+1 food on worked ocean tiles; links coasts",
             Building::Temple => "+2 content",
@@ -326,7 +335,7 @@ impl Building {
 
     /// The wonders added after the first six (each with its own effect, mostly handled in the game's turn).
     fn is_later_wonder(&self) -> bool {
-        matches!(self, Building::GreatWall | Building::StatueOfZeus | Building::Mausoleum | Building::Copernicus | Building::SunTzu | Building::MarcoPolo | Building::KingRichards | Building::Michelangelo | Building::Leonardo | Building::Bach | Building::Magellan | Building::Newton | Building::AdamSmith | Building::Shakespeare | Building::Darwin | Building::Liberty | Building::HooverDam | Building::Eiffel | Building::Internet | Building::Apollo | Building::CureForCancer)
+        matches!(self, Building::GreatWall | Building::StatueOfZeus | Building::Mausoleum | Building::Copernicus | Building::SunTzu | Building::MarcoPolo | Building::KingRichards | Building::Michelangelo | Building::Leonardo | Building::Bach | Building::Magellan | Building::Newton | Building::AdamSmith | Building::Shakespeare | Building::Darwin | Building::Liberty | Building::HooverDam | Building::Eiffel | Building::Internet | Building::Apollo | Building::CureForCancer | Building::Manhattan)
     }
 
     pub fn is_wonder(&self) -> bool {
@@ -433,6 +442,7 @@ impl Building {
             Building::Internet => "+3 science in every city with a Library",
             Building::Apollo => "the whole world revealed",
             Building::CureForCancer => "+2 content in every city",
+            Building::Manhattan => "lets every people who knows Rocketry build Nuclear Missiles",
             _ => "",
         }
     }
