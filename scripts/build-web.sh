@@ -19,6 +19,7 @@ if command -v wasm-opt >/dev/null; then
   wasm-opt -Os --all-features -o dist/bevy-civ_bg.wasm dist/bevy-civ_bg.wasm
 fi
 
-cp web/index.html dist/
+# The page, its favicons and anything else in web/.
+cp web/* dist/
 cp -r assets dist/assets
 ls -lh dist

@@ -83,6 +83,7 @@ impl EmpireTab {
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
 pub enum HelpTopic {
     #[default]
+    Start,
     Basics,
     Units,
     Buildings,
@@ -94,7 +95,8 @@ pub enum HelpTopic {
 }
 
 impl HelpTopic {
-    const ALL: [HelpTopic; 8] = [
+    const ALL: [HelpTopic; 9] = [
+        HelpTopic::Start,
         HelpTopic::Basics,
         HelpTopic::Units,
         HelpTopic::Buildings,
@@ -107,6 +109,7 @@ impl HelpTopic {
 
     fn name(self) -> &'static str {
         match self {
+            HelpTopic::Start => "How to play",
             HelpTopic::Basics => "Basics & keys",
             HelpTopic::Units => "Units",
             HelpTopic::Buildings => "Buildings",
@@ -122,6 +125,21 @@ impl HelpTopic {
 /// The text of an encyclopedia page, one paragraph or table row per line.
 fn help_lines(topic: HelpTopic) -> Vec<String> {
     match topic {
+        HelpTopic::Start => [
+            "You lead a people from its first villages to the space age. Everything happens in turns: you give your orders - move units, choose what cities build and what to research - then press End Turn (Enter), and every other people takes its turn too.",
+            "The aim: be the last people standing, win the race to Alpha Centauri, outshine everyone in culture, be elected by the United Nations - or simply have the highest score when the last turn comes (the Empire window, Y, keeps the score).",
+            "1. Found cities. Cities are everything: they grow, build units and buildings, and produce the gold and science that drive the rest. Move a Settler at least two tiles from other cities - rivers, coasts and grassland make good sites - and press B.",
+            "2. Choose what each city builds. Click a city to open it: Units, Buildings and Wonders tabs list what it can make, with the turns each takes. Early on, a Warrior or Spearman to guard each city, a Worker, and Settlers to spread out are the usual start.",
+            "3. Improve the land. Workers build farms (F, more food, so cities grow), mines (M, more shields, so cities build faster) and roads (R, faster travel and trade). Press K and a worker does it all by itself.",
+            "4. Research. Press Q to choose what your people learn next. Each discovery opens new units, buildings and wonders; the tree shows where each leads.",
+            "5. Explore. The map starts dark. Send a Warrior or Scout out to find good land, tribal villages (with gifts inside) and other peoples. Ships, once you know Seafaring, carry troops across the sea.",
+            "6. Keep your people happy. Past a few citizens, a city needs temples, luxuries or entertainers, or it falls into disorder and stops working. The city panel shows content and unhappy faces.",
+            "7. Meet your neighbours. Press E to make peace, trade resources and technology, or declare war. Defend your cities - a city with no troops in it is easily taken.",
+            "Each turn, the game brings up every unit waiting for orders (a ring marks the one selected) and any city that needs a project. When nothing is left, it is time to end the turn. Short tips appear the first time something new happens; Basics & keys lists every shortcut.",
+        ]
+        .into_iter()
+        .map(String::from)
+        .collect(),
         HelpTopic::Basics => [
             "Click a unit or city to select it; click again or press Tab for the next unit on that tile. Click a tile (or right-click) to move; far destinations become standing orders. Hover over a tile to see the route and how many turns it takes.",
             "Space: skip a unit (or go to a city that needs a project, then end the turn). Enter: end the turn. N: next unit. H: fortify or sleep. Z: sentry (sleep until an enemy comes near). J: a worker or settler joins the city it stands in. I: board a ship in port. Ctrl+Z or Backspace: take back the last move. L: messages. Esc: close or deselect.",
@@ -2253,6 +2271,12 @@ pub fn rebuild_menu(
                         w.spawn(label(&art.font_bold, notice.clone(), 15.0, INK));
                     }
                     w.spawn(label(&art.font_body, "Or choose a world to rule.", 18.0, INK_SOFT));
+                    w.spawn(label(
+                        &art.font_body,
+                        "New to games like this? The Rise of Rome is the quickest to learn: a small map, with your first cities already founded. Once in, press F1 for How to play; short tips explain each new thing as it comes up.",
+                        14.0,
+                        INK_SOFT,
+                    ));
                     for (index, scenario) in menu.catalog.iter().enumerate() {
                         w.spawn((
                             Button,

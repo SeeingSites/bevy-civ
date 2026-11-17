@@ -20,10 +20,14 @@ use crate::{GameState, Selection, PLAYER};
 const SETTING: &str = "tips.json";
 
 /// (id, title, text)
-const TIPS: [(&str, &str, &str); 14] = [
-    ("welcome", "Welcome", "Your people await your orders. Click one of your units to select it, then click a tile to send it there. Enter ends the turn; F1 opens the encyclopedia."),
+const TIPS: [(&str, &str, &str); 21] = [
+    ("welcome", "Welcome", "Your people await your orders. Click one of your units to select it, then click a tile to send it there. Enter ends the turn. New to this kind of game? F1 opens How to play, a short guide to your first turns."),
+    ("end_turn", "Ending the turn", "Every unit has its orders. Press Enter (or End Turn, bottom right) and the other peoples take their turns; then a new turn begins and your units can move again."),
     ("unit", "Moving units", "Hover over a tile to see the route and how many turns it takes. Far destinations become standing orders. H fortifies a unit so it is not asked again."),
     ("settler", "Settlers", "Settlers found new cities: move one to a good spot at least two tiles from other cities and press B. Rivers and coasts make fine sites."),
+    ("explore", "Exploring", "Scouts move far and see far. Send them towards the dark edges of the map: they find good land, tribal villages (walk in for a gift) and other peoples."),
+    ("ship", "Ships", "This ship can carry units. Move troops onto its tile (or press I in port) to board, then sail it; to land them, select a unit aboard and click a land tile next to the ship."),
+    ("aboard", "At sea", "This unit is aboard a ship and travels with it. Click a land tile next to the ship to go ashore - that takes the rest of its turn. Troops cannot attack from a ship."),
     ("worker", "Workers", "Workers improve the land: F farm, M mine, R road (roads triple movement), X clear land. K lets the worker look after your land by itself."),
     ("city", "Your cities", "The city panel shows food, shields, science, gold and happiness. Choose what to build in the Units, Buildings and Wonders tabs. A city keeps training the same unit until you change it."),
     ("research", "Research", "Press Q for the science advisor: choose what your scholars study next, and see the whole tree of knowledge."),
@@ -34,6 +38,9 @@ const TIPS: [(&str, &str, &str); 14] = [
     ("caravan", "Caravans", "Move a caravan into another of your cities (6+ tiles away) or next to a foreign one and press T for a trade route, or U in a city building a wonder to add its shields."),
     ("diplomat", "Diplomats", "Move a diplomat next to a foreign city: open an embassy to see their research, or try a covert mission. If caught, they will not forget it."),
     ("war", "At war", "Attack by moving onto an enemy. Hills, forests, rivers, walls and fortifying help defenders; veterans fight harder. Armies cannot slip past enemy armies."),
+    ("grow", "Growing cities", "A city grows when its food store fills: work food-rich tiles and build farms. Bigger cities work more tiles, but past a few citizens they need temples or luxuries to stay content."),
+    ("score", "How to win", "There are five ways to win: conquer everyone, reach Alpha Centauri first, lead the world in culture, win the United Nations vote, or have the best score on the last turn. Press Y (Empire) to see how everyone stands."),
+    ("defend", "Guard your cities", "A city with no troops inside falls to the first enemy that walks in. Keep at least one defender in each city - Spearmen and Phalanxes early, then Pikemen and Musketmen - and fortify it (H)."),
     ("save", "Saving", "The game saves itself every turn (Continue on the start menu). F2 downloads a file you can keep or send to a friend to load."),
 ];
 
@@ -91,6 +98,13 @@ pub fn queue_tips(
         "welcome" => true,
         "unit" => selected.is_some(),
         "settler" => selected == Some(UnitType::Settler),
+        "end_turn" => state.turn <= 5 && ours().next().is_some() && !ours().any(crate::needs_orders),
+        "explore" => selected == Some(UnitType::Scout),
+        "ship" => selected.is_some_and(|u| u.capacity() > 0 && u != UnitType::Carrier),
+        "aboard" => selection.unit.and_then(|e| units.get(e).ok()).is_some_and(|u| u.owner == PLAYER && u.carrier.is_some() && u.unit_type.domain() == bevy_civ::unit::Domain::Land),
+        "grow" => state.turn >= 6,
+        "score" => state.turn >= 20,
+        "defend" => cities.iter().any(|(c, _)| c.owner == PLAYER && !ours().any(|u| u.position == c.position && u.unit_type.is_army())) && state.turn >= 3,
         "worker" => selected == Some(UnitType::Worker),
         "city" => selection.city.is_some(),
         "research" => state.turn >= 2,
