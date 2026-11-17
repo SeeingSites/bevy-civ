@@ -25,6 +25,8 @@ pub struct CityView {
     pub threatened: bool,
     /// Within 6 tiles of its people's capital (no place for a second seat of government).
     pub near_capital: bool,
+    /// Level of its drug trade.
+    pub narcotics: u32,
 }
 
 /// The state of the civilization as a whole, including what its other cities have already queued.
@@ -185,6 +187,10 @@ pub fn choose(city: &CityView, civ: &CivView, supplies: &Supplies, rng: &mut imp
     if let Some(part) = civ.space_parts.iter().find(|p| can_build(p, city, civ, supplies)) {
         return ProductionItem::Building(*part);
     }
+    // A drug trade is dealt with first.
+    if city.narcotics > 0 && can_build(&Building::PoliceStation, city, civ, supplies) {
+        return ProductionItem::Building(Building::PoliceStation);
+    }
     let wish = [
         (Building::Walls, city.threatened || civ.at_war),
         (Building::Temple, city.population >= bevy_civ::diplomacy::BASE_CONTENT),
@@ -205,10 +211,12 @@ pub fn choose(city: &CityView, civ: &CivView, supplies: &Supplies, rng: &mut imp
         (Building::Factory, true),
         (Building::Observatory, true),
         (Building::Supermarket, city.population >= 12),
-        (Building::PoliceStation, city.population >= 12),
+        (Building::PoliceStation, city.population >= 12 || city.narcotics > 0),
         (Building::CoastalFortress, civ.at_war),
         (Building::PowerPlant, true),
         (Building::ResearchLab, true),
+        (Building::FoodSafety, city.population >= 9),
+        (Building::GmFarms, city.population >= 10 && city.built.contains(&Building::FoodSafety)),
         (Building::MassTransit, city.population >= 10),
         (Building::RecyclingCenter, city.population >= 10),
         (Building::Airport, civ.at_war),
@@ -246,7 +254,7 @@ mod tests {
     use std::collections::HashSet;
 
     fn city() -> CityView {
-        CityView { position: Hex::ZERO, population: 4, built: vec![], coastal: false, linked: true, defended: true, threatened: false, near_capital: true }
+        CityView { position: Hex::ZERO, population: 4, built: vec![], coastal: false, linked: true, defended: true, threatened: false, near_capital: true, narcotics: 0 }
     }
 
     fn civ(tech: &TechState) -> CivView<'_> {
@@ -280,6 +288,13 @@ mod tests {
         let at_war = CivView { at_war: true, military: 0, ..civ(&tech) };
         assert_ne!(best_attacker(&view, &at_war, &Supplies::default()), UnitType::Legion);
         assert_eq!(best_attacker(&view, &at_war, &supplies_with(&[Good::Iron])), UnitType::Legion);
+    }
+
+    #[test]
+    fn a_city_with_a_drug_trade_builds_a_police_station() {
+        let tech = knowing(&[Tech::Pottery, Tech::Sanitation]);
+        let troubled = CityView { narcotics: 1, population: 9, ..city() };
+        assert_eq!(choose(&troubled, &civ(&tech), &Supplies::default(), &mut rand::thread_rng()), ProductionItem::Building(Building::PoliceStation));
     }
 
     #[test]

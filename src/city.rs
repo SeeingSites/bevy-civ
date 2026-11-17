@@ -33,6 +33,12 @@ pub struct City {
     /// Tiles the player put a citizen on by hand: the governor leaves them worked.
     #[serde(default)]
     pub pinned: Vec<hexx::Hex>,
+    /// Level of its drug trade (see `troubles`).
+    #[serde(default)]
+    pub narcotics: u32,
+    /// Turns its people stay angry after an adulterated-food scandal.
+    #[serde(default)]
+    pub scandal: u32,
 }
 
 /// Most projects a city can have waiting.
@@ -274,6 +280,8 @@ pub fn spawn_city(
                 land: (0, 0, 0),
                 focus: Default::default(),
                 pinned: Vec::new(),
+                narcotics: 0,
+                scandal: 0,
             },
             Name::new(name),
             CityBuildings { buildings: vec![] },
@@ -305,6 +313,8 @@ mod hurry_tests {
             land: (0, 0, 0),
             focus: Default::default(),
             pinned: Vec::new(),
+                narcotics: 0,
+                scandal: 0,
         }
     }
 

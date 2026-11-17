@@ -188,6 +188,8 @@ fn help_lines(topic: HelpTopic) -> Vec<String> {
             "When the unhappy outnumber the happy the city falls into disorder: no growth, production, science or taxes until it is calmed.",
             "Cities grow when their granary fills and cannot pass size 8 without an Aqueduct, or 16 without a Sewer System. Every citizen eats 2 food; specialists eat without working the land.",
             "Each working citizen works one tile of its city's area, and the city's own tile is worked for free. Open a city to see each tile's food, shields and gold (worked tiles ringed in green); click a tile to move a citizen there or off it, or let the governor choose. Farms, mines, roads, railroads, resources and rivers make tiles richer.",
+            "Modern troubles: once a people knows Sanitation, big unhappy cities may fall into a drug trade (up to 3 levels, each +1 unhappy and -1 gold), spread by smugglers from foreign cities nearby - a Police Station roots it out, and you can demand that a neighbour cracks down. With Industrialization, adulterated food may spoil half a granary and anger a city for 6 turns (likelier where corruption is high) unless it has a Food Safety Agency. GM Farms (Genetic Engineering) add a food on every farmed tile, but people distrust the food (+1 unhappy) without a Food Safety Agency.",
+            "Migration: every 5 turns, citizens leave unhappy, hungry or troubled cities for clearly better ones within 10 tiles - at home, or abroad in peoples that know Industrialization and welcome them. Set your policy in the Empire window (Government): welcome migrants and grow (their rulers resent it), or turn them away. Communist and fundamentalist peoples admit none.",
             "Each city's governor works the land for a focus, always feeding the city first: Growth (the most food), Production (shields), Trade (gold-rich tiles, for science and taxes) or Balanced. On Auto, the default, it picks one from the city's situation - production for a wonder or for troops in wartime, growth for a small city, trade for a big one with a library or market - and the city panel says why.",
             "Culture from temples, cathedrals, colosseums, libraries, universities and wonders widens a city's borders over time (2 tiles, 3 at 100, 4 at 1,000, 5 at 5,000). Where borders meet, the land goes to the city with the stronger culture for its distance, so a great culture pushes its neighbours' borders back. A city in disorder next to a much greater culture may defect to it.",
             "Corruption grows with distance from the capital and is halved by a Courthouse. A city keeps training the same unit until told otherwise; a finished building or wonder leaves it waiting for its next project - unless its build queue holds more (switch the city panel to Add to queue and pick up to six projects).",
@@ -1371,6 +1373,21 @@ pub fn rebuild_panels(
                 if city.resistance > 0 {
                     p.spawn(label(&art.font_bold, format!("Resisting our rule: produces nothing for {} more turns", city.resistance), 14.0, Color::srgb(1.0, 0.45, 0.4)));
                 }
+                // The troubles of the modern city.
+                let mut troubles = Vec::new();
+                if city.narcotics > 0 {
+                    let cure = if buildings.has(Building::PoliceStation) { "the police are rooting it out" } else { "a Police Station would root it out" };
+                    troubles.push(format!("a drug trade (level {} of {}: +{} unhappy, -{} gold; {cure})", city.narcotics, bevy_civ::troubles::NARCOTICS_MAX, city.narcotics, city.narcotics));
+                }
+                if city.scandal > 0 {
+                    troubles.push(format!("anger over adulterated food (+{} unhappy, {} more turns)", bevy_civ::troubles::SCANDAL_UNHAPPY, city.scandal));
+                }
+                if buildings.has(Building::GmFarms) && !buildings.has(Building::FoodSafety) {
+                    troubles.push("distrust of its engineered food (+1 unhappy; a Food Safety Agency reassures them)".to_string());
+                }
+                if !troubles.is_empty() {
+                    p.spawn(label(&art.font_bold, format!("Troubles: {}.", troubles.join("; ")), 14.0, Color::srgb(1.0, 0.6, 0.45)));
+                }
                 let merchants = great.merchants.get(&city.position).copied().unwrap_or(0);
                 if merchants > 0 {
                     p.spawn(label(&art.font_body, format!("Trading houses: {merchants} (+{} gold)", great.merchant_gold(city.position)), 14.0, CREAM));
@@ -1506,6 +1523,7 @@ pub fn rebuild_panels(
                         OfferKind::BuyFromUs(good, gold) => format!("We would send them our spare {} and receive {gold} gold a turn for {} turns.", good.name(), foreign::DEAL_TURNS),
                         OfferKind::SellToUs(good, gold) => format!("We would receive {} and pay {gold} gold a turn for {} turns. We have {} gold.", good.name(), foreign::DEAL_TURNS, state.gold),
                         OfferKind::Passage => "Our units and theirs could then share tiles and pass through each other.".to_string(),
+                        OfferKind::Withdraw => "Accepting sends our troops in their lands back to our nearest city (and ends any right of passage). Refusing angers them, and they may fight.".to_string(),
                         OfferKind::Notice => String::new(),
                     };
                     if !detail.is_empty() {
@@ -1627,6 +1645,19 @@ pub fn rebuild_panels(
                                     14.0,
                                     INK_SOFT,
                                 ));
+                                // Migration policy.
+                                w.spawn(row(8.0)).with_children(|r| {
+                                    r.spawn(label(&art.font_bold, "Migrants from abroad:", 15.0, INK));
+                                    let welcome = state.welcome_migrants;
+                                    button(r, art, "Welcome", Command::Game(Action::SetMigration(true)), if welcome { GREEN } else { BRONZE }, 13.0);
+                                    button(r, art, "Turn away", Command::Game(Action::SetMigration(false)), if welcome { BRONZE } else { GREEN }, 13.0);
+                                    r.spawn(label(
+                                        &art.font_body,
+                                        "Once we know Industrialization, people leave unhappy, hungry or troubled cities for better ones nearby.",
+                                        13.0,
+                                        INK_SOFT,
+                                    ));
+                                });
                                 for g in Government::CHOICES {
                                     let known = g.available(&tech);
                                     w.spawn(Node { align_items: AlignItems::Center, column_gap: Val::Px(10.0), ..default() }).with_children(|r| {
@@ -2101,6 +2132,12 @@ pub fn rebuild_panels(
                                         button(r, art, "Trade agreement", ask(DiploAct::TradePact), BRONZE, 14.0);
                                     }
                                     button(r, art, "Exchange technology", ask(DiploAct::TechTrade), BRONZE, 14.0);
+                                    if let Some(troops) = foreign.trespass.get(&civ.id).filter(|n| **n > 0) {
+                                        button(r, art, format!("Demand they withdraw ({troops} troops in our lands)"), ask(DiploAct::Withdraw), BRONZE, 14.0);
+                                    }
+                                    if foreign.smugglers.contains(&civ.id) {
+                                        button(r, art, "Demand a crackdown on smugglers", ask(DiploAct::Crackdown), BRONZE, 14.0);
+                                    }
                                     button(r, art, "Declare war", ask(DiploAct::War), RED, 14.0);
                                 }
                                 button(r, art, format!("Gift {} gold", foreign::GIFT), ask(DiploAct::Gift), BRONZE, 14.0);

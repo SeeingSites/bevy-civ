@@ -117,6 +117,7 @@ pub fn run(which: &str, turns: u32) -> bool {
             println!("Cities that changed hands: {changes}.");
             snapshot(world, turn);
             armies(world);
+            troubles(world);
             break;
         }
     }
@@ -139,6 +140,22 @@ fn era_of(tech: Tech) -> &'static str {
 }
 
 /// The make-up of each civilization's military at the end: its most common unit types.
+/// The modern troubles at the end: drugs, food scandals, the buildings against them, migration.
+fn troubles(world: &mut World) {
+    use bevy_civ::building::{Building, CityBuildings};
+    let mut cities = world.query::<(&bevy_civ::city::City, &CityBuildings)>();
+    let (mut drugs, mut scandals, mut police, mut safety, mut gm) = (0, 0, 0, 0, 0);
+    for (city, buildings) in cities.iter(world) {
+        drugs += usize::from(city.narcotics > 0);
+        scandals += usize::from(city.scandal > 0);
+        police += usize::from(buildings.has(Building::PoliceStation));
+        safety += usize::from(buildings.has(Building::FoodSafety));
+        gm += usize::from(buildings.has(Building::GmFarms));
+    }
+    let (moved, abroad) = world.resource::<GameState>().migrations;
+    println!("--- troubles: {drugs} cities with a drug trade, {scandals} in a food scandal; {police} Police Stations, {safety} Food Safety Agencies, {gm} GM Farms; {moved} migrants ({abroad} abroad)");
+}
+
 fn armies(world: &mut World) {
     let civs = world.resource::<Civilizations>().clone();
     let mut units = world.query::<&Unit>();

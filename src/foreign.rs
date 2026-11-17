@@ -68,6 +68,10 @@ pub enum DiploAct {
     Demand,
     TradePact,
     TechTrade,
+    /// Demand that they take their troops out of our lands.
+    Withdraw,
+    /// Demand that they stop the drug smugglers crossing into our cities.
+    Crackdown,
 }
 
 #[derive(Clone, PartialEq, Debug, serde::Serialize, serde::Deserialize)]
@@ -84,6 +88,8 @@ pub enum OfferKind {
     SellToUs(Good, i32),
     /// A right of passage between our peoples.
     Passage,
+    /// They demand that we take our troops out of their lands.
+    Withdraw,
 }
 
 /// A message from another leader waiting for the player's answer.
@@ -117,6 +123,20 @@ pub struct Foreign {
     pub deals: Vec<Deal>,
     /// Resource deals between computer players.
     pub ai_deals: Vec<AiDeal>,
+    /// Peoples who agreed to stop their smugglers, and until which turn.
+    #[serde(default, with = "bevy_civ::save::pairs")]
+    pub crackdown: HashMap<u32, u32>,
+    /// Each people's troops standing in our lands, and ours in theirs (refreshed every turn).
+    #[serde(skip)]
+    pub trespass: HashMap<u32, usize>,
+    #[serde(skip)]
+    pub our_trespass: HashMap<u32, usize>,
+    /// Peoples whose smugglers bring drugs into our cities (refreshed every turn).
+    #[serde(skip)]
+    pub smugglers: HashSet<u32>,
+    /// Withdrawals agreed but not yet carried out: (whose troops, out of whose lands).
+    #[serde(skip)]
+    pub withdrawals: Vec<(u32, u32)>,
 }
 
 impl Foreign {
@@ -305,6 +325,45 @@ pub fn player_act(ctx: &mut Ctx, civ: u32, act: DiploAct) {
                 }
                 shift(ctx, civ, 12);
                 "A generous gift. It will be remembered.".into()
+            }
+        }
+        DiploAct::Withdraw => {
+            let troops = ctx.foreign.trespass.get(&civ).copied().unwrap_or(0);
+            if troops == 0 {
+                "We have no soldiers in your lands.".into()
+            } else if at_war {
+                "Our armies answer to us, not to you.".into()
+            } else if attitude >= 15 || (attitude >= -10 && theirs < ours * 1.3) {
+                // They pull back - and any right of passage ends with it.
+                ctx.foreign.withdrawals.push((civ, PLAYER));
+                ctx.diplomacy.passage.remove(&pair(PLAYER, civ));
+                shift(ctx, civ, -3);
+                ctx.log.push(format!("{} agree to withdraw their {troops} troops from our lands.", crate::capitalised(&name)));
+                "Very well. Our soldiers will return home.".into()
+            } else {
+                shift(ctx, civ, -6);
+                if aggression > 0.6 && theirs > ours * 1.3 && ctx.state.turn >= AI_GRACE_TURNS && rand::thread_rng().gen_bool(0.3) {
+                    set_treaty(ctx, PLAYER, civ, Treaty::War);
+                    ctx.log.push(format!("{name} answer our demand with war!"));
+                    "You want our soldiers? You shall have them.".into()
+                } else {
+                    "Our soldiers go where they please.".into()
+                }
+            }
+        }
+        DiploAct::Crackdown => {
+            if !ctx.foreign.smugglers.contains(&civ) {
+                "We know of no smugglers of ours troubling you.".into()
+            } else if at_war {
+                "Your troubles are your own.".into()
+            } else if attitude >= 0 || theirs < ours * 0.8 {
+                ctx.foreign.crackdown.insert(civ, ctx.state.turn + bevy_civ::troubles::CRACKDOWN_TURNS);
+                shift(ctx, civ, 2);
+                ctx.log.push(format!("{} agree to crack down on the smugglers crossing into our lands.", crate::capitalised(&name)));
+                "Our police will close the smuggling routes.".into()
+            } else {
+                shift(ctx, civ, -4);
+                "What our merchants sell is no affair of yours.".into()
             }
         }
         DiploAct::Demand => {
@@ -539,6 +598,24 @@ pub fn answer_offer(ctx: &mut Ctx, accept: bool) {
             "Our caravans leave at dawn."
         }
         (OfferKind::BuyFromUs(..) | OfferKind::SellToUs(..), false) => "Perhaps another time.",
+        (OfferKind::Withdraw, true) => {
+            ctx.foreign.withdrawals.push((PLAYER, civ));
+            ctx.diplomacy.passage.remove(&pair(PLAYER, civ));
+            shift(ctx, civ, 6);
+            ctx.log.push(format!("Our troops in the lands of {name} march home."));
+            "Good. Let our borders be respected."
+        }
+        (OfferKind::Withdraw, false) => {
+            shift(ctx, civ, -12);
+            let aggression = ctx.civs.players.iter().find(|c| c.id == civ).map(|c| c.aggression).unwrap_or(0.5);
+            if rand::thread_rng().gen_bool((aggression as f64 * 0.6).clamp(0.1, 0.5)) && ctx.diplomacy.get_treaty(PLAYER, civ) != Treaty::War {
+                set_treaty(ctx, PLAYER, civ, Treaty::War);
+                ctx.log.push(format!("{} have declared war on us!", crate::capitalised(&name)));
+                "Then we will drive them out ourselves."
+            } else {
+                "We will not forget this insult."
+            }
+        }
     };
     ctx.foreign.reply.insert(civ, reply.to_string());
 }
@@ -652,9 +729,13 @@ pub fn turn(ctx: &mut Ctx, fog: &FogOfWar, supplies: &Supplies, units: &[(Hex, u
         if ctx.foreign.offer.is_some() || ctx.foreign.cooldown.get(&id).copied().unwrap_or(0) > turn {
             continue;
         }
+        let our_troops = ctx.foreign.our_trespass.get(&id).copied().unwrap_or(0);
         let offer = if treaty == Treaty::War {
             (age >= 8 && (theirs < ours * 0.8 || age >= 25))
                 .then(|| (OfferKind::Peace, "This war bleeds us both. Shall we put down our swords?".to_string(), 10))
+        } else if our_troops >= 1 && treaty != Treaty::Alliance && !ctx.diplomacy.has_passage(PLAYER, id) && turn >= AI_GRACE_TURNS && rng.gen_bool(0.25) {
+            let troops = if our_troops == 1 { "a unit".to_string() } else { format!("{our_troops} units") };
+            Some((OfferKind::Withdraw, format!("You have {troops} of soldiers inside our borders. Withdraw them, or we will take it as a threat."), 12))
         } else if treaty != Treaty::Alliance && aggression > 0.55 && theirs > ours * 1.5 && turn >= AI_GRACE_TURNS && rng.gen_bool(0.15) {
             let amount = (ctx.state.gold / 2).clamp(20, 80);
             Some((OfferKind::Tribute(amount), format!("Our armies are restless. {amount} gold would calm them."), 20))
@@ -932,5 +1013,35 @@ mod tests {
         table.state.turn += 1;
         foreign_turn(&mut table, &fog, &supplies, &cities);
         assert!(table.foreign.ai_deals.iter().all(|d| !(d.seller == 1 && d.buyer == 2)));
+    }
+
+    #[test]
+    fn troops_are_withdrawn_on_demand_and_smugglers_stopped() {
+        let mut table = Table::new(1);
+        // Their troops in our lands: a friendly people pulls them out (and the passage ends).
+        table.foreign.trespass.insert(1, 2);
+        table.diplomacy.change_attitude(PLAYER, 1, 20);
+        table.diplomacy.grant_passage(PLAYER, 1);
+        player_act(&mut table.ctx(), 1, DiploAct::Withdraw);
+        assert_eq!(table.foreign.withdrawals, vec![(1, PLAYER)]);
+        assert!(!table.diplomacy.has_passage(PLAYER, 1));
+        // A hostile, stronger people refuses.
+        let mut table = Table::new(1);
+        table.foreign.trespass.insert(1, 2);
+        table.diplomacy.change_attitude(PLAYER, 1, -30);
+        table.foreign.strength.insert(PLAYER, 10.0);
+        table.foreign.strength.insert(1, 30.0);
+        player_act(&mut table.ctx(), 1, DiploAct::Withdraw);
+        assert!(table.foreign.withdrawals.is_empty());
+        // They demand we leave theirs: accepting sends our troops home.
+        let mut table = Table::new(1);
+        table.foreign.offer = Some(Offer { from: 1, kind: OfferKind::Withdraw, text: String::new() });
+        answer_offer(&mut table.ctx(), true);
+        assert_eq!(table.foreign.withdrawals, vec![(PLAYER, 1)]);
+        // A crackdown on smugglers keeps them out for a while.
+        let mut table = Table::new(1);
+        table.foreign.smugglers.insert(1);
+        player_act(&mut table.ctx(), 1, DiploAct::Crackdown);
+        assert!(table.foreign.crackdown.get(&1).is_some_and(|until| *until > table.state.turn));
     }
 }
