@@ -84,7 +84,7 @@ pub fn run(which: &str, turns: u32) -> bool {
         let news: Vec<String> = log.lines.iter().skip(log.lines.len() - fresh).cloned().collect();
         log_seen = log.written;
         for line in news {
-            let notable = ["nuclear missile", "lifts off", "have launched a spaceship", "priests found", "Wonder of the world", "launched a spaceship", "adopt", "golden age", "has been born", "Alpha Centauri", "cultural victory"];
+            let notable = ["United Nations votes", "missionaries bring", "nuclear missile", "lifts off", "have launched a spaceship", "priests found", "Wonder of the world", "launched a spaceship", "adopt", "golden age", "has been born", "Alpha Centauri", "cultural victory"];
             if notable.iter().any(|n| line.contains(n)) {
                 println!("  turn {turn:>3}: {line}");
             }

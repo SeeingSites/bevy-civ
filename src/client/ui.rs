@@ -122,7 +122,7 @@ fn help_lines(topic: HelpTopic) -> Vec<String> {
     match topic {
         HelpTopic::Basics => [
             "Click a unit or city to select it; click again or press Tab for the next unit on that tile. Click a tile (or right-click) to move; far destinations become standing orders. Hover over a tile to see the route and how many turns it takes.",
-            "Space: skip a unit (or go to a city that needs a project, then end the turn). Enter: end the turn. N: next unit. H: fortify or sleep. Esc: close or deselect.",
+            "Space: skip a unit (or go to a city that needs a project, then end the turn). Enter: end the turn. N: next unit. H: fortify or sleep. Z: sentry (sleep until an enemy comes near). J: a worker or settler joins the city it stands in. Esc: close or deselect.",
             "Workers and Engineers: F farm, M mine, R road (railroad on a road, with Steam Power), O fortress (Construction), X clear land or clean pollution, K automate. Settlers: B found a city.",
             "U uses the selected unit: a great person's gift, a General forming an army, a Missionary preaching, a caravan helping a wonder. T opens a caravan's trade route. P pillages enemy land. Diplomats act from the unit panel next to a foreign city.",
             "Q science, E foreign affairs, G trade, Y empire (government, rates, cities, military, score), F1 this encyclopedia, V sound, F2 save a file (the game also saves itself every turn).",
@@ -187,6 +187,7 @@ fn help_lines(topic: HelpTopic) -> Vec<String> {
         ],
         HelpTopic::Victory => vec![
             "Conquest: take every rival city. Domination: hold two thirds of the cities in the world (at least five).".to_string(),
+            "Diplomacy: once the United Nations (Computers) stands, every 10 turns the world votes for Secretary-General between its owner and the highest-scoring other people. Each people votes for itself or for the candidate it likes better; two thirds of all the votes win.".to_string(),
             "Space: the race to Alpha Centauri, the nearest star. Research Space Flight, Plastics and Superconductors; cities with a Factory build 4 Space Structures, 2 to 4 Components (engines) and 2 Modules. Launch from the Empire advisor's Space page: the voyage takes 12 turns, 2 fewer for each extra engine. The first ship to arrive wins - unless its capital falls first.".to_string(),
             format!("Culture: reach {} culture points (in a game of {} turns; scaled to the game's length) and twice as much as any rival.", bevy_civ::culture::VICTORY_CULTURE, 400),
             "Score: if nobody has won by the last turn (chosen when the game begins), the highest score wins. Score counts 2 points a citizen, 10 a technology and 50 a wonder, for everyone alike. A rival who holds two thirds of the cities wins by domination.".to_string(),
@@ -938,6 +939,13 @@ pub fn rebuild_panels(
                     if !unit.fortified {
                         let text = if unit.unit_type.is_military() { "Fortify (H)" } else { "Sleep (H)" };
                         button(r, art, text, Command::Game(Action::Fortify), BRONZE, 15.0);
+                        if unit.unit_type.is_military() {
+                            button(r, art, "Sentry (Z)", Command::Game(Action::Sentry), BRONZE, 15.0);
+                        }
+                    }
+                    let in_own_city = cities.iter().any(|(c, _, _)| c.position == unit.position && c.owner == PLAYER);
+                    if in_own_city && matches!(unit.unit_type, UnitType::Worker | UnitType::Engineers | UnitType::Settler) {
+                        button(r, art, "Join City (J)", Command::Game(Action::JoinCity), BRONZE, 15.0);
                     }
                     button(r, art, "Skip (Space)", Command::Game(Action::Skip), BRONZE, 15.0);
                     button(r, art, "Done", Command::Game(Action::Deselect), BRONZE, 15.0);

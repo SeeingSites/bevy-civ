@@ -47,6 +47,9 @@ pub struct CivView<'a> {
     pub wonders_taken: &'a std::collections::HashSet<Building>,
     pub caravans: usize,
     pub diplomats: usize,
+    pub missionaries: usize,
+    /// Has a state religion and cities of its own that do not follow it yet.
+    pub faith_to_spread: bool,
     /// Another city of this civilization is building a wonder (caravans can help it).
     pub wonder_elsewhere: bool,
     /// Spaceship parts its ship still needs.
@@ -152,6 +155,9 @@ pub fn choose(city: &CityView, civ: &CivView, supplies: &Supplies, rng: &mut imp
         return unit(UnitType::Caravan);
     }
     // One diplomat to open embassies and spy, once the civilization has a few cities.
+    if civ.faith_to_spread && civ.missionaries == 0 && rng.gen_bool(0.25) && can_train(UnitType::Missionary, city, civ, supplies) {
+        return unit(UnitType::Missionary);
+    }
     if civ.diplomats == 0 && civ.cities >= 3 && rng.gen_bool(0.3) && can_train(UnitType::Diplomat, city, civ, supplies) {
         return unit(UnitType::Diplomat);
     }
@@ -225,7 +231,7 @@ mod tests {
     }
 
     fn civ(tech: &TechState) -> CivView<'_> {
-        CivView { tech, aggression: 0.4, cities: 2, workers: 1, settlers: 1, military: 3, navy: 0, air: 0, road_work: 0, cut_off: 0, at_war: false, wonders_taken: &NO_WONDERS, caravans: 2, diplomats: 1, wonder_elsewhere: false, space_parts: &[], room_to_expand: true, forbidden_palace: false }
+        CivView { tech, aggression: 0.4, cities: 2, workers: 1, settlers: 1, military: 3, navy: 0, air: 0, road_work: 0, cut_off: 0, at_war: false, wonders_taken: &NO_WONDERS, caravans: 2, diplomats: 1, missionaries: 0, faith_to_spread: false, wonder_elsewhere: false, space_parts: &[], room_to_expand: true, forbidden_palace: false }
     }
 
     fn knowing(techs: &[Tech]) -> TechState {

@@ -26,6 +26,27 @@ pub fn sprawl_unhappiness(cities: u32) -> u32 {
     cities.saturating_sub(12) / 6
 }
 
+/// A United Nations vote for Secretary-General between two candidates: each candidate votes for
+/// itself, every other voter for the candidate it likes better (abstaining if it dislikes both).
+/// Returns each candidate's votes and the winner, if one has two thirds of all the voters.
+pub fn un_vote(voters: &[u32], candidates: [u32; 2], attitude: impl Fn(u32, u32) -> i32) -> ([usize; 2], Option<u32>) {
+    let mut tally = [0usize; 2];
+    for voter in voters {
+        if let Some(i) = candidates.iter().position(|c| c == voter) {
+            tally[i] += 1;
+            continue;
+        }
+        let (a, b) = (attitude(*voter, candidates[0]), attitude(*voter, candidates[1]));
+        if a.max(b) < -20 {
+            continue;
+        }
+        tally[if a >= b { 0 } else { 1 }] += 1;
+    }
+    let needed = (voters.len() * 2).div_ceil(3);
+    let winner = (0..2).find(|i| tally[*i] >= needed).map(|i| candidates[i]);
+    (tally, winner)
+}
+
 impl Default for Diplomacy {
     fn default() -> Self {
         Self {
@@ -142,5 +163,21 @@ mod passage_tests {
         assert!(!d.has_passage(0, 2));
         d.set_treaty(0, 3, Treaty::Alliance);
         assert!(d.has_passage(3, 0));
+    }
+}
+
+#[cfg(test)]
+mod un_tests {
+    use super::*;
+
+    #[test]
+    fn two_thirds_of_the_world_elects_a_secretary_general() {
+        let voters = [0, 1, 2, 3, 4, 5];
+        let fond_of_zero = |v: u32, c: u32| if v == 5 { -40 } else if c == 0 { 30 } else { 0 };
+        let (tally, winner) = un_vote(&voters, [0, 1], fond_of_zero);
+        assert_eq!(tally, [4, 1]);
+        assert_eq!(winner, Some(0));
+        let split = |v: u32, c: u32| if (v % 2 == 0) == (c == 0) { 10 } else { 0 };
+        assert_eq!(un_vote(&voters, [0, 1], split).1, None);
     }
 }
