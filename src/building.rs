@@ -439,7 +439,7 @@ impl Building {
             Building::StatueOfZeus => "one more unit per city supported free",
             Building::Mausoleum => "temples and walls each calm one more citizen",
             Building::Copernicus => "+6 science here",
-            Building::SunTzu => "new troops trained as veterans everywhere",
+            Building::SunTzu => "new troops trained as veterans everywhere; armies hold a fifth unit",
             Building::MarcoPolo => "an embassy with every civilization",
             Building::KingRichards => "+4 shields here",
             Building::Michelangelo => "+3 content in every city",

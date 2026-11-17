@@ -380,6 +380,10 @@ pub enum Action {
     Bombard,
     /// Tab: the next of the player's units on the selected unit's or city's tile.
     CycleStack,
+    /// Shift+Tab: the previous unit on the tile.
+    CycleStackBack,
+    /// Fortify (true) or wake (false) every unit of ours on the selected unit's tile.
+    StackOrder(bool),
     SetProduction(ProductionItem),
     Research(Tech),
 }
@@ -957,6 +961,7 @@ fn handle_map_click(
         let berths: Vec<Berth> = units.iter().map(|(e, u)| Berth::of(e, &u)).collect();
         // Hit points, level and whether dug in, for whoever has to defend.
         let vitals: HashMap<Entity, (u32, u8, bool)> = units.iter().map(|(e, u)| (e, (u.hp, u.level, u.fortified))).collect();
+        let members_of: HashMap<Entity, u32> = units.iter().map(|(e, u)| (e, u.members())).collect();
         // Enemy fighters that have not flown this turn, ready to intercept our bombers.
         let fighters_ready: Vec<(Entity, Hex, u32)> = units
             .iter()
@@ -994,7 +999,11 @@ fn handle_map_click(
                 picks.extend(snapshot.iter().filter(|u| u.1 == hex).take(1).map(|u| Pick::Unit(u.0)));
             }
             let current = selection.city.map(Pick::City).or(selection.unit.map(Pick::Unit));
-            let index = current.and_then(|c| picks.iter().position(|p| *p == c)).map(|i| i + 1).unwrap_or(0);
+            // Coming to a stack afresh, a unit that still needs orders is picked first (a city first
+            // on its own tile).
+            let ready = |p: &Pick| matches!(p, Pick::Unit(e) if units.get(*e).is_ok_and(|(_, u)| needs_orders(u)));
+            let fresh = if matches!(picks.first(), Some(Pick::City(_))) { 0 } else { picks.iter().position(ready).unwrap_or(0) };
+            let index = current.and_then(|c| picks.iter().position(|p| *p == c)).map(|i| i + 1).unwrap_or(fresh);
             match picks.get(index % picks.len().max(1)) {
                 Some(Pick::City(entity)) => {
                     selection.city = Some(*entity);
@@ -1137,8 +1146,8 @@ fn handle_map_click(
                     || tiles.iter().any(|t| t.coord == hex && t.improvements.contains(&Improvement::Fortress));
                 let coast_fort = city_here.is_some_and(|(e, _)| walls_of.get(e).is_ok_and(|b| b.has(Building::CoastalFortress)));
                 let outcome = combat::fight(
-                    Side { kind: unit.unit_type, hp: unit.hp, level: unit.level, led: led(unit.position, PLAYER) },
-                    Side { kind: enemy_type, hp: d_hp, level: d_level, led: led(hex, enemy_owner) },
+                    Side { kind: unit.unit_type, hp: unit.hp, level: unit.level, led: led(unit.position, PLAYER), members: unit.members() },
+                    Side { kind: enemy_type, hp: d_hp, level: d_level, led: led(hex, enemy_owner), members: members_of.get(&enemy_entity).copied().unwrap_or(1) },
                     Ground { terrain, fortified: dug_in, walls, river: rivers.tiles.contains(&hex), coast_fort },
                     &mut rand::thread_rng(),
                 );
@@ -1758,6 +1767,28 @@ fn apply_actions(
                 let Some(entity) = selected_unit else { continue };
                 let Ok(unit) = units.get(entity) else { continue };
                 let (kind, here) = (unit.unit_type, unit.position);
+                // Ground troops join an army of ours on their tile that has room.
+                if bevy_civ::unit::can_join_army(unit) {
+                    let recruit = unit.clone();
+                    let capacity = bevy_civ::unit::army_capacity(wonders.owns(PLAYER, Building::SunTzu));
+                    let army = unit_entities.iter().find(|e| {
+                        *e != entity && units.get(*e).is_ok_and(|a| a.owner == PLAYER && a.position == here && a.is_army_group() && (a.members() as usize) < capacity)
+                    });
+                    let Some(army) = army else {
+                        log.push(format!("No army of ours with room stands here. A Great General forms one in a city; it then takes up to {capacity} units."));
+                        continue;
+                    };
+                    if let Ok(mut lead) = units.get_mut(army) {
+                        if lead.take_into_army(&recruit, capacity) {
+                            log.push(format!("The {} joins the army: {} ({} of {capacity}, {} hit points).", recruit.unit_type.name(), lead.display_name(), lead.members(), lead.max_hp()));
+                            commands.entity(entity).try_despawn_recursive();
+                            selection.unit = Some(army);
+                            sounds.send(Sfx::Select);
+                            dirty.ui = true;
+                        }
+                    }
+                    continue;
+                }
                 if kind == UnitType::Caravan {
                     // A caravan in one of the player's cities adds its shields to the wonder being built there.
                     let Some(mut city) = cities.iter_mut().find(|c| c.position == here && c.owner == PLAYER) else {
@@ -1883,7 +1914,7 @@ fn apply_actions(
                             Vec::new()
                         };
                         let refs: Vec<&Unit> = stack.iter().map(|(_, u)| u).collect();
-                        match bevy_civ::unit::plan_army(&refs) {
+                        match bevy_civ::unit::plan_army(&refs, bevy_civ::unit::army_capacity(wonders.owns(PLAYER, Building::SunTzu))) {
                             Some((leader, absorbed)) => {
                                 let members: Vec<Unit> = absorbed.iter().map(|i| stack[*i].1.clone()).collect();
                                 for i in &absorbed {
@@ -1896,7 +1927,7 @@ fn apply_actions(
                                 true
                             }
                             None => {
-                                log.push("A Great General forms an army: bring it and two or three land units into one of your cities, then press U. Until then, troops on its tile fight half again as hard.");
+                                log.push("A Great General forms an army: bring it and two to four land units into one of your cities, then press U. Until then, troops on its tile fight half again as hard.");
                                 false
                             }
                         }
@@ -2078,8 +2109,8 @@ fn apply_actions(
                 };
                 let terrain = defence_terrain(map.terrain.get(&at).copied(), cities.iter().any(|c| c.position == at));
                 let hp = combat::bombard(
-                    Side { kind, hp: 3, level, led: false },
-                    Side { kind: their_kind, hp: their_hp, level: their_level, led: false },
+                    Side { kind, hp: 3, level, led: false, members: 1 },
+                    Side { kind: their_kind, hp: their_hp, level: their_level, led: false, members: 1 },
                     Ground { terrain, fortified: dug_in, walls: false, river: rivers.tiles.contains(&at), coast_fort: false },
                     &mut rand::thread_rng(),
                 );
@@ -2093,18 +2124,41 @@ fn apply_actions(
                 sounds.send(Sfx::Battle);
                 cycle.advance = true;
             }
-            Action::CycleStack => {
+            Action::CycleStack | Action::CycleStackBack => {
                 let here = selected_unit
                     .and_then(|e| units.get(e).ok().map(|u| u.position))
                     .or_else(|| selection.city.and_then(|e| cities.get(e).ok().map(|c| c.position)));
                 let Some(here) = here else { continue };
                 let stack = own_stack(here, unit_entities.iter(), |e| units.get(e).ok().map(|u| (u.position, u.owner)));
-                let next = selected_unit.and_then(|e| stack.iter().position(|s| *s == e)).map_or(0, |i| (i + 1) % stack.len().max(1));
+                let len = stack.len().max(1);
+                let step = if *action == Action::CycleStackBack { len - 1 } else { 1 };
+                let next = selected_unit.and_then(|e| stack.iter().position(|s| *s == e)).map_or(0, |i| (i + step) % len);
                 if let Some(entity) = stack.get(next) {
                     selection.unit = Some(*entity);
                     selection.city = None;
                     sounds.send(Sfx::Select);
                 }
+            }
+            Action::StackOrder(fortify) => {
+                let Some(here) = selected_unit.and_then(|e| units.get(e).ok().map(|u| u.position)) else { continue };
+                let stack = own_stack(here, unit_entities.iter(), |e| units.get(e).ok().map(|u| (u.position, u.owner)));
+                let mut changed = 0;
+                for entity in stack {
+                    let Ok(mut unit) = units.get_mut(entity) else { continue };
+                    // Units at work and troops aboard a ship are left as they are.
+                    if unit.build_turns_left.is_some() || (unit.carrier.is_some() && map.water.contains(&unit.position)) || unit.fortified == *fortify {
+                        continue;
+                    }
+                    unit.fortified = *fortify;
+                    changed += 1;
+                    if !*fortify {
+                        commands.entity(entity).remove::<Sentry>();
+                    }
+                }
+                log.push(format!("{changed} unit{} {}.", if changed == 1 { "" } else { "s" }, if *fortify { "fortified" } else { "woken: they wait for orders" }));
+                cycle.advance = true;
+                cycle.force = *fortify;
+                dirty.ui = true;
             }
             Action::Build(improvement) => {
                 let Some(mut unit) = selected_unit.and_then(|e| units.get_mut(e).ok()) else { continue };
@@ -3248,6 +3302,8 @@ fn process_turn(
             .filter(|(_, u)| u.unit_type == UnitType::GreatGeneral && u.owner != PLAYER && city_spots.contains(&(u.position, u.owner)))
             .map(|(e, u)| (e, u.position, u.owner))
             .collect();
+        // Units merged into an army this turn (despawned, but still in the query until next frame).
+        let mut taken: HashSet<Entity> = HashSet::new();
         for (general, at, owner) in generals {
             let stack: Vec<(Entity, Unit)> = units.iter().filter(|(_, u)| u.position == at && u.owner == owner).map(|(e, u)| (e, u.clone())).collect();
             // Keep one unit back as the city's own garrison.
@@ -3255,15 +3311,42 @@ fn process_turn(
                 continue;
             }
             let refs: Vec<&Unit> = stack.iter().map(|(_, u)| u).collect();
-            let Some((leader, mut absorbed)) = bevy_civ::unit::plan_army(&refs) else { continue };
-            absorbed.truncate(1);
+            let capacity = bevy_civ::unit::army_capacity(wonders.owns(owner, Building::SunTzu));
+            let Some((leader, mut absorbed)) = bevy_civ::unit::plan_army(&refs, capacity) else { continue };
+            // One unit always stays behind to hold the city.
+            let joinable = stack.iter().filter(|(_, u)| bevy_civ::unit::can_join_army(u)).count();
+            absorbed.truncate(joinable.saturating_sub(2).max(1));
             let members: Vec<Unit> = absorbed.iter().map(|i| stack[*i].1.clone()).collect();
             for i in &absorbed {
+                taken.insert(stack[*i].0);
                 commands.entity(stack[*i].0).try_despawn_recursive();
             }
             commands.entity(general).try_despawn_recursive();
             if let Ok((_, mut lead)) = units.get_mut(stack[leader].0) {
                 bevy_civ::unit::join_army(&mut lead, &members);
+            }
+        }
+        // Their armies resting in a city take in the troops there that are not needed to hold it.
+        let armies: Vec<(Entity, Hex, u32)> = units
+            .iter()
+            .filter(|(e, u)| !taken.contains(e) && u.owner != PLAYER && u.is_army_group() && city_spots.contains(&(u.position, u.owner)))
+            .map(|(e, u)| (e, u.position, u.owner))
+            .collect();
+        for (army, at, owner) in armies {
+            let capacity = bevy_civ::unit::army_capacity(wonders.owns(owner, Building::SunTzu));
+            let recruits: Vec<(Entity, Unit)> = units
+                .iter()
+                .filter(|(e, u)| *e != army && !taken.contains(e) && u.position == at && u.owner == owner && bevy_civ::unit::can_join_army(u))
+                .map(|(e, u)| (e, u.clone()))
+                .collect();
+            let spare = recruits.len().saturating_sub(1);
+            for (entity, recruit) in recruits.into_iter().take(spare) {
+                let Ok((_, mut lead)) = units.get_mut(army) else { break };
+                if !lead.take_into_army(&recruit, capacity) {
+                    break;
+                }
+                taken.insert(entity);
+                commands.entity(entity).try_despawn_recursive();
             }
         }
     }
@@ -3480,9 +3563,11 @@ fn process_turn(
         let led = |at: Hex, owner: u32| units.iter().any(|(e, u)| !dead.contains(&e) && u.position == at && u.owner == owner && u.unit_type == UnitType::GreatGeneral);
         let (a_led, d_led) = (led(a_pos, a_owner), led(attack.target, d_owner));
         let d_vitals = units.get(d_entity).map(|(_, u)| (u.hp, u.level)).unwrap_or((3, 0));
+        let a_members = units.get(attack.attacker).map(|(_, u)| u.members()).unwrap_or(1);
+        let d_members = units.get(d_entity).map(|(_, u)| u.members()).unwrap_or(1);
         let outcome = combat::fight(
-            Side { kind: a_type, hp: a_vitals.0, level: a_vitals.1, led: a_led },
-            Side { kind: defending_as(d_type, attack.target, &map), hp: d_vitals.0, level: d_vitals.1, led: d_led },
+            Side { kind: a_type, hp: a_vitals.0, level: a_vitals.1, led: a_led, members: a_members },
+            Side { kind: defending_as(d_type, attack.target, &map), hp: d_vitals.0, level: d_vitals.1, led: d_led, members: d_members },
             Ground { terrain, fortified: dug_in, walls: walled_cities.contains(&attack.target), river: rivers.tiles.contains(&attack.target), coast_fort: forts.contains(&attack.target) },
             &mut rng,
         );

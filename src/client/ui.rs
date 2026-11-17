@@ -143,7 +143,7 @@ fn help_lines(topic: HelpTopic) -> Vec<String> {
         .map(String::from)
         .collect(),
         HelpTopic::Basics => [
-            "Click a unit or city to select it; click again or press Tab for the next unit on that tile. Click a tile (or right-click) to move; far destinations become standing orders. Hover over a tile to see the route and how many turns it takes.",
+            "Click a unit or city to select it; click again or press Tab (Shift+Tab back) for the next unit on that tile - or pick one from the cards in the unit panel. Click a tile (or right-click) to move; far destinations become standing orders. Hover over a tile to see the route and how many turns it takes.",
             "Space: skip a unit (or go to a city that needs a project, then end the turn). Enter: end the turn. N: next unit. H: fortify or sleep. Z: sentry (sleep until an enemy comes near). J: a worker or settler joins the city it stands in. I: board a ship in port. Ctrl+Z or Backspace: take back the last move. L: messages. Esc: close or deselect.",
             "Workers and Engineers: F farm, M mine, R road (railroad on a road, with Steam Power), O fortress (Construction), X clear land or clean pollution, K automate. Settlers: B found a city.",
             "U uses the selected unit: a great person's gift, a General forming an army, a Missionary preaching, a caravan helping a wonder. T opens a caravan's trade route. P pillages enemy land. Diplomats act from the unit panel next to a foreign city.",
@@ -207,7 +207,7 @@ fn help_lines(topic: HelpTopic) -> Vec<String> {
         HelpTopic::War => vec![
             "Attack by moving onto an enemy. Battles are fought in rounds over hit points (3, 4 for a veteran, 5 for an elite); winners may be promoted, faster attackers may retreat, wounds heal while resting.".to_string(),
             "Defence: hills and forest +50%, mountains double, rivers +25%, fortifying +25%, city walls or a fortress double against land attacks, a Coastal Fortress double against ships. A Great General on the tile makes troops fight half again as hard.".to_string(),
-            "Armies: a Great General in one of your cities forms up to three land units into one army that fights as its best unit with the hit points of all, and moves at its slowest member's pace.".to_string(),
+            "Armies: a Great General in one of your cities forms up to four land units (five with Sun Tzu's War Academy) into one army. It fights as its best unit with the hit points of all, 10% harder for every member beyond the first, and moves at its slowest member's pace. Troops standing with an army that has room can join it (U).".to_string(),
             "Artillery, some ships and bombers bombard without risk. Troops cannot slip past enemy troops (zone of control). Pillage (P) wrecks improvements on enemy land; computer raiders do the same to yours.".to_string(),
             "A captured city resists for a while (longer for a big one; a garrison of two halves it) and produces nothing. Under a Republic or Democracy a long war makes citizens unhappy (a Police Station halves it).".to_string(),
             "Older units are upgraded in your cities for gold once the better unit can be built there. Under Monarchy, Republic, Communism or Fundamentalism, once you know Gunpowder, a city can draft a citizen into its best defender once a turn.".to_string(),
@@ -442,6 +442,28 @@ fn button(parent: &mut ChildBuilder, art: &Art, text: impl Into<String>, command
         ))
         .with_children(|b| {
             b.spawn(label(&art.font_bold, text, size, INK));
+        });
+}
+
+/// A small card for a unit in a stack: its figure, name and a line of status.
+fn unit_card(parent: &mut ChildBuilder, art: &Art, unit: &Unit, name: String, status: String, command: Command, tint: Color) {
+    parent
+        .spawn((
+            Button,
+            Node { padding: UiRect::new(Val::Px(4.0), Val::Px(9.0), Val::Px(3.0), Val::Px(3.0)), align_items: AlignItems::Center, column_gap: Val::Px(5.0), width: Val::Px(156.0), ..default() },
+            ImageNode { image: art.button.clone(), image_mode: sliced(14.0), color: tint, ..default() },
+            ButtonTint(tint),
+            ButtonCommand(command),
+        ))
+        .with_children(|card| {
+            card.spawn((
+                Node { width: Val::Px(34.0), height: Val::Px(34.0), ..default() },
+                ImageNode { image: art.units.clone(), texture_atlas: Some(art.atlas(&art.units_layout, super::actors::unit_row(unit.unit_type) * 4)), ..default() },
+            ));
+            card.spawn(Node { flex_direction: FlexDirection::Column, ..default() }).with_children(|text| {
+                text.spawn(label(&art.font_bold, name, 12.0, INK));
+                text.spawn(label(&art.font_body, status, 11.0, INK));
+            });
         });
 }
 
@@ -894,7 +916,19 @@ pub fn rebuild_panels(
                 p.spawn(label(&art.font_bold, great::ability(unit.unit_type), 14.0, GOLD));
             }
             if unit.is_army_group() {
-                p.spawn(label(&art.font_body, format!("{}: fights as its best unit, with the hit points of all.", unit.display_name()), 14.0, CREAM));
+                let capacity = bevy_civ::unit::army_capacity(wonders.owns(unit.owner, Building::SunTzu));
+                let bonus = (bevy_civ::unit::ARMY_MEMBER_BONUS * (unit.members() - 1) as f32 * 100.0).round();
+                p.spawn(label(
+                    &art.font_body,
+                    format!(
+                        "{} - {} of {capacity} units: fights as its best unit, {bonus}% harder, with the hit points of all.{}",
+                        unit.display_name(),
+                        unit.members(),
+                        if (unit.members() as usize) < capacity && unit.owner == PLAYER { " Troops on its tile can join it (U)." } else { "" }
+                    ),
+                    14.0,
+                    CREAM,
+                ));
             }
             if mine && unit.unit_type == UnitType::Caravan {
                 p.spawn(label(&art.font_body, "In another of your cities, or next to a foreign one: T opens a trade route from its home city. In one of your cities building a wonder: U adds its shields.", 13.0, MUTED));
@@ -930,26 +964,34 @@ pub fn rebuild_panels(
                     let index = selection.unit.and_then(|s| stack.iter().position(|e| *e == s)).unwrap_or(0);
                     p.spawn(label(
                         &art.font_bold,
-                        format!("Unit {} of {} on this tile - Tab or click the tile again for the next:", index + 1, stack.len()),
+                        format!("Unit {} of {} on this tile - Tab / Shift+Tab or click a card:", index + 1, stack.len()),
                         14.0,
                         GOLD,
                     ));
                     let together = if ui.group_move { "Move together: On" } else { "Move together: Off (or Shift-click)" };
-                    p.spawn(row(6.0)).with_children(|r| button(r, art, together, Command::ToggleGroupMove, if ui.group_move { GREEN } else { BRONZE }, 13.0));
                     p.spawn(row(6.0)).with_children(|r| {
+                        button(r, art, together, Command::ToggleGroupMove, if ui.group_move { GREEN } else { BRONZE }, 13.0);
+                        button(r, art, "Fortify all", Command::Game(Action::StackOrder(true)), BRONZE, 13.0);
+                        button(r, art, "Wake all", Command::Game(Action::StackOrder(false)), BRONZE, 13.0);
+                    });
+                    // One card per unit: its figure, health, and whether it still has orders to give.
+                    p.spawn(Node { flex_wrap: FlexWrap::Wrap, column_gap: Val::Px(5.0), row_gap: Val::Px(5.0), max_height: Val::Px(190.0), overflow: Overflow::clip_y(), ..default() }).with_children(|grid| {
                         for entity in &stack {
                             let Ok(other) = units.get(*entity) else { continue };
                             let state = if other.build_turns_left.is_some() {
-                                " (working)"
+                                "working"
+                            } else if other.carrier.is_some() && map.water.contains(&other.position) {
+                                "aboard"
                             } else if other.fortified {
-                                " (fortified)"
+                                "fortified"
                             } else if !other.can_move() {
-                                " (done)"
+                                "done"
                             } else {
-                                ""
+                                "ready"
                             };
-                            let tint = if selection.unit == Some(*entity) { GREEN } else { BRONZE };
-                            button(r, art, format!("{}{}", other.unit_type.name(), state), Command::Game(Action::Select(*entity)), tint, 13.0);
+                            let tint = if selection.unit == Some(*entity) { GREEN } else if state == "ready" { BRONZE } else { SPENT };
+                            let name = if other.is_army_group() { format!("Army of {}", other.members()) } else { other.unit_type.name().to_string() };
+                            unit_card(grid, art, other, name, format!("{}/{} HP - {state}", other.hp, other.max_hp()), Command::Game(Action::Select(*entity)), tint);
                         }
                     });
                 }
@@ -1032,6 +1074,14 @@ pub fn rebuild_panels(
                     }
                     if unit.unit_type == UnitType::Missionary {
                         button(r, art, "Spread Faith (U)", Command::Game(Action::UseUnit), GREEN, 15.0);
+                    }
+                    // Ground troops can join an army of ours on their tile that has room.
+                    let capacity = bevy_civ::unit::army_capacity(wonders.owns(PLAYER, Building::SunTzu));
+                    let army_here = unit_entities.iter().filter(|e| Some(*e) != selection.unit).filter_map(|e| units.get(e).ok()).any(|a| {
+                        a.owner == PLAYER && a.position == unit.position && a.is_army_group() && (a.members() as usize) < capacity
+                    });
+                    if bevy_civ::unit::can_join_army(unit) && army_here {
+                        button(r, art, "Join Army (U)", Command::Game(Action::UseUnit), GREEN, 15.0);
                     }
                     if unit.unit_type == UnitType::GreatGeneral {
                         button(r, art, "Form Army (U)", Command::Game(Action::UseUnit), GREEN, 15.0);

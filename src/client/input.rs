@@ -195,10 +195,18 @@ pub fn keyboard_input(
         (KeyCode::F2, Action::Save),
     ];
     let ctrl = keys.any_pressed([KeyCode::ControlLeft, KeyCode::ControlRight, KeyCode::SuperLeft, KeyCode::SuperRight]);
+    // Held, or let go in this same frame (a quick Shift+Tab can arrive all at once).
+    let shift = keys.any_pressed([KeyCode::ShiftLeft, KeyCode::ShiftRight]) || keys.any_just_released([KeyCode::ShiftLeft, KeyCode::ShiftRight]);
     for (key, action) in bindings {
         if keys.just_pressed(key) {
-            // Ctrl+Z (Cmd+Z) undoes the last move; Z alone is sentry.
-            let action = if key == KeyCode::KeyZ && ctrl { Action::Undo } else { action };
+            // Ctrl+Z (Cmd+Z) undoes the last move; Z alone is sentry. Shift+Tab goes back through a stack.
+            let action = if key == KeyCode::KeyZ && ctrl {
+                Action::Undo
+            } else if key == KeyCode::Tab && shift {
+                Action::CycleStackBack
+            } else {
+                action
+            };
             actions.send(action);
         }
     }

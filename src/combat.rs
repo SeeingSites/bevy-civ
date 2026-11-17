@@ -13,6 +13,8 @@ pub struct Side {
     pub level: u8,
     /// A great general stands with it.
     pub led: bool,
+    /// Units fighting as one (an army has several; a lone unit 1).
+    pub members: u32,
 }
 
 /// Where the defender stands.
@@ -43,8 +45,9 @@ pub enum Outcome {
 pub fn strengths(attacker: &Side, defender: &Side, ground: &Ground) -> (f32, f32) {
     let level = |l: u8| 1.0 + 0.25 * l as f32;
     let led = |l: bool| if l { GENERAL_BONUS } else { 1.0 };
-    let mut attack = attacker.kind.stats().0 as f32 * attacker.kind.attack_bonus(ground.terrain) * level(attacker.level) * led(attacker.led);
-    let mut defence = (defender.kind.stats().1 as f32).max(0.1) * defender.kind.defense_bonus() * level(defender.level) * led(defender.led);
+    let army = |m: u32| 1.0 + crate::unit::ARMY_MEMBER_BONUS * m.saturating_sub(1) as f32;
+    let mut attack = attacker.kind.stats().0 as f32 * attacker.kind.attack_bonus(ground.terrain) * level(attacker.level) * led(attacker.led) * army(attacker.members);
+    let mut defence = (defender.kind.stats().1 as f32).max(0.1) * defender.kind.defense_bonus() * level(defender.level) * led(defender.led) * army(defender.members);
     defence *= match ground.terrain {
         Terrain::Hills | Terrain::Forest => 1.5,
         Terrain::Mountain => 2.0,
@@ -114,7 +117,7 @@ mod fight_tests {
     use rand::SeedableRng;
 
     fn side(kind: UnitType) -> Side {
-        Side { kind, hp: 3, level: 0, led: false }
+        Side { kind, hp: 3, level: 0, led: false, members: 1 }
     }
 
     fn open() -> Ground {
@@ -135,6 +138,12 @@ mod fight_tests {
         assert!(wins(side(UnitType::Legion), side(UnitType::Spearman), walled) < wins(side(UnitType::Legion), side(UnitType::Spearman), open()));
         let veteran = Side { level: 2, hp: 5, ..side(UnitType::Spearman) };
         assert!(wins(side(UnitType::Legion), veteran, open()) < wins(side(UnitType::Legion), side(UnitType::Spearman), open()));
+        // An army of four pools its hit points and fights 30% harder than one unit.
+        let army = Side { hp: 12, members: 4, ..side(UnitType::Legion) };
+        assert!(wins(army, side(UnitType::Legion), open()) > 990);
+        let (lone, _) = strengths(&side(UnitType::Legion), &side(UnitType::Legion), &open());
+        let (strong, _) = strengths(&army, &side(UnitType::Legion), &open());
+        assert!((strong / lone - 1.3).abs() < 0.001);
     }
 
     #[test]
