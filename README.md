@@ -1,6 +1,11 @@
 # Bevy Civ
 
-Cross-platform Civilization-inspired 4X (hex grid) in Rust + Bevy.
+Cross-platform Civilization-inspired 4X (hex grid) in Rust + Bevy. Free and open source: MIT or
+WTFPL, your choice (see [License](#license)).
+
+> An independent fan project, inspired by the Civilization series. Not affiliated with or endorsed
+> by Firaxis Games, 2K or Take-Two Interactive; "Civilization" is their trademark. All code, art,
+> music and text here are original.
 
 Turn-based, Civilization-style empire building on a hex map, playable in the browser.
 
@@ -15,17 +20,17 @@ Turn-based, Civilization-style empire building on a hex map, playable in the bro
 - Specialists (entertainers, tax collectors, scientists) and corruption by distance
 - Science, luxury and tax rates, capped by your government
 - Strategic and luxury resources joined to cities by roads and harbours, and traded with leaders
-- 51 technologies from Pottery to Superconductors, shown as a tree by era; every one unlocks something
+- 53 technologies from Pottery to Genetic Engineering, shown as a tree by era; click any to research the way to it
 - Six governments chosen in a revolution (with anarchy): Despotism to Democracy, Communism and
   Fundamentalism; martial law where it applies
 - Combat in rounds with hit points, veterans and elites, retreat, walls, fortification, river and
   terrain defence, artillery bombardment, great generals, zone of control and unit upgrades
 - A defender for every age: Warrior, Spearman, Phalanx, Pikeman, Musketman, Rifleman, Infantry and
   Mech. Infantry, and Modern Armor after the Tank
-- Ships and aircraft, troops crossing the sea in boats
+- Ships and aircraft: transports carry troops across the sea, carriers carry aircraft
 - World wonders (one per world) with real effects, golden ages
 - Great people: generals, merchants, scientists, artists, engineers
-- Armies: a great general in one of your cities forms up to three land units into one army
+- Armies: a great general in one of your cities forms up to four land units (five with Sun Tzu) into one army, 10% stronger per member; more troops can join later
 - Battles played out on the map, one at a time: the camera goes to every battle you fight (also
   attacks on your units in the other peoples' turns), the attacker lunges, blows land, the fallen
   topple and the result floats over the tile; the next unit waits until the battle is over
@@ -60,8 +65,9 @@ nothing at all, and railroads run on through cities. Route planning prefers road
 for computer players too, whose workers also lay railroads over their roads once they have Steam
 Power (after any roads their network still needs). Ships and aircraft ignore both.
 
-Land units can cross water once their civilization knows **Seafaring**: they board a boat (boarding
-and landing end the move) and sail three tiles a turn.
+Land units cross water only aboard ships: a Galley or Frigate holds 2, a Galleon 4, a Transport 8.
+Troops board a ship with room (from the shore or in port), sail with it, and go ashore onto land next
+to it; boarding and landing end the move.
 
 ## Resources and trade
 Eighteen resources are scattered by terrain:
@@ -184,8 +190,7 @@ other and from you, and you hear about it when they target you.
 ## Ships and aircraft
 - **Warships** (Galley, Frigate, Ironclad, Destroyer, Battleship) are built in coastal cities. They
   sail on water and into your own cities, can attack units at sea or on the shore, and cannot take
-  cities. Troops crossing the sea in boats are defenceless against them, cannot attack from their
-  boats, and cannot attack ships.
+  cities. Troops aboard a ship are defenceless at sea, cannot attack from it, and go down with it.
 - **Aircraft** (Fighter, Bomber) fly over anything but must stay within eight tiles of one of your
   cities. They attack like other units and cannot take cities.
 - Only land armies hold and capture cities.
@@ -411,8 +416,8 @@ the default `audio` feature: `cargo run --no-default-features --features full`.
 ## Autoplay
 `cargo run --release -- --autoplay [rome|earth|discovery] [turns]` plays a whole game between
 computer players under the real rules, without a window, and prints a snapshot every 25 turns plus
-the milestones (eras, wonders, governments, spaceships) and how it ends. CI runs all three scenarios
-to 400 turns. Recent runs: Rome ends in a space race victory around turn 300, the Whole Earth around
+the milestones (eras, wonders, governments, spaceships) and how it ends. The Game Simulator
+workflow runs all three scenarios to 400 turns on demand. Recent runs: Rome ends in a space race victory around turn 300, the Whole Earth around
 turn 355, and the Age of Discovery by culture around turn 210.
 
 ## Simulator
@@ -423,7 +428,8 @@ cd simulate && cargo run -- --games 100 --max-turns 120
 ```
 
 ### CI
-GitHub Actions workflow (`.github/workflows/simulate.yml`) runs on push/PR.
+The Game Simulator workflow (`.github/workflows/simulate.yml`) runs on demand: Actions, Game
+Simulator, Run workflow (choose how many games and turns).
 
 ## Running (native)
 ```bash
@@ -442,9 +448,24 @@ npm run dev      # serve locally at http://localhost:8787
 npm run deploy   # build + wrangler deploy (needs `wrangler login` or an API token)
 ```
 
-`.github/workflows/deploy.yml` builds on every PR and deploys on every push to `main`. It needs two
+`.github/workflows/deploy.yml` builds and deploys on every push to `main` (or on demand). It needs two
 repository secrets: `CLOUDFLARE_API_TOKEN` (the "Edit Cloudflare Workers" token template) and
 `CLOUDFLARE_ACCOUNT_ID`. The game is then live at `https://bevy-civ.<your-subdomain>.workers.dev`.
 
 ## License
-MIT OR Apache-2.0
+The code is free software, released under either of
+
+- the MIT License ([LICENSE-MIT](LICENSE-MIT)), or
+- the Do What The F*ck You Want To Public License ([LICENSE-WTFPL](LICENSE-WTFPL)),
+
+at your option. The same goes for the art, sounds, music and scenario files made for this game (the
+generators are in `tools/`).
+
+Not covered by that choice, and keeping their own licenses:
+- the fonts in `assets/fonts/` (Cinzel and Alegreya Sans), under the SIL Open Font License (texts
+  alongside them);
+- the Natural Earth coastlines the maps are built from (public domain);
+- the Rust and npm dependencies (Bevy, hexx and the rest), each under its own license.
+
+Bevy Civ is an independent project inspired by the Civilization series. It is not affiliated with or
+endorsed by Firaxis Games, 2K or Take-Two Interactive, and "Civilization" is their trademark.

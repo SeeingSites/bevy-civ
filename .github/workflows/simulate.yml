@@ -1,10 +1,8 @@
 name: Game Simulator
 
+# Balance check: the quick simulator, then three full 400-turn games between computer players.
+# Runs on demand (Actions, Game Simulator, Run workflow) - it takes several minutes.
 on:
-  push:
-    branches: [main]
-  pull_request:
-    branches: [main]
   workflow_dispatch:
     inputs:
       games:
