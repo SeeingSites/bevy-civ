@@ -1,7 +1,7 @@
 # Bevy Civ
 
-Cross-platform Civilization-inspired 4X (hex grid) in Rust + Bevy. Free and open source: MIT or
-WTFPL, your choice (see [License](#license)).
+Cross-platform Civilization-inspired 4X (hex grid) in Rust + Bevy. Free and open source under the
+MIT License (see [License](#license)).
 
 > An independent fan project, inspired by the Civilization series. Not affiliated with or endorsed
 > by Firaxis Games, 2K or Take-Two Interactive; "Civilization" is their trademark. All code, art,
@@ -453,13 +453,8 @@ repository secrets: `CLOUDFLARE_API_TOKEN` (the "Edit Cloudflare Workers" token 
 `CLOUDFLARE_ACCOUNT_ID`. The game is then live at `https://bevy-civ.<your-subdomain>.workers.dev`.
 
 ## License
-The code is free software, released under either of
-
-- the MIT License ([LICENSE-MIT](LICENSE-MIT)), or
-- the Do What The F*ck You Want To Public License ([LICENSE-WTFPL](LICENSE-WTFPL)),
-
-at your option. The same goes for the art, sounds, music and scenario files made for this game (the
-generators are in `tools/`).
+Released under the [MIT License](LICENSE). That covers the code and the art, sounds, music and
+scenario files made for this game (the generators are in `tools/`).
 
 Not covered by that choice, and keeping their own licenses:
 - the fonts in `assets/fonts/` (Cinzel and Alegreya Sans), under the SIL Open Font License (texts
