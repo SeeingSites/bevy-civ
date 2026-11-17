@@ -404,6 +404,9 @@ pub enum Action {
     StackOrder(bool),
     SetProduction(ProductionItem),
     Research(Tech),
+    /// Work towards a technology: research follows the path to it.
+    ResearchGoal(Tech),
+    ClearResearchGoal,
 }
 
 /// A click (or tap) on a map tile. `secondary` is the right mouse button: always an order.
@@ -2656,8 +2659,27 @@ fn apply_actions(
             Action::Research(target) => {
                 if tech.can_research(*target) && tech.current != Some(*target) {
                     tech.current = Some(*target);
+                    // Studying something off the way to the goal sets the goal aside.
+                    if tech.goal.is_some_and(|g| !tech.path_to(g).contains(target)) {
+                        tech.goal = None;
+                    }
                     log.push(format!("Our scholars turn to {}.", target.name()));
                 }
+            }
+            Action::ResearchGoal(goal) => {
+                if !tech.researched.contains(goal) {
+                    tech.set_goal(*goal);
+                    let steps = tech.path_to(*goal).len();
+                    log.push(format!(
+                        "Our scholars work towards {} ({steps} discover{} away), starting with {}.",
+                        goal.name(),
+                        if steps == 1 { "y" } else { "ies" },
+                        tech.current.map(|t| t.name()).unwrap_or("nothing")
+                    ));
+                }
+            }
+            Action::ClearResearchGoal => {
+                tech.goal = None;
             }
         }
     }
