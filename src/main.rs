@@ -516,7 +516,7 @@ pub struct Exploring;
 
 /// Cities the player took this turn: they can still be razed.
 #[derive(Resource, Default)]
-pub struct JustCaptured(pub HashSet<Hex>);
+pub struct JustCaptured(pub HashSet<Hex>, pub Vec<u32>);
 
 /// Ends the player's turn (sent once the order to end it is confirmed).
 #[derive(Event)]
@@ -1333,6 +1333,8 @@ fn capture<'a>(unit: &Unit, cities: impl Iterator<Item = Mut<'a, City>>, wonders
     }
     for mut city in cities {
         if city.position == unit.position && city.owner != PLAYER {
+            // Whoever loses it has a grievance against us (settled in the turn, by `process_turn`).
+            taken.1.push(city.owner);
             city.owner = PLAYER;
             city.is_capital = false;
             city.resistance = bevy_civ::city::resistance_turns(city.population);
@@ -2711,7 +2713,8 @@ fn apply_actions(
                         }
                     } else {
                         diplomacy.change_attitude(PLAYER, victim, espionage::CAUGHT_ATTITUDE);
-                        log.push(format!("Our diplomat is caught in {city_name}! {civ_name} are outraged."));
+                        foreign.add_grievance(victim, PLAYER, foreign::Wrong::SpyCaught, state.turn);
+                        log.push(format!("Our diplomat is caught in {city_name}! {civ_name} are outraged - and now have a just cause for war against us."));
                     }
                 }
                 commands.entity(entity).try_despawn_recursive();
@@ -2957,8 +2960,13 @@ fn process_turn(
     log.turn = state.turn;
     spies.tick();
     golden.tick();
-    // The chance to raze last turn's conquests has passed.
+    // The chance to raze last turn's conquests has passed; their former owners hold it against us.
     taken.0.clear();
+    for loser in std::mem::take(&mut taken.1) {
+        if loser != BARBARIANS {
+            foreign.add_grievance(loser, PLAYER, foreign::Wrong::CityTaken, state.turn);
+        }
+    }
     // Routes close when a city changes hands or their two owners are at war.
     {
         let owners: HashMap<Hex, u32> = cities.iter().map(|(c, _, _)| (c.position, c.owner)).collect();
@@ -4326,6 +4334,9 @@ fn process_turn(
         }
         let occupier = occupying.map(|(_, owner, _)| owner);
         if let Some(new_owner) = occupier.filter(|_| !defended) {
+            if city.owner != BARBARIANS && new_owner != BARBARIANS {
+                foreign.add_grievance(city.owner, new_owner, foreign::Wrong::CityTaken, state.turn);
+            }
             if city.owner == PLAYER {
                 log.push(format!("{} has fallen to {} forces!", city.name, civ_name(new_owner)));
             } else if fog.explored.contains(&city.position) {
@@ -4628,8 +4639,9 @@ fn process_turn(
                     }
                     if rng.gen::<f32>() >= mission.odds(walls) {
                         diplomacy.change_attitude(owner, partner, espionage::CAUGHT_ATTITUDE);
+                        foreign.add_grievance(partner, owner, foreign::Wrong::SpyCaught, state.turn);
                         if partner == PLAYER {
-                            log.push(format!("We caught a {} diplomat spying in {}!", civ_name(owner), city_name));
+                            log.push(format!("We caught a {} diplomat spying in {}! We have a just cause for war against them.", civ_name(owner), city_name));
                         }
                         continue;
                     }

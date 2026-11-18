@@ -2451,6 +2451,25 @@ pub fn rebuild_panels(
                             if !feuds.is_empty() {
                                 w.spawn(label(&art.font_body, format!("They are at war with {}.", feuds.join(", ")), 15.0, INK_SOFT));
                             }
+                            // Just causes for war, either way.
+                            if treaty != Treaty::War {
+                                if let Some(g) = foreign.grievance(PLAYER, civ.id, state.turn) {
+                                    w.spawn(label(
+                                        &art.font_bold,
+                                        format!("Just cause for war: they {} ({} turns left). Declaring war now costs little reputation, and their allies may stay out.", g.wrong.describe(), g.until - state.turn),
+                                        15.0,
+                                        Color::srgb(0.2, 0.45, 0.2),
+                                    ));
+                                }
+                                if let Some(g) = foreign.grievance(civ.id, PLAYER, state.turn) {
+                                    w.spawn(label(
+                                        &art.font_bold,
+                                        format!("They hold a grievance against us: we {} ({} turns left). They are readier to declare war.", g.wrong.confessed(), g.until - state.turn),
+                                        15.0,
+                                        Color::srgb(0.65, 0.2, 0.15),
+                                    ));
+                                }
+                            }
                             w.spawn(row(6.0)).with_children(|r| {
                                 let ask = |act: DiploAct| Command::Game(Action::Diplo(civ.id, act));
                                 if treaty == Treaty::War {
