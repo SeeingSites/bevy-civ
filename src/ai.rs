@@ -19,7 +19,14 @@ pub struct Ferries {
     pub wanted: HashMap<u32, usize>,
     /// Units each civilization has landed overseas so far (for the autoplay report).
     pub landed: HashMap<u32, u32>,
+    /// Turns a ship has lain in port (by port and owner) waiting for a worthwhile load.
+    pub waited: HashMap<(Hex, u32), u32>,
 }
+
+/// Troops a ferry wants aboard before it sails (a lone unit landed overseas only dies), and the
+/// turns it waits for them before taking what there is.
+pub const FERRY_LOAD: usize = 4;
+pub const FERRY_PATIENCE: u32 = 8;
 
 /// Numbers each land tile by the landmass it belongs to.
 pub fn continents(land: &HashSet<Hex>) -> HashMap<Hex, u32> {
@@ -81,6 +88,9 @@ impl Default for Civilizations {
         Self { players: Vec::new() }
     }
 }
+
+/// Extra appeal of a technology that gives a better government than the one a people has.
+pub const GOVERNMENT_APPEAL: f32 = 3.0;
 
 /// How much a technology appeals to a warlike (first) and to a builder (second) civilization.
 fn appeal(tech: Tech) -> (f32, f32) {
@@ -144,9 +154,19 @@ fn appeal(tech: Tech) -> (f32, f32) {
 /// The technology a computer player studies next: warlike leaders favour arms, builders the economy,
 /// and cheap discoveries are preferred over distant ones.
 pub fn pick_research(tech: &TechState, aggression: f32) -> Option<Tech> {
+    let now = crate::government::Government::preferred(tech, aggression);
     let score = |t: Tech| {
         let (war, peace) = appeal(t);
-        war * aggression + peace * (1.0 - aggression) - t.cost() as f32 / 40.0
+        // A technology that opens a better form of government is worth a detour: science, corruption
+        // and production all depend on it.
+        let better = crate::government::Government::CHOICES.iter().any(|g| {
+            g.required_tech() == Some(t) && {
+                let mut with = tech.clone();
+                with.researched.insert(t);
+                crate::government::Government::preferred(&with, aggression) == *g && *g != now
+            }
+        });
+        war * aggression + peace * (1.0 - aggression) - t.cost() as f32 / 40.0 + if better { GOVERNMENT_APPEAL } else { 0.0 }
     };
     Tech::ALL.into_iter().filter(|t| tech.can_research(*t)).max_by(|a, b| score(*a).total_cmp(&score(*b)))
 }
@@ -697,7 +717,11 @@ fn sail_ferries(
         let here = unit.position;
         // Empty in a port where troops wait: take them aboard.
         if cargo.is_empty() {
-            if let Some(list) = waiting.get_mut(&(here, owner)) {
+            let patient = ferries.waited.get(&(here, owner)).copied().unwrap_or(0) >= FERRY_PATIENCE;
+            // Settlers sail at once; troops wait for company.
+            let settling = |list: &Vec<(Entity, Hex)>| list.iter().any(|(e, _)| berths.iter().any(|b| b.entity == *e && b.unit_type == UnitType::Settler));
+            if let Some(list) = waiting.get_mut(&(here, owner)).filter(|l| !l.is_empty() && (l.len() >= FERRY_LOAD.min(capacity as usize) || patient || settling(l))) {
+                ferries.waited.remove(&(here, owner));
                 let take = list.len().min(capacity as usize);
                 let loaded: Vec<(Entity, Hex)> = list.drain(..take).collect();
                 if let Some((_, goal)) = loaded.first() {
@@ -710,6 +734,11 @@ fn sail_ferries(
                     }
                 }
             }
+        }
+        if cargo.is_empty() && waiting.get(&(here, owner)).is_some_and(|l| !l.is_empty()) {
+            // Troops are waiting here but too few to sail: the ship waits for more.
+            *ferries.waited.entry((here, owner)).or_default() += 1;
+            continue;
         }
         if cargo.is_empty() {
             // Make for the port with the most troops waiting (or home).
@@ -1012,6 +1041,15 @@ mod tests {
         let tech = TechState::default();
         assert_eq!(pick_research(&tech, 0.9), Some(Tech::AnimalHusbandry));
         assert_eq!(pick_research(&tech, 0.1), Some(Tech::Pottery));
+    }
+
+    #[test]
+    fn a_better_government_is_worth_a_detour() {
+        // Monarchy only needs Code of Laws: a builder with Alphabet and Code of Laws learned goes for it
+        // before the other techs on offer.
+        let mut tech = TechState::default();
+        tech.researched.extend([Tech::Alphabet, Tech::CodeOfLaws]);
+        assert_eq!(pick_research(&tech, 0.4), Some(Tech::Monarchy));
     }
 
     #[test]

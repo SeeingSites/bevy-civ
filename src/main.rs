@@ -3707,6 +3707,17 @@ fn process_turn(
             .collect();
         // Units merged into an army this turn (despawned, but still in the query until next frame).
         let mut taken: HashSet<Entity> = HashSet::new();
+        // A computer player keeps no more than a few generals: the rest retire (they would only pile up).
+        let mut retained: HashMap<u32, usize> = HashMap::new();
+        for (e, u) in units.iter().filter(|(_, u)| u.unit_type == UnitType::GreatGeneral && u.owner != PLAYER && u.owner != BARBARIANS) {
+            let kept = retained.entry(u.owner).or_default();
+            *kept += 1;
+            if *kept > GENERALS_KEPT {
+                taken.insert(e);
+                commands.entity(e).try_despawn_recursive();
+            }
+        }
+        let generals: Vec<(Entity, Hex, u32)> = generals.into_iter().filter(|(g, _, _)| !taken.contains(g)).collect();
         for (general, at, owner) in generals {
             let stack: Vec<(Entity, Unit)> = units.iter().filter(|(_, u)| u.position == at && u.owner == owner).map(|(e, u)| (e, u.clone())).collect();
             // Keep one unit back as the city's own garrison.
@@ -4915,6 +4926,9 @@ pub fn visit_villages(
 pub const DOMINATION_FIFTHS: usize = 2;
 
 /// Whether holding `held` of the world's `total` cities is a domination victory.
+/// Great generals a computer player keeps at a time.
+pub const GENERALS_KEPT: usize = 3;
+
 pub fn dominates(held: usize, total: usize) -> bool {
     held >= 5 && held * 5 >= total * DOMINATION_FIFTHS
 }

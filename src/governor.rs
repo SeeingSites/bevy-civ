@@ -70,7 +70,7 @@ pub struct CivView<'a> {
 pub fn army_cap(cities: usize) -> usize {
     // Two units a city while small; past eight cities, two more for every three (a great empire
     // fields a greater army, which is what lets it overwhelm smaller neighbours).
-    (4 + 2 * cities).min(14 + cities * 2 / 3)
+    (4 + 2 * cities).min(6 + cities * 3 / 2)
 }
 
 fn can_train(unit: UnitType, city: &CityView, civ: &CivView, supplies: &Supplies) -> bool {
@@ -238,7 +238,12 @@ pub fn choose(city: &CityView, civ: &CivView, supplies: &Supplies, rng: &mut imp
     if civ.military < cap {
         return unit(best_attacker(city, civ, supplies));
     }
-    unit(worker_kind(civ))
+    // Nothing left to build: a few spare hands at most. More would only pile up (a city that has
+    // everything keeps producing); the army is capped, so its units are simply not raised.
+    if civ.workers < civ.cities + 2 {
+        return unit(worker_kind(civ));
+    }
+    unit(best_defender(city, civ, supplies))
 }
 
 /// Engineers once the civilization can train them, workers before.
@@ -364,6 +369,20 @@ mod tests {
         assert!(!matches!(choose(&port, &idle, &Supplies::default(), &mut rand::thread_rng()), ProductionItem::Unit(UnitType::Galley)));
         let (inland, state) = at_war(false);
         assert!(!matches!(choose(&inland, &state, &Supplies::default(), &mut rand::thread_rng()), ProductionItem::Unit(u) if u.domain() == Domain::Sea));
+    }
+
+    #[test]
+    fn a_city_with_nothing_to_build_does_not_pile_up_workers() {
+        let tech = knowing(&[Tech::Pottery]);
+        let done = CivView { military: army_cap(2), workers: 4, room_to_expand: false, ..civ(&tech) };
+        let pick = choose(&CityView { built: Building::ALL.to_vec(), ..city() }, &done, &Supplies::default(), &mut rand::thread_rng());
+        assert!(matches!(pick, ProductionItem::Unit(u) if u.is_army()), "{pick:?}");
+    }
+
+    #[test]
+    fn great_empires_field_armies_beyond_their_garrisons() {
+        assert!(army_cap(25) >= 25 + 10);
+        assert_eq!(army_cap(2), 8);
     }
 
     #[test]
