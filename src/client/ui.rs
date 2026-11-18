@@ -492,6 +492,54 @@ fn button(parent: &mut ChildBuilder, art: &Art, text: impl Into<String>, command
         });
 }
 
+/// An advisor window: a header banner with the title and a close button (x) at the top right that
+/// stay in place, over a body that scrolls (wheel or finger) when it does not fit the screen.
+fn framed_window(p: &mut ChildBuilder, art: &Art, width: f32, title: impl Into<String>, body: impl FnOnce(&mut ChildBuilder)) {
+    p.spawn(panel(
+        &art.parchment,
+        Node {
+            width: Val::Px(width),
+            max_width: Val::Percent(96.0),
+            max_height: Val::Percent(100.0),
+            flex_direction: FlexDirection::Column,
+            padding: UiRect::new(Val::Px(22.0), Val::Px(14.0), Val::Px(12.0), Val::Px(18.0)),
+            overflow: Overflow::clip(),
+            ..default()
+        },
+    ))
+    .with_children(|frame| {
+        frame
+            .spawn(Node { justify_content: JustifyContent::SpaceBetween, align_items: AlignItems::Center, column_gap: Val::Px(10.0), padding: UiRect::bottom(Val::Px(6.0)), flex_shrink: 0.0, ..default() })
+            .with_children(|head| {
+                head.spawn(label(&art.font_title, title, 26.0, INK));
+                close_button(head, art);
+            });
+        frame
+            .spawn((
+                super::layout::Scrollable,
+                RelativeCursorPosition::default(),
+                ScrollPosition::default(),
+                Node { flex_direction: FlexDirection::Column, row_gap: Val::Px(10.0), overflow: Overflow::scroll_y(), flex_shrink: 1.0, min_height: Val::Px(0.0), padding: UiRect::right(Val::Px(8.0)), ..default() },
+            ))
+            .with_children(body);
+    });
+}
+
+/// The square close button in a window's header (Esc does the same).
+fn close_button(parent: &mut ChildBuilder, art: &Art) {
+    parent
+        .spawn((
+            Button,
+            Node { width: Val::Px(40.0), height: Val::Px(40.0), justify_content: JustifyContent::Center, align_items: AlignItems::Center, flex_shrink: 0.0, ..default() },
+            ImageNode { image: art.button.clone(), image_mode: sliced(14.0), color: BRONZE, ..default() },
+            ButtonTint(BRONZE),
+            ButtonCommand(Command::CloseModal),
+        ))
+        .with_children(|b| {
+            b.spawn(label(&art.font_bold, "X", 20.0, INK));
+        });
+}
+
 /// A small card for a unit in a stack: its figure, name and a line of status.
 fn unit_card(parent: &mut ChildBuilder, art: &Art, unit: &Unit, name: String, status: String, command: Command, tint: Color) {
     parent
@@ -916,7 +964,7 @@ pub fn rebuild_panels(
         Res<TradeRoutes>,
     ),
     cities: Query<(&City, &CityBuildings, &Happiness)>,
-    (city_list, space, history, culture, taken, tips_on, rivers, web): (
+    (city_list, space, history, culture, taken, tips_on, rivers, web, (tree_layout, tree_image)): (
         Query<(Entity, &City)>,
         Res<bevy_civ::space::SpaceRace>,
         Res<crate::History>,
@@ -925,6 +973,7 @@ pub fn rebuild_panels(
         Res<super::tips::Tips>,
         Res<crate::Rivers>,
         Res<super::relations::RelationsWeb>,
+        (Res<super::techtree::TreeLayout>, Res<super::techtree::TreeImage>),
     ),
     unit_panel: Query<Entity, With<UnitPanel>>,
     mut city_panel: Query<(Entity, &mut Node), (With<CityPanel>, Without<ModalRoot>)>,
@@ -1622,8 +1671,7 @@ pub fn rebuild_panels(
             let Some(modal) = ui.modal else { return };
             match modal {
                 Modal::Empire => {
-                    p.spawn(window(760.0)).with_children(|w| {
-                        w.spawn(label(&art.font_title, "Empire Advisor", 26.0, INK));
+                    framed_window(p, art, 760.0, "Empire Advisor", |w| {
                         w.spawn(Node { column_gap: Val::Px(4.0), ..default() }).with_children(|r| {
                             for tab in EmpireTab::ALL {
                                 let tint = if ui.empire_tab == tab { GOLD } else { BRONZE };
@@ -1877,12 +1925,10 @@ pub fn rebuild_panels(
                                 }
                             }
                         }
-                        w.spawn(row(6.0)).with_children(|r| button(r, art, "Close (Esc)", Command::CloseModal, BRONZE, 14.0));
                     });
                 }
                 Modal::Game => {
-                    p.spawn(window(420.0)).with_children(|w| {
-                        w.spawn(label(&art.font_title, "Game", 26.0, INK));
+                    framed_window(p, art, 420.0, "Game", |w| {
                         w.spawn(label(&art.font_body, format!("Turn {}. The game also saves itself at the end of every turn; Continue on the start menu picks it up.", state.turn), 14.0, INK_SOFT));
                         w.spawn(Node { flex_direction: FlexDirection::Column, row_gap: Val::Px(8.0), ..default() }).with_children(|c| {
                             c.spawn(Node::default()).with_children(|r| button(r, art, "Save to a file (F2)", Command::Game(Action::Save), GREEN, 15.0));
@@ -1897,13 +1943,11 @@ pub fn rebuild_panels(
                             c.spawn(Node::default()).with_children(|r| button(r, art, tips_label, Command::ToggleTips, BRONZE, 15.0));
                             c.spawn(Node::default()).with_children(|r| button(r, art, "Quit to the start menu", Command::QuitToMenu, Color::srgb(0.9, 0.6, 0.5), 15.0));
                         });
-                        w.spawn(row(6.0)).with_children(|r| button(r, art, "Close (Esc)", Command::CloseModal, BRONZE, 14.0));
                     });
                 }
                 Modal::Messages => {
                     const PER_PAGE: usize = 24;
-                    p.spawn(window(800.0)).with_children(|w| {
-                        w.spawn(label(&art.font_title, if ui.highlights_only { "Chronicle" } else { "Messages" }, 26.0, INK));
+                    framed_window(p, art, 800.0, if ui.highlights_only { "Chronicle" } else { "Messages" }, |w| {
                         let shown: Vec<&(u32, String)> = log
                             .history
                             .iter()
@@ -1929,12 +1973,10 @@ pub fn rebuild_panels(
                         for (turn, line) in &shown[start..end] {
                             w.spawn(label(&art.font_body, format!("Turn {turn}: {line}"), 13.0, INK));
                         }
-                        w.spawn(row(6.0)).with_children(|r| button(r, art, "Close (Esc)", Command::CloseModal, BRONZE, 14.0));
                     });
                 }
                 Modal::Help => {
-                    p.spawn(window(800.0)).with_children(|w| {
-                        w.spawn(label(&art.font_title, "Encyclopedia", 26.0, INK));
+                    framed_window(p, art, 800.0, "Encyclopedia", |w| {
                         w.spawn(Node { column_gap: Val::Px(4.0), flex_wrap: FlexWrap::Wrap, row_gap: Val::Px(4.0), ..default() }).with_children(|r| {
                             for topic in HelpTopic::ALL {
                                 let tint = if ui.help_topic == topic { GOLD } else { BRONZE };
@@ -1944,12 +1986,10 @@ pub fn rebuild_panels(
                         for line in help_lines(ui.help_topic) {
                             w.spawn(label(&art.font_body, line, 13.0, INK));
                         }
-                        w.spawn(row(6.0)).with_children(|r| button(r, art, "Close (Esc)", Command::CloseModal, BRONZE, 14.0));
                     });
                 }
                 Modal::Science => {
-                    p.spawn(window(760.0)).with_children(|w| {
-                        w.spawn(label(&art.font_title, "Science Advisor", 26.0, INK));
+                    framed_window(p, art, 760.0, "Science Advisor", |w| {
                         match tech.current {
                             Some(current) => {
                                 let cost = tech.cost_of(current);
@@ -2002,40 +2042,61 @@ pub fn rebuild_panels(
                                 });
                             }
                         });
-                        let eras: [(&str, u32, u32); 4] = [("Ancient", 0, 25), ("Classical", 26, 45), ("Industrial", 46, 95), ("Modern", 96, u32::MAX)];
-                        for (era, low, high) in eras {
-                            w.spawn(Node { column_gap: Val::Px(5.0), flex_wrap: FlexWrap::Wrap, row_gap: Val::Px(4.0), align_items: AlignItems::Center, ..default() }).with_children(|r| {
-                                r.spawn(Node { width: Val::Px(78.0), ..default() }).with_children(|c| {
-                                    c.spawn(label(&art.font_bold, era, 13.0, INK));
-                                });
-                                for t in Tech::ALL.into_iter().filter(|t| (low..=high).contains(&t.cost())) {
-                                    if tech.researched.contains(&t) {
-                                        r.spawn((Node { padding: UiRect::axes(Val::Px(7.0), Val::Px(4.0)), ..default() }, BackgroundColor(KNOWN), BorderRadius::all(Val::Px(5.0)))).with_children(|k| {
-                                            k.spawn(label(&art.font_body, t.name(), 12.0, INK));
+                        // The diagram: boxes in columns by steps of study, lines from what each needs.
+                        w.spawn(label(&art.font_body, "Drag sideways (or Shift + mouse wheel) to see the whole tree.", 12.0, INK_SOFT));
+                        let size = tree_layout.size;
+                        w.spawn((
+                            super::layout::Scrollable,
+                            RelativeCursorPosition::default(),
+                            ScrollPosition::default(),
+                            Node { width: Val::Percent(100.0), height: Val::Px(size.y as f32 + 12.0), overflow: Overflow::scroll_x(), flex_shrink: 0.0, ..default() },
+                            BackgroundColor(Color::srgba(0.35, 0.25, 0.12, 0.08)),
+                        ))
+                        .with_children(|view| {
+                            view.spawn((Node { width: Val::Px(size.x as f32), height: Val::Px(size.y as f32), flex_shrink: 0.0, ..default() }, ImageNode::new(tree_image.0.clone())))
+                                .with_children(|tree| {
+                                    for t in Tech::ALL {
+                                        let Some(at) = tree_layout.at.get(&t) else { continue };
+                                        let tint = if tech.researched.contains(&t) {
+                                            KNOWN
+                                        } else if tech.current == Some(t) {
+                                            GREEN
+                                        } else if tech.goal == Some(t) {
+                                            GOAL
+                                        } else if path.contains(&t) {
+                                            PATH
+                                        } else if tech.can_research(t) {
+                                            BRONZE
+                                        } else {
+                                            SPENT
+                                        };
+                                        tree.spawn((
+                                            Button,
+                                            Node {
+                                                position_type: PositionType::Absolute,
+                                                left: Val::Px(at.x),
+                                                top: Val::Px(at.y),
+                                                width: Val::Px(super::techtree::BOX_WIDTH),
+                                                height: Val::Px(super::techtree::BOX_HEIGHT),
+                                                justify_content: JustifyContent::Center,
+                                                align_items: AlignItems::Center,
+                                                padding: UiRect::horizontal(Val::Px(4.0)),
+                                                ..default()
+                                            },
+                                            ImageNode { image: art.button.clone(), image_mode: sliced(12.0), color: tint, ..default() },
+                                            ButtonTint(tint),
+                                            ButtonCommand(Command::Game(Action::ResearchGoal(t))),
+                                        ))
+                                        .with_children(|b| {
+                                            b.spawn(label(&art.font_bold, t.name(), 11.0, INK));
                                         });
-                                        continue;
                                     }
-                                    let tint = if tech.current == Some(t) {
-                                        GREEN
-                                    } else if tech.goal == Some(t) {
-                                        GOAL
-                                    } else if path.contains(&t) {
-                                        PATH
-                                    } else if tech.can_research(t) {
-                                        BRONZE
-                                    } else {
-                                        SPENT
-                                    };
-                                    button(r, art, t.name(), Command::Game(Action::ResearchGoal(t)), tint, 12.0);
-                                }
-                            });
-                        }
-                        w.spawn(row(6.0)).with_children(|r| button(r, art, "Close (Esc)", Command::CloseModal, BRONZE, 14.0));
+                                });
+                        });
                     });
                 }
                 Modal::Trade => {
-                    p.spawn(window(720.0)).with_children(|w| {
-                        w.spawn(label(&art.font_title, "Trade Advisor", 26.0, INK));
+                    framed_window(p, art, 720.0, "Trade Advisor", |w| {
                         w.spawn(label(
                             &art.font_body,
                             "A resource must lie inside our borders and be joined to a city by road (or by harbours) before that city can use it. Strategic resources are needed for units and buildings; each different luxury keeps one more citizen content in every connected city.",
@@ -2121,12 +2182,10 @@ pub fn rebuild_panels(
                             };
                             w.spawn(label(&art.font_body, text, 14.0, INK));
                         }
-                        w.spawn(row(6.0)).with_children(|r| button(r, art, "Close (Esc)", Command::CloseModal, BRONZE, 14.0));
                     });
                 }
                 Modal::Diplomacy => {
-                    p.spawn(window(820.0)).with_children(|w| {
-                        w.spawn(label(&art.font_title, "Foreign Advisor", 26.0, INK));
+                    framed_window(p, art, 820.0, "Foreign Advisor", |w| {
                         w.spawn(row(6.0)).with_children(|r| {
                             for page in DiploPage::ALL {
                                 let tint = if ui.diplo_page == page { GREEN } else { BRONZE };
@@ -2136,7 +2195,6 @@ pub fn rebuild_panels(
                         match ui.diplo_page {
                             DiploPage::Relations => {
                                 relations_page(w, art, &civs.players, &known, &web.0, &diplomacy, &foreign, state.turn);
-                                w.spawn(row(6.0)).with_children(|r| button(r, art, "Close (Esc)", Command::CloseModal, BRONZE, 14.0));
                                 return;
                             }
                             DiploPage::Intelligence => {
@@ -2157,7 +2215,6 @@ pub fn rebuild_panels(
                                 let our_cities: Vec<&City> = city_list.iter().map(|(_, c)| c).filter(|c| c.owner == PLAYER).collect();
                                 let ours = (latest(PLAYER), our_cities.len(), our_cities.iter().map(|c| c.population).sum(), state.gold);
                                 intelligence_page(w, art, &civs.players, &known, &report, ours, &diplomacy, &spies, &foreign, &tech);
-                                w.spawn(row(6.0)).with_children(|r| button(r, art, "Close (Esc)", Command::CloseModal, BRONZE, 14.0));
                                 return;
                             }
                             DiploPage::Talk => {}
@@ -2295,9 +2352,6 @@ pub fn rebuild_panels(
                                 });
                             }
                         }
-                        w.spawn(row(6.0)).with_children(|r| {
-                            button(r, art, "Close (Esc)", Command::CloseModal, BRONZE, 14.0);
-                        });
                     });
                 }
             }

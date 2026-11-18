@@ -411,6 +411,7 @@ can be told apart - a step towards reskinning it as other games:
   panels that scroll with the wheel or a finger; button `Activated` events (a mouse acts on press, a
   finger on release unless it scrolled); and browser canvas sizing that gets the pixel ratio right on
   high-density screens.
+- `src/client/paint.rs`: painting lines into images for diagrams (the relations web, the tech tree).
 - `src/client/input.rs`: camera pan and zoom, and taps and drags on the hex map.
 - `src/client/ui.rs` and the other client modules: this game's panels, advisors and views. They
   describe content and dock it; the layout module fits it to the device.
