@@ -198,7 +198,7 @@ pub fn choose(city: &CityView, civ: &CivView, supplies: &Supplies, rng: &mut imp
         (Building::Temple, city.population >= bevy_civ::diplomacy::BASE_CONTENT),
         (Building::Aqueduct, city.population >= 7),
         (Building::Granary, city.population < 8),
-        (Building::Barracks, civ.at_war || civ.aggression > 0.6),
+        (Building::Barracks, (civ.at_war || civ.aggression > 0.6) && city.population >= 6),
         (Building::Library, true),
         (Building::Marketplace, true),
         (Building::Harbor, true),
