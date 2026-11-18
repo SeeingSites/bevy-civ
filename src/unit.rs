@@ -521,6 +521,21 @@ impl UnitType {
         })
     }
 
+    /// The most advanced unit along the upgrade line that `can_equip` allows: a unit whose next
+    /// step needs a resource the city lacks can still skip ahead to one that does not.
+    pub fn best_upgrade(&self, can_equip: impl Fn(UnitType) -> bool) -> Option<UnitType> {
+        let mut best = None;
+        let mut step = *self;
+        for _ in 0..12 {
+            let Some(next) = step.upgrades_to() else { break };
+            if can_equip(next) {
+                best = Some(next);
+            }
+            step = next;
+        }
+        best
+    }
+
     /// Gold to upgrade to `to`.
     pub fn upgrade_cost(&self, to: UnitType) -> i32 {
         (to.cost() as i32 - self.cost() as i32).max(10) * 2 + 20
@@ -552,6 +567,38 @@ impl Unit {
     /// Hit points when unhurt: 3, 4 for a veteran, 5 for elite; an army has that for each member.
     pub fn max_hp(&self) -> u32 {
         (3 + self.level as u32) * (1 + self.troops.len() as u32)
+    }
+
+    /// Gold to re-equip this unit - every member of an army - with the best that `can_equip`
+    /// allows, and what the leader becomes; `None` when nobody can be upgraded.
+    pub fn refit_cost(&self, can_equip: impl Fn(UnitType) -> bool) -> Option<(i32, UnitType)> {
+        let mut cost = 0;
+        let mut any = false;
+        let mut leader = self.unit_type;
+        for (i, kind) in std::iter::once(self.unit_type).chain(self.troops.iter().copied()).enumerate() {
+            if let Some(to) = kind.best_upgrade(&can_equip) {
+                cost += kind.upgrade_cost(to);
+                any = true;
+                if i == 0 {
+                    leader = to;
+                }
+            }
+        }
+        any.then_some((cost, leader))
+    }
+
+    /// Re-equips this unit (and every member of an army) as [`Unit::refit_cost`] priced it,
+    /// at full strength.
+    pub fn refit(&mut self, can_equip: impl Fn(UnitType) -> bool) {
+        if let Some(to) = self.unit_type.best_upgrade(&can_equip) {
+            self.unit_type = to;
+        }
+        for troop in &mut self.troops {
+            if let Some(to) = troop.best_upgrade(&can_equip) {
+                *troop = to;
+            }
+        }
+        self.hp = self.max_hp();
     }
 
     pub fn is_army_group(&self) -> bool {
@@ -731,6 +778,15 @@ pub fn join_army(leader: &mut Unit, members: &[Unit]) {
 #[cfg(test)]
 mod army_tests {
     use super::*;
+
+    #[test]
+    fn upgrades_skip_a_step_the_city_cannot_equip() {
+        // No saltpeter: a longbowman cannot become a musketman or rifleman, but can become infantry.
+        let no_saltpeter = |to: UnitType| !to.required_resources().contains(&Resource::Saltpeter) && to != UnitType::MechInfantry;
+        assert_eq!(UnitType::Longbowman.best_upgrade(no_saltpeter), Some(UnitType::Infantry));
+        assert_eq!(UnitType::Longbowman.best_upgrade(|_| false), None);
+        assert_eq!(UnitType::Warrior.best_upgrade(|to| to == UnitType::Spearman), Some(UnitType::Spearman));
+    }
 
     fn unit(kind: UnitType, hp: u32, level: u8) -> Unit {
         Unit { unit_type: kind, movement_left: 1, owner: 0, position: Hex::ZERO, build_turns_left: None, current_build: None, fortified: false, road_credit: 0, hp, level, troops: Vec::new(), fatigue: 0, carrier: None }
