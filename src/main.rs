@@ -388,6 +388,10 @@ pub enum Action {
     SetRates(u32, u32),
     /// Whether foreign migrants may settle in our cities.
     SetMigration(bool),
+    /// The selected city's governor chooses its builds (true) or the player does.
+    AutoBuild(bool),
+    /// Every one of our cities' governors chooses its builds (true), or none does.
+    AutoBuildAll(bool),
     /// Buy the rest of the selected city's project with gold (not wonders).
     Hurry,
     /// Rush the selected city's project with citizens' labour (Despotism and Communism).
@@ -2079,6 +2083,20 @@ fn apply_actions(
                     cycle.advance = true;
                 }
             }
+            Action::AutoBuild(on) => {
+                let Some(mut city) = selection.city.and_then(|e| cities.get_mut(e).ok()) else { continue };
+                if city.owner == PLAYER {
+                    city.auto_build = *on;
+                    dirty.ui = true;
+                }
+            }
+            Action::AutoBuildAll(on) => {
+                for mut city in cities.iter_mut().filter(|c| c.owner == PLAYER) {
+                    city.auto_build = *on;
+                }
+                log.push(if *on { "Every city's governor now chooses its builds when a project is done." } else { "Our cities wait for our orders again when a project is done." });
+                dirty.ui = true;
+            }
             Action::SetMigration(welcome) => {
                 state.welcome_migrants = *welcome;
                 log.push(if *welcome {
@@ -3406,12 +3424,14 @@ fn process_turn(
             }
         }
 
-        // A computer player's city gets its next project from the governor.
-        if needs_orders && !mine && owner != BARBARIANS {
+        // A computer player's city gets its next project from the governor - and so does one of ours
+        // whose governor we have put in charge of building, once its queue runs out.
+        let governed = !mine || (city.auto_build && city.queue.is_empty());
+        if needs_orders && governed && owner != BARBARIANS {
             if let Some(civ) = civs.players.iter().find(|c| c.id == owner) {
                 let civ_view = governor::CivView {
-                    tech: &civ.tech,
-                    aggression: civ.aggression,
+                    tech: if mine { &tech } else { &civ.tech },
+                    aggression: if mine { 0.4 } else { civ.aggression },
                     cities: city_counts.get(&owner).copied().unwrap_or(1),
                     workers: worker_counts.get(&owner).copied().unwrap_or(0),
                     settlers: settler_counts.get(&owner).copied().unwrap_or(0),
@@ -3444,6 +3464,9 @@ fn process_turn(
                     ProductionItem::Unit(u) if u.domain() == Domain::Sea => *navy_sizes.entry(owner).or_default() += 1,
                     ProductionItem::Unit(u) if u.domain() == Domain::Air => *air_sizes.entry(owner).or_default() += 1,
                     _ => {}
+                }
+                if mine && city.production_queue.as_ref() != Some(&next) {
+                    log.push(format!("The governor of {} starts on {}.", city.name, next.name()));
                 }
                 city.production_queue = Some(next);
             }
