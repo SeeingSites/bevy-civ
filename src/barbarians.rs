@@ -1,5 +1,15 @@
 //! Barbarians: raiders who appear in the wild lands outside every border, in bands that grow with
 //! the age of the world and carry its weapons (warriors at first, rifles and artillery much later).
+//!
+//! Modern raiders rise inside a people's own lands, out of its cities' troubles, and fight on the
+//! barbarians' side:
+//! - **Cartel gunmen** form near a city with a drug trade (likelier the worse it is), unless it has a
+//!   Police Station. While they are near, its drug trade cannot be rooted out; in an undefended city they
+//!   extort gold and melt away. Killing them seizes their assets.
+//! - **Insurgents** (a terror cell) form, once a people knows Electronics, in a city with grievances:
+//!   disorder, occupation (still resisting a conqueror), a faith not its ruler's, or long war. A
+//!   Police Station stops cells forming in its city. In an undefended city they wreck a building
+//!   and kill a citizen, and are spent - unless the police foil the plot.
 
 use std::collections::HashMap;
 
@@ -20,6 +30,59 @@ pub const QUIET_TURNS: u32 = 10;
 #[derive(Resource, Default, Clone, serde::Serialize, serde::Deserialize)]
 pub struct BarbarianState {
     pub spawn_timer: u32,
+}
+
+/// Most modern raiders allowed near one city at a time.
+pub const RAIDERS_NEAR: usize = 2;
+/// Gold seized from a cartel when its gunmen are killed.
+pub const SEIZED_GOLD: i32 = 25;
+/// Chance a city's Police Station foils an insurgents' plot.
+pub const POLICE_FOIL: f64 = 0.5;
+
+/// What breeds a terror cell in a city.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Grievance {
+    pub disorder: bool,
+    /// Still resisting a conqueror.
+    pub occupied: bool,
+    /// Follows a faith other than its ruler's.
+    pub foreign_faith: bool,
+    /// Its people have been at war a long time.
+    pub war_weary: bool,
+}
+
+impl Grievance {
+    pub fn count(&self) -> u32 {
+        [self.disorder, self.occupied, self.foreign_faith, self.war_weary].iter().filter(|g| **g).count() as u32
+    }
+
+    /// The worst of them, for the news.
+    pub fn reason(&self) -> &'static str {
+        if self.occupied {
+            "resentment of its occupiers"
+        } else if self.disorder {
+            "unrest in its streets"
+        } else if self.foreign_faith {
+            "anger at its rulers' faith"
+        } else {
+            "weariness of a long war"
+        }
+    }
+}
+
+/// The chance this turn that cartel gunmen form near a city with this level of drug trade.
+pub fn cartel_chance(narcotics: u32, police: bool) -> f64 {
+    if police || narcotics == 0 { 0.0 } else { 0.02 * narcotics as f64 - 0.01 }
+}
+
+/// The chance this turn that a terror cell forms in a city with these grievances.
+pub fn terror_chance(grievance: &Grievance, police: bool) -> f64 {
+    if police { 0.0 } else { 0.01 * grievance.count() as f64 }
+}
+
+/// Gold cartel gunmen extort from an undefended city's people.
+pub fn extortion(population: u32, treasury: i32) -> i32 {
+    (10 + population as i32 * 4).min(treasury.max(0))
 }
 
 /// The band that rises when the world's peoples know `techs` technologies on average.
@@ -84,5 +147,22 @@ mod tests {
         assert_eq!(band(0), vec![UnitType::Warrior]);
         assert_eq!(band(20).len(), 2);
         assert!(band(50).contains(&UnitType::Infantry) && band(50).len() == 3);
+    }
+
+    #[test]
+    fn modern_raiders_rise_from_drugs_and_grievance_unless_policed() {
+        assert_eq!(cartel_chance(0, false), 0.0);
+        assert!(cartel_chance(1, false) > 0.0);
+        assert!(cartel_chance(3, false) > cartel_chance(2, false));
+        assert_eq!(cartel_chance(3, true), 0.0);
+        let angry = Grievance { disorder: true, occupied: true, ..Default::default() };
+        assert_eq!(angry.count(), 2);
+        assert!(terror_chance(&angry, false) > 0.0);
+        assert_eq!(terror_chance(&angry, true), 0.0);
+        assert_eq!(terror_chance(&Grievance::default(), false), 0.0);
+        assert_eq!(angry.reason(), "resentment of its occupiers");
+        assert_eq!(extortion(5, 1000), 30);
+        assert_eq!(extortion(5, 12), 12);
+        assert!(UnitType::Cartel.is_raider() && !UnitType::Cartel.is_trainable() && UnitType::Insurgent.is_army());
     }
 }

@@ -589,6 +589,26 @@ const UNITS = [
       `<path d="M-2,${GROUND - 38} h122 l6,4 h-6 l-8,20 q-6,14 -20,16 h-70 q-14,-2 -18,-26 Z" fill="#7d8590"/>` +
       `<path d="M4,${GROUND - 36} h112" stroke="#e8e4d8" stroke-width="1.6" stroke-dasharray="7 5"/><path d="M6,${GROUND - 18} h110" stroke="#4f5660" stroke-width="2.5"/>`);
   },
+  // Cartel Gunmen: dark jacket, ball cap and shades, a short submachine gun held low
+  (f) => {
+    const gun = (bob, sway) =>
+      limb(5, -42 + bob, 14, -34 + bob, '#2b2b30', 4) +
+      `<g transform="rotate(${sway * 2} 12 ${-32 + bob})"><path d="M4,${-32 + bob} h22" stroke-width="5"/><path d="M4,${-32 + bob} h22" stroke="#3a3d42" stroke-width="2.6"/><path d="M12,${-31 + bob} v9" stroke-width="3.5"/><path d="M12,${-31 + bob} v9" stroke="#2a2a2e" stroke-width="1.6"/></g>`;
+    const shades = (hx, hy) =>
+      `<path d="M${hx - 8.5},${hy - 2} a8.5,8.5 0 0 1 17,0 Z" fill="#1f1f24"/><path d="M${hx - 1},${hy - 2} h12" stroke-width="3"/><path d="M${hx - 1},${hy - 2} h12" stroke="#1f1f24" stroke-width="1.6"/>` +
+      `<rect x="${hx - 1}" y="${hy + 1}" width="9" height="3.5" rx="1.2" fill="#111" stroke="none"/>`;
+    return shadow(62, 24) + wrap(human(60, GROUND, { tunic: '#2b2b30', sleeve: '#2b2b30', legs: '#3b4a66', boots: '#141414', trim: '#b8892e', head: shades, front: gun }, f));
+  },
+  // Insurgents: scarf over the face, drab fatigues, a rifle slung forward
+  (f) => {
+    const rifle = (bob, sway) =>
+      limb(5, -42 + bob, 14, -32 + bob, '#7a6a4a', 4) +
+      `<g transform="rotate(${sway} 8 ${-30 + bob})"><path d="M-6,${-24 + bob} L30,${-50 + bob}" stroke-width="5.5"/><path d="M-6,${-24 + bob} L10,${-36 + bob}" stroke="#6b4424" stroke-width="3.4"/><path d="M10,${-36 + bob} L30,${-50 + bob}" stroke="#3f444a" stroke-width="2.2"/></g>`;
+    const scarf = (hx, hy) =>
+      `<path d="M${hx - 9},${hy - 1} q-1,-11 9,-11 q10,0 9,11 Z" fill="#5a4e3a"/><path d="M${hx - 8},${hy + 1} h16 v5 q-8,4 -16,0 Z" fill="#8a3a2e"/><path d="M${hx - 8},${hy + 3} h16" stroke="#6e2a20" stroke-width="1.2"/>`;
+    const pouch = (bob) => `<rect x="-14" y="${-44 + bob}" width="7" height="12" rx="2" fill="#4e4630"/>`;
+    return shadow(62, 24) + wrap(human(60, GROUND, { tunic: '#7a6a4a', sleeve: '#7a6a4a', legs: '#5e5440', boots: '#2a241c', head: scarf, back: pouch, front: rifle }, f));
+  },
 ];
 
 /** A great person: a figure standing in a softly pulsing golden aura. */

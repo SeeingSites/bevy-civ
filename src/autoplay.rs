@@ -153,7 +153,9 @@ fn troubles(world: &mut World) {
         gm += usize::from(buildings.has(Building::GmFarms));
     }
     let (moved, abroad) = world.resource::<GameState>().migrations;
+    let (cartels, cells, raids) = world.resource::<GameState>().raiders;
     println!("--- troubles: {drugs} cities with a drug trade, {scandals} in a food scandal; {police} Police Stations, {safety} Food Safety Agencies, {gm} GM Farms; {moved} migrants ({abroad} abroad)");
+    println!("--- raiders: {cartels} cartel bands and {cells} terror cells formed; {raids} raids on undefended cities");
 }
 
 fn armies(world: &mut World) {

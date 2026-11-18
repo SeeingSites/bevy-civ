@@ -169,6 +169,10 @@ fn help_lines(topic: HelpTopic) -> Vec<String> {
                 let res = if res.is_empty() { String::new() } else { format!(" and {}", res.join(", ")) };
                 if u.is_great_person() {
                     format!("{}: {}", u.name(), great::ability(u))
+                } else if u == UnitType::Cartel {
+                    format!("{}: attack {a}, defence {d}, moves {m}. Modern raiders, not trained: they rise near cities with a drug trade (likelier the worse it is) and no Police Station, keep the police from rooting it out while near, and extort gold from an undefended city. Killing them seizes {} gold.", u.name(), bevy_civ::barbarians::SEIZED_GOLD)
+                } else if u == UnitType::Insurgent {
+                    format!("{}: attack {a}, defence {d}, moves {m}. A terror cell, not trained: once a people knows Electronics, it forms near a city with grievances (disorder, occupation, a faith not its ruler's, a long war) unless it has a Police Station. In an undefended city it wrecks a building and kills a citizen; police foil half such plots.", u.name())
                 } else if u.capacity() > 0 {
                     let kind = if u == UnitType::Carrier { "aircraft" } else { "troops" };
                     format!("{}: attack {a}, defence {d}, moves {m}; carries {} {kind}; {} shields{needs}{res}", u.name(), u.capacity(), u.cost())
@@ -217,6 +221,7 @@ fn help_lines(topic: HelpTopic) -> Vec<String> {
             "Armies: a Great General in one of your cities forms up to four land units (five with Sun Tzu's War Academy) into one army. It fights as its best unit with the hit points of all, 10% harder for every member beyond the first, and moves at its slowest member's pace. Troops standing with an army that has room can join it (U).".to_string(),
             "Artillery, some ships and bombers bombard without risk. Troops cannot slip past enemy troops (zone of control). Pillage (P) wrecks improvements on enemy land; computer raiders do the same to yours.".to_string(),
             "A captured city resists for a while (longer for a big one; a garrison of two halves it) and produces nothing. Under a Republic or Democracy a long war makes citizens unhappy (a Police Station halves it).".to_string(),
+            "Modern raiders rise inside your own lands, on the barbarians' side. Cartel Gunmen form near a city with a drug trade and no Police Station (likelier the worse it is); while near, its drug trade cannot be rooted out, and an undefended city pays them off - killing them seizes their assets. Insurgents form, once you know Electronics, near a city with grievances (disorder, occupation, a faith not its ruler's, a long war); in an undefended city they wreck a building and kill a citizen. A Police Station stops both forming in its city and foils half of all plots; a garrison keeps them out.".to_string(),
             "Older units are upgraded in your cities for gold once the better unit can be built there. Under Monarchy, Republic, Communism or Fundamentalism, once you know Gunpowder, a city can draft a citizen into its best defender once a turn.".to_string(),
             "Air: enemy fighters that have not flown this turn intercept bombers attacking within 3 tiles of them, shooting most down; a bomber that survives is damaged.".to_string(),
             "Nuclear weapons: once anyone has built the Manhattan Project (Nuclear Fission), every people that knows Rocketry can build Nuclear Missiles. Select a missile, click a target within 12 tiles, then click it again to launch: everything within a tile is destroyed, a city there loses half its people and two buildings, fallout spoils the land, the victim goes to war with you and every other people trusts you less. An SDI Defense (Superconductors) shoots down missiles aimed within 3 tiles of its city.".to_string(),
@@ -841,7 +846,10 @@ pub fn setup_ui(mut commands: Commands, art: Res<Art>, mut images: ResMut<Assets
             left: Val::Px(0.0),
             right: Val::Px(0.0),
             top: Val::Px(74.0),
+            // A bottom edge gives windows a height to keep within (they scroll beyond it).
+            bottom: Val::Px(12.0),
             justify_content: JustifyContent::Center,
+            align_items: AlignItems::FlexStart,
             display: Display::None,
             ..default()
         },
@@ -1514,7 +1522,7 @@ pub fn rebuild_panels(
                         Node {
                             width: Val::Px(width),
                             max_width: Val::Percent(96.0),
-                            max_height: Val::Percent(90.0),
+                            max_height: Val::Percent(100.0),
                             overflow: Overflow::scroll_y(),
                             padding: UiRect::all(Val::Px(26.0)),
                             flex_direction: FlexDirection::Column,

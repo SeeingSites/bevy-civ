@@ -94,6 +94,10 @@ pub enum UnitType {
     Transport,
     /// Carries four aircraft and serves them as a moving airfield.
     Carrier,
+    /// Cartel gunmen: modern raiders bred by a city's drug trade (see `barbarians`).
+    Cartel,
+    /// A terror cell: modern raiders bred by grievance (see `barbarians`).
+    Insurgent,
 }
 
 /// Where a unit can go: over land (crossing the sea aboard ships), on the sea, or through the air.
@@ -109,7 +113,7 @@ pub const AIR_RANGE: i32 = 8;
 
 impl UnitType {
     /// Every unit type, in declaration order (also the row order of the sprite atlas).
-    pub const ALL: [UnitType; 46] = [
+    pub const ALL: [UnitType; 48] = [
         UnitType::Settler, UnitType::Worker, UnitType::Warrior, UnitType::Spearman, UnitType::Archer,
         UnitType::Horseman, UnitType::Legion, UnitType::WarChariot, UnitType::Immortal, UnitType::Phalanx,
         UnitType::Catapult, UnitType::Knight, UnitType::Cannon, UnitType::Rifleman, UnitType::Cavalry,
@@ -119,7 +123,7 @@ impl UnitType {
         UnitType::GreatArtist, UnitType::GreatEngineer, UnitType::Pikeman, UnitType::Musketman, UnitType::Infantry,
         UnitType::MechInfantry, UnitType::ModernArmor, UnitType::Scout, UnitType::Longbowman, UnitType::Galleon,
         UnitType::Submarine, UnitType::Engineers, UnitType::RadarArtillery, UnitType::Missionary, UnitType::NuclearMissile,
-        UnitType::Transport, UnitType::Carrier,
+        UnitType::Transport, UnitType::Carrier, UnitType::Cartel, UnitType::Insurgent,
     ];
 
     /// The five kinds of great person.
@@ -133,7 +137,13 @@ impl UnitType {
 
     /// Whether a city can put this unit into production.
     pub fn is_trainable(&self) -> bool {
-        !self.is_great_person()
+        !self.is_great_person() && !self.is_raider()
+    }
+
+    /// Modern raiders: cartel gunmen and insurgents, who rise inside a people's own lands and never
+    /// hold a city (they extort it, or strike at it, and are spent).
+    pub fn is_raider(&self) -> bool {
+        matches!(self, UnitType::Cartel | UnitType::Insurgent)
     }
 
     /// A world wonder that must stand somewhere in the world before anyone can build this unit.
@@ -189,6 +199,8 @@ impl UnitType {
             UnitType::NuclearMissile => "Nuclear Missile",
             UnitType::Transport => "Transport",
             UnitType::Carrier => "Carrier",
+            UnitType::Cartel => "Cartel Gunmen",
+            UnitType::Insurgent => "Insurgents",
         }
     }
 
@@ -206,6 +218,7 @@ impl UnitType {
             UnitType::NuclearMissile => Some(Tech::Rocketry),
             UnitType::Transport => Some(Tech::Industrialization),
             UnitType::Carrier => Some(Tech::AdvancedFlight),
+            UnitType::Cartel | UnitType::Insurgent => None,
             UnitType::Spearman | UnitType::Phalanx => Some(Tech::BronzeWorking),
             UnitType::Archer => Some(Tech::Mining),
             UnitType::Horseman => Some(Tech::HorsebackRiding),
@@ -265,6 +278,8 @@ impl UnitType {
             UnitType::NuclearMissile => (0, 0, 0),
             UnitType::Transport => (0, 3, 5),
             UnitType::Carrier => (1, 9, 5),
+            UnitType::Cartel => (5, 4, 2),
+            UnitType::Insurgent => (6, 3, 1),
             UnitType::Cavalry => (6, 2, 2),
             UnitType::Tank => (10, 5, 2),
             UnitType::Artillery => (8, 2, 1),
@@ -312,6 +327,7 @@ impl UnitType {
             UnitType::NuclearMissile => 160,
             UnitType::Transport => 60,
             UnitType::Carrier => 150,
+            UnitType::Cartel | UnitType::Insurgent => 0,
             UnitType::Cavalry => 60,
             UnitType::Tank => 100,
             UnitType::Artillery => 80,
@@ -359,6 +375,8 @@ impl UnitType {
             UnitType::NuclearMissile => Color::srgb(0.9, 0.9, 0.85),
             UnitType::Transport => Color::srgb(0.45, 0.48, 0.5),
             UnitType::Carrier => Color::srgb(0.4, 0.44, 0.48),
+            UnitType::Cartel => Color::srgb(0.3, 0.28, 0.3),
+            UnitType::Insurgent => Color::srgb(0.45, 0.4, 0.32),
             UnitType::Cavalry => Color::srgb(0.7, 0.5, 0.2),
             UnitType::Tank => Color::srgb(0.4, 0.4, 0.2),
             UnitType::Artillery => Color::srgb(0.5, 0.4, 0.3),

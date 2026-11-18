@@ -96,7 +96,7 @@ pub fn catalog() -> Vec<Scenario> {
     let mut random = Scenario {
         id: "random".into(),
         name: "New World".into(),
-        blurb: "Five peoples share an unknown, randomly generated land. Every game is different.".into(),
+        blurb: "Peoples share an unknown, randomly generated land: choose how many and how big. Every game is different.".into(),
         start_year: -4000,
         years_per_turn: 40,
         ..default()
