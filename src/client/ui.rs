@@ -138,7 +138,7 @@ fn help_lines(topic: HelpTopic) -> Vec<String> {
             "2. Choose what each city builds. Click a city to open it: Units, Buildings and Wonders tabs list what it can make, with the turns each takes. Early on, a Warrior or Spearman to guard each city, a Worker, and Settlers to spread out are the usual start.",
             "3. Improve the land. Workers build farms (F, more food, so cities grow), mines (M, more shields, so cities build faster) and roads (R, faster travel and trade). Press K and a worker does it all by itself.",
             "4. Research. Press Q to choose what your people learn next. Each discovery opens new units, buildings and wonders. Click any technology in the tree to make it a goal: your scholars research the way to it, in order, and the tree lights up the path.",
-            "5. Explore. The map starts dark. Send a Warrior or Scout out to find good land, tribal villages (with gifts inside) and other peoples. Ships, once you know Seafaring, carry troops across the sea.",
+            "5. Explore. The map starts dark. Send a Warrior or Scout out to find good land, tribal villages (with gifts inside) and other peoples - or press C and it explores by itself. Ships, once you know Seafaring, carry troops across the sea.",
             "6. Keep your people happy. Past a few citizens, a city needs temples, luxuries or entertainers, or it falls into disorder and stops working. The city panel shows content and unhappy faces.",
             "7. Meet your neighbours. Press E to make peace, trade resources and technology, or declare war. Defend your cities - a city with no troops in it is easily taken.",
             "Each turn, the game brings up every unit waiting for orders (a ring marks the one selected) and any city that needs a project. When nothing is left, it is time to end the turn. Short tips appear the first time something new happens; Basics & keys lists every shortcut.",
@@ -148,7 +148,7 @@ fn help_lines(topic: HelpTopic) -> Vec<String> {
         .collect(),
         HelpTopic::Basics => [
             "Click a unit or city to select it; click again or press Tab (Shift+Tab back) for the next unit on that tile - or pick one from the cards in the unit panel. Click a tile (or right-click) to move; far destinations become standing orders. Hover over a tile to see the route and how many turns it takes.",
-            "Space: skip a unit (or go to a city that needs a project, then end the turn). Enter: end the turn (if a city has no soldier and an enemy is in sight nearby, the game says so first; End Turn again goes ahead). N: next unit. H: fortify or sleep. Z: sentry (sleep until an enemy comes near). J: a worker or settler joins the city it stands in. I: board a ship in port. [ and ]: previous and next city. Ctrl+Z or Backspace: take back the last move. L: messages. Esc: close or deselect.",
+            "Space: skip a unit (or go to a city that needs a project, then end the turn). Enter: end the turn (if a city has no soldier and an enemy is in sight nearby, the game says so first; End Turn again goes ahead). N: next unit. H: fortify or sleep. Z: sentry (sleep until an enemy comes near). C: a scout, soldier or ship explores by itself, turn after turn, until nothing is left to find. J: a worker or settler joins the city it stands in. I: board a ship in port. [ and ]: previous and next city. Ctrl+Z or Backspace: take back the last move. L: messages. Esc: close or deselect.",
             "Workers and Engineers: F farm, M mine, R road (railroad on a road, with Steam Power), O fortress (Construction), X clear land or clean pollution, K automate. Settlers: B found a city.",
             "U uses the selected unit: a great person's gift, a General forming an army, a Missionary preaching, a caravan helping a wonder. T opens a caravan's trade route. P pillages enemy land. Diplomats act from the unit panel next to a foreign city.",
             "Q science, E foreign affairs, G trade, Y empire (government, rates, cities, military, score), F1 this encyclopedia, V sound, F2 save a file (the game also saves itself every turn).",
@@ -1207,6 +1207,9 @@ pub fn rebuild_panels(
                             button(r, art, "Fortress (O)", Command::Game(Action::Build(Improvement::Fortress)), BRONZE, 15.0);
                         }
                         button(r, art, "Automate (K)", Command::Game(Action::Automate), GREEN, 15.0);
+                    }
+                    if crate::can_explore(unit) {
+                        button(r, art, "Explore (C)", Command::Game(Action::Explore), GREEN, 15.0);
                     }
                     // Upgrade in one of our cities, once the successor can be equipped there.
                     let in_city = cities.iter().any(|(c, _, _)| c.position == unit.position && c.owner == PLAYER);

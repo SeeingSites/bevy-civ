@@ -175,6 +175,7 @@ impl Plugin for ClientPlugin {
                     .after(GameLogic)
                     .run_if(in_state(crate::AppState::Playing)),
             )
+            .add_systems(OnEnter(crate::AppState::Playing), tips::reset)
             .add_systems(Update, (tips::queue_tips.run_if(in_state(crate::AppState::Playing)), tips::show_tip).chain().after(GameLogic))
             .add_systems(
                 Update,
