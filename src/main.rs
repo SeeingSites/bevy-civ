@@ -368,6 +368,8 @@ pub enum Action {
     SelectCity(Entity),
     /// The selected unit, in one of the player's cities, is re-equipped as its modern successor.
     Upgrade,
+    /// Every unit of ours in the selected unit's city is re-equipped, while the treasury lasts.
+    UpgradeAll,
     /// Burn the selected city, taken this turn, to the ground.
     Raze,
     /// Let the governor choose all the selected city's worked tiles again.
@@ -1727,7 +1729,7 @@ fn apply_actions(
         // Anything a unit does besides moving cannot be taken back with Undo.
         if matches!(
             action,
-            Action::Bombard | Action::Pillage | Action::UseUnit | Action::Spy(_) | Action::TradeRoute | Action::FoundCity | Action::Build(_) | Action::Transform | Action::JoinCity | Action::Upgrade | Action::EndTurn
+            Action::Bombard | Action::Pillage | Action::UseUnit | Action::Spy(_) | Action::TradeRoute | Action::FoundCity | Action::Build(_) | Action::Transform | Action::JoinCity | Action::Upgrade | Action::UpgradeAll | Action::EndTurn
         ) {
             last_move.0 = None;
         }
@@ -2182,33 +2184,66 @@ fn apply_actions(
                 let Some(entity) = selected_unit else { continue };
                 let Ok(unit) = units.get(entity) else { continue };
                 let here = unit.position;
-                if unit.is_army_group() {
-                    log.push("An army cannot be re-equipped.");
-                    continue;
-                }
-                let Some(to) = unit.unit_type.upgrades_to() else {
-                    log.push(format!("A {} has nothing to upgrade to.", unit.unit_type.name()));
-                    continue;
-                };
                 if !cities.iter().any(|c| c.position == here && c.owner == PLAYER) {
                     log.push("Units are upgraded in one of your cities.");
                     continue;
                 }
-                if to.required_tech().is_some_and(|t| !tech.researched.contains(&t)) || !supplies.missing(here, to.required_resources()).is_empty() {
-                    log.push(format!("This city cannot equip a {} yet.", to.name()));
+                let equip = |to: UnitType| to.required_tech().is_none_or(|t| tech.researched.contains(&t)) && supplies.missing(here, to.required_resources()).is_empty();
+                let Some((cost, to)) = unit.refit_cost(equip) else {
+                    log.push(format!("This city cannot re-equip our {} yet.", unit.unit_type.name()));
                     continue;
-                }
-                let cost = unit.unit_type.upgrade_cost(to);
+                };
                 if state.gold < cost {
-                    log.push(format!("Upgrading to a {} costs {cost} gold; we have {}.", to.name(), state.gold));
+                    log.push(format!("Re-equipping our {} costs {cost} gold; we have {}.", unit.unit_type.name(), state.gold));
                     continue;
                 }
                 state.gold -= cost;
                 if let Ok(mut unit) = units.get_mut(entity) {
-                    log.push(format!("Our {} is re-equipped as a {} for {cost} gold.", unit.unit_type.name(), to.name()));
-                    unit.unit_type = to;
-                    unit.hp = unit.max_hp();
+                    if unit.is_army_group() {
+                        log.push(format!("Our army is re-equipped for {cost} gold."));
+                    } else {
+                        log.push(format!("Our {} is re-equipped as a {} for {cost} gold.", unit.unit_type.name(), to.name()));
+                    }
+                    unit.refit(equip);
                     unit.end_move();
+                }
+            }
+            Action::UpgradeAll => {
+                let Some(entity) = selected_unit else { continue };
+                let Ok(unit) = units.get(entity) else { continue };
+                let here = unit.position;
+                if !cities.iter().any(|c| c.position == here && c.owner == PLAYER) {
+                    log.push("Units are upgraded in one of your cities.");
+                    continue;
+                }
+                let equip = |to: UnitType| to.required_tech().is_none_or(|t| tech.researched.contains(&t)) && supplies.missing(here, to.required_resources()).is_empty();
+                let mut garrison: Vec<(Entity, i32)> = unit_entities
+                    .iter()
+                    .filter_map(|e| units.get(e).ok().map(|u| (e, u)))
+                    .filter(|(_, u)| u.owner == PLAYER && u.position == here)
+                    .filter_map(|(e, u)| u.refit_cost(equip).map(|(cost, _)| (e, cost)))
+                    .collect();
+                // Cheapest first, so the gold goes as far as it can.
+                garrison.sort_by_key(|(e, cost)| (*cost, e.index()));
+                let (mut done, mut spent, mut short) = (0, 0, 0);
+                for (e, cost) in garrison {
+                    if state.gold < cost {
+                        short += 1;
+                        continue;
+                    }
+                    if let Ok(mut unit) = units.get_mut(e) {
+                        state.gold -= cost;
+                        spent += cost;
+                        done += 1;
+                        unit.refit(equip);
+                        unit.end_move();
+                    }
+                }
+                match (done, short) {
+                    (0, 0) => log.push("Nothing here can be re-equipped yet."),
+                    (0, _) => log.push("We cannot afford to re-equip anyone here."),
+                    (_, 0) => log.push(format!("{done} units re-equipped for {spent} gold.")),
+                    _ => log.push(format!("{done} units re-equipped for {spent} gold; {short} more wait for gold.")),
                 }
             }
             Action::Bombard => {
@@ -4087,25 +4122,30 @@ fn process_turn(
             let knows = |t: Option<Tech>| t.is_none_or(|t| civ.tech.researched.contains(&t));
             let power = |u: UnitType| u.stats().0 + u.stats().1;
             let mut upgraded = 0;
-            let candidates: Vec<Entity> = units
+            let mut candidates: Vec<(Entity, bool, i32)> = units
                 .iter()
-                .filter(|(_, u)| u.owner == civ.id && u.troops.is_empty() && city_spots.get(&u.position) == Some(&civ.id))
-                .filter(|(_, u)| u.unit_type.upgrades_to().is_some_and(|to| knows(to.required_tech()) && supplies.has(u.position, to.required_resources())))
-                .map(|(e, _)| e)
+                .filter(|(_, u)| u.owner == civ.id && city_spots.get(&u.position) == Some(&civ.id))
+                .filter_map(|(e, u)| {
+                    let (_, to) = u.refit_cost(|to| knows(to.required_tech()) && supplies.has(u.position, to.required_resources()))?;
+                    // Soldiers before workers, and the most outdated first.
+                    Some((e, u.unit_type.is_military(), power(to) as i32 - power(u.unit_type) as i32))
+                })
                 .collect();
+            candidates.sort_by_key(|(e, military, gain)| (!*military, -*gain, e.index()));
+            let candidates: Vec<Entity> = candidates.into_iter().map(|(e, _, _)| e).collect();
             for entity in candidates {
-                if upgraded >= 3 {
+                if upgraded >= 4 {
                     break;
                 }
                 let Ok((_, mut unit)) = units.get_mut(entity) else { continue };
-                let Some(to) = unit.unit_type.upgrades_to() else { continue };
-                let cost = unit.unit_type.upgrade_cost(to);
-                if civ.gold < cost + 100 {
-                    break;
+                let here = unit.position;
+                let equip = |to: UnitType| knows(to.required_tech()) && supplies.has(here, to.required_resources());
+                let Some((cost, _)) = unit.refit_cost(equip) else { continue };
+                if civ.gold < cost + 50 {
+                    continue;
                 }
                 civ.gold -= cost;
-                unit.unit_type = to;
-                unit.hp = unit.max_hp();
+                unit.refit(equip);
                 upgraded += 1;
             }
             // At the size limit: stand down the weakest land unit if something twice as strong can be built.
@@ -4123,7 +4163,7 @@ fn process_turn(
                     .max()
                     .unwrap_or(0);
                 if let Some((entity, kind)) = military.iter().min_by_key(|(_, k)| power(*k)) {
-                    let stuck = kind.upgrades_to().is_none_or(|to| !knows(to.required_tech()));
+                    let stuck = kind.best_upgrade(|to| knows(to.required_tech())).is_none();
                     if power(*kind) * 2 <= best && (stuck || civ.gold < 200) {
                         dead.insert(*entity);
                         commands.entity(*entity).try_despawn_recursive();

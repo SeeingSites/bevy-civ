@@ -1182,11 +1182,14 @@ pub fn rebuild_panels(
                         button(r, art, "Automate (K)", Command::Game(Action::Automate), GREEN, 15.0);
                     }
                     // Upgrade in one of our cities, once the successor can be equipped there.
-                    if let Some(to) = unit.unit_type.upgrades_to() {
-                        let in_city = cities.iter().any(|(c, _, _)| c.position == unit.position && c.owner == PLAYER);
-                        let ready = to.required_tech().is_none_or(|t| tech.researched.contains(&t)) && supplies.missing(unit.position, to.required_resources()).is_empty();
-                        if in_city && ready {
-                            button(r, art, format!("Upgrade to {} ({} gold)", to.name(), unit.unit_type.upgrade_cost(to)), Command::Game(Action::Upgrade), GREEN, 15.0);
+                    let in_city = cities.iter().any(|(c, _, _)| c.position == unit.position && c.owner == PLAYER);
+                    let units_here = units.iter().filter(|u| u.owner == PLAYER && u.position == unit.position).count();
+                    let refit = unit.refit_cost(|to| to.required_tech().is_none_or(|t| tech.researched.contains(&t)) && supplies.missing(unit.position, to.required_resources()).is_empty());
+                    if let Some((cost, to)) = refit.filter(|_| in_city) {
+                        let label = if unit.is_army_group() { format!("Re-equip army ({cost} gold)") } else { format!("Upgrade to {} ({cost} gold)", to.name()) };
+                        button(r, art, label, Command::Game(Action::Upgrade), GREEN, 15.0);
+                        if units_here > 1 {
+                            button(r, art, "Upgrade all here", Command::Game(Action::UpgradeAll), GREEN, 15.0);
                         }
                     }
                     if unit.unit_type.can_bombard() && unit.can_move() {

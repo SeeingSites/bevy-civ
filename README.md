@@ -216,8 +216,8 @@ Computer players follow the same rules as you and are run by three pieces of cod
   sell resources among themselves.
 - **Reaching cut-off cities**: a city with no land route to the capital is roaded to the nearest
   coastal city of its owner, and coastal cities on both sides build Harbors to join the networks.
-- **Modern armies**: troops in their cities are upgraded while the treasury allows (keeping 100
-  gold in reserve, up to three a turn); at the army size limit the weakest unit that can no longer
+- **Modern armies**: troops and armies in their cities are upgraded while the treasury allows
+  (keeping 50 gold in reserve, up to four a turn, soldiers and the most outdated first); at the army size limit the weakest unit that can no longer
   be upgraded is stood down when something twice as strong can be built.
 - **Navy and air force**: at war, coastal cities add warships and industrial powers add aircraft;
   both hunt enemies within reach and otherwise stay at their base.
@@ -363,7 +363,9 @@ working directory.
   Medicine and the Hoover Dam Electronics.
 - **Defenders**: Pikeman (Engineering, Iron), Musketman (Gunpowder, Saltpeter), Rifleman
   (Industrialization, Saltpeter), Infantry (Electricity), Mech. Infantry (Computers, Oil); Modern
-  Armor (Plastics, Oil) follows the Tank. Older units upgrade along this line in a city for gold.
+  Armor (Plastics, Oil) follows the Tank. Older units upgrade along this line in a city for gold, skipping
+  straight to the best the city can equip (a city without Saltpeter can still turn Longbowmen into
+  Infantry). Upgrade all here re-equips a whole garrison at once, cheapest first.
 - **Happiness**: five citizens are content; the rest are unhappy until calmed by temples (+2),
   colosseums and cathedrals (+3), wonders, masterpieces, entertainers or martial law (troops in the
   city under Despotism, Monarchy and Communism). Each luxury the city can reach makes one citizen
@@ -381,7 +383,7 @@ working directory.
   wounds heal while resting (fully in a city). Faster attackers retreat rather than die.
 - **Armies**: select a Great General in one of your cities with two or three land units and press
   U (Form Army). The strongest unit leads; the army fights with its strength and the hit points of
-  every member, moves at its slowest member's pace and cannot be upgraded. The general is used up.
+  every member, moves at its slowest member's pace and is re-equipped member by member. The general is used up.
   Computer players form armies too.
 - **Space race to the nearest star**: research Space Flight, Plastics and Superconductors; cities
   with a Factory build 4 structures, 2 to 4 components (engines) and 2 modules. Launch from the
