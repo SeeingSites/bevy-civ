@@ -207,7 +207,8 @@ pub fn show_tip(
         ))
         .with_children(|p| {
             p.spawn(label_bundle(&art.font_title, format!("Tip: {title}"), 17.0, Color::srgb(0.95, 0.83, 0.52)));
-            p.spawn(label_bundle(&art.font_body, *text, 14.0, Color::srgb(0.94, 0.9, 0.82)));
+            let text = if screen.compact { super::ui::without_key_hints(text) } else { text.to_string() };
+            p.spawn(label_bundle(&art.font_body, text, 14.0, Color::srgb(0.94, 0.9, 0.82)));
             tip_buttons(p, &art);
         });
 }
