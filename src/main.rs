@@ -190,6 +190,9 @@ pub struct GameState {
     /// Citizens who have moved between cities so far, and how many of them crossed a border.
     #[serde(default)]
     pub migrations: (u32, u32),
+    /// Modern raiders so far: cartel bands and terror cells formed, and raids they made on cities.
+    #[serde(default)]
+    pub raiders: (u32, u32, u32),
     /// How the player's commerce is split, in percent: science and luxury; taxes take the rest.
     #[serde(default = "default_science_rate")]
     pub science_rate: u32,
@@ -247,6 +250,7 @@ impl Default for GameState {
             drafted: HashSet::new(),
             welcome_migrants: true,
             migrations: (0, 0),
+            raiders: (0, 0, 0),
             last_turn: LAST_TURN,
             science_rate: 60,
             luxury_rate: 0,
@@ -1225,6 +1229,11 @@ fn handle_map_click(
                 if won {
                     let rank = if promoted && unit.promote() { format!(" It is promoted to {}.", unit.level_name()) } else { String::new() };
                     log.push(format!("Victory! Your {} defeated the enemy {} ({} of {} hit points left).{rank}", unit.unit_type.name(), enemy_type.name(), unit.hp, unit.max_hp()));
+                    // A cartel's assets are seized.
+                    if enemy_type == UnitType::Cartel {
+                        commands.queue(|world: &mut World| world.resource_mut::<GameState>().gold += bevy_civ::barbarians::SEIZED_GOLD);
+                        log.push(format!("We seize the cartel's assets: {} gold.", bevy_civ::barbarians::SEIZED_GOLD));
+                    }
                     if great.victory(PLAYER) {
                         spawn_unit(&mut commands, unit.position, UnitType::GreatGeneral, PLAYER);
                         log.push("Your victories bring forth a Great General! Keep it with your troops: they fight half again as hard.");
@@ -2933,6 +2942,11 @@ fn process_turn(
     };
     let mut smugglers: HashSet<u32> = HashSet::new();
     let mut smuggled_by_us: HashSet<u32> = HashSet::new();
+    // Modern raiders already about, the tiles others hold, and who has the media age's grievances.
+    let raiders: Vec<(Hex, UnitType)> = units.iter().filter(|(_, u)| u.owner == BARBARIANS && u.unit_type.is_raider()).map(|(_, u)| (u.position, u.unit_type)).collect();
+    let held_tiles: HashSet<Hex> = units.iter().filter(|(_, u)| u.owner != BARBARIANS).map(|(_, u)| u.position).collect();
+    let media_age: HashSet<u32> = civs.players.iter().map(|c| c.id).filter(|o| knows_tech(*o, Tech::Electronics)).collect();
+    let mut uprisings: Vec<(Hex, u32, UnitType, String)> = Vec::new();
 
     for (mut city, mut buildings, mut happiness) in &mut cities {
         let mine = city.owner == PLAYER;
@@ -2956,7 +2970,10 @@ fn process_turn(
                 }
                 let restless = happiness.unhappy > happiness.happy;
                 let before = city.narcotics;
-                city.narcotics = bevy_civ::troubles::narcotics_turn(before, city.population, restless, smuggler.is_some(), buildings.has(Building::PoliceStation), &mut rng);
+                // Cartel gunmen nearby keep the police from rooting the trade out.
+                let cartel_near = raiders.iter().any(|(p, k)| *k == UnitType::Cartel && p.distance_to(city.position) <= 2);
+                let policed = buildings.has(Building::PoliceStation) && !cartel_near;
+                city.narcotics = bevy_civ::troubles::narcotics_turn(before, city.population, restless, smuggler.is_some(), policed, &mut rng);
                 if mine && city.narcotics > before {
                     log.push(format!(
                         "A drug trade takes hold in {} (level {} of {}): its people grow restless and the black market takes its cut. A Police Station roots it out.",
@@ -2966,6 +2983,24 @@ fn process_turn(
                     ));
                 } else if mine && city.narcotics < before && city.narcotics == 0 {
                     log.push(format!("The police have cleared the drug trade out of {}.", city.name));
+                }
+            }
+            // Modern raiders: cartel gunmen from a rife drug trade, a terror cell from grievance.
+            if owner != BARBARIANS && raiders.iter().filter(|(p, _)| p.distance_to(city.position) <= 4).count() < bevy_civ::barbarians::RAIDERS_NEAR {
+                let police = buildings.has(Building::PoliceStation);
+                if rng.gen_bool(bevy_civ::barbarians::cartel_chance(city.narcotics, police)) {
+                    uprisings.push((city.position, owner, UnitType::Cartel, "its drug trade".to_string()));
+                } else if media_age.contains(&owner) {
+                    let state_faith = capitals.get(&owner).and_then(|cp| religions.of(*cp));
+                    let grievance = bevy_civ::barbarians::Grievance {
+                        disorder: happiness.in_disorder(),
+                        occupied: city.resistance > 0,
+                        foreign_faith: religions.of(city.position).is_some_and(|f| state_faith.is_some_and(|s| s != f)),
+                        war_weary: war_turns.get(&owner).copied().unwrap_or(0) >= 15,
+                    };
+                    if rng.gen_bool(bevy_civ::barbarians::terror_chance(&grievance, police)) {
+                        uprisings.push((city.position, owner, UnitType::Insurgent, grievance.reason().to_string()));
+                    }
                 }
             }
             city.scandal = city.scandal.saturating_sub(1);
@@ -3450,6 +3485,37 @@ fn process_turn(
     foreign.smugglers = smugglers;
     foreign.smuggled_by_us = smuggled_by_us;
 
+    // The raiders gather on free land within two tiles of the city that bred them (insurgents close in).
+    {
+        let city_tiles: HashSet<Hex> = cities.iter().map(|(c, _, _)| c.position).collect();
+        let mut used: HashSet<Hex> = HashSet::new();
+        for (at, owner, kind, reason) in uprisings {
+            let reach = if kind == UnitType::Insurgent { 1 } else { 2 };
+            let spot = hexx::shapes::hexagon(at, 2)
+                .filter(|h| map.cells.contains(h) && !map.water.contains(h) && !city_tiles.contains(h) && !held_tiles.contains(h) && !used.contains(h))
+                .min_by_key(|h| ((h.distance_to(at) - reach).abs(), h.x, h.y));
+            let Some(spot) = spot else { continue };
+            used.insert(spot);
+            spawn_unit(&mut commands, spot, kind, BARBARIANS);
+            if kind == UnitType::Cartel {
+                state.raiders.0 += 1;
+            } else {
+                state.raiders.1 += 1;
+            }
+            if owner == PLAYER {
+                let name = cities.iter().find(|(c, _, _)| c.position == at).map(|(c, _, _)| c.name.clone()).unwrap_or_default();
+                log.push(match kind {
+                    UnitType::Cartel => format!(
+                        "Cartel gunmen have set up near {name}, fed by {reason}. While they are near, the drug trade cannot be rooted out; an undefended city pays them off. Kill them to seize their assets."
+                    ),
+                    _ => format!(
+                        "A terror cell has formed near {name}, fed by {reason}. Insurgents strike any city they can reach undefended. A Police Station stops cells forming and can foil their plots."
+                    ),
+                });
+            }
+        }
+    }
+
     // Migration: every few turns, citizens leave troubled cities for better ones nearby that welcome
     // them - at home, or abroad in peoples that know Industrialization.
     if state.turn % bevy_civ::troubles::MIGRATION_EVERY == 0 {
@@ -3926,15 +3992,52 @@ fn process_turn(
         }
     }
 
-    // An enemy military unit standing in an undefended city takes it.
-    for (mut city, _, _) in &mut cities {
+    // An enemy military unit standing in an undefended city takes it - except modern raiders, who
+    // extort it (cartels) or strike at it (insurgents), and are spent.
+    for (mut city, mut buildings, _) in &mut cities {
         let defended = units.iter().any(|(e, u)| !dead.contains(&e) && u.position == city.position && u.owner == city.owner && u.unit_type.is_army());
-        let occupier = units
+        let occupying = units
             .iter()
             .find(|(e, u)| {
                 !dead.contains(e) && u.position == city.position && u.owner != PLAYER && u.owner != city.owner && u.unit_type.is_army() && hostile(u.owner, city.owner)
             })
-            .map(|(_, u)| u.owner);
+            .map(|(e, u)| (e, u.owner, u.unit_type));
+        if let Some((raider, _, kind)) = occupying.filter(|(_, _, k)| k.is_raider() && !defended) {
+            state.raiders.2 += 1;
+            dead.insert(raider);
+            commands.entity(raider).try_despawn_recursive();
+            let mine = city.owner == PLAYER;
+            if kind == UnitType::Cartel {
+                let treasury = if mine { state.gold } else { civs.players.iter().find(|c| c.id == city.owner).map_or(0, |c| c.gold) };
+                let paid = bevy_civ::barbarians::extortion(city.population, treasury);
+                if mine {
+                    state.gold -= paid;
+                    log.push(format!("Cartel gunmen walk into undefended {} and extort {paid} gold, then melt into the streets.", city.name));
+                } else if let Some(civ) = civs.players.iter_mut().find(|c| c.id == city.owner) {
+                    civ.gold -= paid;
+                }
+            } else if buildings.has(Building::PoliceStation) && rng.gen_bool(bevy_civ::barbarians::POLICE_FOIL) {
+                if mine {
+                    log.push(format!("The police of {} foil an insurgents' plot and round up the cell.", city.name));
+                }
+            } else {
+                // A building wrecked (never a wonder or the palace) and a citizen killed.
+                let targets: Vec<Building> = buildings.buildings.iter().copied().filter(|b| !b.is_wonder() && *b != Building::ForbiddenPalace && !b.is_spaceship_part()).collect();
+                let wrecked = (!targets.is_empty()).then(|| targets[rng.gen_range(0..targets.len())]);
+                if let Some(b) = wrecked {
+                    buildings.buildings.retain(|x| *x != b);
+                }
+                if city.population > 1 {
+                    city.population -= 1;
+                }
+                if mine {
+                    let what = wrecked.map(|b| format!("the {} is wrecked", b.name())).unwrap_or_else(|| "the streets are left in ruins".to_string());
+                    log.push(format!("Insurgents strike undefended {}: {what} and a citizen is killed. Keep troops in your cities; a Police Station foils such plots.", city.name));
+                }
+            }
+            continue;
+        }
+        let occupier = occupying.map(|(_, owner, _)| owner);
         if let Some(new_owner) = occupier.filter(|_| !defended) {
             if city.owner == PLAYER {
                 log.push(format!("{} has fallen to {} forces!", city.name, civ_name(new_owner)));
