@@ -1347,6 +1347,19 @@ pub fn rebuild_panels(
                 };
                 p.spawn(label(&art.font_body, note, 13.0, MUTED));
             }
+            // Who chooses the next project: the player, or the city's governor.
+            if mine {
+                p.spawn(row(6.0)).with_children(|r| {
+                    let (text, tint) = if city.auto_build { ("Governor builds: On", GREEN) } else { ("Governor builds: Off", BRONZE) };
+                    button(r, art, text, Command::Game(Action::AutoBuild(!city.auto_build)), tint, 12.0);
+                    r.spawn(label(
+                        &art.font_body,
+                        if city.auto_build { "it picks the next project when one is done (after the queue)" } else { "units repeat until you choose; buildings wait for orders" },
+                        12.0,
+                        MUTED,
+                    ));
+                });
+            }
             match &city.production_queue {
                 Some(item) => {
                     let left = (item.cost().saturating_sub(city.production_progress) as f32 / production.max(1) as f32).ceil();
@@ -1810,6 +1823,12 @@ pub fn rebuild_panels(
                                 ours.sort_by_key(|(_, c)| std::cmp::Reverse(c.population));
                                 if ours.is_empty() {
                                     w.spawn(label(&art.font_body, "We have no cities.", 14.0, INK));
+                                } else {
+                                    w.spawn(row(6.0)).with_children(|r| {
+                                        r.spawn(label(&art.font_bold, "Governors choose builds:", 14.0, INK));
+                                        button(r, art, "In every city", Command::Game(Action::AutoBuildAll(true)), BRONZE, 13.0);
+                                        button(r, art, "In none", Command::Game(Action::AutoBuildAll(false)), BRONZE, 13.0);
+                                    });
                                 }
                                 for (entity, city) in ours {
                                     let Some((_, buildings, happiness)) = cities.iter().find(|(c, _, _)| c.position == city.position) else { continue };

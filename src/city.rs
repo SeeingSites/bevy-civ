@@ -39,6 +39,9 @@ pub struct City {
     /// Turns its people stay angry after an adulterated-food scandal.
     #[serde(default)]
     pub scandal: u32,
+    /// The governor chooses its next project whenever one is finished (and its queue is empty).
+    #[serde(default)]
+    pub auto_build: bool,
 }
 
 /// Most projects a city can have waiting.
@@ -282,6 +285,7 @@ pub fn spawn_city(
                 pinned: Vec::new(),
                 narcotics: 0,
                 scandal: 0,
+                auto_build: false,
             },
             Name::new(name),
             CityBuildings { buildings: vec![] },
@@ -315,6 +319,7 @@ mod hurry_tests {
             pinned: Vec::new(),
                 narcotics: 0,
                 scandal: 0,
+                auto_build: false,
         }
     }
 

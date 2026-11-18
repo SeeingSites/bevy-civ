@@ -21,9 +21,9 @@ const SETTING: &str = "tips.json";
 
 /// (id, title, text)
 const TIPS: [(&str, &str, &str); 21] = [
-    ("welcome", "Welcome", "Your people await your orders. Click one of your units to select it, then click a tile to send it there. Enter ends the turn. New to this kind of game? F1 opens How to play, a short guide to your first turns."),
+    ("welcome", "Welcome", "Your people await your orders. Click (or tap) one of your units to select it, then a tile to send it there. End Turn (Enter) passes play to the other peoples. New to this kind of game? Help (F1) opens How to play, a short guide to your first turns."),
     ("end_turn", "Ending the turn", "Every unit has its orders. Press Enter (or End Turn, bottom right) and the other peoples take their turns; then a new turn begins and your units can move again."),
-    ("unit", "Moving units", "Hover over a tile to see the route and how many turns it takes. Far destinations become standing orders. H fortifies a unit so it is not asked again."),
+    ("unit", "Moving units", "Point at a tile to see the route and how many turns it takes. Far destinations become standing orders. Fortify (H) keeps a unit in place so it is not asked again."),
     ("settler", "Settlers", "Settlers found new cities: move one to a good spot at least two tiles from other cities and press B. Rivers and coasts make fine sites."),
     ("explore", "Exploring", "Scouts move far and see far. Send them towards the dark edges of the map: they find good land, tribal villages (walk in for a gift) and other peoples."),
     ("ship", "Ships", "This ship can carry units. Move troops onto its tile (or press I in port) to board, then sail it; to land them, select a unit aboard and click a land tile next to the ship."),
@@ -31,7 +31,7 @@ const TIPS: [(&str, &str, &str); 21] = [
     ("worker", "Workers", "Workers improve the land: F farm, M mine, R road (roads triple movement), X clear land. K lets the worker look after your land by itself."),
     ("city", "Your cities", "The city panel shows food, shields, science, gold and happiness. Choose what to build in the Units, Buildings and Wonders tabs. A city keeps training the same unit until you change it."),
     ("research", "Research", "Press Q for the science advisor: choose what your scholars study next, and see the whole tree of knowledge."),
-    ("idle", "A city needs a project", "A city that finished a building waits for your next order. Space brings it up before the turn ends."),
+    ("idle", "A city needs a project", "A city that finished a building waits for your next order. Or switch on Governor builds in its panel (or for every city in the Empire window, Cities) and its governor picks for you."),
     ("contact", "Other peoples", "You have met another people. Press E for the foreign advisor: treaties, trade in resources and technology, and their mood towards you."),
     ("disorder", "Unhappy cities", "A city in disorder produces nothing. Build a temple, connect luxuries, make some citizens entertainers (Overview tab) or station troops under Despotism or Monarchy."),
     ("great", "A great person", "A great person has been born. Select it and press U to use it: a scientist completes research, an engineer finishes a building, a merchant trades abroad, an artist makes a masterpiece."),
@@ -49,11 +49,16 @@ pub struct Tips {
     pub enabled: bool,
     pub shown: HashSet<&'static str>,
     pub current: Option<&'static str>,
+    /// The turn the current tip appeared: it steps aside by itself after a few turns.
+    pub shown_on: u32,
 }
+
+/// Turns a tip stays up unless dismissed.
+const TIP_TURNS: u32 = 3;
 
 impl Default for Tips {
     fn default() -> Self {
-        Self { enabled: read_setting(SETTING).as_deref() != Some("off"), shown: HashSet::new(), current: None }
+        Self { enabled: read_setting(SETTING).as_deref() != Some("off"), shown: HashSet::new(), current: None, shown_on: 0 }
     }
 }
 
@@ -88,6 +93,10 @@ pub fn queue_tips(
     diplomacy: Res<Diplomacy>,
     ui: Res<UiState>,
 ) {
+    // A tip left up for a few turns steps aside for the next.
+    if tips.current.is_some() && state.turn >= tips.shown_on + TIP_TURNS {
+        tips.current = None;
+    }
     // No new tip while a window is open: it would only cover what the player is reading.
     if !tips.enabled || tips.current.is_some() || state.victory.is_some() || ui.modal.is_some() {
         return;
@@ -121,6 +130,7 @@ pub fn queue_tips(
     if let Some((id, _, _)) = TIPS.iter().find(|(id, _, _)| !tips.shown.contains(id) && due(id)) {
         tips.shown.insert(id);
         tips.current = Some(id);
+        tips.shown_on = state.turn;
     }
 }
 
