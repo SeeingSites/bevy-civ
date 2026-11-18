@@ -320,6 +320,10 @@ working directory.
   tile is worked for free with a bonus. A governor picks tiles (food first until the city can grow,
   then a balance); open a city and its area shows each tile's yield, the worked tiles ringed:
   click a tile to move a citizen there or off it (to entertain), or let the governor choose again.
+- **Governor builds**: each of your cities' governors also chooses its next project when one is
+  done (after anything you queued), with the same judgement the computer players use. It is on in
+  new games; switch it off in a city's panel, or for every city under Empire, Cities, to choose by
+  hand - then units repeat until you change the order and buildings wait for one.
 - **Barbarians**: from turn 10, every 8 turns a band rises on wild land outside every border and
   away from any unit; it grows (one to three units) and re-arms with the age of the world, from
   warriors to infantry and artillery.
