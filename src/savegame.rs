@@ -26,7 +26,7 @@ use bevy_civ::trade::TradeRoutes;
 use bevy_civ::unit::{spawn_unit, Unit};
 
 use crate::foreign::Foreign;
-use crate::{Automated, Cycle, Dirty, GameLog, GameState, GoTo, GoldenAges, History, HomeCity, MapData, Rivers, PLAYER};
+use crate::{Automated, Cycle, Dirty, Exploring, GameLog, GameState, GoTo, GoldenAges, History, HomeCity, MapData, Rivers, PLAYER};
 
 /// Bumped whenever the format changes in a way older files cannot be read.
 pub const VERSION: u32 = 1;
@@ -40,12 +40,19 @@ pub struct SavedUnit {
     pub home: Option<Hex>,
     pub goto: Option<Hex>,
     pub automated: bool,
+    /// Out exploring by itself (E).
+    #[serde(default)]
+    pub exploring: bool,
 }
 
 #[derive(Serialize, Deserialize)]
 pub struct SavedCity {
     pub city: City,
     pub buildings: Vec<Building>,
+    /// Happy, content and unhappy citizens as of the last turn (so a loaded city is not shown in
+    /// disorder until the turn is over).
+    #[serde(default)]
+    pub mood: Option<[u32; 3]>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -131,8 +138,8 @@ pub fn write_save(
     ),
     mut log: ResMut<GameLog>,
     tiles: Query<&HexTile>,
-    cities: Query<(&City, &CityBuildings)>,
-    units: Query<(&Unit, Option<&HomeCity>, Option<&GoTo>, Has<Automated>)>,
+    cities: Query<(&City, &CityBuildings, &Happiness)>,
+    units: Query<(&Unit, Option<&HomeCity>, Option<&GoTo>, Has<Automated>, Has<Exploring>)>,
 ) {
     let download = requests.read().fold(None, |any: Option<bool>, r| Some(any.unwrap_or(false) || r.download));
     let Some(download) = download else { return };
@@ -158,10 +165,10 @@ pub fn write_save(
         villages: villages.clone(),
         log: log.lines.clone(),
         tiles: tiles.iter().cloned().collect(),
-        cities: cities.iter().map(|(c, b)| SavedCity { city: c.clone(), buildings: b.buildings.clone() }).collect(),
+        cities: cities.iter().map(|(c, b, h)| SavedCity { city: c.clone(), buildings: b.buildings.clone(), mood: Some([h.happy, h.content, h.unhappy]) }).collect(),
         units: units
             .iter()
-            .map(|(u, home, goto, automated)| SavedUnit { unit: u.clone(), home: home.map(|h| h.0), goto: goto.map(|g| g.0), automated })
+            .map(|(u, home, goto, automated, exploring)| SavedUnit { unit: u.clone(), home: home.map(|h| h.0), goto: goto.map(|g| g.0), automated, exploring })
             .collect(),
     };
     let json = match serde_json::to_string(&game) {
@@ -224,7 +231,11 @@ pub fn restore_world(
     for saved in &game.cities {
         let c = &saved.city;
         let entity = spawn_city(&mut commands, c.position, c.name.clone(), c.population, c.owner, c.is_capital);
-        commands.entity(entity).insert((c.clone(), CityBuildings { buildings: saved.buildings.clone() }, Happiness::new(c.population)));
+        let mut mood = Happiness::new(c.population);
+        if let Some([happy, content, unhappy]) = saved.mood.filter(|m| m.iter().sum::<u32>() == c.population) {
+            mood = Happiness { happy, content, unhappy };
+        }
+        commands.entity(entity).insert((c.clone(), CityBuildings { buildings: saved.buildings.clone() }, mood));
     }
     for saved in &game.units {
         let u = &saved.unit;
@@ -239,6 +250,9 @@ pub fn restore_world(
         }
         if saved.automated {
             e.insert(Automated);
+        }
+        if saved.exploring {
+            e.insert(Exploring);
         }
     }
     // Saves from before troops needed ships can have troops crossing the sea by themselves: give
@@ -361,7 +375,7 @@ mod tests {
         use bevy_civ::unit::UnitType;
         let at = |kind: UnitType, x: i32, owner: u32| {
             let unit = Unit { unit_type: kind, movement_left: 1, owner, position: Hex::new(x, 0), build_turns_left: None, current_build: None, fortified: false, road_credit: 0, hp: 3, level: 0, troops: Vec::new(), fatigue: 0, carrier: None };
-            SavedUnit { unit, home: None, goto: None, automated: false }
+            SavedUnit { unit, home: None, goto: None, automated: false, exploring: false }
         };
         let water: HashSet<Hex> = [Hex::new(1, 0), Hex::new(2, 0)].into();
         let units = vec![at(UnitType::Rifleman, 1, 2), at(UnitType::Rifleman, 1, 2), at(UnitType::Rifleman, 1, 2), at(UnitType::Rifleman, 2, 2), at(UnitType::Galleon, 2, 2), at(UnitType::Rifleman, 0, 2)];
@@ -422,8 +436,8 @@ mod tests {
             villages: Default::default(),
             log: vec!["hello".into()],
             tiles: vec![HexTile { coord: Hex::new(1, 2), terrain: Terrain::Hills, improvements: vec![], resource: None }],
-            cities: vec![SavedCity { city, buildings: vec![Building::Temple, Building::Oracle] }],
-            units: vec![SavedUnit { unit, home: Some(Hex::new(1, 2)), goto: Some(Hex::new(5, 5)), automated: false }],
+            cities: vec![SavedCity { city, buildings: vec![Building::Temple, Building::Oracle], mood: Some([0, 5, 1]) }],
+            units: vec![SavedUnit { unit, home: Some(Hex::new(1, 2)), goto: Some(Hex::new(5, 5)), automated: false, exploring: false }],
         }
     }
 
@@ -436,6 +450,7 @@ mod tests {
         assert_eq!(game.great.city[&Hex::new(1, 2)], [1, 2, 3, 4]);
         assert_eq!(game.culture.of(Hex::new(1, 2)), 77);
         assert_eq!(game.cities[0].buildings, vec![Building::Temple, Building::Oracle]);
+        assert_eq!(game.cities[0].mood, Some([0, 5, 1]));
         assert_eq!(game.cities[0].city.production_queue, Some(ProductionItem::Building(Building::Temple)));
         let unit = &game.units[0];
         assert_eq!((unit.unit.hp, unit.unit.level, unit.goto), (2, 1, Some(Hex::new(5, 5))));

@@ -181,6 +181,7 @@ pub fn keyboard_input(
         (KeyCode::Tab, Action::CycleStack),
         (KeyCode::KeyU, Action::UseUnit),
         (KeyCode::KeyK, Action::Automate),
+        (KeyCode::KeyC, Action::Explore),
         (KeyCode::KeyH, Action::Fortify),
         (KeyCode::Enter, Action::EndTurn),
         (KeyCode::KeyF, Action::Build(Improvement::Farm)),
