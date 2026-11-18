@@ -122,6 +122,9 @@ pub struct Foreign {
     pub cooldown: HashMap<u32, u32>,
     /// Military strength per civilization, refreshed every turn.
     pub strength: HashMap<u32, f32>,
+    /// Civilizations with a spaceship in flight (set each turn): the others try to stop it.
+    #[serde(skip)]
+    pub in_flight: HashSet<u32>,
     pub deals: Vec<Deal>,
     /// Resource deals between computer players.
     pub ai_deals: Vec<AiDeal>,
@@ -639,6 +642,9 @@ pub fn answer_offer(ctx: &mut Ctx, accept: bool) {
 }
 
 /// Runs once per turn: contact, drifting attitudes, and the decisions other leaders make.
+/// Chance each turn that a rival declares war on a people whose spaceship is in flight.
+pub const SPACE_RACE_WAR: f64 = 0.15;
+
 pub fn turn(ctx: &mut Ctx, fog: &FogOfWar, supplies: &Supplies, units: &[(Hex, u32)], cities: &[(Hex, u32)]) {
     let mut rng = rand::thread_rng();
     let turn = ctx.state.turn;
@@ -708,6 +714,10 @@ pub fn turn(ctx: &mut Ctx, fog: &FogOfWar, supplies: &Supplies, units: &[(Hex, u
         }
         if shared_enemy {
             target += 15;
+        }
+        // Our ship in flight would end the game: they want it stopped.
+        if ctx.foreign.in_flight.contains(&PLAYER) {
+            target -= 30;
         }
         if aggression > 0.55 && ours < theirs * 0.6 {
             target -= 10; // contempt for the weak
@@ -807,9 +817,19 @@ pub fn turn(ctx: &mut Ctx, fog: &FogOfWar, supplies: &Supplies, units: &[(Hex, u
         }
     }
 
-    // The other powers fight and make up among themselves.
+    // The other powers fight and make up among themselves. A people with a spaceship in flight is
+    // everyone's target: its rivals go to war to take its capital before the ship arrives.
     for (i, a) in alive.iter().enumerate() {
         for b in alive.iter().skip(i + 1) {
+            let launch = ctx.foreign.in_flight.contains(&a.0) != ctx.foreign.in_flight.contains(&b.0);
+            if launch && turn >= AI_GRACE_TURNS && ctx.diplomacy.get_treaty(a.0, b.0) != Treaty::War && nearest(a.0, b.0) <= 30 && rng.gen_bool(SPACE_RACE_WAR) {
+                set_treaty(ctx, a.0, b.0, Treaty::War);
+                if ctx.foreign.met.contains(&a.0) || ctx.foreign.met.contains(&b.0) {
+                    let (who, launcher) = if ctx.foreign.in_flight.contains(&a.0) { (&b.1, &a.1) } else { (&a.1, &b.1) };
+                    ctx.log.push(format!("{} declare war on {} to stop their spaceship.", crate::capitalised(who), launcher));
+                }
+                continue;
+            }
             if nearest(a.0, b.0) > 12 {
                 continue;
             }

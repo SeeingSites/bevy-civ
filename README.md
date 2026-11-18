@@ -39,7 +39,7 @@ Turn-based, Civilization-style empire building on a hex map, playable in the bro
 - Caravans (trade routes, help with wonders) and diplomats (embassies and espionage)
 - Diplomacy: treaties, attitude and reputation, tribute, tech exchange, resource deals
 - Computer players that research, expand, build, trade, spy, race for wonders and the stars
-- Victory by conquest, domination, diplomacy (United Nations), culture (20,000 points and twice any rival, scaled to the game's length), space race, or score at the last turn
+- Victory by conquest, domination, diplomacy (United Nations), culture (20,000 points and 1.6 times any rival, scaled to the game's length), space race, or score at the last turn
 - Multi-turn orders, route preview, worker automation, stack moves, raze or keep captured cities
 - Advisors (science, foreign, trade, empire: government, cities, military, score) and an encyclopedia
 - Saved games: automatic every turn, and as files that anyone can load
@@ -317,7 +317,7 @@ working directory.
   warriors to infantry and artillery.
 - **United Nations**: the wonder (Computers) holds a vote for Secretary-General every 10 turns
   between its owner and the highest-scoring other people; every people votes for itself if a
-  candidate, else for the candidate it likes better (or abstains); two thirds of all the votes win
+  candidate, else for the candidate it likes better (or abstains); a majority of all the members wins
   a diplomatic victory.
 - **More orders**: Sentry (Z) sleeps a unit until an enemy comes within two tiles; Join City (J)
   settles a worker (+1) or settler (+2) into the city it stands in. Missionaries preach in or next
@@ -337,7 +337,7 @@ working directory.
 - **Capitals and the fallen**: a people that loses its capital moves the palace to its largest
   city (corruption and the state religion follow it). A people with no city and no settler left
   is out of the game: its troops disband and it leaves diplomacy. Scores count citizens (2),
-  technologies (10) and wonders (50) the same way for everyone, and a rival holding two thirds of
+  technologies (10) and wonders (50) the same way for everyone, and a rival holding half of
   the world's cities (at least five) wins by domination.
 - **Build queue**: in the city panel, switch "Click to" from *Build now* to *Add to queue* and pick
   up to six projects; each starts when the one before is done (a unit in production gives way to
@@ -388,8 +388,9 @@ working directory.
 - **Space race to the nearest star**: research Space Flight, Plastics and Superconductors; cities
   with a Factory build 4 structures, 2 to 4 components (engines) and 2 modules. Launch from the
   Empire advisor's Space page, which shows every known ship's voyage from Sol to Alpha Centauri
-  (4.37 light-years): 12 turns, 2 fewer per extra engine. Computer players launch when ready. The
-  first ship to arrive wins; a ship in flight is lost with its capital.
+  (4.37 light-years): 18 turns, 2 fewer per extra engine. Computer players launch when ready. The
+  first ship to arrive wins; a ship in flight is lost with its capital - so a launch turns the world
+  against the launcher: rivals declare war and march on its capital.
 - **Nuclear weapons**: the Manhattan Project (Nuclear Fission) lets everyone who knows Rocketry build
   Nuclear Missiles. Select one, click a target within 12 tiles and click again to launch: every unit
   within a tile dies, a city there loses half its people and two buildings, fallout spoils the land,

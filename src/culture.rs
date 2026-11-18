@@ -10,8 +10,10 @@ use serde::{Deserialize, Serialize};
 
 use crate::building::Building;
 
-/// Culture a civilization needs, with half as much again as anyone else, for a cultural victory.
+/// Culture a civilization needs for a cultural victory, with [`VICTORY_LEAD_TENTHS`] / 10 times anyone else's.
 pub const VICTORY_CULTURE: u32 = 20_000;
+/// How far ahead of the next civilization a cultural victory takes (in tenths: 16 = 1.6 times).
+pub const VICTORY_LEAD_TENTHS: u32 = 16;
 
 /// Culture a cultural victory takes in a game of `last_turn` turns (20,000 in a 400-turn game).
 pub fn victory_culture(last_turn: u32) -> u32 {
@@ -81,7 +83,7 @@ impl CultureLedger {
 pub fn cultural_winner(totals: &HashMap<u32, u32>, threshold: u32) -> Option<u32> {
     let (leader, best) = totals.iter().max_by_key(|(_, c)| **c).map(|(o, c)| (*o, *c))?;
     let second = totals.iter().filter(|(o, _)| **o != leader).map(|(_, c)| *c).max().unwrap_or(0);
-    (best >= threshold && best >= second * 2).then_some(leader)
+    (best >= threshold && best * 10 >= second * VICTORY_LEAD_TENTHS).then_some(leader)
 }
 
 #[cfg(test)]
@@ -100,8 +102,8 @@ mod tests {
         ledger.add(Hex::new(5, 0), 10_000);
         let totals = ledger.totals([(Hex::ZERO, 0), (Hex::new(5, 0), 1)].into_iter());
         assert_eq!(cultural_winner(&totals, threshold), Some(0));
-        ledger.add(Hex::new(5, 0), 2_000);
+        ledger.add(Hex::new(5, 0), 4_000);
         let totals = ledger.totals([(Hex::ZERO, 0), (Hex::new(5, 0), 1)].into_iter());
-        assert_eq!(cultural_winner(&totals, threshold), None, "not twice as much as the next");
+        assert_eq!(cultural_winner(&totals, threshold), None, "not far enough ahead of the next");
     }
 }
