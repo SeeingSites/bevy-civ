@@ -258,6 +258,11 @@ pub struct UiState {
     /// The Messages window: page (0 = the latest), and whether only great events are shown.
     pub messages_page: usize,
     pub highlights_only: bool,
+    /// On a small screen the open city's sheet covers the map; this folds it down to its title
+    /// bar so tiles can be tapped (to move a citizen).
+    pub city_peek: bool,
+    /// The city `city_peek` was last judged for (a newly opened city starts with its sheet up).
+    pub peeked_city: Option<Entity>,
 }
 
 /// Pages of the foreign advisor.
@@ -350,6 +355,7 @@ pub enum Command {
     BackToScenarios,
     QuitToMenu,
     ToggleSound,
+    ToggleCityPeek,
     CityTab(CityTab),
     EmpireTab(EmpireTab),
     HelpTopic(HelpTopic),
@@ -570,6 +576,15 @@ fn unit_card(parent: &mut ChildBuilder, art: &Art, unit: &Unit, name: String, st
 }
 
 /// Moves left, with the thirds of a move left over from road travel ("1⅔").
+/// A button's text with its keyboard shortcut in brackets, e.g. "Fortify (H)". A phone has no
+/// keyboard, so on a compact screen the shortcut is left off (shorter buttons, a shorter panel).
+fn keyed(screen: &super::layout::Screen, text: &str) -> String {
+    match text.rsplit_once(" (") {
+        Some((name, _)) if screen.compact => name.to_string(),
+        _ => text.to_string(),
+    }
+}
+
 fn moves_left(unit: &Unit) -> String {
     let fraction = match unit.road_credit {
         1 => "⅓",
@@ -994,6 +1009,12 @@ pub fn rebuild_panels(
     }
     dirty.ui = false;
     let art = &*art;
+    // A newly opened city starts with its sheet up.
+    if ui.peeked_city != selection.city {
+        ui.peeked_city = selection.city;
+        ui.city_peek = false;
+    }
+    let peek = screen.compact && ui.city_peek;
 
     // --- unit panel ---
     if let Ok(root) = unit_panel.get_single() {
@@ -1123,7 +1144,7 @@ pub fn rebuild_panels(
                     }
                 }
                 if stack.len() > 1 && !(screen.compact && !ui.stack_open) {
-                    let together = if ui.group_move { "Move together: On" } else { "Move together: Off (or Shift-click)" };
+                    let together = if ui.group_move { "Move together: On" } else { if screen.compact { "Move together: Off" } else { "Move together: Off (or Shift-click)" } };
                     p.spawn(row(6.0)).with_children(|r| {
                         button(r, art, together, Command::ToggleGroupMove, if ui.group_move { GREEN } else { BRONZE }, 13.0);
                         button(r, art, "Fortify all", Command::Game(Action::StackOrder(true)), BRONZE, 13.0);
@@ -1187,24 +1208,24 @@ pub fn rebuild_panels(
             if mine {
                 p.spawn(row(6.0)).with_children(|r| {
                     if can_board {
-                        button(r, art, "Board ship (I)", Command::Game(Action::Board), GREEN, 15.0);
+                        button(r, art, keyed(&screen, "Board ship (I)"), Command::Game(Action::Board), GREEN, 15.0);
                     }
                     if can_leave {
                         button(r, art, if unit.carrier.is_some() { "Leave ship" } else { "Unload all" }, Command::Game(Action::Unload), BRONZE, 15.0);
                     }
                     if unit.unit_type == UnitType::Settler {
-                        button(r, art, "Found City (B)", Command::Game(Action::FoundCity), GREEN, 15.0);
+                        button(r, art, keyed(&screen, "Found City (B)"), Command::Game(Action::FoundCity), GREEN, 15.0);
                     }
                     if unit.unit_type.is_worker() && unit.build_turns_left.is_none() {
-                        button(r, art, "Farm (F)", Command::Game(Action::Build(Improvement::Farm)), BRONZE, 15.0);
-                        button(r, art, "Mine (M)", Command::Game(Action::Build(Improvement::Mine)), BRONZE, 15.0);
+                        button(r, art, keyed(&screen, "Farm (F)"), Command::Game(Action::Build(Improvement::Farm)), BRONZE, 15.0);
+                        button(r, art, keyed(&screen, "Mine (M)"), Command::Game(Action::Build(Improvement::Mine)), BRONZE, 15.0);
                         let rail = tiles.iter().any(|t| t.coord == unit.position && t.has_road() && !t.has_railroad()) && tech.researched.contains(&Tech::SteamPower);
                         button(r, art, if rail { "Railroad (R)" } else { "Road (R)" }, Command::Game(Action::Build(Improvement::Road)), BRONZE, 15.0);
-                        button(r, art, "Clear (X)", Command::Game(Action::Transform), BRONZE, 15.0);
+                        button(r, art, keyed(&screen, "Clear (X)"), Command::Game(Action::Transform), BRONZE, 15.0);
                         if tech.researched.contains(&Tech::Construction) {
-                            button(r, art, "Fortress (O)", Command::Game(Action::Build(Improvement::Fortress)), BRONZE, 15.0);
+                            button(r, art, keyed(&screen, "Fortress (O)"), Command::Game(Action::Build(Improvement::Fortress)), BRONZE, 15.0);
                         }
-                        button(r, art, "Automate (K)", Command::Game(Action::Automate), GREEN, 15.0);
+                        button(r, art, keyed(&screen, "Automate (K)"), Command::Game(Action::Automate), GREEN, 15.0);
                     }
                     // Upgrade in one of our cities, once the successor can be equipped there.
                     let in_city = cities.iter().any(|(c, _, _)| c.position == unit.position && c.owner == PLAYER);
@@ -1221,17 +1242,17 @@ pub fn rebuild_panels(
                         button(r, art, "Bombard", Command::Game(Action::Bombard), Color::srgb(0.95, 0.65, 0.5), 15.0);
                     }
                     if unit.unit_type == UnitType::Caravan {
-                        button(r, art, "Trade Route (T)", Command::Game(Action::TradeRoute), GREEN, 15.0);
-                        button(r, art, "Help Wonder (U)", Command::Game(Action::UseUnit), GREEN, 15.0);
+                        button(r, art, keyed(&screen, "Trade Route (T)"), Command::Game(Action::TradeRoute), GREEN, 15.0);
+                        button(r, art, keyed(&screen, "Help Wonder (U)"), Command::Game(Action::UseUnit), GREEN, 15.0);
                     }
                     // Pillage: troops on improved land that is not ours.
                     let foreign_land = supplies.territory.get(&unit.position).is_none_or(|(o, _)| *o != PLAYER);
                     let improved = tiles.iter().any(|t| t.coord == unit.position && bevy_civ::terrain::pillage_target(&t.improvements).is_some());
                     if unit.unit_type.is_army() && foreign_land && improved && !cities.iter().any(|(c, _, _)| c.position == unit.position) {
-                        button(r, art, "Pillage (P)", Command::Game(Action::Pillage), Color::srgb(0.95, 0.65, 0.5), 15.0);
+                        button(r, art, keyed(&screen, "Pillage (P)"), Command::Game(Action::Pillage), Color::srgb(0.95, 0.65, 0.5), 15.0);
                     }
                     if unit.unit_type == UnitType::Missionary {
-                        button(r, art, "Spread Faith (U)", Command::Game(Action::UseUnit), GREEN, 15.0);
+                        button(r, art, keyed(&screen, "Spread Faith (U)"), Command::Game(Action::UseUnit), GREEN, 15.0);
                     }
                     // Ground troops can join an army of ours on their tile that has room.
                     let capacity = bevy_civ::unit::army_capacity(wonders.owns(PLAYER, Building::SunTzu));
@@ -1239,28 +1260,28 @@ pub fn rebuild_panels(
                         a.owner == PLAYER && a.position == unit.position && a.is_army_group() && (a.members() as usize) < capacity
                     });
                     if bevy_civ::unit::can_join_army(unit) && army_here {
-                        button(r, art, "Join Army (U)", Command::Game(Action::UseUnit), GREEN, 15.0);
+                        button(r, art, keyed(&screen, "Join Army (U)"), Command::Game(Action::UseUnit), GREEN, 15.0);
                     }
                     if unit.unit_type == UnitType::GreatGeneral {
-                        button(r, art, "Form Army (U)", Command::Game(Action::UseUnit), GREEN, 15.0);
+                        button(r, art, keyed(&screen, "Form Army (U)"), Command::Game(Action::UseUnit), GREEN, 15.0);
                     } else if unit.unit_type.is_great_person() {
-                        button(r, art, "Use (U)", Command::Game(Action::UseUnit), GREEN, 15.0);
+                        button(r, art, keyed(&screen, "Use (U)"), Command::Game(Action::UseUnit), GREEN, 15.0);
                     }
                     if !unit.fortified {
                         let text = if unit.unit_type.is_military() { "Fortify (H)" } else { "Sleep (H)" };
-                        button(r, art, text, Command::Game(Action::Fortify), BRONZE, 15.0);
+                        button(r, art, keyed(&screen, text), Command::Game(Action::Fortify), BRONZE, 15.0);
                         if unit.unit_type.is_military() {
-                            button(r, art, "Sentry (Z)", Command::Game(Action::Sentry), BRONZE, 15.0);
+                            button(r, art, keyed(&screen, "Sentry (Z)"), Command::Game(Action::Sentry), BRONZE, 15.0);
                         }
                     }
                     let in_own_city = cities.iter().any(|(c, _, _)| c.position == unit.position && c.owner == PLAYER);
                     if in_own_city && matches!(unit.unit_type, UnitType::Worker | UnitType::Engineers | UnitType::Settler) {
-                        button(r, art, "Join City (J)", Command::Game(Action::JoinCity), BRONZE, 15.0);
+                        button(r, art, keyed(&screen, "Join City (J)"), Command::Game(Action::JoinCity), BRONZE, 15.0);
                     }
                     if last_move.0.as_ref().is_some_and(|(e, _)| Some(*e) == selection.unit) {
-                        button(r, art, "Undo move (Ctrl+Z)", Command::Game(Action::Undo), BRONZE, 15.0);
+                        button(r, art, keyed(&screen, "Undo move (Ctrl+Z)"), Command::Game(Action::Undo), BRONZE, 15.0);
                     }
-                    button(r, art, "Skip (Space)", Command::Game(Action::Skip), BRONZE, 15.0);
+                    button(r, art, keyed(&screen, "Skip (Space)"), Command::Game(Action::Skip), BRONZE, 15.0);
                     button(r, art, "Done", Command::Game(Action::Deselect), BRONZE, 15.0);
                 });
             }
@@ -1271,6 +1292,8 @@ pub fn rebuild_panels(
     if let Ok((root, mut node)) = city_panel.get_single_mut() {
         let city = selection.city.and_then(|e| cities.get(e).ok());
         node.display = if city.is_some() { Display::Flex } else { Display::None };
+        // Folded to the title bar (see `UiState::city_peek`), the sheet is no taller than that.
+        node.max_height = if peek { Val::Px(64.0) } else { Val::Auto };
         let capital = cities.iter().find(|(c, _, _)| c.is_capital && c.owner == PLAYER).map(|(c, _, _)| c.position);
         // Seats of government (capital and Forbidden Palace): corruption counts from the nearer.
         let seats: Vec<hexx::Hex> = cities.iter().filter(|(c, b, _)| c.owner == PLAYER && (c.is_capital || b.has(Building::ForbiddenPalace))).map(|(c, _, _)| c.position).collect();
@@ -1287,14 +1310,20 @@ pub fn rebuild_panels(
                         ours.sort_by_key(|(e, _)| e.index());
                         if ours.len() > 1 {
                             let index = ours.iter().position(|(_, at)| *at == city.position).unwrap_or(0);
-                            button(nav, art, "< [", Command::Game(Action::CycleCity(false)), BRONZE, 13.0);
+                            button(nav, art, if screen.compact { "<" } else { "< [" }, Command::Game(Action::CycleCity(false)), BRONZE, 13.0);
                             nav.spawn(label(&art.font_body, format!("{} of {}", index + 1, ours.len()), 13.0, CREAM));
-                            button(nav, art, "] >", Command::Game(Action::CycleCity(true)), BRONZE, 13.0);
+                            button(nav, art, if screen.compact { ">" } else { "] >" }, Command::Game(Action::CycleCity(true)), BRONZE, 13.0);
                         }
+                    }
+                    if screen.compact {
+                        button(nav, art, if peek { "Panel" } else { "Map" }, Command::ToggleCityPeek, BRONZE, 13.0);
                     }
                     button(nav, art, "Close", Command::Game(Action::Deselect), BRONZE, 13.0);
                 });
             });
+            if peek {
+                return;
+            }
             let kind = if city.is_capital { "capital" } else { "city" };
             p.spawn(label(&art.font_body, format!("{} {}  -  size {}", owner_name(city.owner, &civs), kind, city.population), 15.0, owner_color(city.owner).mix(&Color::WHITE, 0.55)));
             if !mine {
@@ -1303,7 +1332,7 @@ pub fn rebuild_panels(
             let garrison = crate::own_stack(city.position, unit_entities.iter(), |e| units.get(e).ok().map(|u| (u.position, u.owner)));
             if !garrison.is_empty() {
                 let units_here = if garrison.len() == 1 { "1 of your units is".to_string() } else { format!("{} of your units are", garrison.len()) };
-                p.spawn(label(&art.font_bold, format!("{units_here} here - press Tab or click the city again to pick one."), 14.0, GOLD));
+                p.spawn(label(&art.font_bold, format!("{units_here} here - {} the city again to pick one.", if screen.compact { "tap" } else { "press Tab or click" }), 14.0, GOLD));
             }
             if taken.0.contains(&city.position) {
                 p.spawn(row(6.0)).with_children(|r| {
@@ -1345,10 +1374,11 @@ pub fn rebuild_panels(
                     r.spawn(label(
                         &art.font_body,
                         format!(
-                            "Land: {} of {} citizens work tiles ({f} food, {s} shields, {g} gold; {} eaten). Click a tile on the map to move a citizen.",
+                            "Land: {} of {} citizens work tiles ({f} food, {s} shields, {g} gold; {} eaten). {} to move a citizen.",
                             city.worked.len(),
                             city.population,
-                            city.population * bevy_civ::tiles::FOOD_PER_CITIZEN
+                            city.population * bevy_civ::tiles::FOOD_PER_CITIZEN,
+                            if screen.compact { "Tap Map, then a tile on the map," } else { "Click a tile on the map" }
                         ),
                         13.0,
                         MUTED,
@@ -2761,6 +2791,7 @@ pub fn button_actions(
         sounds.send(Sfx::Click);
         match &command.0 {
             Command::ToggleSound => sound.toggle(),
+            Command::ToggleCityPeek => ui.city_peek = !ui.city_peek,
             Command::CityTab(tab) => ui.city_tab = *tab,
             Command::EmpireTab(tab) => ui.empire_tab = *tab,
             Command::HelpTopic(topic) => ui.help_topic = *topic,
@@ -2885,10 +2916,11 @@ pub fn rebuild_menu(
     menu: Res<MenuState>,
     state: Res<State<AppState>>,
     art: Res<Art>,
+    screen: Res<super::layout::Screen>,
     mut root: Query<(Entity, &mut Node), With<MenuRoot>>,
     mut commands: Commands,
 ) {
-    if !(menu.is_changed() || state.is_changed()) {
+    if !(menu.is_changed() || state.is_changed() || screen.is_changed()) {
         return;
     }
     let Ok((root, mut node)) = root.get_single_mut() else { return };
@@ -2958,6 +2990,16 @@ pub fn rebuild_menu(
                     let who = civ.map(|c| format!("{} of {}", c.leader, c.name)).unwrap_or_default();
                     w.spawn(label(&art.font_title, scenario.name.clone(), 24.0, INK));
                     w.spawn(label(&art.font_bold, format!("You lead as {who}."), 16.0, INK_SOFT));
+                    // On a short screen the options run past the bottom, so Begin goes up here.
+                    let buttons = |w: &mut ChildBuilder| {
+                        w.spawn(row(8.0)).with_children(|r| {
+                            button(r, art, "Back", Command::BackToPeoples, BRONZE, 15.0);
+                            button(r, art, "Begin", Command::StartGame, GREEN, 18.0);
+                        });
+                    };
+                    if screen.compact {
+                        buttons(w);
+                    }
                     if let Some(c) = civ {
                         w.spawn(label(&art.font_body, character_line(&c.name, &c.adjective), 14.0, INK_SOFT));
                     }
@@ -2996,10 +3038,9 @@ pub fn rebuild_menu(
                             }
                         });
                     }
-                    w.spawn(row(8.0)).with_children(|r| {
-                        button(r, art, "Back", Command::BackToPeoples, BRONZE, 15.0);
-                        button(r, art, "Begin", Command::StartGame, GREEN, 18.0);
-                    });
+                    if !screen.compact {
+                        buttons(w);
+                    }
                 }
                 Some(scenario) => {
                     w.spawn(label(&art.font_title, scenario.name.clone(), 24.0, INK));
