@@ -298,6 +298,12 @@ impl Building {
         matches!(self, Building::SpaceStructure | Building::SpaceComponent | Building::SpaceModule)
     }
 
+    /// A world wonder that must stand somewhere in the world before anyone can build this: the
+    /// Apollo Program opens the space race to every people.
+    pub fn required_wonder(&self) -> Option<Building> {
+        self.is_spaceship_part().then_some(Building::Apollo)
+    }
+
     /// Citizens this building makes content in its city.
     pub fn content(&self) -> u32 {
         match self {
@@ -386,7 +392,6 @@ impl Building {
         match self {
             Building::Library => 2,
             Building::University => 4,
-            Building::GreatLibrary => 5,
             Building::Copernicus => 6,
             Building::Newton => 8,
             Building::Observatory => 3,
@@ -399,7 +404,6 @@ impl Building {
         match self {
             Building::Barracks => 1,
             Building::Factory => 3,
-            Building::Pyramids => 3,
             Building::KingRichards => 4,
             Building::PowerPlant => 4,
             _ => 0,
@@ -452,8 +456,8 @@ impl Building {
     /// What a wonder does, in a few words (its yields in its own city, plus anything wider).
     pub fn wonder_effect(&self) -> &'static str {
         match self {
-            Building::Pyramids => "+3 shields here",
-            Building::GreatLibrary => "+5 science here",
+            Building::Pyramids => "a Granary in every city of its owner (+2 food where there is none)",
+            Building::GreatLibrary => "teaches its owner every technology known to two or more of the peoples it has met (until it learns Theory of Gravity)",
             Building::HangingGardens => "+2 food here, +1 content in every city",
             Building::Colossus => "+3 gold here",
             Building::Oracle => "+2 content in every city",
@@ -477,7 +481,7 @@ impl Building {
             Building::HooverDam => "+25% shields in every city",
             Building::Eiffel => "+2 culture a turn in every city",
             Building::Internet => "+3 science in every city with a Library",
-            Building::Apollo => "the whole world revealed",
+            Building::Apollo => "the whole world revealed to its owner; opens the space race: no people can build spaceship parts until it stands",
             Building::CureForCancer => "+2 content in every city",
             Building::Manhattan => "lets every people who knows Rocketry build Nuclear Missiles",
             Building::UnitedNations => "every 10 turns the world votes for Secretary-General: two thirds of the votes win a diplomatic victory",

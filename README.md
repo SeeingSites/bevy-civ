@@ -20,7 +20,8 @@ Turn-based, Civilization-style empire building on a hex map, playable in the bro
 - Specialists (entertainers, tax collectors, scientists) and corruption by distance
 - Science, luxury and tax rates, capped by your government
 - Strategic and luxury resources joined to cities by roads and harbours, and traded with leaders
-- 53 technologies from Pottery to Genetic Engineering, shown as a tree by era; click any to research the way to it
+- 53 technologies from Pottery to Genetic Engineering in four ages (Ancient Times, Middle Ages,
+  Industrial Age, Modern Age), shown as a tree; click any to research the way to it
 - Six governments chosen in a revolution (with anarchy): Despotism to Democracy, Communism and
   Fundamentalism; martial law where it applies
 - Combat in rounds with hit points, veterans and elites, retreat, walls, fortification, river and
@@ -28,7 +29,8 @@ Turn-based, Civilization-style empire building on a hex map, playable in the bro
 - A defender for every age: Warrior, Spearman, Phalanx, Pikeman, Musketman, Rifleman, Infantry and
   Mech. Infantry, and Modern Armor after the Tank
 - Ships and aircraft: transports carry troops across the sea, carriers carry aircraft
-- World wonders (one per world) with real effects, golden ages
+- World wonders (one per world) with real effects; golden ages begun by a wonder in a people's spirit
+  or its unique unit's first victory
 - Great people: generals, merchants, scientists, artists, engineers
 - Governors: with Governor builds on, a city picks its projects, calms disorder with entertainers (and releases them when they are no longer needed) and sends the Workers it trains to work on automatic; a city in disorder says so plainly in its panel
 - Auto-explore (C): scouts, soldiers and warships roam to the edge of the known world by themselves, turn after turn
@@ -122,8 +124,8 @@ else's work on it stops (their shields go to the next project) and the news is a
 
 | Wonder | Needs | Effect |
 |---|---|---|
-| Pyramids | Masonry | +3 shields in its city |
-| Great Library | Writing | +5 science in its city |
+| Pyramids | Masonry | a Granary in every city of its owner (+2 food where there is none) |
+| Great Library | Writing | its owner learns every technology known to two or more of the peoples it has met (until it learns Theory of Gravity) |
 | Hanging Gardens | Monarchy | +2 food in its city, +1 content in every city |
 | Colossus | Bronze Working | +3 gold in its city (needs Iron) |
 | Oracle | Mysticism | +2 content in every city |
@@ -147,10 +149,18 @@ else's work on it stops (their shields go to the next project) and the news is a
 | Eiffel Tower | Refining | +2 culture a turn in every city |
 | Hoover Dam | Replaceable Parts | +25% shields in every city |
 | The Internet | Computers | +3 science in every city with a Library |
-| Apollo Program | Space Flight | the whole world revealed |
+| Apollo Program | Space Flight | the whole world revealed to its owner; no people can build spaceship parts until it stands |
 | Cure for Cancer | Superconductors | +2 content in every city |
 
 A captured city's wonders change hands with it.
+
+Every wonder speaks to one or two of the six traits (Pyramids: Agricultural and Industrious; Great
+Library: Scientific; Colossus: Commercial; Oracle: Religious; Great Wall: Militaristic and
+Industrious; and so on - the encyclopedia's Wonders page and the city panel list them). A people's
+first wonder that matches one of its own traits begins its **golden age**, and so does the first
+victory of its unique unit over another people (not barbarians), whichever comes first: for 20 turns
+every worked tile that yields a shield yields one more, and every one that yields gold one more
+gold. Each people has one golden age a game.
 
 **Great people** are born in cities. Every turn a city earns great-person points from its buildings
 (Marketplace, Harbor and Bank for merchants; Library and University for scientists; Aqueduct and
@@ -223,6 +233,9 @@ Computer players follow the same rules as you and are run by three pieces of cod
   sailing there once the civilization knows Seafaring. Research follows temperament: warlike
   leaders study arms first, builders the economy; a civilization hemmed in on a small island
   studies Seafaring first; a technology that gives a better form of government is studied early.
+  Like the player, they trade knowledge: neighbours not at war swap a technology each (5% a turn
+  for each pair, when on good terms), and one with nothing to teach buys a lesson for gold (three
+  gold a beaker of its base cost).
   Troop ships wait in port for a load of four (or eight turns) rather than carry a lone soldier
   to its death; settlers sail at once. A computer player keeps at most three great generals.
 - **Cities** (`src/governor.rs`): each city picks its next project in order of need - a defender if
@@ -315,12 +328,22 @@ working directory.
   Trading Company. Savings earn 5% interest a turn, up to 2 gold per Bank and 3 per Stock Exchange.
   A Great Merchant makes a trade mission abroad (gold now) or settles in one of your cities as a
   trading house (+3 gold there every turn).
+- **Science and ages**: technologies belong to four ages - Ancient Times, the Middle Ages, the
+  Industrial Age and the Modern Age. A people enters an age with its first discovery there, and can
+  study an age's technologies only once it knows every required technology of the ages before
+  (optional: Horseback Riding, Seafaring and The Republic; Chivalry, Navigation and Democracy;
+  Communism and Fundamentalism). Each discovery makes the next ones dearer, and a technology is
+  cheaper the more of the other peoples know it - of those you have met - down to half price when
+  all of them do. A discovery takes at least 4 turns (beakers beyond its cost are lost) and at most
+  40, however little science goes into it. The first people to learn Philosophy founds the Way of
+  Reason and makes a free discovery; a Scientific people makes one on entering each new age.
 - **Rates**: each of your cities' commerce (its science and taxes) is pooled and split by the rates
   in the Empire advisor's Government tab: science, luxury, and taxes for the rest. Every 2 luxury
   make a citizen happy. A government limits any one rate: Despotism 60%, Monarchy and Communism
   70%, Republic 80%, Democracy 100%, Fundamentalism 50%; Anarchy allows no science.
 - **Traits and unique units**: every civilization has two traits - Militaristic (troops promoted
-  after half their victories), Commercial (+1 gold a city), Scientific (+1 science a city),
+  after half their victories), Commercial (+1 gold a city), Scientific (+1 science a city and a
+  free discovery in each new age),
   Religious (+1 content a city, shorter revolutions), Industrious (+1 shield a city), Agricultural
   (+1 food a city) - and a unique unit it trains a rank higher (Roman Legion, Spanish Knight...).
 - **Religion**: the first to learn Mysticism, Philosophy, Theology and Printing Press founds the Old
@@ -410,7 +433,9 @@ working directory.
   culture pushes its neighbours back (every city keeps its own ring). Land lost this way takes its
   resources and river gold with it. A city in disorder within 5
   tiles of a civilization with twice its owner's culture may defect.
-- **Golden age**: a civilization's first wonder brings 10 turns of +50% shields and extra gold.
+- **Golden age**: once a game, begun by a people's first wonder that matches one of its traits or by
+  its unique unit's first victory over another people: 20 turns of one more shield on every worked
+  tile that yields shields, and one more gold on every one that yields gold.
 - **Rivers**: +1 gold per river tile in a city's land, +25% defence, and fresh water.
 - **Pollution**: big industrial cities spoil tiles, which yield nothing until cleaned.
 - **Combat**: 3 hit points (4 veteran, 5 elite); winners may be promoted, Barracks train veterans,
@@ -419,8 +444,9 @@ working directory.
   U (Form Army). The strongest unit leads; the army fights with its strength and the hit points of
   every member, moves at its slowest member's pace and is re-equipped member by member. The general is used up.
   Computer players form armies too.
-- **Space race to the nearest star**: research Space Flight, Plastics and Superconductors; cities
-  with a Factory build 4 structures, 2 to 4 components (engines) and 2 modules. Launch from the
+- **Space race to the nearest star**: research Space Flight, Plastics and Superconductors; once
+  someone has built the Apollo Program, cities with a Factory build 4 structures, 2 to 4 components
+  (engines) and 2 modules. Launch from the
   Empire advisor's Space page, which shows every known ship's voyage from Sol to Alpha Centauri
   (4.37 light-years): 18 turns, 2 fewer per extra engine. Computer players launch when ready. The
   first ship to arrive wins; a ship in flight is lost with its capital - so a launch turns the world

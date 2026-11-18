@@ -106,6 +106,78 @@ impl Difficulty {
     }
 }
 
+/// What every people still in the game (holding a city) knows: the computer players' and ours.
+fn peoples_knowledge(civs: &Civilizations, tech: &TechState, holding: &HashSet<u32>) -> Vec<(u32, HashSet<Tech>)> {
+    civs.players
+        .iter()
+        .filter(|c| !c.is_human && !c.eliminated && holding.contains(&c.id))
+        .map(|c| (c.id, c.tech.researched.clone()))
+        .chain(holding.contains(&PLAYER).then(|| (PLAYER, tech.researched.clone())))
+        .collect()
+}
+
+/// The first victory of a people's unique unit over another people (not barbarians) begins its
+/// golden age, if it has not had one.
+fn unique_victory(golden: &mut GoldenAges, civs: &Civilizations, met: &HashSet<u32>, log: &mut GameLog, winner: u32, kind: UnitType, loser: u32) {
+    if winner == BARBARIANS || loser == BARBARIANS {
+        return;
+    }
+    let Some(civ) = civs.players.iter().find(|c| c.id == winner) else { return };
+    if bevy_civ::traits::of(&civ.name).unique != kind || !golden.begin(winner) {
+        return;
+    }
+    if winner == PLAYER {
+        log.push(format!("Our {} win their first battle against another people: a golden age begins! For {GOLDEN_AGE_TURNS} turns every worked tile that yields a shield or gold yields one more.", kind.name()));
+    } else if met.contains(&winner) {
+        log.push(format!("The victories of the {} {} begin a golden age for their people.", civ.adjective, kind.name()));
+    }
+}
+
+/// The technology after which the Great Library teaches no more.
+pub const GREAT_LIBRARY_UNTIL: Tech = Tech::TheoryOfGravity;
+
+/// The Great Library: its owner learns every technology that two or more of the other peoples it
+/// has met already know (and that it may study), until it learns [`GREAT_LIBRARY_UNTIL`] itself.
+fn great_library(civs: &mut Civilizations, tech: &mut TechState, wonders: &WorldWonders, met: &HashSet<u32>, holding: &HashSet<u32>, log: &mut GameLog) {
+    let Some(&(owner, _)) = wonders.built.get(&Building::GreatLibrary) else { return };
+    let knowledge = peoples_knowledge(civs, tech, holding);
+    let known_to = |t: Tech| knowledge.iter().filter(|(id, k)| *id != owner && (owner != PLAYER || met.contains(id)) && k.contains(&t)).count();
+    let learner = if owner == PLAYER { Some(tech) } else { civs.players.iter_mut().find(|c| c.id == owner && !c.eliminated).map(|c| &mut c.tech) };
+    let Some(learner) = learner else { return };
+    if learner.researched.contains(&GREAT_LIBRARY_UNTIL) {
+        return;
+    }
+    while let Some(t) = Tech::ALL.into_iter().find(|t| learner.can_research(*t) && known_to(*t) >= 2) {
+        learner.learn(t);
+        if owner == PLAYER {
+            log.push(format!("The {} teaches us {}, already known to {} peoples.", Building::GreatLibrary.name(), t.name(), known_to(t)));
+        }
+    }
+}
+
+/// A people entering a new age: the news, and a free discovery for a scientific people.
+fn new_ages(civs: &mut Civilizations, tech: &mut TechState, met: &HashSet<u32>, holding: &HashSet<u32>, log: &mut GameLog) {
+    for civ in civs.players.iter_mut().filter(|c| !c.is_human && !c.eliminated) {
+        let Some(era) = civ.tech.enter_new_era() else { continue };
+        let scientific = bevy_civ::traits::of(&civ.name).has(bevy_civ::traits::Trait::Scientific);
+        let gift = if scientific { civ.tech.discover() } else { None };
+        if met.contains(&civ.id) {
+            let gift = gift.map(|t| format!(" Their scholars mark it with a discovery: {}.", t.name())).unwrap_or_default();
+            log.push(format!("{} enter the {}.{gift}", capitalised(&civ.name), era.name()));
+        }
+    }
+    if !holding.contains(&PLAYER) {
+        return;
+    }
+    if let Some(era) = tech.enter_new_era() {
+        let scientific = civs.players.iter().find(|c| c.id == PLAYER).is_some_and(|c| bevy_civ::traits::of(&c.name).has(bevy_civ::traits::Trait::Scientific));
+        match scientific.then(|| tech.discover()).flatten() {
+            Some(gift) => log.push(format!("We enter the {}! Our scientific people marks it with a free discovery: {}.", era.name(), gift.name())),
+            None => log.push(format!("We enter the {}.", era.name())),
+        }
+    }
+}
+
 /// A computer player's score, counted the same way as the player's (population, cities' buildings).
 /// A computer player's score, counted exactly as the player's is (see `Score::calculate`): two points
 /// a citizen, ten a technology, fifty a wonder.
@@ -545,8 +617,10 @@ pub fn needs_orders(unit: &Unit) -> bool {
     unit.owner == PLAYER && unit.can_move() && unit.build_turns_left.is_none() && !unit.fortified
 }
 
-/// Golden ages: a civilization's first wonder starts one (once per game): +50% shields and +1 gold
-/// in every city for [`GOLDEN_AGE_TURNS`] turns.
+/// Golden ages, once per game for each people: begun by its first wonder that speaks to one of its
+/// traits (see `bevy_civ::traits::of_wonder`), or by the first victory of its unique unit over
+/// another people. For [`GOLDEN_AGE_TURNS`] turns every worked tile that yields a shield yields one
+/// more, and every one that yields gold one more gold.
 #[derive(Resource, Default, Clone, serde::Serialize, serde::Deserialize)]
 pub struct GoldenAges {
     #[serde(with = "bevy_civ::save::pairs")]
@@ -554,11 +628,17 @@ pub struct GoldenAges {
     pub had: HashSet<u32>,
 }
 
-pub const GOLDEN_AGE_TURNS: u32 = 10;
+pub const GOLDEN_AGE_TURNS: u32 = 20;
 
 impl GoldenAges {
     pub fn active(&self, owner: u32) -> bool {
         self.turns_left.get(&owner).is_some_and(|t| *t > 0)
+    }
+
+    /// What a worked tile yields to a people in its golden age.
+    pub fn tile(food_shields_gold: bevy_civ::tiles::Yield) -> bevy_civ::tiles::Yield {
+        let (food, shields, gold) = food_shields_gold;
+        (food, shields + u32::from(shields > 0), gold + u32::from(gold > 0))
     }
 
     /// Starts one if the civilization never had one. Returns whether it started.
@@ -1284,6 +1364,11 @@ fn handle_map_click(
                         spawn_unit(&mut commands, unit.position, UnitType::GreatGeneral, PLAYER);
                         log.push("Your victories bring forth a Great General! Keep it with your troops: they fight half again as hard.");
                     }
+                    // Our unique unit's first victory over another people begins our golden age.
+                    let kind = unit.unit_type;
+                    commands.queue(move |world: &mut World| world.resource_scope(|world, mut golden: Mut<GoldenAges>| {
+                        world.resource_scope(|world, mut log: Mut<GameLog>| unique_victory(&mut golden, world.resource::<Civilizations>(), &world.resource::<foreign::Foreign>().met, &mut log, PLAYER, kind, enemy_owner));
+                    }));
                     commands.entity(enemy_entity).try_despawn_recursive();
                     let more_defenders = snapshot.iter().any(|u| u.1 == hex && u.2 != PLAYER && u.0 != enemy_entity);
                     if !more_defenders && may_enter(unit.unit_type, hex, &map, &ports) {
@@ -1291,6 +1376,9 @@ fn handle_map_click(
                     }
                 } else {
                     log.push(format!("Defeat. Your {} was lost attacking a {}.", unit.unit_type.name(), enemy_type.name()));
+                    commands.queue(move |world: &mut World| world.resource_scope(|world, mut golden: Mut<GoldenAges>| {
+                        world.resource_scope(|world, mut log: Mut<GameLog>| unique_victory(&mut golden, world.resource::<Civilizations>(), &world.resource::<foreign::Foreign>().met, &mut log, enemy_owner, enemy_type, PLAYER));
+                    }));
                     commands.entity(selected).try_despawn_recursive();
                     selection.unit = None;
                     continue;
@@ -2918,6 +3006,10 @@ fn apply_actions(
                         log.push("Spaceship parts are built in cities with a Factory.");
                         continue;
                     }
+                    if let Some(wonder) = part.required_wonder().filter(|w| !wonders.built.contains_key(w)) {
+                        log.push(format!("No people can build a {} until the {} stands somewhere in the world.", part.name(), wonder.name()));
+                        continue;
+                    }
                     if let Some(needed) = part.required_building() {
                         if !selection.city.and_then(|e| walled.get(e).ok()).is_some_and(|(_, b)| b.has(needed)) {
                             log.push(format!("A {} needs a {} in the city first.", part.name(), needed.name()));
@@ -3012,6 +3104,19 @@ fn process_turn(
     log.turn = state.turn;
     spies.tick();
     golden.tick();
+    // Knowledge spreads: a technology is cheaper to study the more of the other peoples know it -
+    // of those we have met, for us - down to half price once all of them do.
+    {
+        let holding: HashSet<u32> = cities.iter().map(|(c, _, _)| c.owner).collect();
+        let knowledge = peoples_knowledge(&civs, &tech, &holding);
+        let others = |me: u32| knowledge.iter().filter(move |(id, _)| *id != me);
+        for civ in civs.players.iter_mut().filter(|c| !c.is_human) {
+            let id = civ.id;
+            civ.tech.set_known_abroad(|t| others(id).filter(|(_, k)| k.contains(&t)).count() as u32, others(id).count() as u32);
+        }
+        let met = &foreign.met;
+        tech.set_known_abroad(|t| others(PLAYER).filter(|(id, k)| met.contains(id) && k.contains(&t)).count() as u32, others(PLAYER).count() as u32);
+    }
     // The chance to raze last turn's conquests has passed; their former owners hold it against us.
     taken.0.clear();
     for loser in std::mem::take(&mut taken.1) {
@@ -3306,13 +3411,21 @@ fn process_turn(
             }
         }
 
-        // What a computer player's governor sees of this city.
+        // What a computer player's governor sees of this city (the Pyramids count as its Granary).
         let owner = city.owner;
         let gov = governments.get(&owner).copied().unwrap_or(Government::Despotism);
+        let has_pyramids = wonders.owns(owner, Building::Pyramids);
+        let governed_buildings = |b: &CityBuildings| {
+            let mut built = b.buildings.clone();
+            if has_pyramids && !built.contains(&Building::Granary) {
+                built.push(Building::Granary);
+            }
+            built
+        };
         let view = governor::CityView {
             position: city.position,
             population: city.population,
-            built: buildings.buildings.clone(),
+            built: governed_buildings(&buildings),
             coastal: city.position.all_neighbors().iter().any(|n| map.water.contains(n)),
             linked: supplies.linked.contains(&city.position),
             defended: armies.iter().any(|(p, o)| *p == city.position && *o == owner),
@@ -3359,6 +3472,8 @@ fn process_turn(
         let character = characters.get(&owner).copied();
         let (trait_food, trait_shields, trait_gold, trait_science) = character.map(|c| c.city_bonus()).unwrap_or_default();
         let (extra_food, extra_shields, extra_gold) = (extra_food + trait_food, extra_shields + trait_shields, extra_gold + trait_gold);
+        // The Pyramids are a Granary in every city of their owner.
+        let extra_food = extra_food + if has_pyramids && !buildings.has(Building::Granary) { Building::Granary.food_bonus() } else { 0 };
         if mine {
             total_science += trait_science;
         } else if owner != BARBARIANS {
@@ -3514,13 +3629,6 @@ fn process_turn(
         if !idle && wonders.owns(owner, Building::HooverDam) {
             city.production_progress += city.production_per_turn(&buildings, gov, dist) / 4;
         }
-        // A golden age adds half again to every city's shields.
-        if !idle && golden.active(owner) {
-            city.production_progress += city.production_per_turn(&buildings, gov, dist) / 2;
-            if mine {
-                total_gold += 1;
-            }
-        }
         let finished = if idle { None } else { city.process_production(&buildings, gov, dist) };
         let finished_unit = matches!(finished, Some(ProductionItem::Unit(_)));
         let finished_any = finished.is_some();
@@ -3616,9 +3724,15 @@ fn process_turn(
                             }
                             _ => {}
                         }
-                        if golden.begin(city.owner) && (mine || foreign.met.contains(&city.owner)) {
-                            let who = if mine { "Our".to_string() } else { civs.players.iter().find(|c| c.id == city.owner).map(|c| format!("The {} people's", c.adjective)).unwrap_or_default() };
-                            log.push(format!("{who} first wonder begins a golden age: half again as many shields, and more gold, for {GOLDEN_AGE_TURNS} turns."));
+                        // A wonder in the spirit of its builders begins their golden age.
+                        if character.is_some_and(|c| c.admires(b)) && golden.begin(city.owner) && (mine || foreign.met.contains(&city.owner)) {
+                            let spirit = bevy_civ::traits::wonder_traits(b);
+                            log.push(if mine {
+                                format!("The {} speaks to our {spirit} people: a golden age begins! For {GOLDEN_AGE_TURNS} turns every worked tile that yields a shield or gold yields one more.", b.name())
+                            } else {
+                                let who = civs.players.iter().find(|c| c.id == city.owner).map(|c| c.adjective.clone()).unwrap_or_default();
+                                format!("The {} begins a golden age for the {who} people.", b.name())
+                            });
                         }
                         let builder = civs.players.iter().find(|c| c.id == city.owner).map(|c| c.name.clone()).unwrap_or_else(|| "A people".into());
                         log.push(if mine {
@@ -3749,7 +3863,7 @@ fn process_turn(
                     ferry_wanted: ferries.wanted.get(&owner).copied().unwrap_or(0),
                 };
                 // The unit just trained (if any) now holds the city.
-                let view = governor::CityView { built: buildings.buildings.clone(), defended: view.defended || just_trained, ..view };
+                let view = governor::CityView { built: governed_buildings(&buildings), defended: view.defended || just_trained, ..view };
                 let next = governor::choose(&view, &civ_view, &supplies, &mut rng);
                 // Count what is now on order so the civilization's other cities do not duplicate it.
                 match &next {
@@ -4310,6 +4424,7 @@ fn process_turn(
             }
         };
         if attacker_won {
+            unique_victory(&mut golden, &civs, &foreign.met, &mut log, a_owner, a_type, d_owner);
             if a_owner != BARBARIANS && great.victory(a_owner) {
                 spawn_unit(&mut commands, a_pos, UnitType::GreatGeneral, a_owner);
             }
@@ -4330,6 +4445,7 @@ fn process_turn(
             if d_owner == PLAYER {
                 log.push(format!("Our {} repelled a {} {}.", d_type.name(), civ_name(a_owner), a_type.name()));
             }
+            unique_victory(&mut golden, &civs, &foreign.met, &mut log, d_owner, d_type, a_owner);
             if d_owner != BARBARIANS && great.victory(d_owner) {
                 spawn_unit(&mut commands, attack.target, UnitType::GreatGeneral, d_owner);
                 if d_owner == PLAYER {
@@ -4819,6 +4935,11 @@ fn process_turn(
             log.push(format!("We may now adopt {}: open the Empire advisor (Y) to start a revolution.", government.name()));
         }
     }
+    {
+        let holding: HashSet<u32> = cities.iter().map(|(c, _, _)| c.owner).collect();
+        great_library(&mut civs, &mut tech, &wonders, &foreign.met, &holding, &mut log);
+        new_ages(&mut civs, &mut tech, &foreign.met, &holding, &mut log);
+    }
 
     // A revolution ends after its turns of anarchy.
     if state.anarchy_turns > 0 {
@@ -5036,7 +5157,7 @@ fn idle_city<'a>(cities: impl Iterator<Item = (Entity, &'a City)>) -> Option<(En
 pub fn religion_turn(
     mut state: ResMut<GameState>,
     mut last: Local<u32>,
-    tech: Res<TechState>,
+    mut tech: ResMut<TechState>,
     mut civs: ResMut<Civilizations>,
     cities: Query<&City>,
     mut religions: ResMut<Religions>,
@@ -5052,7 +5173,8 @@ pub fn religion_turn(
     let city_list: Vec<(Hex, u32, String, bool, u32)> = cities.iter().map(|c| (c.position, c.owner, c.name.clone(), c.is_capital, c.population)).collect();
     let positions: Vec<Hex> = city_list.iter().map(|c| c.0).collect();
     religions.retain(&positions);
-    let name_of = |id: u32| civs.players.iter().find(|c| c.id == id).map(|c| c.adjective.clone()).unwrap_or_default();
+    let adjectives: HashMap<u32, String> = civs.players.iter().map(|c| (c.id, c.adjective.clone())).collect();
+    let name_of = |id: u32| adjectives.get(&id).cloned().unwrap_or_default();
 
     // Founding: the first civilization to know a faith's technology founds it in one of its cities
     // that has none yet (the capital if it can).
@@ -5076,6 +5198,17 @@ pub fn religion_turn(
             ));
         } else {
             log.push(format!("{} priests found {} in {}.", capitalised(&name_of(founder)), faith.name(), site.2));
+        }
+        // The first people to master Philosophy (the founders of its faith) also make a free discovery.
+        if faith.founding_tech() == Tech::Philosophy && !fresh {
+            let gift = if founder == PLAYER { tech.discover() } else { civs.players.iter_mut().find(|c| c.id == founder).and_then(|c| c.tech.discover()) };
+            if let Some(gift) = gift {
+                log.push(if founder == PLAYER {
+                    format!("As the first to master {}, our thinkers make a free discovery: {}!", Tech::Philosophy.name(), gift.name())
+                } else {
+                    format!("As the first to master {}, the {} thinkers make a free discovery.", Tech::Philosophy.name(), name_of(founder))
+                });
+            }
         }
     }
     if fresh {
@@ -5272,9 +5405,10 @@ pub fn work_tiles(
     units: Query<&Unit>,
     mut cities: Query<(&mut City, &CityBuildings, Option<&Happiness>)>,
     (changed_tiles, changed_units): (Query<(), Changed<HexTile>>, Query<(), Changed<Unit>>),
+    golden: Res<GoldenAges>,
 ) {
     let city_changed = cities.iter_mut().any(|(c, _, _)| c.is_changed());
-    if !(supplies.is_changed() || city_changed || !changed_tiles.is_empty() || !changed_units.is_empty()) {
+    if !(supplies.is_changed() || city_changed || golden.is_changed() || !changed_tiles.is_empty() || !changed_units.is_empty()) {
         return;
     }
     let tile_at: HashMap<Hex, &HexTile> = tiles.iter().map(|t| (t.coord, t)).collect();
@@ -5297,7 +5431,7 @@ pub fn work_tiles(
         let harbor = buildings.has(Building::Harbor);
         // GM Farms make every farmed tile one food richer.
         let engineered = buildings.has(Building::GmFarms);
-        let yield_for = |owner: u32, hex: Hex| {
+        let base_yield = |owner: u32, hex: Hex| {
             yield_for(owner, hex).map(|y| {
                 let tile = tile_at.get(&hex);
                 let sea = harbor && tile.is_some_and(|t| t.terrain == Terrain::Water);
@@ -5305,8 +5439,12 @@ pub fn work_tiles(
                 (y.0 + u32::from(sea) + u32::from(farmed), y.1, y.2)
             })
         };
+        // A golden age makes every tile that yields a shield or gold yield one more.
+        let golden_age = golden.active(owner);
+        let shine = |y: bevy_civ::tiles::Yield| if golden_age { GoldenAges::tile(y) } else { y };
+        let yield_for = |owner: u32, hex: Hex| base_yield(owner, hex).map(shine);
         let enemy_on = |h: &Hex| occupants.iter().any(|(p, o)| p == h && *o != owner && (*o == BARBARIANS || owner == BARBARIANS || diplomacy.get_treaty(owner, *o) == Treaty::War));
-        let centre = bevy_civ::tiles::centre_yield(yield_for(owner, city.position).unwrap_or((2, 0, 0)));
+        let centre = shine(bevy_civ::tiles::centre_yield(base_yield(owner, city.position).unwrap_or((2, 0, 0))));
         let mut candidates: Vec<(Hex, bevy_civ::tiles::Yield)> = areas
             .get(&city.position)
             .map(|area| area.iter().filter(|h| **h != city.position && !enemy_on(h)).filter_map(|h| yield_for(owner, *h).map(|y| (*h, y))).collect())

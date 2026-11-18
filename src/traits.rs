@@ -5,6 +5,7 @@
 //! ordinary units, trained by that civilization one rank higher (a veteran, or elite with Barracks).
 //! Both follow from the civilization's name, so they need no saving.
 
+use crate::building::Building;
 use crate::unit::UnitType;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -13,7 +14,7 @@ pub enum Trait {
     Militaristic,
     /// +1 gold in every city.
     Commercial,
-    /// +1 science in every city.
+    /// +1 science in every city, and a free discovery on entering each new age.
     Scientific,
     /// +1 content citizen in every city, and revolutions take a turn less.
     Religious,
@@ -41,12 +42,56 @@ impl Trait {
         match self {
             Trait::Militaristic => "troops are promoted after half their victories",
             Trait::Commercial => "+1 gold in every city",
-            Trait::Scientific => "+1 science in every city",
+            Trait::Scientific => "+1 science in every city, a free discovery in each new age",
             Trait::Religious => "+1 content in every city, shorter revolutions",
             Trait::Industrious => "+1 shield in every city",
             Trait::Agricultural => "+1 food in every city",
         }
     }
+}
+
+/// The traits a wonder speaks to. A people's golden age begins with its first wonder that matches
+/// one of its own traits (or with the first victory of its unique unit over another people).
+pub fn of_wonder(wonder: Building) -> &'static [Trait] {
+    use Building as B;
+    use Trait::*;
+    match wonder {
+        B::Pyramids => &[Agricultural, Industrious],
+        B::GreatLibrary => &[Scientific],
+        B::HangingGardens => &[Agricultural],
+        B::Colossus => &[Commercial],
+        B::Oracle => &[Religious],
+        B::GreatLighthouse => &[Commercial],
+        B::GreatWall => &[Militaristic, Industrious],
+        B::StatueOfZeus => &[Militaristic, Religious],
+        B::Mausoleum => &[Religious],
+        B::Copernicus => &[Scientific],
+        B::SunTzu => &[Militaristic],
+        B::MarcoPolo => &[Commercial],
+        B::KingRichards => &[Industrious, Militaristic],
+        B::Michelangelo => &[Religious],
+        B::Leonardo => &[Scientific, Industrious],
+        B::Bach => &[Religious],
+        B::Magellan => &[Commercial],
+        B::Newton => &[Scientific],
+        B::AdamSmith => &[Commercial],
+        B::Shakespeare => &[Agricultural],
+        B::Darwin => &[Scientific],
+        B::Liberty => &[Agricultural, Commercial],
+        B::HooverDam => &[Industrious],
+        B::Eiffel => &[Industrious, Commercial],
+        B::Internet => &[Scientific, Commercial],
+        B::Apollo => &[Scientific],
+        B::CureForCancer => &[Agricultural, Scientific],
+        B::Manhattan => &[Militaristic, Scientific],
+        B::UnitedNations => &[Commercial, Religious],
+        _ => &[],
+    }
+}
+
+/// "Scientific and Commercial": the traits a wonder speaks to, for its description.
+pub fn wonder_traits(wonder: Building) -> String {
+    of_wonder(wonder).iter().map(|t| t.name()).collect::<Vec<_>>().join(" and ")
 }
 
 /// A civilization's two traits and its unique unit.
@@ -75,6 +120,11 @@ impl Character {
     /// Chance a victorious unit is promoted.
     pub fn promotion_chance(&self) -> f64 {
         if self.has(Trait::Militaristic) { 0.5 } else { 1.0 / 3.0 }
+    }
+
+    /// Whether a wonder speaks to one of its traits (and so can begin its golden age).
+    pub fn admires(&self, wonder: Building) -> bool {
+        of_wonder(wonder).iter().any(|t| self.has(*t))
     }
 
     /// "Militaristic and Commercial".
@@ -137,5 +187,19 @@ mod tests {
         assert_eq!(of("Rome").city_bonus(), (0, 0, 1, 0));
         assert_eq!(of("Egypt").content(), 1);
         assert!(of("Rome").promotion_chance() > of("Egypt").promotion_chance());
+    }
+
+    #[test]
+    fn every_wonder_speaks_to_a_trait_and_every_trait_has_ancient_wonders() {
+        let wonders: Vec<Building> = Building::ALL.into_iter().filter(|b| b.is_wonder()).collect();
+        for w in &wonders {
+            assert!(!of_wonder(*w).is_empty(), "{w:?} speaks to no trait");
+        }
+        for t in Trait::ALL {
+            let early = wonders.iter().filter(|w| of_wonder(**w).contains(&t) && w.required_tech().is_some_and(|tech| tech.era() == crate::tech::Era::Ancient)).count();
+            assert!(early >= 1, "no ancient wonder for {t:?}");
+        }
+        assert!(of("Rome").admires(Building::Colossus) && !of("Rome").admires(Building::Oracle));
+        assert_eq!(wonder_traits(Building::Leonardo), "Scientific and Industrious");
     }
 }
