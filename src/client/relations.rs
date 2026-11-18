@@ -5,8 +5,6 @@
 //! advisor window (see `ui::relations_page`), at the places `positions` gives.
 
 use bevy::prelude::*;
-use bevy::render::render_asset::RenderAssetUsages;
-use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
 
 use bevy_civ::ai::Civilizations;
 use bevy_civ::diplomacy::{Diplomacy, Treaty};
@@ -23,14 +21,7 @@ pub const WEB: u32 = 360;
 pub struct RelationsWeb(pub Handle<Image>);
 
 pub fn setup_web(mut commands: Commands, mut images: ResMut<Assets<Image>>) {
-    let image = Image::new_fill(
-        Extent3d { width: WEB, height: WEB, depth_or_array_layers: 1 },
-        TextureDimension::D2,
-        &[0, 0, 0, 0],
-        TextureFormat::Rgba8UnormSrgb,
-        RenderAssetUsages::MAIN_WORLD | RenderAssetUsages::RENDER_WORLD,
-    );
-    commands.insert_resource(RelationsWeb(images.add(image)));
+    commands.insert_resource(RelationsWeb(images.add(super::paint::blank(WEB, WEB))));
 }
 
 /// The peoples on the web, in order: us, then everyone we know.
@@ -98,34 +89,10 @@ pub fn draw_web(
     order.sort_by_key(|(_, _, t)| matches!(t, Treaty::War | Treaty::Alliance));
     for (i, j, treaty) in order {
         if let Some((colour, width)) = stroke(*treaty) {
-            line(&mut image.data, at[*i], at[*j], width, colour);
+            super::paint::line(&mut image.data, WEB, at[*i], at[*j], width, colour);
         }
     }
     *drawn = links;
-}
-
-/// A thick line, stamped as discs along its length.
-fn line(data: &mut [u8], from: Vec2, to: Vec2, width: f32, colour: [u8; 4]) {
-    let length = from.distance(to).max(1.0);
-    let steps = (length * 2.0) as usize;
-    let r = width / 2.0;
-    for s in 0..=steps {
-        let p = from.lerp(to, s as f32 / steps as f32);
-        let (x0, x1) = ((p.x - r).floor() as i32, (p.x + r).ceil() as i32);
-        let (y0, y1) = ((p.y - r).floor() as i32, (p.y + r).ceil() as i32);
-        for y in y0..=y1 {
-            for x in x0..=x1 {
-                if x < 0 || y < 0 || x >= WEB as i32 || y >= WEB as i32 {
-                    continue;
-                }
-                if Vec2::new(x as f32 + 0.5, y as f32 + 0.5).distance(p) > r + 0.5 {
-                    continue;
-                }
-                let i = ((y as u32 * WEB + x as u32) * 4) as usize;
-                data[i..i + 4].copy_from_slice(&colour);
-            }
-        }
-    }
 }
 
 #[cfg(test)]
@@ -137,7 +104,7 @@ mod tests {
         let at = positions(4);
         assert!(at[0].y < at[2].y && (at[0].x - WEB as f32 / 2.0).abs() < 0.01);
         let mut data = vec![0u8; (WEB * WEB * 4) as usize];
-        line(&mut data, Vec2::new(10.0, 10.0), Vec2::new(100.0, 10.0), 3.0, [255, 0, 0, 255]);
+        super::super::paint::line(&mut data, WEB, Vec2::new(10.0, 10.0), Vec2::new(100.0, 10.0), 3.0, [255, 0, 0, 255]);
         let pixel = |x: u32, y: u32| data[((y * WEB + x) * 4) as usize];
         assert_eq!(pixel(50, 10), 255);
         assert_eq!(pixel(50, 40), 0);

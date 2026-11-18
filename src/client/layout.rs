@@ -144,20 +144,30 @@ pub fn activate_buttons(
     }
 }
 
-/// Scrolls whichever scrollable panel the pointer (or finger) is over.
+/// Scrolls the innermost scrollable panel the pointer (or finger) is over that can move that way:
+/// up and down for panels that scroll vertically, sideways for those that scroll horizontally
+/// (Shift + wheel, a sideways trackpad swipe, or a finger).
 pub fn scroll_panels(
     mut wheel: EventReader<bevy::input::mouse::MouseWheel>,
+    keys: Res<ButtonInput<KeyCode>>,
     touches: Res<Touches>,
     mut drag: ResMut<TouchScroll>,
-    mut panels: Query<(&bevy::ui::RelativeCursorPosition, &mut ScrollPosition), With<Scrollable>>,
+    mut panels: Query<(Entity, &bevy::ui::RelativeCursorPosition, &mut ScrollPosition, &Node, &ComputedNode), With<Scrollable>>,
 ) {
-    let mut delta: f32 = wheel
-        .read()
-        .map(|event| match event.unit {
-            bevy::input::mouse::MouseScrollUnit::Line => event.y * 40.0,
-            bevy::input::mouse::MouseScrollUnit::Pixel => event.y,
-        })
-        .sum();
+    let shift = keys.any_pressed([KeyCode::ShiftLeft, KeyCode::ShiftRight]);
+    let (mut delta, mut delta_x) = (0.0f32, 0.0f32);
+    for event in wheel.read() {
+        let unit = match event.unit {
+            bevy::input::mouse::MouseScrollUnit::Line => 40.0,
+            bevy::input::mouse::MouseScrollUnit::Pixel => 1.0,
+        };
+        if shift {
+            delta_x += event.y * unit;
+        } else {
+            delta += event.y * unit;
+            delta_x += event.x * unit;
+        }
+    }
     // One finger dragging: the content follows it.
     let fingers: Vec<Vec2> = touches.iter().map(|t| t.position()).collect();
     if fingers.len() == 1 {
@@ -168,6 +178,7 @@ pub fn scroll_panels(
         }
         if let (Some(last), true) = (drag.last, drag.scrolling) {
             delta += at.y - last.y;
+            delta_x += at.x - last.x;
         }
         drag.last = Some(at);
     } else {
@@ -177,12 +188,34 @@ pub fn scroll_panels(
             drag.scrolling = false;
         }
     }
-    if delta == 0.0 {
+    if delta == 0.0 && delta_x == 0.0 {
         return;
     }
-    // The innermost panel under the pointer scrolls (a window above the map, not the map).
-    if let Some((_, mut scroll)) = panels.iter_mut().filter(|(c, _)| c.mouse_over()).last() {
-        scroll.offset_y = (scroll.offset_y - delta).max(0.0);
+    // The innermost (smallest) panel under the pointer that scrolls each way.
+    let mut vertical: Option<(f32, Entity)> = None;
+    let mut horizontal: Option<(f32, Entity)> = None;
+    for (entity, cursor, _, node, computed) in &panels {
+        if !cursor.mouse_over() {
+            continue;
+        }
+        let area = computed.size().x * computed.size().y;
+        if node.overflow.y == OverflowAxis::Scroll && vertical.is_none_or(|(a, _)| area < a) {
+            vertical = Some((area, entity));
+        }
+        if node.overflow.x == OverflowAxis::Scroll && horizontal.is_none_or(|(a, _)| area < a) {
+            horizontal = Some((area, entity));
+        }
+    }
+    for (me, cursor, mut scroll, _, _) in &mut panels {
+        if !cursor.mouse_over() {
+            continue;
+        }
+        if delta != 0.0 && vertical.is_some_and(|(_, e)| e == me) {
+            scroll.offset_y = (scroll.offset_y - delta).max(0.0);
+        }
+        if delta_x != 0.0 && horizontal.is_some_and(|(_, e)| e == me) {
+            scroll.offset_x = (scroll.offset_x - delta_x).max(0.0);
+        }
     }
 }
 
