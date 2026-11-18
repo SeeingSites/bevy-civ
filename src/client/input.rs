@@ -42,7 +42,7 @@ pub fn pointer_input(
 ) {
     let Ok(window) = windows.get_single() else { return };
     // The wheel over a panel or window scrolls it (see `ui::scroll_panels`), not the map.
-    let over_scrollable = scrollables.iter().any(|c| c.mouse_over());
+    let over_scrollable = super::layout::over_scrollable(&scrollables);
     // Shift (or the "move together" switch) orders the whole stack.
     let group = ui.group_move || keys.any_pressed([KeyCode::ShiftLeft, KeyCode::ShiftRight]);
     let Ok((cam, cam_global, mut cam_transform, mut projection)) = camera.get_single_mut() else { return };
