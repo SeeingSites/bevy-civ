@@ -486,7 +486,57 @@ fn column(gap: f32) -> Node {
     Node { flex_direction: FlexDirection::Column, row_gap: Val::Px(gap), ..default() }
 }
 
+/// A button's full text, kept so that a compact screen can drop its keyboard hint (see
+/// `apply_key_hints`).
+#[derive(Component)]
+pub struct KeyHint(String);
+
+/// Whether `inner` (what stands in brackets) names a keyboard shortcut: "H", "F1", "Enter", "Ctrl+Z".
+fn is_key_name(inner: &str) -> bool {
+    let single = inner.len() == 1 && inner.chars().all(|c| c.is_ascii_uppercase());
+    let function = inner.len() >= 2 && inner.starts_with('F') && inner[1..].chars().all(|c| c.is_ascii_digit());
+    single || function || matches!(inner, "Enter" | "Space" | "Tab" | "Ctrl+Z" | "Shift+Tab")
+}
+
+/// `text` without the keyboard shortcuts in brackets, for screens that have no keyboard:
+/// "Fortify (H)" becomes "Fortify".
+pub fn without_key_hints(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some(open) = rest.find(" (") {
+        let after = &rest[open + 2..];
+        match after.find(')') {
+            Some(close) if is_key_name(&after[..close]) => {
+                out.push_str(&rest[..open]);
+                rest = &after[close + 1..];
+            }
+            _ => {
+                out.push_str(&rest[..open + 2]);
+                rest = after;
+            }
+        }
+    }
+    out.push_str(rest);
+    out
+}
+
+/// Gives static buttons on a compact screen the short form of their text (and back, when the
+/// screen is no longer compact).
+pub fn apply_key_hints(screen: Res<super::layout::Screen>, mut labels: Query<(&KeyHint, &mut Text)>, added: Query<(), Added<KeyHint>>) {
+    if !screen.is_changed() && added.is_empty() {
+        return;
+    }
+    for (hint, mut text) in &mut labels {
+        let wanted = if screen.compact { without_key_hints(&hint.0) } else { hint.0.clone() };
+        if text.0 != wanted {
+            text.0 = wanted;
+        }
+    }
+}
+
 fn button(parent: &mut ChildBuilder, art: &Art, text: impl Into<String>, command: Command, tint: Color, size: f32) {
+    let text: String = text.into();
+    let hint = (without_key_hints(&text) != text).then(|| KeyHint(text.clone()));
     parent
         .spawn((
             Button,
@@ -501,7 +551,10 @@ fn button(parent: &mut ChildBuilder, art: &Art, text: impl Into<String>, command
             ButtonCommand(command),
         ))
         .with_children(|b| {
-            b.spawn(label(&art.font_bold, text, size, INK));
+            let mut text = b.spawn(label(&art.font_bold, text, size, INK));
+            if let Some(hint) = hint {
+                text.insert(hint);
+            }
         });
 }
 
@@ -579,10 +632,7 @@ fn unit_card(parent: &mut ChildBuilder, art: &Art, unit: &Unit, name: String, st
 /// A button's text with its keyboard shortcut in brackets, e.g. "Fortify (H)". A phone has no
 /// keyboard, so on a compact screen the shortcut is left off (shorter buttons, a shorter panel).
 fn keyed(screen: &super::layout::Screen, text: &str) -> String {
-    match text.rsplit_once(" (") {
-        Some((name, _)) if screen.compact => name.to_string(),
-        _ => text.to_string(),
-    }
+    if screen.compact { without_key_hints(text) } else { text.to_string() }
 }
 
 fn moves_left(unit: &Unit) -> String {
@@ -1088,14 +1138,19 @@ pub fn rebuild_panels(
                         "{} - {} of {capacity} units: fights as its best unit, {bonus}% harder, with the hit points of all.{}",
                         unit.display_name(),
                         unit.members(),
-                        if (unit.members() as usize) < capacity && unit.owner == PLAYER { " Troops on its tile can join it (U)." } else { "" }
+                        if (unit.members() as usize) < capacity && unit.owner == PLAYER { if screen.compact { " Troops on its tile can join it." } else { " Troops on its tile can join it (U)." } } else { "" }
                     ),
                     14.0,
                     CREAM,
                 ));
             }
             if mine && unit.unit_type == UnitType::Caravan {
-                p.spawn(label(&art.font_body, "In another of your cities, or next to a foreign one: T opens a trade route from its home city. In one of your cities building a wonder: U adds its shields.", 13.0, MUTED));
+                let text = if screen.compact {
+                    "In another of your cities, or next to a foreign one: Trade Route opens a route from its home city. In one of your cities building a wonder: Help Wonder adds its shields."
+                } else {
+                    "In another of your cities, or next to a foreign one: T opens a trade route from its home city. In one of your cities building a wonder: U adds its shields."
+                };
+                p.spawn(label(&art.font_body, text, 13.0, MUTED));
             }
             // A diplomat next to (or in) a foreign city: its missions, with their odds.
             if mine && unit.unit_type == UnitType::Diplomat {
@@ -2060,7 +2115,16 @@ pub fn rebuild_panels(
                                 button(r, art, topic.name(), Command::HelpTopic(topic), tint, 14.0);
                             }
                         });
+                        if screen.compact {
+                            w.spawn(label(
+                                &art.font_bold,
+                                "On a touch screen: every key named here has a button. The advisors are in the top bar (Messages and Save are under Game); a unit's orders are in its panel, bottom left; End Turn is bottom right. Drag the map to scroll it, pinch to zoom.",
+                                13.0,
+                                INK_SOFT,
+                            ));
+                        }
                         for line in help_lines(ui.help_topic) {
+                            let line = if screen.compact { without_key_hints(&line) } else { line };
                             w.spawn(label(&art.font_body, line, 13.0, INK));
                         }
                     });
@@ -3223,4 +3287,21 @@ pub fn update_turn_buttons(
 /// Peoples in a New World unless the player chooses otherwise.
 fn default_peoples() -> usize {
     crate::scenario::DEFAULT_PEOPLES
+}
+
+#[cfg(test)]
+mod tests {
+    use super::without_key_hints;
+
+    #[test]
+    fn keyboard_hints_are_dropped_but_other_brackets_stay() {
+        assert_eq!(without_key_hints("Fortify (H)"), "Fortify");
+        assert_eq!(without_key_hints("Help (F1)"), "Help");
+        assert_eq!(without_key_hints("Undo move (Ctrl+Z)"), "Undo move");
+        assert_eq!(without_key_hints("End Turn (Enter) passes play. Open Science (Q) at the top."), "End Turn passes play. Open Science at the top.");
+        assert_eq!(without_key_hints("Upgrade to Musketman (40 gold)"), "Upgrade to Musketman (40 gold)");
+        assert_eq!(without_key_hints("Road (R - roads triple movement)"), "Road (R - roads triple movement)");
+        assert_eq!(without_key_hints("Sound: On (V)"), "Sound: On");
+        assert_eq!(without_key_hints("Plain"), "Plain");
+    }
 }
