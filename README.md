@@ -398,6 +398,23 @@ Every order also has a button, so the game is playable with a mouse or touch scr
 City production is chosen from the city panel, whose tabs split **Units**, **Buildings** and
 **Wonders**; **Overview** lists what the city has built, its resources and its great-person progress.
 
+## Code layout (and reuse)
+The project is organised so that the rules, the engine-level client pieces and this game's content
+can be told apart - a step towards reskinning it as other games:
+
+- `src/lib.rs` and its modules (`unit`, `city`, `tech`, `combat`, `ai`, `cargo`, `troubles`, ...):
+  the rules, with no drawing code. Headless autoplay and the simulator run on them.
+- `src/client/layout.rs`: **game-agnostic** screen layout. A `Screen` class (size, portrait or
+  landscape, compact phone or not) recomputed on every resize or rotation; panels that declare a
+  `Dock` (top, bottom corners, right drawer, centre) and are placed so they never collide (on a phone
+  the bottom corners share a strip and the right drawer becomes a full-width sheet); `Scrollable`
+  panels that scroll with the wheel or a finger; button `Activated` events (a mouse acts on press, a
+  finger on release unless it scrolled); and browser canvas sizing that gets the pixel ratio right on
+  high-density screens.
+- `src/client/input.rs`: camera pan and zoom, and taps and drags on the hex map.
+- `src/client/ui.rs` and the other client modules: this game's panels, advisors and views. They
+  describe content and dock it; the layout module fits it to the device.
+
 ## Art
 All sprites are original and generated from code: `tools/art/*.cjs` describe each sprite as SVG
 and `node tools/art/generate.cjs` rasterises them into the atlases in `assets/sprites/`

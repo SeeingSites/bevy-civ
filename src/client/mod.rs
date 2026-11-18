@@ -1,10 +1,19 @@
 //! Presentation layer: sprite atlases, map and actor views, camera input and the interface.
+//!
+//! Two kinds of module live here:
+//! - **Game-agnostic** pieces that another game built on this client could reuse as they are:
+//!   `layout` (screen classes, docked panels, scrolling, touch-friendly button activation, browser
+//!   canvas sizing) and `input` (camera pan/zoom, tap and drag on a hex map).
+//! - **This game's** screens: `ui` (panels, advisors, encyclopedia), `map`, `actors`, `battles`,
+//!   `relations`, `tips` and `sfx`. They say *where* a panel goes (a `layout::Dock`) and *what* it
+//!   shows; `layout` decides how that fits the device.
 
 use bevy::prelude::*;
 
 pub mod actors;
 pub mod battles;
 pub mod input;
+pub mod layout;
 pub mod map;
 pub mod relations;
 pub mod sfx;
@@ -144,14 +153,14 @@ pub struct ClientPlugin;
 impl Plugin for ClientPlugin {
     fn build(&self, app: &mut App) {
         let playing = in_state(crate::AppState::Playing);
-        app.add_plugins(sfx::SfxPlugin)
+        app.add_plugins((sfx::SfxPlugin, layout::LayoutPlugin))
             .init_resource::<map::Hovered>()
             .init_resource::<input::Pointer>()
             .init_resource::<ui::UiState>()
             .init_resource::<ui::MenuState>()
             .add_systems(PreStartup, load_art)
             .add_systems(Startup, (map::setup_map_view, ui::setup_ui, ui::setup_menu, relations::setup_web))
-            .add_systems(Update, (ui::button_actions, ui::rebuild_menu, ui::button_visuals, ui::fit_ui_scale, ui::scroll_panels, ui::update_sound_button, relations::draw_web).chain().before(GameLogic))
+            .add_systems(Update, (ui::button_actions, ui::rebuild_menu, ui::button_visuals, ui::fit_ui_scale, ui::scroll_panels, ui::update_sound_button, relations::draw_web).chain().after(layout::LayoutInput).before(GameLogic))
             .add_systems(Update, ui::poll_import.run_if(in_state(crate::AppState::Menu)))
             .init_resource::<tips::Tips>()
             .init_resource::<battles::BattleTheatre>()

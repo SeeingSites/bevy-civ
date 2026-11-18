@@ -630,9 +630,11 @@ fn main() {
                 .set(WindowPlugin {
                     primary_window: Some(Window {
                         title: "Bevy Civ".into(),
-                        // Web build: render into the page's canvas and track its size.
+                        // Web build: render into the page's canvas. Its size follows the page through
+                        // `client::layout::fit_canvas`, not the engine's fit-to-parent mode, which
+                        // gets the pixel ratio wrong on high-density screens.
                         canvas: Some("#bevy-canvas".into()),
-                        fit_canvas_to_parent: true,
+                        fit_canvas_to_parent: false,
                         prevent_default_event_handling: true,
                         ..default()
                     }),
