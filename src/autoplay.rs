@@ -57,6 +57,7 @@ pub fn run(which: &str, turns: u32) -> bool {
     // Cities changing hands (conquest, defection), and peoples wiped out.
     let mut owners: std::collections::HashMap<hexx::Hex, u32> = std::collections::HashMap::new();
     let mut changes = 0;
+    let mut between = 0;
     let mut alive: HashSet<u32> = HashSet::new();
     for _ in 0..turns {
         app.world_mut().send_event(EndTurnNow);
@@ -93,8 +94,11 @@ pub fn run(which: &str, turns: u32) -> bool {
             let mut q = world.query::<&City>();
             let now: Vec<(hexx::Hex, u32)> = q.iter(world).map(|c| (c.position, c.owner)).collect();
             for (at, owner) in &now {
-                if owners.get(at).is_some_and(|o| o != owner) {
+                if let Some(old) = owners.get(at).filter(|o| *o != owner) {
                     changes += 1;
+                    if *old != bevy_civ::barbarians::BARBARIANS && *owner != bevy_civ::barbarians::BARBARIANS {
+                        between += 1;
+                    }
                 }
                 owners.insert(*at, *owner);
             }
@@ -114,7 +118,7 @@ pub fn run(which: &str, turns: u32) -> bool {
         }
         if let Some(outcome) = world.resource::<GameState>().victory.clone() {
             println!("Game over on turn {turn}: {outcome}");
-            println!("Cities that changed hands: {changes}.");
+            println!("Cities that changed hands: {changes} ({between} between civilizations).");
             snapshot(world, turn);
             armies(world);
             troubles(world);

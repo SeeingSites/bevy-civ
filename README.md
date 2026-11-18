@@ -224,7 +224,10 @@ Computer players follow the same rules as you and are run by three pieces of cod
 - **Wars of conquest**: an aggressive power with 1.4 times a neighbour's military strength is far
   likelier to attack it and slow to make peace while it wins. Armies grow with the empire (two units
   a city, up to 6 plus three for every two cities, so a great empire keeps a field army beyond its garrisons). A defended city is stormed only once the army
-  gathered before it has half again the garrison's strength; then every unit there joins the assault.
+  gathered before it can wear the garrison down: the planner weighs each side's attack against the
+  garrison's best defence (fortified, walled), and every defender costs about (1-p)/p attackers,
+  p being the odds of one blow. Warlike leaders commit with half the margin. Then every unit there
+  joins the assault.
   The last cities of a people with three or fewer, and the capital of a people whose spaceship is in
   flight, draw armies from much further away.
 - **Settling overseas**: a seafaring people looks for free land up to 20 tiles from its cities and
