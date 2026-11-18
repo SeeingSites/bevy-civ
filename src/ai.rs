@@ -217,6 +217,8 @@ pub fn process_ai_turn(
     };
     // Units that want a ship: (unit, where it is going, the port it waits in).
     let mut requests: Vec<(Entity, u32, Hex, Hex)> = Vec::new();
+    // Where each owner's enemies' armies stand (for zones of control), worked out once per owner.
+    let mut enemy_armies_of: HashMap<u32, std::collections::HashSet<Hex>> = HashMap::new();
     // Each civilization's airfields: its cities and its carriers.
     let carriers: Vec<(Hex, u32)> = units.iter().filter(|(_, u)| u.unit_type == UnitType::Carrier).map(|(_, u)| (u.position, u.owner)).collect();
     let roads = road_network(tiles.iter(), city_positions.iter().map(|(p, _)| *p));
@@ -438,7 +440,7 @@ pub fn process_ai_turn(
             }
             // A hill or mountain of ours with hostile armies close by: fortify it.
             let high = matches!(terrain_at.get(&here), Some(Terrain::Hills | Terrain::Mountain));
-            let threatened = unit_snapshots.iter().any(|(pos, other, strength)| hostile(owner, *other) && *strength > 0.0 && pos.distance_to(here) <= 4);
+            let threatened = unit_snapshots.iter().any(|(pos, other, strength)| pos.distance_to(here) <= 4 && *strength > 0.0 && hostile(owner, *other));
             let knows_construction = civs.players.iter().any(|c| c.id == owner && c.tech.researched.contains(&Tech::Construction));
             if high && threatened && knows_construction && owns(here, owner) && !forts.contains(&here) && !city_positions.iter().any(|(p, _)| *p == here) {
                 unit.start_build(Improvement::Fortress);
@@ -488,7 +490,7 @@ pub fn process_ai_turn(
             };
             let prey = unit_snapshots
                 .iter()
-                .filter(|(pos, other, _)| hostile(owner, *other) && here.distance_to(*pos) <= 7 && in_reach(*pos))
+                .filter(|(pos, other, _)| here.distance_to(*pos) <= 7 && hostile(owner, *other) && in_reach(*pos))
                 .min_by_key(|(pos, _, _)| here.distance_to(*pos))
                 .map(|(pos, _, _)| *pos);
             let base = if flying { airfields.iter().copied().min_by_key(|p| here.distance_to(*p)) } else { ports.iter().copied().min_by_key(|p| here.distance_to(*p)) };
@@ -534,14 +536,14 @@ pub fn process_ai_turn(
         let enemy_unit = unit_snapshots
             .iter()
             .filter(|(pos, other, strength)| {
-                hostile(owner, *other) && here.distance_to(*pos) <= 4 && my_strength > *strength * threshold && same_land(*pos, here)
+                here.distance_to(*pos) <= 4 && hostile(owner, *other) && my_strength > *strength * threshold && same_land(*pos, here)
             })
             .min_by_key(|(pos, _, _)| here.distance_to(*pos))
             .map(|(pos, _, _)| *pos);
         let city_range = if aggression > 0.6 { 14 } else { 7 };
         let enemy_city = city_positions
             .iter()
-            .filter(|(pos, other)| hostile(owner, *other) && here.distance_to(*pos) <= city_range && same_land(*pos, here))
+            .filter(|(pos, other)| here.distance_to(*pos) <= city_range && hostile(owner, *other) && same_land(*pos, here))
             .min_by_key(|(pos, _)| here.distance_to(*pos))
             .map(|(pos, _)| *pos);
         // Nothing to fight on this landmass: an enemy city overseas is reached by ship.
@@ -593,11 +595,12 @@ pub fn process_ai_turn(
 
         if let Some(target) = goal {
             let travel = crate::pathfinding::land_travel(unit.unit_type.is_wheeled(), false);
-            let enemy_armies: std::collections::HashSet<Hex> =
-                unit_snapshots.iter().filter(|(_, other, strength)| hostile(owner, *other) && *strength > 0.0).map(|(pos, _, _)| *pos).collect();
+            let enemy_armies = enemy_armies_of.entry(owner).or_insert_with(|| {
+                unit_snapshots.iter().filter(|(_, other, strength)| *strength > 0.0 && hostile(owner, *other)).map(|(pos, _, _)| *pos).collect()
+            });
             if let Some(path) = find_route(here, target, land.iter().copied(), &roads, travel) {
                 for next in path.into_iter().skip(1) {
-                    if !unit.can_move() || zoc_blocks(unit.position, next, &enemy_armies) {
+                    if !unit.can_move() || zoc_blocks(unit.position, next, enemy_armies) {
                         break;
                     }
                     let boarding = is_land(unit.position) != is_land(next);
