@@ -164,7 +164,7 @@ impl Plugin for ClientPlugin {
             .init_resource::<ui::MenuState>()
             .add_systems(PreStartup, load_art)
             .add_systems(Startup, (map::setup_map_view, ui::setup_ui, ui::setup_menu, relations::setup_web, techtree::setup_tree))
-            .add_systems(Update, (ui::button_actions, ui::rebuild_menu, ui::button_visuals, ui::fit_ui_scale, ui::scroll_panels, ui::update_sound_button, relations::draw_web, techtree::draw_tree).chain().after(layout::LayoutInput).before(GameLogic))
+            .add_systems(Update, (ui::button_actions, ui::rebuild_menu, ui::button_visuals, ui::fit_ui_scale, ui::apply_key_hints, ui::scroll_panels, ui::update_sound_button, relations::draw_web, techtree::draw_tree).chain().after(layout::LayoutInput).before(GameLogic))
             .add_systems(Update, ui::poll_import.run_if(in_state(crate::AppState::Menu)))
             .init_resource::<tips::Tips>()
             .init_resource::<battles::BattleTheatre>()
@@ -175,6 +175,7 @@ impl Plugin for ClientPlugin {
                     .after(GameLogic)
                     .run_if(in_state(crate::AppState::Playing)),
             )
+            .add_systems(OnEnter(crate::AppState::Playing), tips::reset)
             .add_systems(Update, (tips::queue_tips.run_if(in_state(crate::AppState::Playing)), tips::show_tip).chain().after(GameLogic))
             .add_systems(
                 Update,

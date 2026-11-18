@@ -57,6 +57,7 @@ pub fn run(which: &str, turns: u32) -> bool {
     // Cities changing hands (conquest, defection), and peoples wiped out.
     let mut owners: std::collections::HashMap<hexx::Hex, u32> = std::collections::HashMap::new();
     let mut changes = 0;
+    let mut between = 0;
     let mut alive: HashSet<u32> = HashSet::new();
     for _ in 0..turns {
         app.world_mut().send_event(EndTurnNow);
@@ -93,8 +94,11 @@ pub fn run(which: &str, turns: u32) -> bool {
             let mut q = world.query::<&City>();
             let now: Vec<(hexx::Hex, u32)> = q.iter(world).map(|c| (c.position, c.owner)).collect();
             for (at, owner) in &now {
-                if owners.get(at).is_some_and(|o| o != owner) {
+                if let Some(old) = owners.get(at).filter(|o| *o != owner) {
                     changes += 1;
+                    if *old != bevy_civ::barbarians::BARBARIANS && *owner != bevy_civ::barbarians::BARBARIANS {
+                        between += 1;
+                    }
                 }
                 owners.insert(*at, *owner);
             }
@@ -114,7 +118,7 @@ pub fn run(which: &str, turns: u32) -> bool {
         }
         if let Some(outcome) = world.resource::<GameState>().victory.clone() {
             println!("Game over on turn {turn}: {outcome}");
-            println!("Cities that changed hands: {changes}.");
+            println!("Cities that changed hands: {changes} ({between} between civilizations).");
             snapshot(world, turn);
             armies(world);
             troubles(world);
@@ -152,6 +156,18 @@ fn troubles(world: &mut World) {
         safety += usize::from(buildings.has(Building::FoodSafety));
         gm += usize::from(buildings.has(Building::GmFarms));
     }
+    {
+        let mut all: BTreeMap<&str, usize> = BTreeMap::new();
+        let mut q = world.query::<&CityBuildings>();
+        for b in q.iter(world) {
+            for building in b.buildings.iter().filter(|b| !b.is_wonder()) {
+                *all.entry(building.name()).or_default() += 1;
+            }
+        }
+        let n = world.query::<&bevy_civ::city::City>().iter(world).count();
+        let list: Vec<String> = all.iter().map(|(k, v)| format!("{k} {v}")).collect();
+        println!("--- buildings in {n} cities: {}", list.join(", "));
+    }
     let (moved, abroad) = world.resource::<GameState>().migrations;
     let (cartels, cells, raids) = world.resource::<GameState>().raiders;
     println!("--- troubles: {drugs} cities with a drug trade, {scandals} in a food scandal; {police} Police Stations, {safety} Food Safety Agencies, {gm} GM Farms; {moved} migrants ({abroad} abroad)");
@@ -172,6 +188,13 @@ fn armies(world: &mut World) {
         list.sort_by_key(|(_, n)| std::cmp::Reverse(*n));
         let text: Vec<String> = list.iter().take(6).map(|(k, n)| format!("{n} {k}")).collect();
         println!("  {:<14} {}", civ.name.trim_start_matches("the "), text.join(", "));
+    }
+    {
+        let mut civ_units: BTreeMap<&str, usize> = BTreeMap::new();
+        for u in units.iter(world).filter(|u| !u.unit_type.is_military() && u.owner != PLAYER && u.owner != bevy_civ::barbarians::BARBARIANS) {
+            *civ_units.entry(u.unit_type.name()).or_default() += 1;
+        }
+        println!("--- civilian units: {}", civ_units.iter().map(|(k, v)| format!("{k} {v}")).collect::<Vec<_>>().join(", "));
     }
     let ferries = world.resource::<bevy_civ::ai::Ferries>();
     let landed: Vec<String> = civs.players.iter().filter_map(|c| ferries.landed.get(&c.id).map(|n| format!("{} {n}", c.name.trim_start_matches("the ")))).collect();

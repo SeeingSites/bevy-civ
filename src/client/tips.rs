@@ -25,7 +25,7 @@ const TIPS: [(&str, &str, &str); 21] = [
     ("end_turn", "Ending the turn", "Every unit has its orders. Tap End Turn (bottom right, or Enter) and the other peoples take their turns; then a new turn begins and your units can move again."),
     ("unit", "Moving units", "Tap or click a tile to send the unit there; with a mouse, point at a tile first to see the route and how many turns it takes. Far destinations become standing orders. Fortify (H) keeps a unit in place so it is not asked again."),
     ("settler", "Settlers", "Settlers found new cities: move one to a good spot at least two tiles from other cities and choose Found City (B). Rivers and coasts make fine sites."),
-    ("explore", "Exploring", "Scouts move far and see far. Send them towards the dark edges of the map: they find good land, tribal villages (walk in for a gift) and other peoples."),
+    ("explore", "Exploring", "Scouts move far and see far. Press Explore (C) and the scout roams the dark edges of the map by itself, or send it yourself: it finds good land, tribal villages (walk in for a gift) and other peoples."),
     ("ship", "Ships", "This ship can carry units. Move troops onto its tile (or choose Board ship (I) in port), then sail it; to land them, select a unit aboard and tap a land tile next to the ship."),
     ("aboard", "At sea", "This unit is aboard a ship and travels with it. Tap a land tile next to the ship to go ashore - that takes the rest of its turn. Troops cannot attack from a ship."),
     ("worker", "Workers", "Workers improve the land with the buttons in their panel: Farm (F), Mine (M), Road (R - roads triple movement), Clear (X). Automate (K) lets the worker look after your land by itself."),
@@ -53,6 +53,9 @@ pub struct Tips {
     pub shown_on: u32,
 }
 
+/// Tips about the first turns, skipped in a game loaded after them.
+const OPENING_TIPS: [&str; 7] = ["welcome", "end_turn", "unit", "research", "grow", "save", "score"];
+
 /// Turns a tip stays up unless dismissed.
 const TIP_TURNS: u32 = 3;
 
@@ -77,6 +80,12 @@ impl Tips {
     }
 }
 
+/// A game begins (or is loaded): the tips start over, whatever the last game left behind.
+pub fn reset(mut tips: ResMut<Tips>) {
+    tips.shown.clear();
+    tips.current = None;
+}
+
 /// The tip panel under the status bar.
 #[derive(Component)]
 pub struct TipPanel;
@@ -93,6 +102,13 @@ pub fn queue_tips(
     diplomacy: Res<Diplomacy>,
     ui: Res<UiState>,
 ) {
+    // A game picked up in the middle (Continue, or a saved file) has had its first turns: do not
+    // greet its player with the welcome and the other opening tips again.
+    if tips.shown.is_empty() && state.turn > 5 {
+        for (id, _, _) in TIPS.iter().filter(|(id, _, _)| OPENING_TIPS.contains(id)) {
+            tips.shown.insert(id);
+        }
+    }
     // A tip left up for a few turns steps aside for the next.
     if tips.current.is_some() && state.turn >= tips.shown_on + TIP_TURNS {
         tips.current = None;
@@ -191,7 +207,8 @@ pub fn show_tip(
         ))
         .with_children(|p| {
             p.spawn(label_bundle(&art.font_title, format!("Tip: {title}"), 17.0, Color::srgb(0.95, 0.83, 0.52)));
-            p.spawn(label_bundle(&art.font_body, *text, 14.0, Color::srgb(0.94, 0.9, 0.82)));
+            let text = if screen.compact { super::ui::without_key_hints(text) } else { text.to_string() };
+            p.spawn(label_bundle(&art.font_body, text, 14.0, Color::srgb(0.94, 0.9, 0.82)));
             tip_buttons(p, &art);
         });
 }

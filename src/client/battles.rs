@@ -101,7 +101,9 @@ pub fn stage_battles(
         // The attacker lunges (if it still stands), or its stand-in does.
         let lunge = Lunge { toward, elapsed: 0.0, duration: seconds * 0.6, applied: Vec2::ZERO };
         match battle.attacker {
-            Some(entity) if !battle.attacker_died => {
+            // The attacker may be gone by the time its battle is shown (the queue plays later):
+            // then its stand-in lunges instead.
+            Some(entity) if !battle.attacker_died && commands.get_entity(entity).is_some() => {
                 commands.entity(entity).try_insert(lunge);
             }
             _ => {

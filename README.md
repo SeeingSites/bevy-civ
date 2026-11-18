@@ -30,6 +30,9 @@ Turn-based, Civilization-style empire building on a hex map, playable in the bro
 - Ships and aircraft: transports carry troops across the sea, carriers carry aircraft
 - World wonders (one per world) with real effects, golden ages
 - Great people: generals, merchants, scientists, artists, engineers
+- Governors: with Governor builds on, a city picks its projects, calms disorder with entertainers (and releases them when they are no longer needed) and sends the Workers it trains to work on automatic; a city in disorder says so plainly in its panel
+- Auto-explore (C): scouts, soldiers and warships roam to the edge of the known world by themselves, turn after turn
+- Ending the turn with a city that has no soldier in it and an enemy in sight nearby asks for a second End Turn
 - Armies: a great general in one of your cities forms up to four land units (five with Sun Tzu) into one army, 10% stronger per member; more troops can join later
 - Battles played out on the map, one at a time: the camera goes to every battle you fight (also
   attacks on your units in the other peoples' turns), the attacker lunges, blows land, the fallen
@@ -205,11 +208,13 @@ Computer players follow the same rules as you and are run by three pieces of cod
   new ones: each settler heads for the best free site in reach (good land, resources, not too far),
   sailing there once the civilization knows Seafaring. Research follows temperament: warlike
   leaders study arms first, builders the economy; a civilization hemmed in on a small island
-  studies Seafaring first.
+  studies Seafaring first; a technology that gives a better form of government is studied early.
+  Troop ships wait in port for a load of four (or eight turns) rather than carry a lone soldier
+  to its death; settlers sail at once. A computer player keeps at most three great generals.
 - **Cities** (`src/governor.rs`): each city picks its next project in order of need - a defender if
   it has none, workers while roads are missing, a Harbor if it is cut off from the capital, an army
   sized to peace or war, settlers, then buildings and wonders. A city in danger pays gold to hurry
-  its defender. Settlers keep coming (one per six cities) while there is free land within reach.
+  its defender. A city with nothing left to build adds at most a couple of spare workers (and raises no soldiers beyond the army limit). Settlers keep coming (one per six cities) while there is free land within reach.
 - **Economy and diplomacy** (`src/main.rs`, `src/foreign.rs`): science and gold come from their own
   cities and buildings. Spare gold hurries production and is invested in research. Their merchants
   propose resource deals: to buy what you can spare and sell what they can. They also buy and
@@ -221,8 +226,11 @@ Computer players follow the same rules as you and are run by three pieces of cod
   be upgraded is stood down when something twice as strong can be built.
 - **Wars of conquest**: an aggressive power with 1.4 times a neighbour's military strength is far
   likelier to attack it and slow to make peace while it wins. Armies grow with the empire (two units
-  a city, up to 14 plus two for every three cities). A defended city is stormed only once the army
-  gathered before it has half again the garrison's strength; then every unit there joins the assault.
+  a city, up to 6 plus three for every two cities, so a great empire keeps a field army beyond its garrisons). A defended city is stormed only once the army
+  gathered before it can wear the garrison down: the planner weighs each side's attack against the
+  garrison's best defence (fortified, walled), and every defender costs about (1-p)/p attackers,
+  p being the odds of one blow. Warlike leaders commit with half the margin. Then every unit there
+  joins the assault.
   The last cities of a people with three or fewer, and the capital of a people whose spaceship is in
   flight, draw armies from much further away.
 - **Settling overseas**: a seafaring people looks for free land up to 20 tiles from its cities and
