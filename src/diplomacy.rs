@@ -29,10 +29,15 @@ pub fn sprawl_unhappiness(cities: u32) -> u32 {
 /// Goodwill a voter needs towards a candidate to back it at the United Nations.
 pub const UN_GOODWILL: i32 = 10;
 
+/// Votes a Secretary-General needs: a majority of all the members.
+pub fn un_votes_needed(members: usize) -> usize {
+    members / 2 + 1
+}
+
 /// A United Nations vote for Secretary-General between two candidates: each candidate votes for
 /// itself, every other voter for the candidate it likes better - if it is friendly with that one
 /// (otherwise, or with no preference, it abstains).
-/// Returns each candidate's votes and the winner, if one has two thirds of all the voters.
+/// Returns each candidate's votes and the winner, if one has a majority of all the voters.
 pub fn un_vote(voters: &[u32], candidates: [u32; 2], attitude: impl Fn(u32, u32) -> i32) -> ([usize; 2], Option<u32>) {
     let mut tally = [0usize; 2];
     for voter in voters {
@@ -48,7 +53,7 @@ pub fn un_vote(voters: &[u32], candidates: [u32; 2], attitude: impl Fn(u32, u32)
         }
         tally[if a > b { 0 } else { 1 }] += 1;
     }
-    let needed = (voters.len() * 2).div_ceil(3);
+    let needed = un_votes_needed(voters.len());
     let winner = (0..2).find(|i| tally[*i] >= needed).map(|i| candidates[i]);
     (tally, winner)
 }

@@ -16,7 +16,7 @@ pub const NEEDED: [u32; 3] = [4, 2, 2];
 /// The most of each part a ship can carry (more components, faster).
 pub const MOST: [u32; 3] = [4, 4, 2];
 /// Turns from launch to arrival with the fewest engines; each extra component saves two.
-pub const FLIGHT_TURNS: u32 = 12;
+pub const FLIGHT_TURNS: u32 = 18;
 /// Where the ships are bound, and how far.
 pub const DESTINATION: &str = "Alpha Centauri";
 pub const LIGHT_YEARS: f32 = 4.37;
@@ -169,7 +169,7 @@ mod tests {
         assert!(race.wants(0, Building::SpaceComponent, true));
         assert_eq!(race.ships[&0].flight_turns(), FLIGHT_TURNS - 2);
         assert_eq!(race.launch(0, 60), Some(60 + FLIGHT_TURNS - 2));
-        assert!((race.ships[&0].progress(65) - 0.5).abs() < 0.01);
+        assert!((race.ships[&0].progress(60 + (FLIGHT_TURNS - 2) / 2) - 0.5).abs() < 0.01);
         assert_eq!(race.launch(0, 61), None);
     }
 }

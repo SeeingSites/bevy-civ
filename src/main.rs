@@ -278,9 +278,9 @@ pub struct GameLog {
 }
 
 /// Words that mark a message as one of the game's great events (the Messages window's highlights).
-pub const HIGHLIGHTS: [&str; 18] = [
+pub const HIGHLIGHTS: [&str; 19] = [
     "Wonder of the world", "completes the", "means war", "captured", "has fallen", "capture", "priests found", "We have founded",
-    "launched", "lifts off", "nuclear", "United Nations", "golden age", "is born", "are no more", "Global warming", "Revolution", "Discovery",
+    "launched", "lifts off", "nuclear", "United Nations", "golden age", "is born", "are no more", "Global warming", "Revolution", "Discovery", "spaceship",
 ];
 
 impl GameLog {
@@ -3905,7 +3905,9 @@ fn process_turn(
         }
     }
     let owns = |hex: Hex, owner: u32| supplies.territory.get(&hex).is_some_and(|(o, _)| *o == owner);
-    let attacks = process_ai_turn(&mut civs, &mut units, &city_owners, &tiles, &hostile, &mut road_jobs, &owns, &mut ferries, &mut commands);
+    // Capitals of peoples whose spaceship is in flight: taking one stops the ship.
+    let must_fall: Vec<Hex> = cities.iter().filter(|(c, _, _)| c.is_capital && space.ships.get(&c.owner).is_some_and(|s| s.arrives.is_some())).map(|(c, _, _)| c.position).collect();
+    let attacks = process_ai_turn(&mut civs, &mut units, &city_owners, &tiles, &hostile, &mut road_jobs, &owns, &mut ferries, &mut commands, &must_fall);
     let names: HashMap<u32, String> = civs.players.iter().map(|c| (c.id, c.adjective.clone())).collect();
     let civ_name = |owner: u32| names.get(&owner).cloned().unwrap_or_else(|| "Barbarian".to_string());
 
@@ -4476,6 +4478,7 @@ fn process_turn(
     for (_, owner) in &city_owners {
         *foreign.strength.entry(*owner).or_default() += 2.0;
     }
+    foreign.in_flight = space.ships.iter().filter(|(_, s)| s.arrives.is_some()).map(|(o, _)| *o).collect();
     {
         let mut ctx = foreign::Ctx { diplomacy: &mut diplomacy, foreign: &mut foreign, civs: &mut civs, state: &mut state, tech: &mut tech, log: &mut log };
         foreign::turn(&mut ctx, &fog, &supplies, &unit_owners, &city_owners);
@@ -4561,7 +4564,7 @@ fn process_turn(
         let culture_winner = culture_rules::cultural_winner(&culture.totals(cities.iter().map(|(c, _, _)| (c.position, c.owner))), culture_rules::victory_culture(state.last_turn));
         state.victory = if held.len() == 1 {
             leader.map(|(o, _)| format!("Conquest victory for {}.", civ_named(o)))
-        } else if let Some((o, n)) = leader.filter(|(_, n)| *n >= 5 && n * 3 >= total_cities * 2) {
+        } else if let Some((o, n)) = leader.filter(|(_, n)| *n >= 5 && n * 2 >= total_cities) {
             Some(format!("Domination victory for {} ({n} of {total_cities} cities).", civ_named(o)))
         } else if let Some(o) = culture_winner {
             Some(format!("Cultural victory for {}.", civ_named(o)))
@@ -4576,17 +4579,17 @@ fn process_turn(
     } else if player_cities == 0 {
         state.victory = Some("Your civilization has fallen.".into());
     } else if let Some((name, held)) = {
-        // A rival holding two thirds of the world's cities dominates it.
+        // A rival holding half of the world's cities dominates it.
         let mut held: HashMap<u32, usize> = HashMap::new();
         for (city, _, _) in cities.iter().filter(|(c, _, _)| c.owner != PLAYER && c.owner != BARBARIANS) {
             *held.entry(city.owner).or_default() += 1;
         }
-        held.into_iter().filter(|(_, n)| *n >= 5 && n * 3 >= total_cities * 2).max_by_key(|(_, n)| *n).map(|(o, n)| (civ_named(o), n))
+        held.into_iter().filter(|(_, n)| *n >= 5 && n * 2 >= total_cities).max_by_key(|(_, n)| *n).map(|(o, n)| (civ_named(o), n))
     } {
         state.victory = Some(format!("Defeat: {name} dominate the world, holding {held} of its {total_cities} cities."));
     } else if !rivals_remain {
         state.victory = Some("Conquest Victory!".into());
-    } else if player_cities >= 5 && player_cities * 3 >= total_cities * 2 {
+    } else if player_cities >= 5 && player_cities * 2 >= total_cities {
         state.victory = Some("Domination Victory!".into());
     } else if let Some(winner) = culture_rules::cultural_winner(&culture.totals(cities.iter().map(|(c, _, _)| (c.position, c.owner))), culture_rules::victory_culture(state.last_turn)) {
         state.victory = Some(if winner == PLAYER {
@@ -4623,7 +4626,7 @@ fn process_turn(
             if let (Some(rival), true) = (rival, holding.contains(&un_owner)) {
                 let (tally, winner) = bevy_civ::diplomacy::un_vote(&voters, [un_owner, rival], |a, b| diplomacy.get_attitude(a, b));
                 let name = |id: u32| if id == PLAYER { "we".to_string() } else { civ_named(id) };
-                let needed = (voters.len() * 2).div_ceil(3);
+                let needed = bevy_civ::diplomacy::un_votes_needed(voters.len());
                 log.push(format!(
                     "The United Nations votes for Secretary-General: {} {}, {} {} ({needed} of {} needed).",
                     capitalised(&name(un_owner)),

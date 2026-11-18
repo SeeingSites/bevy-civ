@@ -165,7 +165,8 @@ pub struct AiAttack {
 
 /// Moves every computer-controlled unit and returns the attacks they launch.
 ///
-/// `hostile(a, b)` says whether owner `a` is willing to attack owner `b`.
+/// `hostile(a, b)` says whether owner `a` is willing to attack owner `b`. `must_fall`: cities
+/// worth marching much further for (the capital of a people whose spaceship is in flight).
 /// `road_jobs` lists, per owner and in order of urgency, the tiles that owner wants a road on;
 /// `owns(tile, owner)` says whether a tile lies inside that owner's borders.
 pub fn process_ai_turn(
@@ -178,6 +179,7 @@ pub fn process_ai_turn(
     owns: &dyn Fn(Hex, u32) -> bool,
     ferries: &mut Ferries,
     commands: &mut Commands,
+    must_fall: &[Hex],
 ) -> Vec<AiAttack> {
     let mut rng = rand::thread_rng();
     let mut attacks = Vec::new();
@@ -541,17 +543,18 @@ pub fn process_ai_turn(
             .min_by_key(|(pos, _, _)| here.distance_to(*pos))
             .map(|(pos, _, _)| *pos);
         let city_range = if aggression > 0.6 { 14 } else { 7 };
+        let urgent = |pos: &Hex| must_fall.contains(pos);
         let enemy_city = city_positions
             .iter()
-            .filter(|(pos, other)| here.distance_to(*pos) <= city_range && hostile(owner, *other) && same_land(*pos, here))
-            .min_by_key(|(pos, _)| here.distance_to(*pos))
+            .filter(|(pos, other)| here.distance_to(*pos) <= if urgent(pos) { 3 * city_range } else { city_range } && hostile(owner, *other) && same_land(*pos, here))
+            .min_by_key(|(pos, _)| (!urgent(pos), here.distance_to(*pos)))
             .map(|(pos, _)| *pos);
         // Nothing to fight on this landmass: an enemy city overseas is reached by ship.
         if relief.is_none() && enemy_unit.is_none() && enemy_city.is_none() && can_sail && is_land(here) {
             let overseas = city_positions
                 .iter()
-                .filter(|(pos, other)| hostile(owner, *other) && *other != 99 && here.distance_to(*pos) <= 2 * city_range + 6 && !same_land(*pos, here))
-                .min_by_key(|(pos, _)| (here.distance_to(*pos), pos.x, pos.y))
+                .filter(|(pos, other)| hostile(owner, *other) && *other != 99 && here.distance_to(*pos) <= if urgent(pos) { 4 * city_range } else { 2 * city_range + 6 } && !same_land(*pos, here))
+                .min_by_key(|(pos, _)| (!urgent(pos), here.distance_to(*pos), pos.x, pos.y))
                 .map(|(pos, _)| *pos);
             if let Some((goal, port)) = overseas.and_then(|g| port_for(owner, here, g).map(|p| (g, p))) {
                 requests.push((entity, owner, goal, port));
@@ -793,7 +796,7 @@ mod tests {
         mut commands: Commands,
     ) {
         let cities = [(Hex::ZERO, 1)];
-        process_ai_turn(&mut civs, &mut units, &cities, &tiles, &|_, _| false, &mut jobs.0, &|hex, _| hex.distance_to(Hex::ZERO) <= 2, &mut Ferries::default(), &mut commands);
+        process_ai_turn(&mut civs, &mut units, &cities, &tiles, &|_, _| false, &mut jobs.0, &|hex, _| hex.distance_to(Hex::ZERO) <= 2, &mut Ferries::default(), &mut commands, &[]);
     }
 
     fn rival() -> Civ {
@@ -913,7 +916,7 @@ mod tests {
     ) {
         // Rival city at the origin, the player's city three tiles east; they are at war.
         let cities = [(Hex::ZERO, 1), (Hex::new(3, 0), 0)];
-        process_ai_turn(&mut civs, &mut units, &cities, &tiles, &|a, b| a != b, &mut HashMap::new(), &|_, _| false, &mut Ferries::default(), &mut commands);
+        process_ai_turn(&mut civs, &mut units, &cities, &tiles, &|a, b| a != b, &mut HashMap::new(), &|_, _| false, &mut Ferries::default(), &mut commands, &[]);
     }
 
     #[test]
@@ -983,7 +986,7 @@ mod tests {
 
     fn naval_phase(mut civs: ResMut<Civilizations>, mut units: Query<(Entity, &mut Unit)>, tiles: Query<&mut HexTile>, mut commands: Commands) -> Vec<Hex> {
         let cities = [(Hex::ZERO, 1)];
-        process_ai_turn(&mut civs, &mut units, &cities, &tiles, &|a, b| a != b, &mut HashMap::new(), &|_, _| false, &mut Ferries::default(), &mut commands)
+        process_ai_turn(&mut civs, &mut units, &cities, &tiles, &|a, b| a != b, &mut HashMap::new(), &|_, _| false, &mut Ferries::default(), &mut commands, &[])
             .into_iter()
             .map(|a| a.target)
             .collect()
