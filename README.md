@@ -30,6 +30,8 @@ Turn-based, Civilization-style empire building on a hex map, playable in the bro
 - Ships and aircraft: transports carry troops across the sea, carriers carry aircraft
 - World wonders (one per world) with real effects, golden ages
 - Great people: generals, merchants, scientists, artists, engineers
+- Governors: with Governor builds on, a city picks its projects, calms disorder with entertainers (and releases them when they are no longer needed) and sends the Workers it trains to work on automatic; a city in disorder says so plainly in its panel
+- Ending the turn with a city that has no soldier in it and an enemy in sight nearby asks for a second End Turn
 - Armies: a great general in one of your cities forms up to four land units (five with Sun Tzu) into one army, 10% stronger per member; more troops can join later
 - Battles played out on the map, one at a time: the camera goes to every battle you fight (also
   attacks on your units in the other peoples' turns), the attacker lunges, blows land, the fallen

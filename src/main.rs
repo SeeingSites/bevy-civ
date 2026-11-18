@@ -515,6 +515,11 @@ pub struct JustCaptured(pub HashSet<Hex>);
 #[derive(Event)]
 pub struct EndTurnNow;
 
+/// The player asked to end the turn (Enter, the button); `end_turn_guard` may first warn about a
+/// city left open to enemies, then sends `EndTurnNow`.
+#[derive(Event)]
+pub struct EndTurnRequest;
+
 /// Asks the camera to centre on a tile.
 #[derive(Event)]
 pub struct Focus(pub Hex);
@@ -668,7 +673,7 @@ fn main() {
         .add_systems(OnExit(AppState::Playing), cleanup_world)
         .add_systems(
             Update,
-            (handle_map_click, apply_actions, cycle_cities, withdraw_troops, stow_cargo, process_turn, religion_turn, continue_orders, stow_cargo, visit_villages, automate_workers, advance_selection, preview_route, refresh_supplies, work_tiles, nuclear_strikes)
+            (handle_map_click, apply_actions, end_turn_guard, cycle_cities, withdraw_troops, stow_cargo, process_turn, religion_turn, continue_orders, stow_cargo, visit_villages, automate_workers, advance_selection, preview_route, refresh_supplies, work_tiles, nuclear_strikes)
                 .chain()
                 .in_set(GameLogic)
                 .run_if(in_state(AppState::Playing)),
@@ -705,6 +710,7 @@ pub fn init_game(app: &mut App) {
         .init_resource::<JustCaptured>()
         .init_resource::<Rivers>()
         .add_event::<EndTurnNow>()
+        .add_event::<EndTurnRequest>()
         .add_event::<Focus>()
         .add_event::<Action>()
         .add_event::<MapClick>()
@@ -1689,6 +1695,49 @@ fn defence_terrain(terrain: Option<Terrain>, in_city: bool) -> Terrain {
     }
 }
 
+/// How near an enemy must be for ending the turn to be worth a second thought.
+const THREAT_RANGE: i32 = 3;
+
+/// Ending the turn passes through here: a city with no soldier in it, with an enemy in sight close by,
+/// is shown to the player first (a second End Turn goes ahead anyway).
+fn end_turn_guard(
+    mut requests: EventReader<EndTurnRequest>,
+    mut go: EventWriter<EndTurnNow>,
+    mut focus: EventWriter<Focus>,
+    mut warned: Local<Option<u32>>,
+    state: Res<GameState>,
+    fog: Res<FogOfWar>,
+    diplomacy: Res<Diplomacy>,
+    cities: Query<&City>,
+    units: Query<&Unit>,
+    mut log: ResMut<GameLog>,
+) {
+    for _ in requests.read() {
+        let at_war = |owner: u32| owner == BARBARIANS || (owner != PLAYER && diplomacy.get_treaty(PLAYER, owner) == Treaty::War);
+        let danger = cities
+            .iter()
+            .filter(|c| c.owner == PLAYER && !units.iter().any(|u| u.owner == PLAYER && u.position == c.position && u.unit_type.is_army()))
+            .find_map(|c| {
+                units
+                    .iter()
+                    .filter(|u| at_war(u.owner) && u.unit_type.is_military() && fog.visible.contains(&u.position))
+                    .filter(|u| u.position.distance_to(c.position) <= THREAT_RANGE)
+                    .min_by_key(|u| u.position.distance_to(c.position))
+                    .map(|u| (c.name.clone(), c.position, u.unit_type.name(), u.position.distance_to(c.position)))
+            });
+        match danger {
+            Some((city, at, enemy, distance)) if *warned != Some(state.turn) => {
+                *warned = Some(state.turn);
+                focus.send(Focus(at));
+                log.push(format!("{city} has no soldier inside and an enemy {enemy} is {distance} tiles away. Press End Turn again to end the turn anyway."));
+            }
+            _ => {
+                go.send(EndTurnNow);
+            }
+        }
+    }
+}
+
 fn apply_actions(
     mut actions: EventReader<Action>,
     mut selection: ResMut<Selection>,
@@ -1703,7 +1752,7 @@ fn apply_actions(
     mut civs: ResMut<Civilizations>,
     mut log: ResMut<GameLog>,
     mut dirty: ResMut<Dirty>,
-    (mut cycle, supplies, mut map, mut end_turn, mut focus): (ResMut<Cycle>, Res<Supplies>, ResMut<MapData>, EventWriter<EndTurnNow>, EventWriter<Focus>),
+    (mut cycle, supplies, mut map, mut end_turn, mut focus): (ResMut<Cycle>, Res<Supplies>, ResMut<MapData>, EventWriter<EndTurnRequest>, EventWriter<Focus>),
     (unit_entities, mut sounds, mut wonders, mut great, mut spies, homes, walled, mut taken, automated, rivers, mut saves, mut religions, mut space, mut last_move): (
         Query<Entity, With<Unit>>,
         EventWriter<Sfx>,
@@ -1735,7 +1784,7 @@ fn apply_actions(
         }
         match action {
             Action::EndTurn => {
-                end_turn.send(EndTurnNow);
+                end_turn.send(EndTurnRequest);
             }
             Action::NextUnit => {
                 selection.city = None;
@@ -1761,7 +1810,7 @@ fn apply_actions(
                         log.push(format!("{} needs something to build (Enter ends the turn anyway).", city.name));
                     }
                 } else {
-                    end_turn.send(EndTurnNow);
+                    end_turn.send(EndTurnRequest);
                 }
             }
             Action::Sentry => {
@@ -2391,9 +2440,14 @@ fn apply_actions(
                 }
                 let here = unit.position;
                 let land = tiles.iter().any(|t| t.coord == here && t.terrain != Terrain::Water);
-                let crowded = cities.iter().any(|c| c.position.distance_to(here) < 2);
-                if !land || crowded {
-                    log.push("A city cannot be founded here; move further from other cities.");
+                let nearest = cities.iter().filter(|c| c.position.distance_to(here) < 2).min_by_key(|c| c.position.distance_to(here));
+                if !land {
+                    log.push("A city cannot be founded at sea.");
+                    continue;
+                }
+                if let Some(near) = nearest {
+                    let how = if near.position == here { "stands on this very tile" } else { "is right next door" };
+                    log.push(format!("{} {how}: cities need at least one empty tile between them. Move the settler further away.", near.name));
                     continue;
                 }
                 let count = cities.iter().filter(|c| c.owner == PLAYER).count();
@@ -3190,6 +3244,26 @@ fn process_turn(
                 }
             }
         }
+        // The player's governor (the "Governor builds" switch) does the same for its city, and lets an
+        // entertainer go back to work once the city would stay orderly without it.
+        if mine && city.auto_build {
+            let mut calm = calm;
+            while happiness.in_disorder() && city.workers() > 1 {
+                city.add_specialist(bevy_civ::city::Specialist::Entertainer);
+                calm += 2;
+                happiness.update(city.population, calm, joy);
+                log.push(format!("The governor of {} puts a citizen to entertaining to calm the city.", city.name));
+            }
+            if let Some(i) = city.specialists.iter().position(|s| *s == bevy_civ::city::Specialist::Entertainer) {
+                let mut probe = Happiness::new(city.population);
+                probe.update(city.population, calm.saturating_sub(2), joy);
+                if !probe.in_disorder() {
+                    city.specialists.remove(i);
+                    happiness.update(city.population, calm.saturating_sub(2), joy);
+                    log.push(format!("The governor of {} sends an entertainer back to the fields.", city.name));
+                }
+            }
+        }
         let disorder = happiness.in_disorder();
         if disorder && mine {
             log.push(format!(
@@ -3284,6 +3358,10 @@ fn process_turn(
                     if !at_cap {
                         let trained = spawn_unit(&mut commands, city.position, ut, city.owner);
                         commands.entity(trained).try_insert(HomeCity(city.position));
+                        // A city with its governor on sends its new workers to look after the land.
+                        if mine && city.auto_build && ut.is_worker() {
+                            commands.entity(trained).try_insert(Automated);
+                        }
                         // Barracks train veterans.
                         let veteran = if ut.domain() == Domain::Air { buildings.has(Building::Airport) } else { buildings.has(Building::Barracks) || wonders.owns(city.owner, Building::SunTzu) };
                         // A civilization's unique unit is trained a rank higher still.
@@ -3308,7 +3386,11 @@ fn process_turn(
                     }
                     // Units keep coming until the player changes the order.
                     if mine {
-                        log.push(format!("{} trains a {}.", city.name, ut.name()));
+                        if city.auto_build && ut.is_worker() {
+                            log.push(format!("{} trains a {}, which sets about improving the land by itself (K takes it in hand).", city.name, ut.name()));
+                        } else {
+                            log.push(format!("{} trains a {}.", city.name, ut.name()));
+                        }
                     }
                 }
                 ProductionItem::Building(b) if b.is_spaceship_part() => {
@@ -5194,7 +5276,7 @@ mod tests {
         let mut app = App::new();
         app.add_plugins(MinimalPlugins)
             .add_event::<Action>()
-            .add_event::<EndTurnNow>()
+            .add_event::<EndTurnRequest>()
             .add_event::<Sfx>()
             .add_event::<Focus>()
             .add_event::<savegame::SaveRequest>()
@@ -5291,6 +5373,56 @@ mod tests {
         app.update();
         let city = app.world().get::<City>(roma).unwrap();
         assert_eq!((city.population, city.production_progress), (2, Building::Barracks.cost()));
+    }
+
+    #[test]
+    fn founding_too_close_names_the_city_in_the_way() {
+        let mut app = order_app();
+        for at in [Hex::new(1, 0), Hex::new(-2, 0)] {
+            app.world_mut().spawn(HexTile { coord: at, terrain: Terrain::Grassland, improvements: vec![], resource: None });
+        }
+        let settler = order(&mut app, UnitType::Settler, Hex::new(1, 0), None, Action::FoundCity);
+        assert!(app.world().get_entity(settler).is_ok(), "next to Roma: not founded");
+        let log = app.world().resource::<GameLog>();
+        assert!(log.lines.last().is_some_and(|l| l.contains("Roma") && l.contains("empty tile")), "{:?}", log.lines.last());
+        let far = order(&mut app, UnitType::Settler, Hex::new(-2, 0), None, Action::FoundCity);
+        assert!(app.world().get_entity(far).is_err(), "two tiles away: founded");
+    }
+
+    #[test]
+    fn ending_the_turn_warns_once_of_an_open_city_with_an_enemy_near() {
+        let mut app = App::new();
+        app.add_plugins(MinimalPlugins)
+            .add_event::<EndTurnRequest>()
+            .add_event::<EndTurnNow>()
+            .add_event::<Focus>()
+            .init_resource::<GameState>()
+            .init_resource::<FogOfWar>()
+            .init_resource::<Diplomacy>()
+            .init_resource::<GameLog>()
+            .add_systems(Update, end_turn_guard);
+        let world = app.world_mut();
+        spawn_city(&mut world.commands(), Hex::ZERO, "Roma".into(), 3, PLAYER, true);
+        let raider = spawn_unit(&mut world.commands(), Hex::new(2, 0), UnitType::Warrior, BARBARIANS);
+        world.flush();
+        world.resource_mut::<FogOfWar>().visible.insert(Hex::new(2, 0));
+        let ended = |app: &mut App| app.world_mut().resource_mut::<Events<EndTurnNow>>().drain().count();
+
+        app.world_mut().send_event(EndTurnRequest);
+        app.update();
+        assert_eq!(ended(&mut app), 0, "warned first");
+        assert!(app.world().resource::<GameLog>().lines.last().is_some_and(|l| l.contains("Roma has no soldier")));
+        app.world_mut().send_event(EndTurnRequest);
+        app.update();
+        assert_eq!(ended(&mut app), 1, "a second request goes ahead");
+
+        // A soldier inside, or an enemy out of sight, is no reason to wait.
+        app.world_mut().resource_mut::<GameState>().turn += 1;
+        spawn_unit(&mut app.world_mut().commands(), Hex::ZERO, UnitType::Spearman, PLAYER);
+        app.world_mut().send_event(EndTurnRequest);
+        app.update();
+        assert_eq!(ended(&mut app), 1);
+        let _ = raider;
     }
 
     #[test]

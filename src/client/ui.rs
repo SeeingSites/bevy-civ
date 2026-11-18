@@ -148,7 +148,7 @@ fn help_lines(topic: HelpTopic) -> Vec<String> {
         .collect(),
         HelpTopic::Basics => [
             "Click a unit or city to select it; click again or press Tab (Shift+Tab back) for the next unit on that tile - or pick one from the cards in the unit panel. Click a tile (or right-click) to move; far destinations become standing orders. Hover over a tile to see the route and how many turns it takes.",
-            "Space: skip a unit (or go to a city that needs a project, then end the turn). Enter: end the turn. N: next unit. H: fortify or sleep. Z: sentry (sleep until an enemy comes near). J: a worker or settler joins the city it stands in. I: board a ship in port. [ and ]: previous and next city. Ctrl+Z or Backspace: take back the last move. L: messages. Esc: close or deselect.",
+            "Space: skip a unit (or go to a city that needs a project, then end the turn). Enter: end the turn (if a city has no soldier and an enemy is in sight nearby, the game says so first; End Turn again goes ahead). N: next unit. H: fortify or sleep. Z: sentry (sleep until an enemy comes near). J: a worker or settler joins the city it stands in. I: board a ship in port. [ and ]: previous and next city. Ctrl+Z or Backspace: take back the last move. L: messages. Esc: close or deselect.",
             "Workers and Engineers: F farm, M mine, R road (railroad on a road, with Steam Power), O fortress (Construction), X clear land or clean pollution, K automate. Settlers: B found a city.",
             "U uses the selected unit: a great person's gift, a General forming an army, a Missionary preaching, a caravan helping a wonder. T opens a caravan's trade route. P pillages enemy land. Diplomats act from the unit panel next to a foreign city.",
             "Q science, E foreign affairs, G trade, Y empire (government, rates, cities, military, score), F1 this encyclopedia, V sound, F2 save a file (the game also saves itself every turn).",
@@ -198,7 +198,7 @@ fn help_lines(topic: HelpTopic) -> Vec<String> {
             "Each working citizen works one tile of its city's area, and the city's own tile is worked for free. Open a city to see each tile's food, shields and gold (worked tiles ringed in green); click a tile to move a citizen there or off it, or let the governor choose. Farms, mines, roads, railroads, resources and rivers make tiles richer.",
             "Modern troubles: once a people knows Sanitation, big unhappy cities may fall into a drug trade (up to 3 levels, each +1 unhappy and -1 gold), spread by smugglers from foreign cities nearby - a Police Station roots it out, and you can demand that a neighbour cracks down. With Industrialization, adulterated food may spoil half a granary and anger a city for 6 turns (likelier where corruption is high) unless it has a Food Safety Agency. GM Farms (Genetic Engineering) add a food on every farmed tile, but people distrust the food (+1 unhappy) without a Food Safety Agency.",
             "Migration: every 5 turns, citizens leave unhappy, hungry or troubled cities for clearly better ones within 10 tiles - at home, or abroad in peoples that know Industrialization and welcome them. Set your policy in the Empire window (Government): welcome migrants and grow (their rulers resent it), or turn them away. Communist and fundamentalist peoples admit none.",
-            "Each city's governor works the land for a focus, always feeding the city first: Growth (the most food), Production (shields), Trade (gold-rich tiles, for science and taxes) or Balanced. On Auto, the default, it picks one from the city's situation - production for a wonder or for troops in wartime, growth for a small city, trade for a big one with a library or market - and the city panel says why.",
+            "Each city's governor works the land for a focus, always feeding the city first: Growth (the most food), Production (shields), Trade (gold-rich tiles, for science and taxes) or Balanced. With Governor builds on, the governor also puts citizens to entertaining when the city would fall into disorder, and back to work once it is calm without them; and Workers it trains start on automatic. On Auto, the default, it picks one from the city's situation - production for a wonder or for troops in wartime, growth for a small city, trade for a big one with a library or market - and the city panel says why.",
             "Culture from temples, cathedrals, colosseums, libraries, universities and wonders widens a city's borders over time (2 tiles, 3 at 100, 4 at 1,000, 5 at 5,000). Where borders meet, the land goes to the city with the stronger culture for its distance, so a great culture pushes its neighbours' borders back. A city in disorder next to a much greater culture may defect to it.",
             "Corruption grows with distance from the capital and is halved by a Courthouse. A city keeps training the same unit until told otherwise; a finished building or wonder leaves it waiting for its next project - unless its build queue holds more (switch the city panel to Add to queue and pick up to six projects).",
             "Pollution and nuclear fallout foul the land; past 15 fouled tiles in the world, global warming now and then turns land drier. Clean it up with workers; Mass Transit and Recycling Centers prevent it.",
@@ -920,6 +920,8 @@ pub fn setup_ui(mut commands: Commands, art: Res<Art>, mut images: ResMut<Assets
     commands.spawn((
         ModalRoot,
         super::layout::Dock::Centre,
+        // Above the docked panels (a window can reach under the city panel), below tips and the menu.
+        GlobalZIndex(10),
         Node {
             position_type: PositionType::Absolute,
             left: Val::Px(0.0),
@@ -1335,6 +1337,20 @@ pub fn rebuild_panels(
                 }
                 stat(r, art, icon::HAPPY, format!("{} / {}", happiness.happy + happiness.content, happiness.unhappy), if happiness.in_disorder() { Color::srgb(1.0, 0.45, 0.4) } else { CREAM });
             });
+            // The mood, spelled out: a city in disorder produces nothing whatever the figures above say.
+            if happiness.in_disorder() {
+                p.spawn(label(
+                    &art.font_bold,
+                    format!(
+                        "CIVIL DISORDER: {} unhappy outnumber {} happy, so nothing grows, is built, researched or taxed. Click a worked tile to make its citizen an entertainer, or build a Temple, or raise Luxury (Empire window).",
+                        happiness.unhappy, happiness.happy
+                    ),
+                    14.0,
+                    Color::srgb(1.0, 0.5, 0.45),
+                ));
+            } else if happiness.unhappy > 0 {
+                p.spawn(label(&art.font_body, format!("Mood: {} happy, {} content, {} unhappy (disorder if the unhappy outnumber the happy).", happiness.happy, happiness.content, happiness.unhappy), 13.0, MUTED));
+            }
             let grow_in = (city.food_to_grow().saturating_sub(city.food_storage) as f32 / food.max(1) as f32).ceil();
             p.spawn(label(&art.font_body, format!("Growth: {}/{} food  (about {} turns)", city.food_storage, city.food_to_grow(), grow_in), 14.0, MUTED));
             bar(p, city.food_storage as f32 / city.food_to_grow() as f32, Color::srgb(0.45, 0.78, 0.35));
@@ -1382,7 +1398,7 @@ pub fn rebuild_panels(
                     button(r, art, text, Command::Game(Action::AutoBuild(!city.auto_build)), tint, 12.0);
                     r.spawn(label(
                         &art.font_body,
-                        if city.auto_build { "it picks the next project when one is done (after the queue)" } else { "units repeat until you choose; buildings wait for orders" },
+                        if city.auto_build { "it picks the next project when one is done (after the queue) and makes entertainers to end disorder" } else { "units repeat until you choose; buildings wait for orders" },
                         12.0,
                         MUTED,
                     ));
@@ -1684,7 +1700,7 @@ pub fn rebuild_panels(
                         });
                     });
                     let detail = match &offer.kind {
-                        OfferKind::Tribute(amount) => format!("They demand {amount} gold. We have {}.", state.gold),
+                        OfferKind::Tribute(amount) => format!("They demand {amount} gold. We have {}. Paying wins a little goodwill; refusing angers them, and they may declare war.", state.gold),
                         OfferKind::TechSwap { give, get } => format!("We would learn {} and teach them {}.", get.name(), give.name()),
                         OfferKind::JoinWar(target) => format!("Accepting means declaring war on {}.", civs.players.iter().find(|c| c.id == *target).map(|c| c.name.as_str()).unwrap_or("them")),
                         OfferKind::Peace => "Accepting ends the war.".to_string(),

@@ -53,6 +53,9 @@ pub struct Tips {
     pub shown_on: u32,
 }
 
+/// Tips about the first turns, skipped in a game loaded after them.
+const OPENING_TIPS: [&str; 7] = ["welcome", "end_turn", "unit", "research", "grow", "save", "score"];
+
 /// Turns a tip stays up unless dismissed.
 const TIP_TURNS: u32 = 3;
 
@@ -93,6 +96,13 @@ pub fn queue_tips(
     diplomacy: Res<Diplomacy>,
     ui: Res<UiState>,
 ) {
+    // A game picked up in the middle (Continue, or a saved file) has had its first turns: do not
+    // greet its player with the welcome and the other opening tips again.
+    if tips.shown.is_empty() && state.turn > 5 {
+        for (id, _, _) in TIPS.iter().filter(|(id, _, _)| OPENING_TIPS.contains(id)) {
+            tips.shown.insert(id);
+        }
+    }
     // A tip left up for a few turns steps aside for the next.
     if tips.current.is_some() && state.turn >= tips.shown_on + TIP_TURNS {
         tips.current = None;
