@@ -216,6 +216,8 @@ fn help_lines(topic: HelpTopic) -> Vec<String> {
             "Great people come from great-person points: Merchants trade abroad or settle as trading houses, Scientists complete research, Artists make masterpieces, Engineers finish projects; Generals come from victories.".to_string(),
         ],
         HelpTopic::War => vec![
+            "Just causes for war: refusing your demand to withdraw troops or stop smugglers, a spy caught, a city taken, an attack on your ally or a border incident gives you a grievance for 30 turns (the foreign advisor lists them). Declaring war with one costs 3 reputation instead of 15, and the enemy's allies may stay out. Others' grievances against you make them readier to attack.".to_string(),
+            "False flags: a Diplomat can Stage an Incident (a faked attack gives you a just cause) or Frame another people for an attack in a city (its owner blames them). If exposed, you lose 10 reputation and everyone trusts you less. Computer players use them too.".to_string(),
             "Attack by moving onto an enemy. Battles are fought in rounds over hit points (3, 4 for a veteran, 5 for an elite); winners may be promoted, faster attackers may retreat, wounds heal while resting.".to_string(),
             "Defence: hills and forest +50%, mountains double, rivers +25%, fortifying +25%, city walls or a fortress double against land attacks, a Coastal Fortress double against ships. A Great General on the tile makes troops fight half again as hard.".to_string(),
             "Armies: a Great General in one of your cities forms up to four land units (five with Sun Tzu's War Academy) into one army. It fights as its best unit with the hit points of all, 10% harder for every member beyond the first, and moves at its slowest member's pace. Troops standing with an army that has room can join it (U).".to_string(),
@@ -1170,8 +1172,21 @@ pub fn rebuild_panels(
                                 let tint = if mission.is_covert() { Color::srgb(0.95, 0.72, 0.6) } else { Color::srgb(0.66, 0.9, 0.52) };
                                 production_button(grid, art, mission.name(), format!("{odds}%: {}", mission.describe()), Command::Game(Action::Spy(mission)), tint);
                             }
+                            // Framing: one button for each other people we know, to take the blame.
+                            for other in civs.players.iter().filter(|c| !c.is_human && !c.eliminated && c.id != city.owner && foreign.met.contains(&c.id)) {
+                                let mission = Mission::Frame(other.id);
+                                let odds = (mission.odds(walls) * 100.0).round() as u32;
+                                production_button(
+                                    grid,
+                                    art,
+                                    &format!("Frame {}", other.name.trim_start_matches("the ")),
+                                    format!("{odds}%: {}", mission.describe()),
+                                    Command::Game(Action::Spy(mission)),
+                                    Color::srgb(0.9, 0.6, 0.75),
+                                );
+                            }
                         });
-                        p.spawn(label(&art.font_body, "The diplomat is spent either way. If caught, they will not forget it.", 12.0, MUTED));
+                        p.spawn(label(&art.font_body, "The diplomat is spent either way. If caught, they will not forget it - and an exposed false flag costs reputation with everyone.", 12.0, MUTED));
                     }
                     None => {
                         p.spawn(label(&art.font_body, "Move next to a foreign city to open an embassy, steal technology, sabotage, steal gold or incite unrest.", 13.0, MUTED));
@@ -2450,6 +2465,25 @@ pub fn rebuild_panels(
                             let feuds: Vec<&str> = known.iter().filter(|o| o.id != civ.id && diplomacy.get_treaty(civ.id, o.id) == Treaty::War).map(|o| o.name.as_str()).collect();
                             if !feuds.is_empty() {
                                 w.spawn(label(&art.font_body, format!("They are at war with {}.", feuds.join(", ")), 15.0, INK_SOFT));
+                            }
+                            // Just causes for war, either way.
+                            if treaty != Treaty::War {
+                                if let Some(g) = foreign.grievance(PLAYER, civ.id, state.turn) {
+                                    w.spawn(label(
+                                        &art.font_bold,
+                                        format!("Just cause for war: they {} ({} turns left). Declaring war now costs little reputation, and their allies may stay out.", g.wrong.describe(), g.until - state.turn),
+                                        15.0,
+                                        Color::srgb(0.2, 0.45, 0.2),
+                                    ));
+                                }
+                                if let Some(g) = foreign.grievance(civ.id, PLAYER, state.turn) {
+                                    w.spawn(label(
+                                        &art.font_bold,
+                                        format!("They hold a grievance against us: we {} ({} turns left). They are readier to declare war.", g.wrong.confessed(), g.until - state.turn),
+                                        15.0,
+                                        Color::srgb(0.65, 0.2, 0.15),
+                                    ));
+                                }
                             }
                             w.spawn(row(6.0)).with_children(|r| {
                                 let ask = |act: DiploAct| Command::Game(Action::Diplo(civ.id, act));

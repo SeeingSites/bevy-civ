@@ -94,6 +94,68 @@ pub enum OfferKind {
     Crackdown,
 }
 
+/// A wrong that gives a people a just cause for war (a casus belli) against another, for a while.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, serde::Serialize, serde::Deserialize)]
+pub enum Wrong {
+    /// Refused to take their troops out of our lands.
+    RefusedWithdrawal,
+    /// Refused to stop their drug smugglers.
+    RefusedCrackdown,
+    /// Their diplomat was caught spying on us.
+    SpyCaught,
+    /// They went to war with our ally.
+    AllyAttacked,
+    /// They took one of our cities.
+    CityTaken,
+    /// Their troops attacked ours at the border (a real incident, or one staged to look like it).
+    BorderIncident,
+}
+
+impl Wrong {
+    /// What they did, as "they ..." would finish it.
+    pub fn describe(&self) -> &'static str {
+        match self {
+            Wrong::RefusedWithdrawal => "refused to withdraw their troops from our lands",
+            Wrong::RefusedCrackdown => "refused to stop their drug smugglers",
+            Wrong::SpyCaught => "were caught spying on us",
+            Wrong::AllyAttacked => "attacked our ally",
+            Wrong::CityTaken => "took one of our cities",
+            Wrong::BorderIncident => "attacked our troops at the border",
+        }
+    }
+
+    /// The same wrong, as the other side tells it ("we ...").
+    pub fn confessed(&self) -> &'static str {
+        match self {
+            Wrong::RefusedWithdrawal => "refused to withdraw our troops from their lands",
+            Wrong::RefusedCrackdown => "refused to stop our smugglers",
+            Wrong::SpyCaught => "were caught spying on them",
+            Wrong::AllyAttacked => "attacked their ally",
+            Wrong::CityTaken => "took one of their cities",
+            Wrong::BorderIncident => "attacked their troops at the border",
+        }
+    }
+}
+
+/// A grievance: `holder` has a just cause for war against `against` until the turn `until`.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, serde::Serialize, serde::Deserialize)]
+pub struct Grievance {
+    pub holder: u32,
+    pub against: u32,
+    pub wrong: Wrong,
+    pub until: u32,
+}
+
+/// Turns a grievance stays a just cause for war.
+pub const GRIEVANCE_TURNS: u32 = 30;
+/// Reputation lost by breaking a treaty: without a just cause, and with one.
+pub const BETRAYAL_REPUTATION: i32 = 15;
+pub const JUSTIFIED_REPUTATION: i32 = 3;
+/// Chance an ally of the victim joins a war that has a just cause (an unjust one, always).
+pub const ALLY_JOINS_JUSTIFIED: f64 = 0.4;
+/// Extra chance each turn of war between two computer players when one holds a grievance.
+pub const GRIEVANCE_WAR: f64 = 0.03;
+
 /// A message from another leader waiting for the player's answer.
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct Offer {
@@ -148,6 +210,9 @@ pub struct Foreign {
     /// Withdrawals agreed but not yet carried out: (whose troops, out of whose lands).
     #[serde(skip)]
     pub withdrawals: Vec<(u32, u32)>,
+    /// Just causes for war that peoples hold against each other (see [`Grievance`]).
+    #[serde(default)]
+    pub grievances: Vec<Grievance>,
 }
 
 impl Foreign {
@@ -164,6 +229,29 @@ impl Foreign {
         }
         list.extend(self.ai_deals.iter().map(|d| (d.seller, d.buyer, d.good)));
         list
+    }
+
+    /// `holder` gains a just cause for war against `against` (renewing the same one if held).
+    pub fn add_grievance(&mut self, holder: u32, against: u32, wrong: Wrong, turn: u32) {
+        if holder == against {
+            return;
+        }
+        self.grievances.retain(|g| !(g.holder == holder && g.against == against && g.wrong == wrong));
+        self.grievances.push(Grievance { holder, against, wrong, until: turn + GRIEVANCE_TURNS });
+    }
+
+    /// The freshest just cause `holder` has for war against `against`, if any.
+    pub fn grievance(&self, holder: u32, against: u32, turn: u32) -> Option<Grievance> {
+        self.grievances.iter().filter(|g| g.holder == holder && g.against == against && g.until > turn).max_by_key(|g| g.until).copied()
+    }
+
+    /// Grievances are spent by the war they justify, and forgotten when they run out.
+    pub fn settle_grievances(&mut self, holder: u32, against: u32) {
+        self.grievances.retain(|g| !(g.holder == holder && g.against == against));
+    }
+
+    pub fn forget_old_grievances(&mut self, turn: u32) {
+        self.grievances.retain(|g| g.until > turn);
     }
 
     pub fn treaty_age(&self, a: u32, b: u32, turn: u32) -> u32 {
@@ -239,19 +327,30 @@ fn teach(ctx: &mut Ctx, civ: u32, tech: Tech) {
     }
 }
 
-/// The player declares war; treaty-breaking costs reputation and the victim's allies join in.
+/// The player declares war. Breaking a treaty costs reputation and the victim's allies join in -
+/// unless we have a just cause (a [`Grievance`]): then the world mostly understands, and each ally
+/// of theirs may stay out.
 fn declare_war(ctx: &mut Ctx, civ: u32, name: &str) {
     let treaty = ctx.diplomacy.get_treaty(PLAYER, civ);
+    let cause = ctx.foreign.grievance(PLAYER, civ, ctx.state.turn);
     if matches!(treaty, Treaty::Peace | Treaty::Alliance) {
-        ctx.foreign.reputation -= 15;
+        let (loss, blame) = if cause.is_some() { (JUSTIFIED_REPUTATION, -2) } else { (BETRAYAL_REPUTATION, -8) };
+        ctx.foreign.reputation -= loss;
         let others: Vec<u32> = ctx.civs.players.iter().filter(|c| !c.is_human && !c.eliminated && c.id != civ).map(|c| c.id).collect();
         for other in others {
-            shift(ctx, other, -8);
+            shift(ctx, other, blame);
         }
-        ctx.log.push("Breaking our treaty has damaged our reputation abroad.");
+        if cause.is_none() {
+            ctx.log.push("Breaking our treaty has damaged our reputation abroad.");
+        }
     }
     set_treaty(ctx, PLAYER, civ, Treaty::War);
-    ctx.log.push(format!("We declare war on {name}."));
+    match cause {
+        Some(g) => ctx.log.push(format!("We declare war on {name}: they {}. The world understands.", g.wrong.describe())),
+        None => ctx.log.push(format!("We declare war on {name}.")),
+    }
+    ctx.foreign.settle_grievances(PLAYER, civ);
+    let mut rng = rand::thread_rng();
     let allies: Vec<(u32, String)> = ctx
         .civs
         .players
@@ -261,6 +360,10 @@ fn declare_war(ctx: &mut Ctx, civ: u32, name: &str) {
         .map(|c| (c.id, c.name.clone()))
         .collect();
     for (ally, ally_name) in allies {
+        if cause.is_some() && !rng.gen_bool(ALLY_JOINS_JUSTIFIED) {
+            ctx.log.push(format!("{}, allied with {name}, accept our cause and stay out of the war.", crate::capitalised(&ally_name)));
+            continue;
+        }
         set_treaty(ctx, PLAYER, ally, Treaty::War);
         ctx.log.push(format!("{}, allied with {name}, have declared war on us!", crate::capitalised(&ally_name)));
     }
@@ -353,6 +456,8 @@ pub fn player_act(ctx: &mut Ctx, civ: u32, act: DiploAct) {
                 "Very well. Our soldiers will return home.".into()
             } else {
                 shift(ctx, civ, -6);
+                ctx.foreign.add_grievance(PLAYER, civ, Wrong::RefusedWithdrawal, ctx.state.turn);
+                ctx.log.push(format!("{} refuse to withdraw: we now have a just cause for war against them (for {GRIEVANCE_TURNS} turns).", crate::capitalised(&name)));
                 if aggression > 0.6 && theirs > ours * 1.3 && ctx.state.turn >= AI_GRACE_TURNS && rand::thread_rng().gen_bool(0.3) {
                     set_treaty(ctx, PLAYER, civ, Treaty::War);
                     ctx.log.push(format!("{name} answer our demand with war!"));
@@ -374,6 +479,8 @@ pub fn player_act(ctx: &mut Ctx, civ: u32, act: DiploAct) {
                 "Our police will close the smuggling routes.".into()
             } else {
                 shift(ctx, civ, -4);
+                ctx.foreign.add_grievance(PLAYER, civ, Wrong::RefusedCrackdown, ctx.state.turn);
+                ctx.log.push(format!("{} refuse to stop their smugglers: we now have a just cause for war against them (for {GRIEVANCE_TURNS} turns).", crate::capitalised(&name)));
                 "What our merchants sell is no affair of yours.".into()
             }
         }
@@ -617,6 +724,7 @@ pub fn answer_offer(ctx: &mut Ctx, accept: bool) {
         }
         (OfferKind::Crackdown, false) => {
             shift(ctx, civ, -7);
+            ctx.foreign.add_grievance(civ, PLAYER, Wrong::RefusedCrackdown, ctx.state.turn);
             "Then the poison you sell is on your conscience."
         }
         (OfferKind::Withdraw, true) => {
@@ -628,6 +736,7 @@ pub fn answer_offer(ctx: &mut Ctx, accept: bool) {
         }
         (OfferKind::Withdraw, false) => {
             shift(ctx, civ, -12);
+            ctx.foreign.add_grievance(civ, PLAYER, Wrong::RefusedWithdrawal, ctx.state.turn);
             let aggression = ctx.civs.players.iter().find(|c| c.id == civ).map(|c| c.aggression).unwrap_or(0.5);
             if rand::thread_rng().gen_bool((aggression as f64 * 0.6).clamp(0.1, 0.5)) && ctx.diplomacy.get_treaty(PLAYER, civ) != Treaty::War {
                 set_treaty(ctx, PLAYER, civ, Treaty::War);
@@ -654,6 +763,7 @@ pub const SPACE_RACE_WAR: f64 = 0.15;
 pub fn turn(ctx: &mut Ctx, fog: &FogOfWar, supplies: &Supplies, units: &[(Hex, u32)], cities: &[(Hex, u32)]) {
     let mut rng = rand::thread_rng();
     let turn = ctx.state.turn;
+    ctx.foreign.forget_old_grievances(turn);
     let roster: Vec<(u32, String, String, f32)> =
         ctx.civs.players.iter().filter(|c| !c.is_human && !c.eliminated).map(|c| (c.id, c.name.clone(), c.leader.clone(), c.aggression)).collect();
     let city_count = |owner: u32| cities.iter().filter(|(_, o)| *o == owner).count();
@@ -742,19 +852,23 @@ pub fn turn(ctx: &mut Ctx, fog: &FogOfWar, supplies: &Supplies, units: &[(Hex, u
             }
         }
 
-        // An unhappy, confident neighbour declares war.
+        // An unhappy, confident neighbour declares war - sooner when it holds a grievance against us,
+        // which it names.
+        let cause = ctx.foreign.grievance(id, PLAYER, turn);
         let may_attack = match treaty {
             Treaty::None => true,
-            Treaty::Peace => age >= 15 && aggression > 0.6,
+            Treaty::Peace => (age >= 15 && aggression > 0.6) || (cause.is_some() && age >= 10),
             _ => false,
         };
-        let threshold = -12 - ((1.0 - aggression) * 40.0) as i32;
+        let threshold = -12 - ((1.0 - aggression) * 40.0) as i32 + if cause.is_some() { 20 } else { 0 };
         if may_attack && turn >= AI_GRACE_TURNS && attitude <= threshold && theirs >= ours * 0.8 && rng.gen_bool(0.25) {
             set_treaty(ctx, PLAYER, id, Treaty::War);
-            ctx.log.push(format!("{} have declared war on us!", crate::capitalised(&name)));
-            ctx.foreign.reply.insert(id, "Your lands will be ours.".into());
+            ctx.foreign.settle_grievances(id, PLAYER);
+            let why = cause.map(|g| format!(" They say we {}.", g.wrong.confessed())).unwrap_or_default();
+            ctx.log.push(format!("{} have declared war on us!{why}", crate::capitalised(&name)));
+            ctx.foreign.reply.insert(id, if cause.is_some() { "You were warned." } else { "Your lands will be ours." }.into());
             if ctx.foreign.offer.is_none() {
-                ctx.foreign.offer = Some(Offer { from: id, kind: OfferKind::Notice, text: format!("{leader} has had enough of words. {} have declared war on us!", crate::capitalised(&name)) });
+                ctx.foreign.offer = Some(Offer { from: id, kind: OfferKind::Notice, text: format!("{leader} has had enough of words. {} have declared war on us!{why}", crate::capitalised(&name)) });
             }
             continue;
         }
@@ -848,7 +962,11 @@ pub fn turn(ctx: &mut Ctx, fog: &FogOfWar, supplies: &Supplies, units: &[(Hex, u
             let conquest = conqueror(sa, a.3, sb) || conqueror(sb, b.3, sa);
             // While the stronger side is winning, it is in no hurry to make peace.
             let peace_chance = if conquest && age < 60 { 0.015 } else { 0.07 };
-            let war_chance = 0.008 * (a.3 + b.3) as f64 + if conquest { CONQUEST_WAR } else { 0.0 };
+            // A grievance on either side makes war likelier, and names who starts it.
+            let cause_ab = ctx.foreign.grievance(a.0, b.0, turn);
+            let cause_ba = ctx.foreign.grievance(b.0, a.0, turn);
+            let aggrieved = cause_ab.is_some() || cause_ba.is_some();
+            let war_chance = 0.008 * (a.3 + b.3) as f64 + if conquest { CONQUEST_WAR } else { 0.0 } + if aggrieved { GRIEVANCE_WAR } else { 0.0 };
             match treaty {
                 Treaty::War if age >= 15 && rng.gen_bool(peace_chance) => {
                     set_treaty(ctx, a.0, b.0, Treaty::Peace);
@@ -856,10 +974,25 @@ pub fn turn(ctx: &mut Ctx, fog: &FogOfWar, supplies: &Supplies, units: &[(Hex, u
                         ctx.log.push(format!("{} and {} make peace.", a.1, b.1));
                     }
                 }
-                Treaty::None | Treaty::Peace if turn >= AI_GRACE_TURNS && (treaty == Treaty::None || age >= 20) && rng.gen_bool(war_chance.min(1.0)) => {
+                Treaty::None | Treaty::Peace if turn >= AI_GRACE_TURNS && (treaty == Treaty::None || age >= 20 || (aggrieved && age >= 10)) && rng.gen_bool(war_chance.min(1.0)) => {
                     set_treaty(ctx, a.0, b.0, Treaty::War);
+                    // Who starts it: the one with a grievance, else the stronger.
+                    let ((attacker, attacker_name), (victim, victim_name), cause) = if cause_ab.is_some() || (cause_ba.is_none() && sa >= sb) {
+                        ((a.0, &a.1), (b.0, &b.1), cause_ab)
+                    } else {
+                        ((b.0, &b.1), (a.0, &a.1), cause_ba)
+                    };
+                    ctx.foreign.settle_grievances(attacker, victim);
                     if known {
-                        ctx.log.push(format!("{} and {} are now at war.", a.1, b.1));
+                        match cause {
+                            Some(g) => ctx.log.push(format!("{} declare war on {victim_name}, who {}.", crate::capitalised(attacker_name), g.wrong.describe())),
+                            None => ctx.log.push(format!("{} and {} are now at war.", a.1, b.1)),
+                        }
+                    }
+                    // An attack on our ally is a wrong done to us too.
+                    if ctx.diplomacy.get_treaty(PLAYER, victim) == Treaty::Alliance && ctx.diplomacy.get_treaty(PLAYER, attacker) != Treaty::War {
+                        ctx.foreign.add_grievance(PLAYER, attacker, Wrong::AllyAttacked, turn);
+                        ctx.log.push(format!("{} have attacked our ally {victim_name}: we have a just cause for war against them.", crate::capitalised(attacker_name)));
                     }
                 }
                 _ => {}
@@ -1096,5 +1229,32 @@ mod tests {
         table.foreign.smugglers.insert(1);
         player_act(&mut table.ctx(), 1, DiploAct::Crackdown);
         assert!(table.foreign.crackdown.get(&1).is_some_and(|until| *until > table.state.turn));
+    }
+
+    #[test]
+    fn a_refused_demand_is_a_just_cause_for_a_cheaper_war() {
+        // Breaking a peace treaty without cause costs the full price.
+        let mut table = Table::new(1);
+        table.diplomacy.set_treaty(PLAYER, 1, Treaty::Peace);
+        player_act(&mut table.ctx(), 1, DiploAct::War);
+        assert_eq!(table.foreign.reputation, -BETRAYAL_REPUTATION);
+        // A hostile, stronger people refuses to withdraw: that is a just cause, for a while.
+        let mut table = Table::new(1);
+        table.diplomacy.set_treaty(PLAYER, 1, Treaty::Peace);
+        table.foreign.trespass.insert(1, 2);
+        table.diplomacy.change_attitude(PLAYER, 1, -30);
+        table.foreign.strength.insert(PLAYER, 10.0);
+        table.foreign.strength.insert(1, 30.0);
+        player_act(&mut table.ctx(), 1, DiploAct::Withdraw);
+        let turn = table.state.turn;
+        let cause = table.foreign.grievance(PLAYER, 1, turn).expect("a just cause");
+        assert_eq!(cause.wrong, Wrong::RefusedWithdrawal);
+        assert!(table.foreign.grievance(PLAYER, 1, turn + GRIEVANCE_TURNS).is_none(), "it runs out");
+        // The refusal may already have been answered with war; if not, our war now costs little.
+        if table.diplomacy.get_treaty(PLAYER, 1) != Treaty::War {
+            player_act(&mut table.ctx(), 1, DiploAct::War);
+            assert_eq!(table.foreign.reputation, -JUSTIFIED_REPUTATION);
+            assert!(table.foreign.grievance(PLAYER, 1, turn).is_none(), "spent by the war");
+        }
     }
 }

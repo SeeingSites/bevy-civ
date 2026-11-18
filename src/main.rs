@@ -516,7 +516,7 @@ pub struct Exploring;
 
 /// Cities the player took this turn: they can still be razed.
 #[derive(Resource, Default)]
-pub struct JustCaptured(pub HashSet<Hex>);
+pub struct JustCaptured(pub HashSet<Hex>, pub Vec<u32>);
 
 /// Ends the player's turn (sent once the order to end it is confirmed).
 #[derive(Event)]
@@ -1333,6 +1333,8 @@ fn capture<'a>(unit: &Unit, cities: impl Iterator<Item = Mut<'a, City>>, wonders
     }
     for mut city in cities {
         if city.position == unit.position && city.owner != PLAYER {
+            // Whoever loses it has a grievance against us (settled in the turn, by `process_turn`).
+            taken.1.push(city.owner);
             city.owner = PLAYER;
             city.is_capital = false;
             city.resistance = bevy_civ::city::resistance_turns(city.population);
@@ -2707,11 +2709,39 @@ fn apply_actions(
                                 spies.incite(at);
                                 log.push(format!("Our diplomat stirs up {city_name}: it stands idle for {} turns.", espionage::UNREST_TURNS));
                             }
+                            Mission::StageIncident => {
+                                foreign.add_grievance(PLAYER, victim, foreign::Wrong::BorderIncident, state.turn);
+                                log.push(format!(
+                                    "Our agents stage a clash near {city_name} that the world blames on {civ_name}. We have a just cause for war against them for {} turns.",
+                                    foreign::GRIEVANCE_TURNS
+                                ));
+                            }
+                            Mission::Frame(framed) => {
+                                let framed_name = civs.players.iter().find(|c| c.id == *framed).map(|c| c.name.clone()).unwrap_or_default();
+                                diplomacy.change_attitude(victim, *framed, espionage::FRAMED_ATTITUDE);
+                                foreign.add_grievance(victim, *framed, foreign::Wrong::BorderIncident, state.turn);
+                                log.push(format!("Our agents strike in {city_name} disguised as {framed_name}: {civ_name} blame {framed_name} and want revenge."));
+                            }
                             Mission::Embassy => {}
                         }
                     } else {
                         diplomacy.change_attitude(PLAYER, victim, espionage::CAUGHT_ATTITUDE);
-                        log.push(format!("Our diplomat is caught in {city_name}! {civ_name} are outraged."));
+                        foreign.add_grievance(victim, PLAYER, foreign::Wrong::SpyCaught, state.turn);
+                        if mission.is_false_flag() {
+                            // Exposed: worse than an honest war. The world hears of it, and a framed
+                            // people takes it as an attack too.
+                            foreign.reputation -= espionage::EXPOSED_REPUTATION;
+                            for other in civs.players.iter().filter(|c| !c.is_human && !c.eliminated && c.id != victim).map(|c| c.id).collect::<Vec<_>>() {
+                                diplomacy.change_attitude(PLAYER, other, espionage::EXPOSED_ATTITUDE);
+                            }
+                            if let Mission::Frame(framed) = mission {
+                                diplomacy.change_attitude(PLAYER, *framed, espionage::CAUGHT_ATTITUDE);
+                                foreign.add_grievance(*framed, PLAYER, foreign::Wrong::SpyCaught, state.turn);
+                            }
+                            log.push(format!("Our false flag in {city_name} is exposed! {civ_name} are outraged, our reputation suffers, and the world will not soon trust us."));
+                        } else {
+                            log.push(format!("Our diplomat is caught in {city_name}! {civ_name} are outraged - and now have a just cause for war against us."));
+                        }
                     }
                 }
                 commands.entity(entity).try_despawn_recursive();
@@ -2957,8 +2987,13 @@ fn process_turn(
     log.turn = state.turn;
     spies.tick();
     golden.tick();
-    // The chance to raze last turn's conquests has passed.
+    // The chance to raze last turn's conquests has passed; their former owners hold it against us.
     taken.0.clear();
+    for loser in std::mem::take(&mut taken.1) {
+        if loser != BARBARIANS {
+            foreign.add_grievance(loser, PLAYER, foreign::Wrong::CityTaken, state.turn);
+        }
+    }
     // Routes close when a city changes hands or their two owners are at war.
     {
         let owners: HashMap<Hex, u32> = cities.iter().map(|(c, _, _)| (c.position, c.owner)).collect();
@@ -4326,6 +4361,9 @@ fn process_turn(
         }
         let occupier = occupying.map(|(_, owner, _)| owner);
         if let Some(new_owner) = occupier.filter(|_| !defended) {
+            if city.owner != BARBARIANS && new_owner != BARBARIANS {
+                foreign.add_grievance(city.owner, new_owner, foreign::Wrong::CityTaken, state.turn);
+            }
             if city.owner == PLAYER {
                 log.push(format!("{} has fallen to {} forces!", city.name, civ_name(new_owner)));
             } else if fog.explored.contains(&city.position) {
@@ -4612,8 +4650,24 @@ fn process_turn(
                     } else {
                         civs.players.iter().find(|c| c.id == partner).map(|c| espionage::stealable(thief, &c.tech)).unwrap_or_default()
                     };
+                    // False flags now and then: an aggressive people stages an incident to justify a
+                    // war, and one at war frames its enemy in a neutral city to drag that city's owner in.
+                    let aggression = civs.players[civ_index].aggression;
+                    let at_peace = diplomacy.get_treaty(owner, partner) != Treaty::War;
+                    let frame_target = civs
+                        .players
+                        .iter()
+                        .map(|c| c.id)
+                        .chain(std::iter::once(PLAYER))
+                        .filter(|x| *x != owner && *x != partner && !civs.players.iter().any(|c| c.id == *x && c.eliminated))
+                        .filter(|x| diplomacy.get_treaty(owner, *x) == Treaty::War && diplomacy.get_treaty(partner, *x) != Treaty::War)
+                        .min();
                     let mission = if !spies.has_embassy(owner, partner) {
                         Mission::Embassy
+                    } else if aggression > 0.6 && at_peace && foreign.grievance(owner, partner, state.turn).is_none() && rng.gen_bool(0.25) {
+                        Mission::StageIncident
+                    } else if let Some(x) = frame_target.filter(|_| at_peace && rng.gen_bool(0.3)) {
+                        Mission::Frame(x)
                     } else if !loot.is_empty() {
                         Mission::StealTech
                     } else if diplomacy.get_treaty(owner, partner) == Treaty::War {
@@ -4628,12 +4682,35 @@ fn process_turn(
                     }
                     if rng.gen::<f32>() >= mission.odds(walls) {
                         diplomacy.change_attitude(owner, partner, espionage::CAUGHT_ATTITUDE);
+                        foreign.add_grievance(partner, owner, foreign::Wrong::SpyCaught, state.turn);
+                        if let Mission::Frame(framed) = mission {
+                            diplomacy.change_attitude(owner, framed, espionage::CAUGHT_ATTITUDE);
+                            foreign.add_grievance(framed, owner, foreign::Wrong::SpyCaught, state.turn);
+                        }
                         if partner == PLAYER {
-                            log.push(format!("We caught a {} diplomat spying in {}!", civ_name(owner), city_name));
+                            let what = if mission.is_false_flag() { "staging a false flag" } else { "spying" };
+                            log.push(format!("We caught a {} diplomat {what} in {}! We have a just cause for war against them.", civ_name(owner), city_name));
+                        } else if mission == Mission::Frame(PLAYER) {
+                            log.push(format!("Rumours say the {} tried to blame us for an attack in {}. We have a just cause for war against them.", civ_name(owner), city_name));
                         }
                         continue;
                     }
                     match mission {
+                        Mission::StageIncident => {
+                            foreign.add_grievance(owner, partner, foreign::Wrong::BorderIncident, state.turn);
+                            if partner == PLAYER {
+                                log.push(format!("The {} accuse us of attacking their troops near {} - we did no such thing. They now claim a just cause for war.", civ_name(owner), city_name));
+                            }
+                        }
+                        Mission::Frame(framed) => {
+                            diplomacy.change_attitude(partner, framed, espionage::FRAMED_ATTITUDE);
+                            foreign.add_grievance(partner, framed, foreign::Wrong::BorderIncident, state.turn);
+                            if partner == PLAYER {
+                                log.push(format!("An attack in {} - by the {}, it seems. We have a just cause for war against them (if they really did it).", city_name, civ_name(framed)));
+                            } else if framed == PLAYER {
+                                log.push(format!("Rumours reach us that we are blamed for an attack in {}. We did not do it.", city_name));
+                            }
+                        }
                         Mission::StealTech => {
                             let stolen = loot[rng.gen_range(0..loot.len())];
                             civs.players[civ_index].tech.learn(stolen);
@@ -5648,6 +5725,23 @@ mod tests {
             order(&mut app, UnitType::Diplomat, Hex::new(2, 0), None, Action::Spy(Mission::StealTech));
         }
         assert!(!app.world().resource::<TechState>().researched.is_empty());
+    }
+
+    #[test]
+    fn a_staged_incident_gives_a_just_cause_or_costs_reputation() {
+        let mut app = order_app();
+        order(&mut app, UnitType::Diplomat, Hex::new(2, 0), None, Action::Spy(Mission::Embassy));
+        // Each attempt either succeeds (a just cause against them) or is exposed (reputation lost).
+        for _ in 0..10 {
+            let reputation = app.world().resource::<Foreign>().reputation;
+            app.world_mut().resource_mut::<Foreign>().grievances.clear();
+            order(&mut app, UnitType::Diplomat, Hex::new(2, 0), None, Action::Spy(Mission::StageIncident));
+            let turn = app.world().resource::<GameState>().turn;
+            let foreign = app.world().resource::<Foreign>();
+            let cause = foreign.grievance(PLAYER, 1, turn).is_some_and(|g| g.wrong == foreign::Wrong::BorderIncident);
+            let exposed = foreign.reputation == reputation - espionage::EXPOSED_REPUTATION && foreign.grievance(1, PLAYER, turn).is_some();
+            assert!(cause != exposed, "exactly one outcome");
+        }
     }
 
     /// Selects a fresh great person of `kind` at `at` and orders it to act.
