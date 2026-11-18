@@ -674,6 +674,7 @@ pub fn setup_ui(mut commands: Commands, art: Res<Art>, mut images: ResMut<Assets
     commands
         .spawn((
             StatusBar,
+            super::layout::Dock::Top,
             panel(
                 &art.panel,
                 Node {
@@ -712,7 +713,7 @@ pub fn setup_ui(mut commands: Commands, art: Res<Art>, mut images: ResMut<Assets
             }
             bar.spawn((label(&art.font_body, "", 16.0, MUTED), StatText::Government));
             });
-            top.spawn(Node { column_gap: Val::Px(8.0), row_gap: Val::Px(4.0), flex_wrap: FlexWrap::Wrap, flex_shrink: 0.0, ..default() }).with_children(|bar| {
+            top.spawn(Node { column_gap: Val::Px(6.0), row_gap: Val::Px(4.0), flex_wrap: FlexWrap::Wrap, flex_shrink: 0.0, max_width: Val::Percent(100.0), ..default() }).with_children(|bar| {
                 button(bar, &art, "Science (Q)", Command::Toggle(Modal::Science), BRONZE, 14.0);
                 button(bar, &art, "Diplomacy (E)", Command::Toggle(Modal::Diplomacy), BRONZE, 14.0);
                 button(bar, &art, "Trade (G)", Command::Toggle(Modal::Trade), BRONZE, 14.0);
@@ -726,13 +727,17 @@ pub fn setup_ui(mut commands: Commands, art: Res<Art>, mut images: ResMut<Assets
     commands
         .spawn((
             LeftColumn,
+            super::layout::Dock::BottomLeft,
+            super::layout::DockSize { width: 360.0 },
             Node {
                 position_type: PositionType::Absolute,
                 left: Val::Px(10.0),
                 bottom: Val::Px(10.0),
                 width: Val::Px(360.0),
                 flex_direction: FlexDirection::Column,
+                justify_content: JustifyContent::FlexEnd,
                 row_gap: Val::Px(8.0),
+                overflow: Overflow::clip(),
                 ..default()
             },
         ))
@@ -747,7 +752,22 @@ pub fn setup_ui(mut commands: Commands, art: Res<Art>, mut images: ResMut<Assets
             });
             left.spawn((
                 UnitPanel,
-                panel(&art.panel, Node { padding: UiRect::all(Val::Px(18.0)), flex_direction: FlexDirection::Column, row_gap: Val::Px(10.0), ..default() }),
+                // Shrinks to the room left under the top bar and scrolls (wheel or finger).
+                super::layout::Scrollable,
+                RelativeCursorPosition::default(),
+                ScrollPosition::default(),
+                panel(
+                    &art.panel,
+                    Node {
+                        padding: UiRect::all(Val::Px(16.0)),
+                        flex_direction: FlexDirection::Column,
+                        row_gap: Val::Px(9.0),
+                        flex_shrink: 1.0,
+                        min_height: Val::Px(0.0),
+                        overflow: Overflow::scroll_y(),
+                        ..default()
+                    },
+                ),
             ));
         });
 
@@ -763,7 +783,7 @@ pub fn setup_ui(mut commands: Commands, art: Res<Art>, mut images: ResMut<Assets
     let minimap = images.add(image);
     commands.insert_resource(MinimapImage(minimap.clone()));
     commands
-        .spawn((TurnPanel, panel(
+        .spawn((TurnPanel, super::layout::Dock::BottomRight, super::layout::DockSize { width: 212.0 }, panel(
             &art.panel,
             Node {
                 position_type: PositionType::Absolute,
@@ -815,9 +835,11 @@ pub fn setup_ui(mut commands: Commands, art: Res<Art>, mut images: ResMut<Assets
     // City panel (right)
     commands.spawn((
         CityPanel,
+        super::layout::Dock::Right,
+        super::layout::DockSize { width: 430.0 },
         // Scrolls (mouse wheel) when it is taller than the room between the status bar and the
         // End Turn panel (the wheel over it does not zoom the map).
-        Scrollable,
+        super::layout::Scrollable,
         RelativeCursorPosition::default(),
         ScrollPosition::default(),
         panel(
@@ -841,6 +863,7 @@ pub fn setup_ui(mut commands: Commands, art: Res<Art>, mut images: ResMut<Assets
     // Advisor windows (centre)
     commands.spawn((
         ModalRoot,
+        super::layout::Dock::Centre,
         Node {
             position_type: PositionType::Absolute,
             left: Val::Px(0.0),
@@ -1514,7 +1537,7 @@ pub fn rebuild_panels(
             // A window no taller than the screen: the mouse wheel scrolls what does not fit.
             let window = |width: f32| {
                 (
-                    Scrollable,
+                    super::layout::Scrollable,
                     RelativeCursorPosition::default(),
                     ScrollPosition::default(),
                     panel(
@@ -2566,92 +2589,56 @@ pub fn update_tile_info(
     }
 }
 
-pub fn update_log(log: Res<GameLog>, mut text: Query<&mut Text, With<LogText>>) {
-    if !log.is_changed() {
+pub fn update_log(log: Res<GameLog>, screen: Res<super::layout::Screen>, mut text: Query<&mut Text, With<LogText>>) {
+    if !log.is_changed() && !screen.is_changed() {
         return;
     }
     if let Ok(mut text) = text.get_single_mut() {
-        let start = log.lines.len().saturating_sub(4);
+        // A phone shows the latest two messages (L opens the rest).
+        let shown = if screen.compact { 2 } else { 4 };
+        let start = log.lines.len().saturating_sub(shown);
         text.0 = log.lines[start..].join("\n");
     }
 }
 
-/// A panel or window whose contents scroll with the mouse wheel when they do not fit.
-#[derive(Component)]
-pub struct Scrollable;
-
-/// The mouse wheel scrolls whichever panel or window the pointer is over; a newly opened city
-/// starts at the top.
-pub fn scroll_panels(
-    mut wheel: EventReader<bevy::input::mouse::MouseWheel>,
-    selection: Res<Selection>,
-    mut panels: Query<(&RelativeCursorPosition, &mut ScrollPosition, Has<CityPanel>), With<Scrollable>>,
-    mut shown: Local<Option<Entity>>,
-) {
-    let opened = *shown != selection.city;
+/// A newly opened city's panel starts at the top (scrolling itself is `layout::scroll_panels`).
+pub fn scroll_panels(selection: Res<Selection>, mut panels: Query<&mut ScrollPosition, With<CityPanel>>, mut shown: Local<Option<Entity>>) {
+    if *shown == selection.city {
+        return;
+    }
     *shown = selection.city;
-    let delta: f32 = wheel
-        .read()
-        .map(|event| match event.unit {
-            bevy::input::mouse::MouseScrollUnit::Line => event.y * 40.0,
-            bevy::input::mouse::MouseScrollUnit::Pixel => event.y,
-        })
-        .sum();
-    for (cursor, mut scroll, city) in &mut panels {
-        if city && opened {
-            scroll.offset_y = 0.0;
-        }
-        if delta != 0.0 && cursor.mouse_over() {
-            scroll.offset_y = (scroll.offset_y - delta).max(0.0);
-        }
+    for mut scroll in &mut panels {
+        scroll.offset_y = 0.0;
     }
 }
 
-/// Shrinks the whole interface on narrow (phone) screens so the panels never collide.
+/// The game's own adjustments to the docked layout (see `layout`): the status bar wraps on a
+/// compact screen, and the minimap steps aside on a phone or while a city is open (the city panel
+/// then has the right side to itself).
 pub fn fit_ui_scale(
-    windows: Query<&Window>,
-    mut scale: ResMut<UiScale>,
+    screen: Res<super::layout::Screen>,
     mut minimap: Query<&mut Node, With<MinimapFrame>>,
-    mut left: Query<&mut Node, (With<LeftColumn>, Without<MinimapFrame>)>,
-    mut bar: Query<&mut Node, (With<StatusBar>, Without<LeftColumn>, Without<MinimapFrame>)>,
-    mut city_panel: Query<&mut Node, (With<CityPanel>, Without<StatusBar>, Without<LeftColumn>, Without<MinimapFrame>)>,
-    turn_panel: Query<&ComputedNode, With<TurnPanel>>,
+    mut bar: Query<&mut Node, (With<StatusBar>, Without<MinimapFrame>)>,
+    mut tile_info: Query<&mut Node, (With<TileInfoText>, Without<StatusBar>, Without<MinimapFrame>)>,
     selection: Res<Selection>,
 ) {
-    let Ok(window) = windows.get_single() else { return };
-    // The status bar keeps to one row unless the screen is too narrow for its buttons.
-    let wrap = if window.width() < 1000.0 { FlexWrap::Wrap } else { FlexWrap::NoWrap };
+    // A touch screen has no hovering, so the tile readout under the minimap only takes room there.
+    let info_display = if screen.compact { Display::None } else { Display::Flex };
+    for mut node in &mut tile_info {
+        if node.display != info_display {
+            node.display = info_display;
+        }
+    }
+    let wrap = if screen.width < 1000.0 { FlexWrap::Wrap } else { FlexWrap::NoWrap };
     for mut node in &mut bar {
         if node.flex_wrap != wrap {
             node.flex_wrap = wrap;
         }
     }
-    // Narrow (phone) screens get a bigger interface than a straight fit would give: panels wrap and
-    // stack instead, and text stays readable.
-    let target = (window.width() / 520.0).clamp(0.6, 1.0);
-    if (scale.0 - target).abs() > 0.01 {
-        scale.0 = target;
-    }
-    // On a phone the minimap gives way, and the unit panel narrows, so the bottom panels sit side by side.
-    let narrow = window.width() < 640.0;
-    // The minimap also steps aside while a city is open, so the city panel has room above Next
-    // Unit and End Turn.
-    let minimap_display = if narrow || selection.city.is_some() { Display::None } else { Display::Flex };
-    if let (Ok(turn), Ok(mut node)) = (turn_panel.get_single(), city_panel.get_single_mut()) {
-        let bottom = Val::Px(turn.size().y * turn.inverse_scale_factor() + 20.0);
-        if node.bottom != bottom {
-            node.bottom = bottom;
-        }
-    }
+    let minimap_display = if screen.compact || selection.city.is_some() { Display::None } else { Display::Flex };
     for mut node in &mut minimap {
         if node.display != minimap_display {
             node.display = minimap_display;
-        }
-    }
-    let width = Val::Px(if narrow { 290.0 } else { 360.0 });
-    for mut node in &mut left {
-        if node.width != width {
-            node.width = width;
         }
     }
 }
@@ -2659,7 +2646,8 @@ pub fn fit_ui_scale(
 // ---- buttons -----------------------------------------------------------------------------------
 
 pub fn button_actions(
-    buttons: Query<(&Interaction, &ButtonCommand), Changed<Interaction>>,
+    mut activated: EventReader<super::layout::Activated>,
+    buttons: Query<&ButtonCommand>,
     mut actions: EventWriter<Action>,
     mut ui: ResMut<UiState>,
     mut menu: ResMut<MenuState>,
@@ -2667,10 +2655,8 @@ pub fn button_actions(
     mut commands: Commands,
     (mut sounds, mut sound, mut tips): (EventWriter<Sfx>, ResMut<SoundSettings>, ResMut<super::tips::Tips>),
 ) {
-    for (interaction, command) in &buttons {
-        if *interaction != Interaction::Pressed {
-            continue;
-        }
+    for super::layout::Activated(entity) in activated.read() {
+        let Ok(command) = buttons.get(*entity) else { continue };
         sounds.send(Sfx::Click);
         match &command.0 {
             Command::ToggleSound => sound.toggle(),
@@ -2810,9 +2796,24 @@ pub fn rebuild_menu(
         if *state.get() != AppState::Menu {
             return;
         }
-        p.spawn(panel(
-            &art.parchment,
-            Node { width: Val::Px(760.0), max_width: Val::Percent(96.0), padding: UiRect::all(Val::Px(30.0)), flex_direction: FlexDirection::Column, row_gap: Val::Px(12.0), ..default() },
+        // No taller than the screen: what does not fit scrolls (wheel or finger).
+        p.spawn((
+            super::layout::Scrollable,
+            RelativeCursorPosition::default(),
+            ScrollPosition::default(),
+            panel(
+                &art.parchment,
+                Node {
+                    width: Val::Px(760.0),
+                    max_width: Val::Percent(96.0),
+                    max_height: Val::Percent(96.0),
+                    overflow: Overflow::scroll_y(),
+                    padding: UiRect::all(Val::Px(30.0)),
+                    flex_direction: FlexDirection::Column,
+                    row_gap: Val::Px(12.0),
+                    ..default()
+                },
+            ),
         ))
         .with_children(|w| {
             w.spawn(label(&art.font_title, "BEVY CIV", 46.0, INK));

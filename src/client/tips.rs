@@ -126,14 +126,24 @@ pub fn queue_tips(
 
 /// Shows (or hides) the tip panel. It sits in the top-left corner, clear of the city panel and the
 /// windows in the middle of the screen, and steps aside while a window is open.
-pub fn show_tip(tips: Res<Tips>, ui: Res<UiState>, art: Res<Art>, panel: Query<Entity, With<TipPanel>>, bar: Query<&ComputedNode, With<super::ui::StatusBar>>, mut commands: Commands) {
-    if !tips.is_changed() && !ui.is_changed() {
+pub fn show_tip(
+    tips: Res<Tips>,
+    ui: Res<UiState>,
+    art: Res<Art>,
+    screen: Res<super::layout::Screen>,
+    extents: Res<super::layout::DockExtents>,
+    selection: Res<Selection>,
+    panel: Query<Entity, With<TipPanel>>,
+    mut commands: Commands,
+) {
+    if !tips.is_changed() && !ui.is_changed() && !screen.is_changed() && !extents.is_changed() && !selection.is_changed() {
         return;
     }
     for entity in &panel {
         commands.entity(entity).despawn_recursive();
     }
-    if ui.modal.is_some() {
+    // A window, or on a phone an open city (a sheet over the screen), keeps the tip waiting.
+    if ui.modal.is_some() || (screen.compact && selection.city.is_some()) {
         return;
     }
     let Some((_, title, text)) = tips.current.and_then(|id| TIPS.iter().find(|(t, _, _)| *t == id)) else { return };
@@ -142,10 +152,13 @@ pub fn show_tip(tips: Res<Tips>, ui: Res<UiState>, art: Res<Art>, panel: Query<E
             TipPanel,
             Node {
                 position_type: PositionType::Absolute,
-                top: Val::Px(bar.get_single().map_or(52.0, |b| b.size().y * b.inverse_scale_factor()) + 10.0),
-                left: Val::Px(10.0),
-                width: Val::Px(380.0),
-                max_width: Val::Percent(94.0),
+                // Under the top bar: on the left on a big screen; on a phone held sideways, on the
+                // right, clear of the unit panel; on a phone upright, across the top.
+                top: Val::Px(extents.top + 8.0),
+                left: if screen.compact && !screen.portrait { Val::Auto } else { Val::Px(8.0) },
+                right: if screen.compact && !screen.portrait { Val::Px(8.0) } else { Val::Auto },
+                width: Val::Px(if screen.compact && !screen.portrait { (screen.width * 0.42).min(340.0) } else { 380.0 }),
+                max_width: Val::Percent(96.0),
                 padding: UiRect::all(Val::Px(12.0)),
                 flex_direction: FlexDirection::Column,
                 row_gap: Val::Px(6.0),

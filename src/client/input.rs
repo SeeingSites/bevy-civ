@@ -38,7 +38,7 @@ pub fn pointer_input(
     mut clicks: EventWriter<MapClick>,
     mut camera: Query<(&Camera, &GlobalTransform, &mut Transform, &mut OrthographicProjection), With<Camera2d>>,
     ui: Res<UiState>,
-    scrollables: Query<&bevy::ui::RelativeCursorPosition, With<super::ui::Scrollable>>,
+    scrollables: Query<&bevy::ui::RelativeCursorPosition, With<super::layout::Scrollable>>,
 ) {
     let Ok(window) = windows.get_single() else { return };
     // The wheel over a panel or window scrolls it (see `ui::scroll_panels`), not the map.
