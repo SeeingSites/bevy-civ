@@ -3849,12 +3849,20 @@ fn process_turn(
 
     // --- Computer players and barbarians move, attack and capture -----------------------------
     // Barbarians fight everyone; civilizations fight those they are at war with.
-    let treaties = diplomacy.treaties.clone();
+    // A flat table of who is at war (ids are small), as the AI asks this for every pair of units.
+    const SIDES: usize = 128;
+    let mut war_table = vec![false; SIDES * SIDES];
+    for ((a, b), treaty) in &diplomacy.treaties {
+        if *treaty == Treaty::War && (*a as usize) < SIDES && (*b as usize) < SIDES {
+            war_table[*a as usize * SIDES + *b as usize] = true;
+            war_table[*b as usize * SIDES + *a as usize] = true;
+        }
+    }
     let hostile = move |a: u32, b: u32| {
         if a == b {
             return false;
         }
-        a == BARBARIANS || b == BARBARIANS || treaties.get(&(a.min(b), a.max(b))).copied() == Some(Treaty::War)
+        a == BARBARIANS || b == BARBARIANS || ((a as usize) < SIDES && (b as usize) < SIDES && war_table[a as usize * SIDES + b as usize])
     };
     // Roads the computer players want: from the governing city to each source that is not yet
     // connected, and from each capital to cities that are cut off from it.
