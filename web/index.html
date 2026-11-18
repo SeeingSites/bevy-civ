@@ -15,11 +15,82 @@
     #bevy-canvas { display: block; width: 100%; height: 100%; outline: none; }
     #status { position: fixed; inset: 0; display: grid; place-items: center; text-align: center; padding: 16px; pointer-events: none; }
     #status.hidden { display: none; }
+
+    /* --- the splash screen: title art while the game loads, then Play --- */
+    @font-face { font-family: Cinzel; src: url(assets/fonts/Cinzel.ttf); font-display: swap; }
+    @font-face { font-family: Alegreya; src: url(assets/fonts/AlegreyaSans-Medium.ttf); font-display: swap; }
+    @font-face { font-family: Alegreya; font-weight: 700; src: url(assets/fonts/AlegreyaSans-Bold.ttf); font-display: swap; }
+    #splash {
+      position: fixed; inset: 0; z-index: 10; display: flex; flex-direction: column; justify-content: flex-end;
+      background: #14161a url(splash.jpg) 29% 30% / cover no-repeat; font-family: Alegreya, system-ui, sans-serif;
+      overflow-y: auto; transition: opacity 0.5s;
+    }
+    #splash.gone { opacity: 0; pointer-events: none; }
+    #splash .card {
+      margin: 0 auto 4vh; width: min(560px, calc(100% - 32px)); box-sizing: border-box; padding: 20px 22px 16px;
+      background: rgba(18, 14, 10, 0.72); border: 1px solid rgba(227, 179, 65, 0.55); border-radius: 14px;
+      backdrop-filter: blur(3px); box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5); text-align: center;
+    }
+    #splash h1 { margin: 0; font: 400 clamp(34px, 7vw, 60px)/1.05 Cinzel, serif; color: #f2d58a; letter-spacing: 0.04em; text-shadow: 0 2px 10px #000; }
+    #splash .tagline { margin: 6px 0 14px; color: #e8dcc0; font-size: 17px; }
+    #splash .bar { height: 6px; border-radius: 3px; background: rgba(255, 255, 255, 0.12); overflow: hidden; margin: 0 auto 14px; width: 70%; }
+    #splash .bar span { display: block; height: 100%; width: 35%; background: #e3b341; border-radius: 3px; animation: slide 1.4s ease-in-out infinite; }
+    #splash.ready .bar { display: none; }
+    @keyframes slide { 0% { transform: translateX(-100%); } 100% { transform: translateX(290%); } }
+    #play {
+      font: 700 22px Alegreya, sans-serif; color: #1d1611; background: linear-gradient(#f2cf6e, #c9973f); border: 2px solid #1d1611;
+      border-radius: 10px; padding: 12px 46px; cursor: pointer; box-shadow: 0 3px 0 #6b4a1a;
+    }
+    #play:disabled { filter: grayscale(0.8) brightness(0.7); cursor: wait; }
+    #splash .small { font-size: 14px; color: #cdbf9f; }
+    #splash a { color: #f2d58a; }
+    #splash .links { margin-top: 12px; display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; }
+    #splash button.link { background: none; border: none; color: #f2d58a; font: inherit; font-size: 15px; cursor: pointer; text-decoration: underline; padding: 4px; }
+    #news { display: none; margin-top: 12px; text-align: left; }
+    #news.open { display: block; }
+    #news input[type=email] {
+      width: 100%; box-sizing: border-box; font: 17px Alegreya, sans-serif; padding: 10px 12px; border-radius: 8px;
+      border: 1px solid #8a6a2a; background: #f6efdc; color: #1d1611;
+    }
+    #news .chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0; }
+    #news .chips label { font-size: 14px; color: #e8dcc0; border: 1px solid rgba(227, 179, 65, 0.5); border-radius: 14px; padding: 4px 10px; cursor: pointer; }
+    #news .chips input { margin: 0 4px 0 0; vertical-align: -1px; }
+    #news .consent { display: flex; gap: 8px; align-items: flex-start; font-size: 14px; color: #e8dcc0; margin: 8px 0; }
+    #news .send { font: 700 16px Alegreya, sans-serif; background: #4f8a3a; color: #fff; border: 1px solid #1d1611; border-radius: 8px; padding: 8px 18px; cursor: pointer; }
+    #news .msg { font-size: 14px; margin-left: 8px; color: #f2d58a; }
+    #statsline { display: block; margin-top: 10px; cursor: pointer; }
+    #statsline input { vertical-align: -2px; margin: 0 6px 0 0; }
   </style>
 </head>
 <body>
   <div id="game"><canvas id="bevy-canvas" tabindex="0"></canvas></div>
-  <div id="status">Loading Bevy Civ…</div>
+  <div id="status" class="hidden">Loading Bevy Civ…</div>
+  <div id="splash">
+    <div class="card">
+      <h1>Bevy Civ</h1>
+      <div class="tagline">Build an empire to stand the test of time.</div>
+      <div class="bar"><span></span></div>
+      <button id="play" disabled>Loading…</button>
+      <div class="links">
+        <button class="link" id="newslink" type="button">✉ Get news of our next games</button>
+      </div>
+      <form id="news" novalidate>
+        <input id="email" type="email" autocomplete="email" placeholder="you@example.com" aria-label="Email address">
+        <div class="chips" aria-label="What do you enjoy?">
+          <label><input type="checkbox" value="strategy">Strategy</label>
+          <label><input type="checkbox" value="history">History</label>
+          <label><input type="checkbox" value="sci-fi">Sci-fi</label>
+          <label><input type="checkbox" value="fantasy">Fantasy</label>
+          <label><input type="checkbox" value="mobile">Mobile</label>
+          <label><input type="checkbox" value="multiplayer">Multiplayer</label>
+        </div>
+        <label class="consent"><input id="consent" type="checkbox"><span id="consenttext">Email me about new games from the makers of Bevy Civ. No spam; unsubscribe any time.</span></label>
+        <button class="send" type="submit">Keep me posted</button><span class="msg" id="newsmsg" role="status"></span>
+      </form>
+      <label id="statsline" class="small"><input id="stats" type="checkbox"> Help improve the game: share anonymous play statistics</label>
+      <div class="small" style="margin-top:8px"><a href="privacy.html" target="_blank">Privacy</a> · Play is free, no account needed.</div>
+    </div>
+  </div>
   <script>
     // Browsers start Web Audio suspended until the player interacts with the page, and the game
     // creates its audio context at launch. Keep track of every context and resume it on the first
@@ -68,22 +139,114 @@
       return text;
     };
   </script>
+  <script>
+    // Players, sign-ups and opt-in statistics. Nothing is sent unless the player opts in: either by
+    // asking for news (with their email) or by ticking the statistics box. The player id is random.
+    (() => {
+      const store = {
+        get: (k) => { try { return localStorage.getItem(k); } catch { return null; } },
+        set: (k, v) => { try { localStorage.setItem(k, v); } catch {} },
+      };
+      let player = store.get("bevyCiv.player");
+      if (!player) {
+        player = (crypto.randomUUID ? crypto.randomUUID() : String(Math.random()).slice(2) + Date.now());
+        store.set("bevyCiv.player", player);
+      }
+      // Where this player first came from (kept until they choose to share it).
+      const params = new URLSearchParams(location.search);
+      const UTM = ["utm_source", "utm_medium", "utm_campaign", "utm_content", "utm_term"];
+      let origin = JSON.parse(store.get("bevyCiv.origin") || "null");
+      if (!origin) {
+        origin = { referrer: document.referrer && new URL(document.referrer).host !== location.host ? document.referrer : null };
+        for (const k of UTM) if (params.get(k)) origin[k] = params.get(k);
+        store.set("bevyCiv.origin", JSON.stringify(origin));
+      }
+      const post = (path, body) =>
+        fetch(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body), keepalive: true })
+          .then((r) => r.json().catch(() => ({})).then((j) => ({ ok: r.ok, ...j })))
+          .catch(() => ({ ok: false, error: "No connection; please try again later." }));
+
+      const statsBox = document.getElementById("stats");
+      let sharing = store.get("bevyCiv.stats") === "1";
+      statsBox.checked = sharing;
+      const hello = () => post("/api/hello", { player, stats: sharing, ...origin });
+      if (sharing) hello();
+      statsBox.addEventListener("change", () => {
+        sharing = statsBox.checked;
+        store.set("bevyCiv.stats", sharing ? "1" : "0");
+        hello();
+      });
+
+      // The game reports milestones here (game started, every 25 turns, how it ended).
+      const queue = [];
+      let timer = null;
+      const flush = () => {
+        timer = null;
+        if (!sharing || !queue.length) { queue.length = 0; return; }
+        post("/api/stats", { player, events: queue.splice(0, 20) });
+      };
+      window.bevyCivEvent = (kind, scenario, turn, detail) => {
+        if (!sharing) return;
+        let extra = null;
+        try { extra = detail ? JSON.parse(detail) : null; } catch {}
+        queue.push({ kind, scenario, turn, detail: extra });
+        if (!timer) timer = setTimeout(flush, 3000);
+      };
+      document.addEventListener("visibilitychange", () => document.visibilityState === "hidden" && flush());
+
+      // The news form: folded away under a link until asked for.
+      const form = document.getElementById("news");
+      const link = document.getElementById("newslink");
+      const msg = document.getElementById("newsmsg");
+      if (store.get("bevyCiv.subscribed") === "1") link.textContent = "✓ You're on the list for news";
+      link.addEventListener("click", () => form.classList.toggle("open"));
+      form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        msg.textContent = "";
+        const email = document.getElementById("email").value.trim();
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) { msg.textContent = "Please enter a valid email address."; return; }
+        if (!document.getElementById("consent").checked) { msg.textContent = "Please tick the box to agree to hear from us."; return; }
+        const interests = [...form.querySelectorAll(".chips input:checked")].map((i) => i.value);
+        msg.textContent = "Sending…";
+        const result = await post("/api/subscribe", {
+          email, player, interests, consent: document.getElementById("consenttext").textContent, ...origin,
+        });
+        if (result.ok) {
+          store.set("bevyCiv.subscribed", "1");
+          msg.textContent = "Thank you - you're on the list.";
+          link.textContent = "✓ You're on the list for news";
+          setTimeout(() => form.classList.remove("open"), 2500);
+        } else {
+          msg.textContent = result.error || "Something went wrong; please try again later.";
+        }
+      });
+    })();
+  </script>
   <script type="module">
     import init from "./bevy-civ.js";
 
     const status = document.getElementById("status");
     const canvas = document.getElementById("bevy-canvas");
-    // Hide the loading text once the game starts drawing into the canvas.
+    const splash = document.getElementById("splash");
+    const play = document.getElementById("play");
+    // The splash stays while the game loads; once it starts drawing, Play takes the player in.
     new MutationObserver((_, observer) => {
-      status.classList.add("hidden");
-      canvas.focus();
+      splash.classList.add("ready");
+      play.disabled = false;
+      play.textContent = "Play";
       observer.disconnect();
     }).observe(canvas, { attributes: true, attributeFilter: ["width", "height", "style"] });
+    play.addEventListener("click", () => {
+      splash.classList.add("gone");
+      setTimeout(() => splash.remove(), 600);
+      canvas.focus();
+    });
 
     init().catch((error) => {
       // winit unwinds out of `main` with this exception by design; it is not a failure.
       if (String(error?.message ?? error).includes("Using exceptions for control flow")) return;
       console.error(error);
+      splash.remove();
       status.classList.remove("hidden");
       status.textContent = "Bevy Civ failed to start. It needs a browser with WebGL2 enabled.";
     });

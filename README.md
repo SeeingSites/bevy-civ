@@ -486,6 +486,28 @@ npm run deploy   # build + wrangler deploy (needs `wrangler login` or an API tok
 repository secrets: `CLOUDFLARE_API_TOKEN` (the "Edit Cloudflare Workers" token template) and
 `CLOUDFLARE_ACCOUNT_ID`. The game is then live at `https://bevy-civ.<your-subdomain>.workers.dev`.
 
+## Players, sign-ups and statistics
+The page opens on a splash screen (`web/splash.jpg`, drawn by `node tools/art/splash.cjs`) that
+stays while the game loads; **Play** takes the player in. Nobody needs an account. Two things are
+offered, both optional and folded out of the way:
+- **News of our next games**: an email, interests to tick (strategy, history, sci-fi, fantasy,
+  mobile, multiplayer) and a consent box whose exact wording is stored with the sign-up.
+- **Anonymous play statistics**: a box to tick. Only then does the page send a random player id
+  (kept in the browser), the campaign tags (`utm_*`) and referrer it arrived with, and the
+  milestones the game reports through `window.bevyCivEvent(kind, scenario, turn, detailJson)`.
+
+The Worker in `worker/index.js` serves the game and an API under `/api/` (`hello`, `subscribe`,
+`stats`, `forget`), storing into the D1 database `bevy-civ-players` (schema in `migrations/`).
+`web/privacy.html` explains it and lets a player delete their statistics.
+
+Export the list, e.g. as JSON to convert for a mailing tool:
+```
+npx wrangler d1 execute bevy-civ-players --remote --json \
+  --command "SELECT email, interests, utm_source, utm_campaign, country, created_at FROM signups WHERE unsubscribed_at IS NULL"
+```
+Local testing: `npx wrangler d1 migrations apply bevy-civ-players --local`, then
+`npx wrangler dev --local` after `npm run build`.
+
 ## License
 Released under the [MIT License](LICENSE). That covers the code and the art, sounds, music and
 scenario files made for this game (the generators are in `tools/`).
