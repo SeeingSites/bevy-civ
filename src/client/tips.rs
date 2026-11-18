@@ -22,26 +22,26 @@ const SETTING: &str = "tips.json";
 /// (id, title, text)
 const TIPS: [(&str, &str, &str); 21] = [
     ("welcome", "Welcome", "Your people await your orders. Click (or tap) one of your units to select it, then a tile to send it there. End Turn (Enter) passes play to the other peoples. New to this kind of game? Help (F1) opens How to play, a short guide to your first turns."),
-    ("end_turn", "Ending the turn", "Every unit has its orders. Press Enter (or End Turn, bottom right) and the other peoples take their turns; then a new turn begins and your units can move again."),
-    ("unit", "Moving units", "Point at a tile to see the route and how many turns it takes. Far destinations become standing orders. Fortify (H) keeps a unit in place so it is not asked again."),
-    ("settler", "Settlers", "Settlers found new cities: move one to a good spot at least two tiles from other cities and press B. Rivers and coasts make fine sites."),
+    ("end_turn", "Ending the turn", "Every unit has its orders. Tap End Turn (bottom right, or Enter) and the other peoples take their turns; then a new turn begins and your units can move again."),
+    ("unit", "Moving units", "Tap or click a tile to send the unit there; with a mouse, point at a tile first to see the route and how many turns it takes. Far destinations become standing orders. Fortify (H) keeps a unit in place so it is not asked again."),
+    ("settler", "Settlers", "Settlers found new cities: move one to a good spot at least two tiles from other cities and choose Found City (B). Rivers and coasts make fine sites."),
     ("explore", "Exploring", "Scouts move far and see far. Send them towards the dark edges of the map: they find good land, tribal villages (walk in for a gift) and other peoples."),
-    ("ship", "Ships", "This ship can carry units. Move troops onto its tile (or press I in port) to board, then sail it; to land them, select a unit aboard and click a land tile next to the ship."),
-    ("aboard", "At sea", "This unit is aboard a ship and travels with it. Click a land tile next to the ship to go ashore - that takes the rest of its turn. Troops cannot attack from a ship."),
-    ("worker", "Workers", "Workers improve the land: F farm, M mine, R road (roads triple movement), X clear land. K lets the worker look after your land by itself."),
-    ("city", "Your cities", "The city panel shows food, shields, science, gold and happiness. Choose what to build in the Units, Buildings and Wonders tabs. A city keeps training the same unit until you change it."),
-    ("research", "Research", "Press Q for the science advisor: choose what your scholars study next, and see the whole tree of knowledge."),
-    ("idle", "A city needs a project", "A city that finished a building waits for your next order. Or switch on Governor builds in its panel (or for every city in the Empire window, Cities) and its governor picks for you."),
-    ("contact", "Other peoples", "You have met another people. Press E for the foreign advisor: treaties, trade in resources and technology, and their mood towards you."),
+    ("ship", "Ships", "This ship can carry units. Move troops onto its tile (or choose Board ship (I) in port), then sail it; to land them, select a unit aboard and tap a land tile next to the ship."),
+    ("aboard", "At sea", "This unit is aboard a ship and travels with it. Tap a land tile next to the ship to go ashore - that takes the rest of its turn. Troops cannot attack from a ship."),
+    ("worker", "Workers", "Workers improve the land with the buttons in their panel: Farm (F), Mine (M), Road (R - roads triple movement), Clear (X). Automate (K) lets the worker look after your land by itself."),
+    ("city", "Your cities", "The city panel shows food, shields, science, gold and happiness. Choose what to build in the Units, Buildings and Wonders tabs. Governor builds (on unless you switch it off) picks the next project whenever one is done."),
+    ("research", "Research", "Open Science (Q) at the top: choose what your scholars study next, and see the whole tree of knowledge."),
+    ("idle", "A city needs a project", "A city with Governor builds switched off waits for your next order when it finishes a building. Choose one, or switch Governor builds back on in its panel (or for every city in the Empire window, Cities)."),
+    ("contact", "Other peoples", "You have met another people. Open Diplomacy (E) at the top: treaties, trade in resources and technology, and their mood towards you."),
     ("disorder", "Unhappy cities", "A city in disorder produces nothing. Build a temple, connect luxuries, make some citizens entertainers (Overview tab) or station troops under Despotism or Monarchy."),
-    ("great", "A great person", "A great person has been born. Select it and press U to use it: a scientist completes research, an engineer finishes a building, a merchant trades abroad, an artist makes a masterpiece."),
-    ("caravan", "Caravans", "Move a caravan into another of your cities (6+ tiles away) or next to a foreign one and press T for a trade route, or U in a city building a wonder to add its shields."),
+    ("great", "A great person", "A great person has been born. Select it and choose Use (U): a scientist completes research, an engineer finishes a building, a merchant trades abroad, an artist makes a masterpiece."),
+    ("caravan", "Caravans", "Move a caravan into another of your cities (6+ tiles away) or next to a foreign one and choose Trade Route (T), or Use (U) in a city building a wonder to add its shields."),
     ("diplomat", "Diplomats", "Move a diplomat next to a foreign city: open an embassy to see their research, or try a covert mission. If caught, they will not forget it."),
     ("war", "At war", "Attack by moving onto an enemy. Hills, forests, rivers, walls and fortifying help defenders; veterans fight harder. Armies cannot slip past enemy armies."),
     ("grow", "Growing cities", "A city grows when its food store fills: work food-rich tiles and build farms. Bigger cities work more tiles, but past a few citizens they need temples or luxuries to stay content."),
-    ("score", "How to win", "There are five ways to win: conquer everyone, reach Alpha Centauri first, lead the world in culture, win the United Nations vote, or have the best score on the last turn. Press Y (Empire) to see how everyone stands."),
+    ("score", "How to win", "There are six ways to win: conquer everyone, hold two in five of the world's cities, reach Alpha Centauri first, lead the world in culture, win the United Nations vote, or have the best score on the last turn. Open Empire (Y) to see how everyone stands."),
     ("defend", "Guard your cities", "A city with no troops inside falls to the first enemy that walks in. Keep at least one defender in each city - Spearmen and Phalanxes early, then Pikemen and Musketmen - and fortify it (H)."),
-    ("save", "Saving", "The game saves itself every turn (Continue on the start menu). F2 downloads a file you can keep or send to a friend to load."),
+    ("save", "Saving", "The game saves itself every turn (Continue on the start menu). Game, then Save to a file (F2), gives you a file you can keep or send to a friend to load."),
 ];
 
 #[derive(Resource)]
@@ -144,6 +144,7 @@ pub fn show_tip(
     extents: Res<super::layout::DockExtents>,
     selection: Res<Selection>,
     panel: Query<Entity, With<TipPanel>>,
+    mut log_box: Query<&mut Node, (With<super::ui::LogBox>, Without<TipPanel>)>,
     mut commands: Commands,
 ) {
     if !tips.is_changed() && !ui.is_changed() && !screen.is_changed() && !extents.is_changed() && !selection.is_changed() {
@@ -153,10 +154,17 @@ pub fn show_tip(
         commands.entity(entity).despawn_recursive();
     }
     // A window, or on a phone an open city (a sheet over the screen), keeps the tip waiting.
-    if ui.modal.is_some() || (screen.compact && selection.city.is_some()) {
-        return;
+    let waiting = ui.modal.is_some() || (screen.compact && selection.city.is_some());
+    let tip = tips.current.and_then(|id| TIPS.iter().find(|(t, _, _)| *t == id)).filter(|_| !waiting);
+    // On a phone held upright the tip lies across the top, where the message log reaches: the log
+    // gives way while it is shown.
+    let log_display = if tip.is_some() && screen.compact && screen.portrait { Display::None } else { Display::Flex };
+    for mut node in &mut log_box {
+        if node.display != log_display {
+            node.display = log_display;
+        }
     }
-    let Some((_, title, text)) = tips.current.and_then(|id| TIPS.iter().find(|(t, _, _)| *t == id)) else { return };
+    let Some((_, title, text)) = tip else { return };
     commands
         .spawn((
             TipPanel,
