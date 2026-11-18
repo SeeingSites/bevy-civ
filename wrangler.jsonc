@@ -1,10 +1,22 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  // Static-assets-only Worker: serves the WebAssembly build of the game from ./dist.
-  // Build it first with `npm run build` (scripts/build-web.sh).
+  // Serves the WebAssembly build of the game from ./dist (build it first with `npm run build`,
+  // scripts/build-web.sh), and a small API under /api/ for sign-ups and opt-in play statistics,
+  // kept in the D1 database below (schema: migrations/).
   "name": "bevy-civ",
+  "main": "worker/index.js",
   "compatibility_date": "2026-11-01",
   "assets": {
-    "directory": "./dist"
-  }
+    "directory": "./dist",
+    "binding": "ASSETS",
+    "run_worker_first": ["/api/*"]
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "bevy-civ-players",
+      "database_id": "9019b695-5a4c-412f-921b-5464f548313d",
+      "migrations_dir": "migrations"
+    }
+  ]
 }

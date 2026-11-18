@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Bevy Civ privacy</title>
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <style>
+    body { margin: 0; background: #14161a; color: #e8e6df; font: 17px/1.55 system-ui, sans-serif; }
+    main { max-width: 680px; margin: 0 auto; padding: 24px 16px 48px; }
+    h1, h2 { color: #f2d58a; font-weight: 600; }
+    a { color: #f2d58a; }
+    button { font: inherit; padding: 8px 14px; border-radius: 8px; border: 1px solid #8a6a2a; background: #f2cf6e; color: #1d1611; cursor: pointer; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Privacy</h1>
+  <p>Bevy Civ is free to play, with no account. This page explains the little we keep, and only when you choose to share it.</p>
+
+  <h2>Playing</h2>
+  <p>Your saved games and settings stay in your own browser. The game gives your browser a random player number so that, if you choose to share statistics, we can tell one player's games from another's. That number does not identify you.</p>
+
+  <h2>Play statistics (only if you tick the box)</h2>
+  <p>If you tick “share anonymous play statistics”, the game sends milestones of your games: when a game starts, every 25 turns, and how it ends (the scenario, the turn, and a few numbers such as your score). We also keep the country your connection comes from and the link that brought you here (for example a campaign tag in the address). We use this only to make the game and our next games better. Untick the box at any time to stop.</p>
+
+  <h2>News of our next games (only if you ask)</h2>
+  <p>If you give us your email and tick the box to hear from us, we keep your email, the interests you ticked, the wording you agreed to, when you signed up, your country and the link that brought you. We use it only to tell you about our games, and every email will let you unsubscribe. We do not sell or share it.</p>
+
+  <h2>Removing your data</h2>
+  <p>The button below deletes the statistics kept for this browser's player number. To remove your email from our list, use the unsubscribe link in any email from us, or open an issue at <a href="https://github.com/SeeingSites/bevy-civ/issues">github.com/SeeingSites/bevy-civ</a>.</p>
+  <p><button id="forget" type="button">Delete this browser's play statistics</button> <span id="done" role="status"></span></p>
+  <p><a href="./">Back to the game</a></p>
+</main>
+<script>
+  document.getElementById("forget").addEventListener("click", async () => {
+    const done = document.getElementById("done");
+    let player = null;
+    try { player = localStorage.getItem("bevyCiv.player"); localStorage.setItem("bevyCiv.stats", "0"); } catch {}
+    if (!player) { done.textContent = "Nothing is kept for this browser."; return; }
+    const r = await fetch("/api/forget", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ player }) }).catch(() => null);
+    done.textContent = r && r.ok ? "Deleted, and statistics are switched off." : "Could not reach the server; please try again later.";
+  });
+</script>
+</body>
+</html>
