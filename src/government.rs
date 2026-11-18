@@ -24,6 +24,11 @@ impl Government {
     }
 
     pub fn name(&self) -> &'static str {
+        crate::theme::rename(crate::theme::Kind::Government, self, self.base_name())
+    }
+
+    /// The name in the default (Earth) theme.
+    pub fn base_name(&self) -> &'static str {
         match self {
             Government::Anarchy => "Anarchy",
             Government::Despotism => "Despotism",

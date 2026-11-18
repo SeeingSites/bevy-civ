@@ -1,0 +1,20 @@
+{
+  "id": "example",
+  "name": "Example reskin",
+  "about": "A small example of a theme: Earth's maps and rules under a few new names and another calendar. Play it with ?theme=example in the browser or --theme example natively. A full reskin renames everything, points 'sprites' at its own art and ships its own scenarios.",
+  "base": "earth",
+  "calendar": { "before": "{year} before the Landing", "after": "Year {year} after the Landing" },
+  "units": {
+    "Warrior": "Scout Drone",
+    "Settler": "Colony Pod",
+    "Worker": "Terraformer",
+    "Musketman": "Plasma Trooper",
+    "Rifleman": "Pulse Rifleman",
+    "MechInfantry": "Exo-Infantry",
+    "Galleon": "Hover Barge"
+  },
+  "buildings": { "Granary": "Hydroponics Bay", "Temple": "Meditation Dome", "UnitedNations": "Galactic Senate" },
+  "techs": { "Gunpowder": "Plasma Cells", "Writing": "Data Glyphs" },
+  "terrain": { "Water": "Methane Sea", "Desert": "Salt Flats" },
+  "terms": { "game_title": "Bevy Colonies", "destination": "the Home Star", "barbarian": "Feral" }
+}

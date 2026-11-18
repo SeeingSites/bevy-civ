@@ -188,6 +188,11 @@ impl Tech {
     }
 
     pub fn name(&self) -> &'static str {
+        crate::theme::rename(crate::theme::Kind::Tech, self, self.base_name())
+    }
+
+    /// The name in the default (Earth) theme.
+    pub fn base_name(&self) -> &'static str {
         match self {
             Tech::Pottery => "Pottery",
             Tech::AnimalHusbandry => "Animal Husbandry",
@@ -262,7 +267,7 @@ impl TechState {
     /// A fresh state that already knows the named technologies.
     pub fn knowing(names: &[String]) -> Self {
         let mut state = Self { researched: HashSet::new(), current: None, progress: 0, science_per_turn: 2, goal: None };
-        state.researched.extend(Tech::ALL.into_iter().filter(|t| names.iter().any(|n| n == t.name())));
+        state.researched.extend(Tech::ALL.into_iter().filter(|t| names.iter().any(|n| n == t.base_name())));
         state.current = Tech::ALL.into_iter().find(|t| state.can_research(*t));
         state
     }

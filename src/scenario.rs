@@ -31,6 +31,14 @@ pub struct Scenario {
     /// Every civilization already knows the others when the game starts.
     #[serde(default)]
     pub known: bool,
+    /// The theme the scenario belongs to (see `bevy_civ::theme`); the menu lists only the scenarios
+    /// of the theme in force.
+    #[serde(default = "earth")]
+    pub theme: String,
+}
+
+fn earth() -> String {
+    "earth".into()
 }
 
 #[derive(Deserialize, Clone, Default)]
@@ -90,20 +98,25 @@ pub fn offset_to_hex(col: i32, row: i32) -> Hex {
     Hex::new(col, -r - col)
 }
 
-/// Everything the start menu offers: a random map first, then the historical scenarios.
+/// Everything the start menu offers: a random map first, then the scenarios of the theme in force.
 pub fn catalog() -> Vec<Scenario> {
-    let built_in: Vec<Scenario> = BUILT_IN.iter().filter_map(|json| serde_json::from_str(json).ok()).collect();
+    let theme = bevy_civ::theme::id();
+    let all: Vec<Scenario> = BUILT_IN.iter().filter_map(|json| serde_json::from_str::<Scenario>(json).ok()).collect();
+    let fallback = all.first().cloned();
+    let built_in: Vec<Scenario> = all.into_iter().filter(|s| bevy_civ::theme::plays(&s.theme)).collect();
     let mut random = Scenario {
         id: "random".into(),
         name: "New World".into(),
         blurb: "Peoples share an unknown, randomly generated land: choose how many and how big. Every game is different.".into(),
         start_year: -4000,
         years_per_turn: 40,
+        theme: theme.into(),
         ..default()
     };
-    // The random map borrows its peoples from the Earth scenario; their homes are chosen when the game starts.
-    if let Some(earth) = built_in.first() {
-        random.civs = earth.civs.iter().take(8).cloned().collect();
+    // The random map borrows its peoples from the theme's first scenario (Earth's, by default);
+    // their homes are chosen when the game starts.
+    if let Some(first) = built_in.first().or(fallback.as_ref()) {
+        random.civs = first.civs.iter().take(8).cloned().collect();
     }
     std::iter::once(random).chain(built_in).collect()
 }

@@ -70,6 +70,11 @@ pub enum Resource {
 
 impl Terrain {
     pub fn name(&self) -> &'static str {
+        crate::theme::rename(crate::theme::Kind::Terrain, self, self.base_name())
+    }
+
+    /// The name in the default (Earth) theme.
+    pub fn base_name(&self) -> &'static str {
         match self {
             Terrain::Water => "Ocean",
             Terrain::Grassland => "Grassland",
@@ -154,6 +159,11 @@ impl Resource {
     ];
 
     pub fn name(&self) -> &'static str {
+        crate::theme::rename(crate::theme::Kind::Resource, self, self.base_name())
+    }
+
+    /// The name in the default (Earth) theme.
+    pub fn base_name(&self) -> &'static str {
         match self {
             Resource::Horses => "Horses",
             Resource::Iron => "Iron",

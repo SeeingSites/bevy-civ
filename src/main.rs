@@ -281,7 +281,7 @@ pub struct GameLog {
 /// Words that mark a message as one of the game's great events (the Messages window's highlights).
 pub const HIGHLIGHTS: [&str; 19] = [
     "Wonder of the world", "completes the", "means war", "captured", "has fallen", "capture", "priests found", "We have founded",
-    "launched", "lifts off", "nuclear", "United Nations", "golden age", "is born", "are no more", "Global warming", "Revolution", "Discovery", "spaceship",
+    "launched", "lifts off", "nuclear", "Secretary-General", "golden age", "is born", "are no more", "Global warming", "Revolution", "Discovery", "spaceship",
 ];
 
 impl GameLog {
@@ -634,9 +634,32 @@ pub struct BattleShown {
     pub defender_died: bool,
 }
 
+/// The theme to dress the game in: `--theme <id>` on the command line, `?theme=<id>` in the page.
+fn chosen_theme(args: &[String]) -> Option<String> {
+    #[cfg(target_arch = "wasm32")]
+    {
+        use wasm_bindgen::prelude::*;
+        #[wasm_bindgen]
+        extern "C" {
+            #[wasm_bindgen(js_name = bevyCivThemeId, catch)]
+            fn js_theme() -> Result<Option<String>, JsValue>;
+        }
+        let _ = args;
+        js_theme().ok().flatten()
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        args.iter().position(|a| a == "--theme").and_then(|i| args.get(i + 1)).cloned()
+    }
+}
+
 fn main() {
-    // `--autoplay [scenario] [turns]`: a whole game between computer players, without a window.
     let args: Vec<String> = std::env::args().collect();
+    let theme = chosen_theme(&args).unwrap_or_else(|| "earth".into());
+    if !bevy_civ::theme::activate_built_in(&theme) {
+        bevy_civ::theme::activate_built_in("earth");
+    }
+    // `--autoplay [scenario] [turns]`: a whole game between computer players, without a window.
     if let Some(i) = args.iter().position(|a| a == "--autoplay") {
         let which = args.get(i + 1).cloned().unwrap_or_else(|| "rome".into());
         let turns = args.get(i + 2).and_then(|t| t.parse().ok()).unwrap_or(LAST_TURN);
@@ -648,7 +671,7 @@ fn main() {
             DefaultPlugins
                 .set(WindowPlugin {
                     primary_window: Some(Window {
-                        title: "Bevy Civ".into(),
+                        title: bevy_civ::theme::term("game_title", "Bevy Civ").into(),
                         // Web build: render into the page's canvas. Its size follows the page through
                         // `client::layout::fit_canvas`, not the engine's fit-to-parent mode, which
                         // gets the pixel ratio wrong on high-density screens.
@@ -846,7 +869,7 @@ fn setup_world(
             }
         }
         for unit in &def.units {
-            let Some(kind) = UnitType::ALL.into_iter().find(|u| u.name() == unit.kind) else { continue };
+            let Some(kind) = UnitType::ALL.into_iter().find(|u| u.base_name() == unit.kind) else { continue };
             let hex = scenario::offset_to_hex(unit.col, unit.row);
             spawn_unit(&mut commands, hex, kind, owner);
             if owner == PLAYER {
@@ -2814,7 +2837,7 @@ fn apply_actions(
             }
             Action::LaunchShip => {
                 if let Some(arrives) = space.launch(PLAYER, state.turn) {
-                    log.push(format!("Our spaceship lifts off for {}, {} light-years away! It arrives on turn {arrives} - unless our capital falls.", bevy_civ::space::DESTINATION, bevy_civ::space::LIGHT_YEARS));
+                    log.push(format!("Our spaceship lifts off for {}, {} light-years away! It arrives on turn {arrives} - unless our capital falls.", bevy_civ::space::destination(), bevy_civ::space::LIGHT_YEARS));
                 }
             }
             Action::SetFocus(focus) => {
@@ -3552,7 +3575,7 @@ fn process_turn(
                             log.push(format!(
                                 "{} have launched a spaceship for {}! It arrives on turn {arrives} unless their capital falls.",
                                 capitalised(&who),
-                                bevy_civ::space::DESTINATION
+                                bevy_civ::space::destination()
                             ));
                         }
                         None if mine => {
@@ -3563,7 +3586,7 @@ fn process_turn(
                                     city.name,
                                     b.name(),
                                     ship.flight_turns(),
-                                    bevy_civ::space::DESTINATION,
+                                    bevy_civ::space::destination(),
                                     bevy_civ::space::MOST[1]
                                 )
                             } else {
@@ -4163,7 +4186,7 @@ fn process_turn(
         .collect();
     let attacks = process_ai_turn(&mut civs, &mut units, &city_owners, &tiles, &hostile, &mut road_jobs, &owns, &mut ferries, &mut commands, &must_fall);
     let names: HashMap<u32, String> = civs.players.iter().map(|c| (c.id, c.adjective.clone())).collect();
-    let civ_name = |owner: u32| names.get(&owner).cloned().unwrap_or_else(|| "Barbarian".to_string());
+    let civ_name = |owner: u32| names.get(&owner).cloned().unwrap_or_else(|| bevy_civ::theme::term("barbarian", "Barbarian").to_string());
 
     let mut walled_cities: HashSet<Hex> = cities.iter().filter(|(c, b, _)| b.has(Building::Walls) || wonders.walls_everywhere(c.owner)).map(|(c, _, _)| c.position).collect();
     // Fortresses in the field defend like walls.
@@ -4924,7 +4947,8 @@ fn process_turn(
                 let name = |id: u32| if id == PLAYER { "we".to_string() } else { civ_named(id) };
                 let needed = bevy_civ::diplomacy::un_votes_needed(voters.len());
                 log.push(format!(
-                    "The United Nations votes for Secretary-General: {} {}, {} {} ({needed} of {} needed).",
+                    "The {} votes for Secretary-General: {} {}, {} {} ({needed} of {} needed).",
+                    Building::UnitedNations.name(),
                     capitalised(&name(un_owner)),
                     tally[0],
                     name(rival),
@@ -4937,7 +4961,7 @@ fn process_turn(
                     } else if winner == PLAYER {
                         "Diplomatic Victory! The nations of the world elect us to lead them.".to_string()
                     } else {
-                        format!("Defeat: the United Nations elects {} to lead the world.", civ_named(winner))
+                        format!("Defeat: the {} elects {} to lead the world.", Building::UnitedNations.name(), civ_named(winner))
                     });
                 }
             }

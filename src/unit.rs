@@ -152,6 +152,11 @@ impl UnitType {
     }
 
     pub fn name(&self) -> &'static str {
+        crate::theme::rename(crate::theme::Kind::Unit, self, self.base_name())
+    }
+
+    /// The name in the default (Earth) theme.
+    pub fn base_name(&self) -> &'static str {
         match self {
             UnitType::WarChariot => "War Chariot",
             UnitType::Settler => "Settler",
