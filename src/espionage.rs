@@ -20,15 +20,26 @@ pub enum Mission {
     Sabotage,
     StealGold,
     InciteUnrest,
+    /// A false flag: fake an attack by them on our troops, to give us a just cause for war.
+    StageIncident,
+    /// A false flag: strike in this city disguised as another people (the one named), turning the
+    /// city's owner against them.
+    Frame(u32),
 }
 
 /// Turns a city stands idle after unrest is incited.
 pub const UNREST_TURNS: u32 = 3;
 /// How much the victim's opinion falls when a spy is caught.
 pub const CAUGHT_ATTITUDE: i32 = -25;
+/// How much a framed people's standing falls with the people that blames them.
+pub const FRAMED_ATTITUDE: i32 = -20;
+/// Reputation lost when a false flag is exposed, and what every other people thinks of it.
+pub const EXPOSED_REPUTATION: i32 = 10;
+pub const EXPOSED_ATTITUDE: i32 = -6;
 
 impl Mission {
-    pub const ALL: [Mission; 5] = [Mission::Embassy, Mission::StealTech, Mission::Sabotage, Mission::StealGold, Mission::InciteUnrest];
+    /// Every mission but framing, which also names the people to blame.
+    pub const ALL: [Mission; 6] = [Mission::Embassy, Mission::StealTech, Mission::Sabotage, Mission::StealGold, Mission::InciteUnrest, Mission::StageIncident];
 
     pub fn name(&self) -> &'static str {
         match self {
@@ -37,6 +48,8 @@ impl Mission {
             Mission::Sabotage => "Sabotage",
             Mission::StealGold => "Steal Gold",
             Mission::InciteUnrest => "Incite Unrest",
+            Mission::StageIncident => "Stage Incident",
+            Mission::Frame(_) => "Frame",
         }
     }
 
@@ -47,7 +60,14 @@ impl Mission {
             Mission::Sabotage => "destroy the city's production so far",
             Mission::StealGold => "take a quarter of their treasury (up to 300)",
             Mission::InciteUnrest => "the city stands idle for 3 turns: no growth, no production",
+            Mission::StageIncident => "a false flag: fake an attack by them on us, for a just cause for war",
+            Mission::Frame(_) => "a false flag: they blame another people for an attack here",
         }
+    }
+
+    /// A false flag: worse than an honest act when exposed.
+    pub fn is_false_flag(&self) -> bool {
+        matches!(self, Mission::StageIncident | Mission::Frame(_))
     }
 
     pub fn is_covert(&self) -> bool {
@@ -61,6 +81,8 @@ impl Mission {
             Mission::StealTech => 0.55,
             Mission::Sabotage | Mission::StealGold => 0.7,
             Mission::InciteUnrest => 0.5,
+            Mission::StageIncident => 0.6,
+            Mission::Frame(_) => 0.5,
         };
         if walls { base - 0.15 } else { base }
     }

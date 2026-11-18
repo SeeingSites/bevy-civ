@@ -108,6 +108,14 @@ on, propose technology swaps, ask you to join their wars, and declare war when r
 Breaking a treaty costs reputation with everyone, allies join each other's wars, and the other
 powers fight and make peace among themselves.
 
+**Grievances (just causes for war).** Some wrongs give a people a just cause for war against another
+for 30 turns: refusing a demand to withdraw troops or to stop drug smugglers, a diplomat caught
+spying, a city taken, an attack on an ally, or a border incident (real or staged). A war declared
+with a just cause costs 3 reputation instead of 15, everyone else minds it far less, and each of
+the victim's allies stays out with a 60% chance; the cause is spent by the war. The foreign advisor
+shows the causes you hold and those held against you. Computer players with a grievance are readier
+to go to war - against you or each other - and say why.
+
 ## Wonders and great people
 There are 27 wonders. Each **wonder** can be built only once in the world: when one civilization finishes it, everyone
 else's work on it stops (their shields go to the next project) and the news is announced.
@@ -184,11 +192,17 @@ them with their odds; the diplomat is spent either way):
 | Sabotage | the city loses its production so far | 70% |
 | Steal Gold | a quarter of their treasury, up to 300 | 70% |
 | Incite Unrest | the city stands idle for 3 turns: no growth, no production | 50% |
+| Stage Incident | a false flag: a faked attack by them on your troops gives you a just cause for war | 60% |
+| Frame (a people) | a false flag: a strike in their city disguised as another people you know; the city's owner blames them (attitude -20) and gains a just cause for war against them | 50% |
 
 City walls cut the odds of covert missions by 15 points. A diplomat who fails is caught, and the
-victim's opinion of you falls sharply. Computer players train a diplomat once they have a few
+victim's opinion of you falls sharply, and they gain a just cause for war against you. An exposed
+false flag is worse: 10 reputation lost, every other people thinks less of you, and a people you
+tried to frame holds it against you too. Computer players train a diplomat once they have a few
 cities: it opens an embassy, then steals technology, sabotages (at war) or steals gold, from each
-other and from you, and you hear about it when they target you.
+other and from you, and you hear about it when they target you. Now and then an aggressive one
+stages an incident to justify a war, and one at war frames its enemy in a neutral city to drag that
+city's owner into the fight; you hear the rumours when you are involved.
 
 ## Ships and aircraft
 - **Warships** (Galley, Frigate, Ironclad, Destroyer, Battleship) are built in coastal cities. They
