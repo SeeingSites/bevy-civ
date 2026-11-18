@@ -642,6 +642,12 @@ pub fn answer_offer(ctx: &mut Ctx, accept: bool) {
 }
 
 /// Runs once per turn: contact, drifting attitudes, and the decisions other leaders make.
+/// A computer player this aggressive, with this many times a neighbour's military strength, sets
+/// out to conquer it: war is likelier (by [`CONQUEST_WAR`] a turn) and peace unlikely while it wins.
+pub const CONQUEST_AGGRESSION: f32 = 0.55;
+pub const CONQUEST_ODDS: f32 = 1.4;
+pub const CONQUEST_WAR: f64 = 0.04;
+
 /// Chance each turn that a rival declares war on a people whose spaceship is in flight.
 pub const SPACE_RACE_WAR: f64 = 0.15;
 
@@ -836,14 +842,21 @@ pub fn turn(ctx: &mut Ctx, fog: &FogOfWar, supplies: &Supplies, units: &[(Hex, u
             let treaty = ctx.diplomacy.get_treaty(a.0, b.0);
             let age = ctx.foreign.treaty_age(a.0, b.0, turn);
             let known = ctx.foreign.met.contains(&a.0) || ctx.foreign.met.contains(&b.0);
+            // A war of conquest: an aggressive power far stronger than its neighbour.
+            let (sa, sb) = (strength(ctx, a.0), strength(ctx, b.0));
+            let conqueror = |power: f32, aggression: f32, victim: f32| aggression >= CONQUEST_AGGRESSION && power >= victim * CONQUEST_ODDS;
+            let conquest = conqueror(sa, a.3, sb) || conqueror(sb, b.3, sa);
+            // While the stronger side is winning, it is in no hurry to make peace.
+            let peace_chance = if conquest && age < 60 { 0.015 } else { 0.07 };
+            let war_chance = 0.008 * (a.3 + b.3) as f64 + if conquest { CONQUEST_WAR } else { 0.0 };
             match treaty {
-                Treaty::War if age >= 15 && rng.gen_bool(0.07) => {
+                Treaty::War if age >= 15 && rng.gen_bool(peace_chance) => {
                     set_treaty(ctx, a.0, b.0, Treaty::Peace);
                     if known {
                         ctx.log.push(format!("{} and {} make peace.", a.1, b.1));
                     }
                 }
-                Treaty::None | Treaty::Peace if turn >= AI_GRACE_TURNS && (treaty == Treaty::None || age >= 20) && rng.gen_bool((0.008 * (a.3 + b.3)) as f64) => {
+                Treaty::None | Treaty::Peace if turn >= AI_GRACE_TURNS && (treaty == Treaty::None || age >= 20) && rng.gen_bool(war_chance.min(1.0)) => {
                     set_treaty(ctx, a.0, b.0, Treaty::War);
                     if known {
                         ctx.log.push(format!("{} and {} are now at war.", a.1, b.1));

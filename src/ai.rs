@@ -163,6 +163,9 @@ pub struct AiAttack {
     pub target: Hex,
 }
 
+/// How many times a city garrison's strength a gathered army wants before it storms the city.
+pub const SIEGE_ODDS: f32 = 1.5;
+
 /// Moves every computer-controlled unit and returns the attacks they launch.
 ///
 /// `hostile(a, b)` says whether owner `a` is willing to attack owner `b`. `must_fall`: cities
@@ -203,6 +206,11 @@ pub fn process_ai_turn(
         if *strength > entry.1 {
             *entry = (*owner, *strength);
         }
+    }
+    // The whole strength standing on each tile (a city's garrison, all told).
+    let mut standing: HashMap<Hex, f32> = HashMap::new();
+    for (pos, _, strength) in &unit_snapshots {
+        *standing.entry(*pos).or_default() += *strength;
     }
     let land: Vec<(Hex, Terrain)> = tiles.iter().map(|t| (t.coord, t.terrain)).collect();
     let land_set: std::collections::HashSet<Hex> = land.iter().filter(|(_, t)| *t != Terrain::Water).map(|(c, _)| *c).collect();
@@ -337,7 +345,7 @@ pub fn process_ai_turn(
             };
             let target = best(&|h: Hex| h.distance_to(here) <= 10 && same_land(h, here));
             if target.is_none() && can_sail && is_land(here) && !free(&here) {
-                let overseas = best(&|h: Hex| h.distance_to(here) <= 16 && !same_land(h, here));
+                let overseas = best(&|h: Hex| h.distance_to(here) <= 22 && !same_land(h, here));
                 if let Some((goal, port)) = overseas.and_then(|g| port_for(owner, here, g).map(|p| (g, p))) {
                     requests.push((entity, owner, goal, port));
                     if here != port {
@@ -574,22 +582,27 @@ pub fn process_ai_turn(
             }
         }
 
+        // A siege: enough of the army gathered before a defended city to outweigh its garrison.
+        let mut siege = None;
         let goal = if let Some((index, city)) = relief {
             undefended.remove(index);
             Some(city)
         } else if enemy_unit.is_some() {
             enemy_unit
         } else if let Some(city) = enemy_city {
-            // A defended city is attacked in strength: wait nearby until enough of the army has gathered.
+            // A defended city is attacked in strength: wait nearby until enough of the army has
+            // gathered - at least two or three units, and half again the garrison's strength.
             let defended = occupied.get(&city).is_some_and(|(other, _)| *other != owner);
             let needed = if !defended { 1 } else if aggression > 0.6 { 2 } else { 3 };
-            let gathered = unit_snapshots.iter().filter(|(pos, other, strength)| *other == owner && *strength > 0.0 && here.distance_to(*pos) <= 3).count();
+            let near: Vec<f32> = unit_snapshots.iter().filter(|(pos, other, strength)| *other == owner && *strength > 0.0 && here.distance_to(*pos) <= 3).map(|(_, _, s)| *s).collect();
+            let ready = !defended || (near.len() >= needed && near.iter().sum::<f32>() >= standing.get(&city).copied().unwrap_or(0.0) * SIEGE_ODDS);
             let available = field_armies.get(&owner).copied().unwrap_or(0);
             if available < needed {
                 None
-            } else if gathered < needed && here.distance_to(city) <= 3 {
+            } else if !ready && here.distance_to(city) <= 3 {
                 continue;
             } else {
+                siege = ready.then_some(city);
                 Some(city)
             }
         } else {
@@ -609,8 +622,10 @@ pub fn process_ai_turn(
                     let boarding = is_land(unit.position) != is_land(next);
                     match occupied.get(&next) {
                         Some((other, strength)) if *other != owner => {
-                            // Attack if the odds look acceptable; otherwise hold position.
-                            if hostile(owner, *other) && (aggression > 0.6 || my_strength >= *strength) {
+                            // Attack if the odds look acceptable (or the siege is ready: every unit
+                            // gathered before the city joins in, wearing the garrison down); otherwise
+                            // hold position.
+                            if hostile(owner, *other) && (aggression > 0.6 || my_strength >= *strength || siege == Some(next)) {
                                 attacks.push(AiAttack { attacker: entity, target: next });
                                 unit.end_move();
                             }

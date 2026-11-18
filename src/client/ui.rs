@@ -227,11 +227,11 @@ fn help_lines(topic: HelpTopic) -> Vec<String> {
             "Nuclear weapons: once anyone has built the Manhattan Project (Nuclear Fission), every people that knows Rocketry can build Nuclear Missiles. Select a missile, click a target within 12 tiles, then click it again to launch: everything within a tile is destroyed, a city there loses half its people and two buildings, fallout spoils the land, the victim goes to war with you and every other people trusts you less. An SDI Defense (Superconductors) shoots down missiles aimed within 3 tiles of its city.".to_string(),
         ],
         HelpTopic::Victory => vec![
-            "Conquest: take every rival city. Domination: hold half of the cities in the world (at least five).".to_string(),
+            "Conquest: take every rival city. Domination: hold two in five of the cities in the world (at least five).".to_string(),
             "Diplomacy: once the United Nations (Computers) stands, every 10 turns the world votes for Secretary-General between its owner and the highest-scoring other people. Each candidate votes for itself; every other people backs the candidate it likes better, but only one it is friendly with (peace treaties, alliances, gifts, trade and a shared faith build goodwill) - otherwise it abstains. A majority of all the members wins.".to_string(),
             "Space: the race to Alpha Centauri, the nearest star. Research Space Flight, Plastics and Superconductors; cities with a Factory build 4 Space Structures, 2 to 4 Components (engines) and 2 Modules. Launch from the Empire advisor's Space page: the voyage takes 18 turns, 2 fewer for each extra engine. The first ship to arrive wins - unless its capital falls first, and every rival will try to make it fall.".to_string(),
             format!("Culture: reach {} culture points (in a game of {} turns; scaled to the game's length) and {} times as much as any rival.", bevy_civ::culture::VICTORY_CULTURE, 400, bevy_civ::culture::VICTORY_LEAD_TENTHS as f32 / 10.0),
-            "Score: if nobody has won by the last turn (chosen when the game begins), the highest score wins. Score counts 2 points a citizen, 10 a technology and 50 a wonder, for everyone alike. A rival who holds half of the cities wins by domination.".to_string(),
+            "Score: if nobody has won by the last turn (chosen when the game begins), the highest score wins. Score counts 2 points a citizen, 10 a technology and 50 a wonder, for everyone alike. A rival who holds two in five of the cities wins by domination.".to_string(),
         ],
     }
 }
@@ -701,7 +701,7 @@ const GRAY: Color = Color::srgb(0.62, 0.6, 0.57);
 fn portrait(art: &Art, index: usize, size: f32) -> impl Bundle {
     (
         Node { width: Val::Px(size), height: Val::Px(size), flex_shrink: 0.0, ..default() },
-        ImageNode { image: art.leaders.clone(), texture_atlas: Some(art.atlas(&art.leaders_layout, index.min(16))), ..default() },
+        ImageNode { image: art.leaders.clone(), texture_atlas: Some(art.atlas(&art.leaders_layout, index.min(17))), ..default() },
     )
 }
 
