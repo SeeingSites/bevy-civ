@@ -102,6 +102,7 @@ pub fn of(name: &str) -> Character {
         "Macedon" => ([Militaristic, Scientific], U::Phalanx),
         "Mali" => ([Commercial, Agricultural], U::Horseman),
         "Muscovy" => ([Industrious, Agricultural], U::Cavalry),
+        "Mongols" => ([Militaristic, Agricultural], U::Knight),
         "Persia" => ([Scientific, Industrious], U::Immortal),
         "Songhai" => ([Commercial, Agricultural], U::Horseman),
         "Spain" => ([Religious, Militaristic], U::Knight),

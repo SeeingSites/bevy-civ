@@ -116,7 +116,7 @@ fn load_art(mut commands: Commands, assets: Res<AssetServer>, mut layouts: ResMu
         parchment: assets.load("sprites/parchment.png"),
         button: assets.load("sprites/button.png"),
         leaders: assets.load("sprites/leaders.png"),
-        leaders_layout: grid(128, 128, 17, 1),
+        leaders_layout: grid(128, 128, 18, 1),
         font_title: assets.load("fonts/Cinzel.ttf"),
         font_body: assets.load("fonts/AlegreyaSans-Medium.ttf"),
         font_bold: assets.load("fonts/AlegreyaSans-Bold.ttf"),
@@ -138,6 +138,7 @@ pub fn owner_color(owner: u32) -> Color {
         9 => Color::srgb(0.6, 0.42, 0.25),
         10 => Color::srgb(0.85, 0.85, 0.9),
         11 => Color::srgb(0.1, 0.4, 0.45),
+        12 => Color::srgb(0.55, 0.15, 0.35),
         _ => Color::srgb(0.32, 0.3, 0.3),
     }
 }

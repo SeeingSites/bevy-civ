@@ -68,7 +68,9 @@ pub struct CivView<'a> {
 
 /// Largest army a computer player keeps.
 pub fn army_cap(cities: usize) -> usize {
-    (4 + 2 * cities).min(20)
+    // Two units a city while small; past eight cities, two more for every three (a great empire
+    // fields a greater army, which is what lets it overwhelm smaller neighbours).
+    (4 + 2 * cities).min(14 + cities * 2 / 3)
 }
 
 fn can_train(unit: UnitType, city: &CityView, civ: &CivView, supplies: &Supplies) -> bool {

@@ -2809,7 +2809,7 @@ fn process_turn(
         *envoy_counts.entry((unit.owner, unit.unit_type)).or_default() += 1;
     }
     // Civilizations with free land for new cities near their own (at least 3 tiles from any city,
-    // within 10 of one of theirs).
+    // within 10 of one of theirs - or 20, for a seafaring people that can ship settlers there).
     let room: HashSet<u32> = {
         let city_spots: Vec<(Hex, u32)> = cities.iter().map(|(c, _, _)| (c.position, c.owner)).collect();
         let free: Vec<Hex> = tiles
@@ -2819,7 +2819,10 @@ fn process_turn(
             .collect();
         civs.players
             .iter()
-            .filter(|c| free.iter().any(|f| city_spots.iter().any(|(p, o)| *o == c.id && p.distance_to(*f) <= 10)))
+            .filter(|c| {
+                let reach = if c.tech.researched.contains(&Tech::Seafaring) { 20 } else { 10 };
+                free.iter().any(|f| city_spots.iter().any(|(p, o)| *o == c.id && p.distance_to(*f) <= reach))
+            })
             .map(|c| c.id)
             .collect()
     };
@@ -3905,8 +3908,14 @@ fn process_turn(
         }
     }
     let owns = |hex: Hex, owner: u32| supplies.territory.get(&hex).is_some_and(|(o, _)| *o == owner);
-    // Capitals of peoples whose spaceship is in flight: taking one stops the ship.
-    let must_fall: Vec<Hex> = cities.iter().filter(|(c, _, _)| c.is_capital && space.ships.get(&c.owner).is_some_and(|s| s.arrives.is_some())).map(|(c, _, _)| c.position).collect();
+    // Cities worth a long march: the capital of a people whose spaceship is in flight (taking it
+    // stops the ship), and the last cities of a people on its last legs (taking them ends it).
+    let dying: HashSet<u32> = city_counts.iter().filter(|(o, n)| **o != PLAYER && **o != BARBARIANS && **n <= 3).map(|(o, _)| *o).collect();
+    let must_fall: Vec<Hex> = cities
+        .iter()
+        .filter(|(c, _, _)| (c.is_capital && space.ships.get(&c.owner).is_some_and(|s| s.arrives.is_some())) || dying.contains(&c.owner))
+        .map(|(c, _, _)| c.position)
+        .collect();
     let attacks = process_ai_turn(&mut civs, &mut units, &city_owners, &tiles, &hostile, &mut road_jobs, &owns, &mut ferries, &mut commands, &must_fall);
     let names: HashMap<u32, String> = civs.players.iter().map(|c| (c.id, c.adjective.clone())).collect();
     let civ_name = |owner: u32| names.get(&owner).cloned().unwrap_or_else(|| "Barbarian".to_string());
@@ -4564,7 +4573,7 @@ fn process_turn(
         let culture_winner = culture_rules::cultural_winner(&culture.totals(cities.iter().map(|(c, _, _)| (c.position, c.owner))), culture_rules::victory_culture(state.last_turn));
         state.victory = if held.len() == 1 {
             leader.map(|(o, _)| format!("Conquest victory for {}.", civ_named(o)))
-        } else if let Some((o, n)) = leader.filter(|(_, n)| *n >= 5 && n * 2 >= total_cities) {
+        } else if let Some((o, n)) = leader.filter(|(_, n)| dominates(*n, total_cities)) {
             Some(format!("Domination victory for {} ({n} of {total_cities} cities).", civ_named(o)))
         } else if let Some(o) = culture_winner {
             Some(format!("Cultural victory for {}.", civ_named(o)))
@@ -4579,17 +4588,17 @@ fn process_turn(
     } else if player_cities == 0 {
         state.victory = Some("Your civilization has fallen.".into());
     } else if let Some((name, held)) = {
-        // A rival holding half of the world's cities dominates it.
+        // A rival holding two in five of the world's cities dominates it.
         let mut held: HashMap<u32, usize> = HashMap::new();
         for (city, _, _) in cities.iter().filter(|(c, _, _)| c.owner != PLAYER && c.owner != BARBARIANS) {
             *held.entry(city.owner).or_default() += 1;
         }
-        held.into_iter().filter(|(_, n)| *n >= 5 && n * 2 >= total_cities).max_by_key(|(_, n)| *n).map(|(o, n)| (civ_named(o), n))
+        held.into_iter().filter(|(_, n)| dominates(*n, total_cities)).max_by_key(|(_, n)| *n).map(|(o, n)| (civ_named(o), n))
     } {
         state.victory = Some(format!("Defeat: {name} dominate the world, holding {held} of its {total_cities} cities."));
     } else if !rivals_remain {
         state.victory = Some("Conquest Victory!".into());
-    } else if player_cities >= 5 && player_cities * 2 >= total_cities {
+    } else if dominates(player_cities, total_cities) {
         state.victory = Some("Domination Victory!".into());
     } else if let Some(winner) = culture_rules::cultural_winner(&culture.totals(cities.iter().map(|(c, _, _)| (c.position, c.owner))), culture_rules::victory_culture(state.last_turn)) {
         state.victory = Some(if winner == PLAYER {
@@ -4900,6 +4909,14 @@ pub fn visit_villages(
             }
         }
     }
+}
+
+/// Share of the world's cities (in fifths, at least five cities) that wins by domination.
+pub const DOMINATION_FIFTHS: usize = 2;
+
+/// Whether holding `held` of the world's `total` cities is a domination victory.
+pub fn dominates(held: usize, total: usize) -> bool {
+    held >= 5 && held * 5 >= total * DOMINATION_FIFTHS
 }
 
 /// Puts every city's working citizens on tiles of its area: the player's own choices are kept (and
