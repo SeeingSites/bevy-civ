@@ -38,6 +38,7 @@ mod governor;
 mod savegame;
 mod scenario;
 mod supply;
+mod telemetry;
 
 use client::sfx::Sfx;
 use foreign::{DiploAct, Foreign, TradeAsk};
@@ -678,6 +679,7 @@ fn main() {
         )
         .add_systems(Update, savegame::write_save.after(GameLogic).run_if(in_state(AppState::Playing)))
         .add_systems(OnExit(AppState::Playing), cleanup_world)
+        .add_systems(Update, telemetry::report_milestones.after(GameLogic).run_if(in_state(AppState::Playing)))
         .add_systems(
             Update,
             (handle_map_click, apply_actions, end_turn_guard, cycle_cities, withdraw_troops, stow_cargo, process_turn, religion_turn, auto_explore, continue_orders, stow_cargo, visit_villages, automate_workers, advance_selection, preview_route, refresh_supplies, work_tiles, nuclear_strikes)

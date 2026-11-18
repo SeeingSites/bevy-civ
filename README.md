@@ -516,7 +516,9 @@ offered, both optional and folded out of the way:
   mobile, multiplayer) and a consent box whose exact wording is stored with the sign-up.
 - **Anonymous play statistics**: a box to tick. Only then does the page send a random player id
   (kept in the browser), the campaign tags (`utm_*`) and referrer it arrived with, and the
-  milestones the game reports through `window.bevyCivEvent(kind, scenario, turn, detailJson)`.
+  milestones the game reports through `window.bevyCivEvent(kind, scenario, turn, detailJson)`
+  (`src/telemetry.rs`): a game starting or resuming, every 25th turn, and how it ended - with the
+  civilization, difficulty, city count, score and government.
 
 The Worker in `worker/index.js` serves the game and an API under `/api/` (`hello`, `subscribe`,
 `stats`, `forget`), storing into the D1 database `bevy-civ-players` (schema in `migrations/`).
