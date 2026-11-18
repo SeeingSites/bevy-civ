@@ -285,7 +285,7 @@ pub fn spawn_city(
                 pinned: Vec::new(),
                 narcotics: 0,
                 scandal: 0,
-                auto_build: false,
+                auto_build: true,
             },
             Name::new(name),
             CityBuildings { buildings: vec![] },
@@ -319,7 +319,7 @@ mod hurry_tests {
             pinned: Vec::new(),
                 narcotics: 0,
                 scandal: 0,
-                auto_build: false,
+                auto_build: true,
         }
     }
 

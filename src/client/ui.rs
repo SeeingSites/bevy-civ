@@ -249,6 +249,8 @@ pub struct UiState {
     pub help_topic: HelpTopic,
     /// Move orders take the whole stack along (as Shift-click does).
     pub group_move: bool,
+    /// The list of units on the selected tile is shown in full (on a small screen it folds away).
+    pub stack_open: bool,
     /// The end-of-game window has been put away to look around the map.
     pub end_dismissed: bool,
     /// Clicking a project adds it to the city's build queue instead of starting it now.
@@ -353,6 +355,7 @@ pub enum Command {
     HelpTopic(HelpTopic),
     DiploPage(DiploPage),
     ToggleGroupMove,
+    ToggleStackList,
     ToggleQueueMode,
     ToggleMusic,
     /// Messages window: older (+1) or newer (-1) page.
@@ -422,6 +425,10 @@ pub struct TurnPanel;
 /// The message log and unit panel (bottom left), narrowed on phones.
 #[derive(Component)]
 pub struct LeftColumn;
+
+/// The box of recent messages above the unit panel.
+#[derive(Component)]
+pub struct LogBox;
 #[derive(Resource)]
 pub struct MinimapImage(Handle<Image>);
 
@@ -791,6 +798,7 @@ pub fn setup_ui(mut commands: Commands, art: Res<Art>, mut images: ResMut<Assets
         ))
         .with_children(|left| {
             left.spawn((
+                LogBox,
                 Node { padding: UiRect::axes(Val::Px(14.0), Val::Px(8.0)), ..default() },
                 BackgroundColor(Color::srgba(0.04, 0.05, 0.07, 0.72)),
                 BorderRadius::all(Val::Px(8.0)),
@@ -964,7 +972,7 @@ pub fn rebuild_panels(
         Res<TradeRoutes>,
     ),
     cities: Query<(&City, &CityBuildings, &Happiness)>,
-    (city_list, space, history, culture, taken, tips_on, rivers, web, (tree_layout, tree_image)): (
+    (city_list, space, history, culture, taken, tips_on, rivers, web, (tree_layout, tree_image), screen): (
         Query<(Entity, &City)>,
         Res<bevy_civ::space::SpaceRace>,
         Res<crate::History>,
@@ -974,13 +982,14 @@ pub fn rebuild_panels(
         Res<crate::Rivers>,
         Res<super::relations::RelationsWeb>,
         (Res<super::techtree::TreeLayout>, Res<super::techtree::TreeImage>),
+        Res<super::layout::Screen>,
     ),
     unit_panel: Query<Entity, With<UnitPanel>>,
     mut city_panel: Query<(Entity, &mut Node), (With<CityPanel>, Without<ModalRoot>)>,
     mut modal_root: Query<(Entity, &mut Node), (With<ModalRoot>, Without<CityPanel>)>,
     mut commands: Commands,
 ) {
-    if !(dirty.ui || selection.is_changed() || ui.is_changed() || foreign.is_changed() || supplies.is_changed() || tips_on.is_changed() || sound_on.is_changed()) {
+    if !(dirty.ui || selection.is_changed() || ui.is_changed() || foreign.is_changed() || supplies.is_changed() || tips_on.is_changed() || sound_on.is_changed() || screen.is_changed()) {
         return;
     }
     dirty.ui = false;
@@ -993,7 +1002,11 @@ pub fn rebuild_panels(
                 p.spawn(label(&art.font_title, "No unit selected", 17.0, GOLD));
                 p.spawn(label(
                     &art.font_body,
-                    "Click a unit or city to select it; click again (or Tab) for the next unit on that tile.\nClick a tile (or right-click) to move. Space skips a unit; Enter ends the turn.",
+                    if screen.compact {
+                        "Tap a unit or city to select it; tap it again for the next unit on that tile. Tap a tile to move there."
+                    } else {
+                        "Click a unit or city to select it; click again (or Tab) for the next unit on that tile.\nClick a tile (or right-click) to move. Space skips a unit; Enter ends the turn."
+                    },
                     14.0,
                     MUTED,
                 ));
@@ -1092,12 +1105,24 @@ pub fn rebuild_panels(
                 let stack = crate::own_stack(unit.position, unit_entities.iter(), |e| units.get(e).ok().map(|u| (u.position, u.owner)));
                 if stack.len() > 1 {
                     let index = selection.unit.and_then(|s| stack.iter().position(|e| *e == s)).unwrap_or(0);
-                    p.spawn(label(
-                        &art.font_bold,
-                        format!("Unit {} of {} on this tile - Tab / Shift+Tab or click a card:", index + 1, stack.len()),
-                        14.0,
-                        GOLD,
-                    ));
+                    // On a small screen the list folds away behind one button, so the map stays in view.
+                    let folded = screen.compact && !ui.stack_open;
+                    if screen.compact {
+                        p.spawn(row(6.0)).with_children(|r| {
+                            r.spawn(label(&art.font_bold, format!("Unit {} of {} here", index + 1, stack.len()), 14.0, GOLD));
+                            let text = if folded { format!("Show all {}", stack.len()) } else { "Hide list".to_string() };
+                            button(r, art, text, Command::ToggleStackList, BRONZE, 13.0);
+                        });
+                    } else {
+                        p.spawn(label(
+                            &art.font_bold,
+                            format!("Unit {} of {} on this tile - Tab / Shift+Tab or click a card:", index + 1, stack.len()),
+                            14.0,
+                            GOLD,
+                        ));
+                    }
+                }
+                if stack.len() > 1 && !(screen.compact && !ui.stack_open) {
                     let together = if ui.group_move { "Move together: On" } else { "Move together: Off (or Shift-click)" };
                     p.spawn(row(6.0)).with_children(|r| {
                         button(r, art, together, Command::ToggleGroupMove, if ui.group_move { GREEN } else { BRONZE }, 13.0);
@@ -2741,6 +2766,7 @@ pub fn button_actions(
             Command::HelpTopic(topic) => ui.help_topic = *topic,
             Command::DiploPage(page) => ui.diplo_page = *page,
             Command::ToggleGroupMove => ui.group_move = !ui.group_move,
+            Command::ToggleStackList => ui.stack_open = !ui.stack_open,
             Command::ToggleQueueMode => ui.queue_mode = !ui.queue_mode,
             Command::ToggleMusic => sound.toggle_music(),
             Command::MessagesPage(delta) => ui.messages_page = (ui.messages_page as i32 + delta).max(0) as usize,
@@ -2908,7 +2934,7 @@ pub fn rebuild_menu(
                     w.spawn(label(&art.font_body, "Or choose a world to rule.", 18.0, INK_SOFT));
                     w.spawn(label(
                         &art.font_body,
-                        "New to games like this? The Rise of Rome is the quickest to learn: a small map, with your first cities already founded. Once in, press F1 for How to play; short tips explain each new thing as it comes up.",
+                        "New to games like this? The Rise of Rome is the quickest to learn: a small map, with your first cities already founded. Once in, Help (F1) opens How to play; short tips explain each new thing as it comes up.",
                         14.0,
                         INK_SOFT,
                     ));
