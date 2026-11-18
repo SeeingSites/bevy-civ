@@ -19,6 +19,11 @@ pub const MOST: [u32; 3] = [4, 4, 2];
 pub const FLIGHT_TURNS: u32 = 18;
 /// Where the ships are bound, and how far.
 pub const DESTINATION: &str = "Alpha Centauri";
+
+/// Where ships are bound under the theme in force.
+pub fn destination() -> &'static str {
+    crate::theme::term("destination", DESTINATION)
+}
 pub const LIGHT_YEARS: f32 = 4.37;
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]

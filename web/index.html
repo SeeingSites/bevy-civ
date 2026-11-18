@@ -133,6 +133,8 @@
       };
       input.click();
     };
+    // The theme the game is dressed in (?theme=<id>); the game falls back to Earth.
+    window.bevyCivThemeId = () => new URLSearchParams(location.search).get("theme");
     window.bevyCivTakeImport = () => {
       const text = imported;
       imported = null;

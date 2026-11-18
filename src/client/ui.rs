@@ -760,7 +760,7 @@ fn stat(parent: &mut ChildBuilder, art: &Art, index: usize, text: impl Into<Stri
 
 pub fn year_label(state: &GameState) -> String {
     let year = state.start_year + (state.turn as i32 - 1) * state.years_per_turn;
-    if year < 0 { format!("{} BC", -year) } else { format!("{} AD", year.max(1)) }
+    bevy_civ::theme::year(year)
 }
 
 fn good_icon(art: &Art, good: Good, size: f32) -> impl Bundle {
@@ -2019,11 +2019,12 @@ pub fn rebuild_panels(
                                 w.spawn(label(&art.font_body, format!("{veterans} veterans or elite; {wounded} wounded (they heal while resting, fully in a city)."), 14.0, INK_SOFT));
                             }
                             EmpireTab::Space => {
-                                use bevy_civ::space::{DESTINATION, LIGHT_YEARS, MOST, NEEDED};
+                                use bevy_civ::space::{LIGHT_YEARS, MOST, NEEDED};
+                                let destination = bevy_civ::space::destination();
                                 w.spawn(label(
                                     &art.font_body,
                                     format!(
-                                        "The race to {DESTINATION}, the nearest star ({LIGHT_YEARS} light-years). Cities with a Factory build {} structures (Space Flight), {} to {} components - engines; each extra one saves two turns (Plastics) - and {} modules (Superconductors). The first ship to arrive wins; a ship in flight is lost if its capital falls.",
+                                        "The race to {destination}, the nearest star ({LIGHT_YEARS} light-years). Cities with a Factory build {} structures (Space Flight), {} to {} components - engines; each extra one saves two turns (Plastics) - and {} modules (Superconductors). The first ship to arrive wins; a ship in flight is lost if its capital falls.",
                                         NEEDED[0], NEEDED[1], MOST[1], NEEDED[2]
                                     ),
                                     14.0,
@@ -2037,7 +2038,7 @@ pub fn rebuild_panels(
                                     any = true;
                                     let status = match ship.arrives {
                                         Some(turn) => format!("in flight, arrives turn {turn}"),
-                                        None if ship.is_ready() => format!("ready to launch ({} turns to {DESTINATION})", ship.flight_turns()),
+                                        None if ship.is_ready() => format!("ready to launch ({} turns to {destination})", ship.flight_turns()),
                                         None => format!("being built: {} still needed", ship.missing()),
                                     };
                                     w.spawn(label(
@@ -2052,11 +2053,11 @@ pub fn rebuild_panels(
                                         r.spawn(Node { flex_grow: 1.0, flex_direction: FlexDirection::Column, ..default() }).with_children(|b| {
                                             bar(b, ship.progress(state.turn), if id == PLAYER { Color::srgb(0.35, 0.7, 0.95) } else { Color::srgb(0.85, 0.45, 0.35) });
                                         });
-                                        r.spawn(label(&art.font_body, DESTINATION, 13.0, INK_SOFT));
+                                        r.spawn(label(&art.font_body, destination, 13.0, INK_SOFT));
                                     });
                                     if id == PLAYER && ship.arrives.is_none() && ship.is_ready() {
                                         w.spawn(row(6.0)).with_children(|r| {
-                                            button(r, art, format!("Launch for {DESTINATION} ({} turns)", ship.flight_turns()), Command::Game(Action::LaunchShip), GREEN, 14.0);
+                                            button(r, art, format!("Launch for {destination} ({} turns)", ship.flight_turns()), Command::Game(Action::LaunchShip), GREEN, 14.0);
                                             if ship.parts[1] < MOST[1] {
                                                 r.spawn(label(&art.font_body, "or build more components first to fly faster", 13.0, INK_SOFT));
                                             }
@@ -3067,7 +3068,7 @@ pub fn rebuild_menu(
             ),
         ))
         .with_children(|w| {
-            w.spawn(label(&art.font_title, "BEVY CIV", 46.0, INK));
+            w.spawn(label(&art.font_title, bevy_civ::theme::term("game_title", "Bevy Civ").to_uppercase(), 46.0, INK));
             match menu.scenario.and_then(|i| menu.catalog.get(i)) {
                 None => {
                     // Carry on, or load a game saved as a file (yours, or one someone sent you).

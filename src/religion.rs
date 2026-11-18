@@ -25,6 +25,11 @@ impl Faith {
     pub const ALL: [Faith; 4] = [Faith::OldGods, Faith::WayOfReason, Faith::OneFaith, Faith::Reformed];
 
     pub fn name(&self) -> &'static str {
+        crate::theme::rename(crate::theme::Kind::Faith, self, self.base_name())
+    }
+
+    /// The name in the default (Earth) theme.
+    pub fn base_name(&self) -> &'static str {
         match self {
             Faith::OldGods => "the Old Gods",
             Faith::WayOfReason => "the Way of Reason",

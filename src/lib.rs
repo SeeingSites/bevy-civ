@@ -23,3 +23,4 @@ pub mod villages;
 pub mod tiles;
 pub mod cargo;
 pub mod troubles;
+pub mod theme;

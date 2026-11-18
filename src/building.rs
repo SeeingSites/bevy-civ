@@ -81,6 +81,11 @@ impl Building {
     ];
 
     pub fn name(&self) -> &'static str {
+        crate::theme::rename(crate::theme::Kind::Building, self, self.base_name())
+    }
+
+    /// The name in the default (Earth) theme.
+    pub fn base_name(&self) -> &'static str {
         match self {
             Building::Granary => "Granary",
             Building::Barracks => "Barracks",
@@ -317,6 +322,11 @@ impl Building {
 
     /// What a regular building does, in a few words (wonders use `wonder_effect`).
     pub fn effect(&self) -> &'static str {
+        crate::theme::rename(crate::theme::Kind::Effect, self, self.base_effect())
+    }
+
+    /// What it does in the default (Earth) theme.
+    pub fn base_effect(&self) -> &'static str {
         match self {
             Building::Granary => "+2 food",
             Building::Barracks => "+1 shields",

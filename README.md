@@ -453,6 +453,24 @@ can be told apart - a step towards reskinning it as other games:
 - `src/client/ui.rs` and the other client modules: this game's panels, advisors and views. They
   describe content and dock it; the layout module fits it to the device.
 
+## Themes (reskinning)
+The rules never name what things look like or are called: a **theme** does (`src/theme.rs`).
+A theme is a JSON file in `assets/themes/`, built into the game, that can rename every unit,
+building and wonder, technology, terrain, resource, government and faith (by its Rust variant
+name), rewrite what buildings do, count years its own way (`"{year} BC"`), set a few proper nouns
+(`game_title`, `destination` for the space race, `barbarian`), and point at its own folder of sprite
+sheets. Anything left out keeps its Earth name. Scenarios carry a `"theme"` and the menu lists those
+of the theme in force (a theme can borrow another's with `"base"`).
+
+Choose one with `?theme=<id>` in the browser or `--theme <id>` natively (also for `--autoplay`).
+`assets/themes/earth.json` documents the format; `example.json` is a small demonstration
+(`?theme=example`: Earth's maps with Colony Pods, Plasma Troopers, Methane Seas and years counted
+from the Landing).
+
+Still Earth-only (later stages): the wording of tips, help and many messages, the civilizations'
+traits (keyed by name in `src/traits.rs`), and the rules themselves, which are written against
+specific units and buildings.
+
 ## Art
 All sprites are original and generated from code: `tools/art/*.cjs` describe each sprite as SVG
 and `node tools/art/generate.cjs` rasterises them into the atlases in `assets/sprites/`
