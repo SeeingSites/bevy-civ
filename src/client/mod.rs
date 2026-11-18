@@ -18,6 +18,7 @@ pub mod layout;
 pub mod map;
 pub mod paint;
 pub mod relations;
+pub mod replay;
 pub mod techtree;
 pub mod sfx;
 pub mod tips;
@@ -163,8 +164,8 @@ impl Plugin for ClientPlugin {
             .init_resource::<ui::UiState>()
             .init_resource::<ui::MenuState>()
             .add_systems(PreStartup, load_art)
-            .add_systems(Startup, (map::setup_map_view, ui::setup_ui, ui::setup_menu, relations::setup_web, techtree::setup_tree))
-            .add_systems(Update, (ui::button_actions, ui::rebuild_menu, ui::button_visuals, ui::fit_ui_scale, ui::apply_key_hints, ui::scroll_panels, ui::update_sound_button, relations::draw_web, techtree::draw_tree).chain().after(layout::LayoutInput).before(GameLogic))
+            .add_systems(Startup, (map::setup_map_view, ui::setup_ui, ui::setup_menu, relations::setup_web, techtree::setup_tree, replay::setup_replay))
+            .add_systems(Update, (ui::button_actions, ui::rebuild_menu, ui::button_visuals, ui::fit_ui_scale, ui::apply_key_hints, ui::scroll_panels, ui::update_sound_button, relations::draw_web, techtree::draw_tree, replay::run_replay).chain().after(layout::LayoutInput).before(GameLogic))
             .add_systems(Update, ui::poll_import.run_if(in_state(crate::AppState::Menu)))
             .init_resource::<tips::Tips>()
             .init_resource::<battles::BattleTheatre>()

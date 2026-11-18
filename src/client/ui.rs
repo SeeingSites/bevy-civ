@@ -58,6 +58,8 @@ pub enum Modal {
     Game,
     /// Every message of the game so far (or only the great events).
     Messages,
+    /// The finished game: final scores, the score graph and the map replayed turn by turn.
+    Replay,
 }
 
 /// Pages of the empire advisor.
@@ -255,6 +257,8 @@ pub struct UiState {
     pub stack_open: bool,
     /// The end-of-game window has been put away to look around the map.
     pub end_dismissed: bool,
+    /// The player pressed Surrender and is asked to confirm.
+    pub confirm_surrender: bool,
     /// Clicking a project adds it to the city's build queue instead of starting it now.
     pub queue_mode: bool,
     /// The Messages window: page (0 = the latest), and whether only great events are shown.
@@ -373,6 +377,15 @@ pub enum Command {
     Chronicle,
     /// Put the end-of-game window away (the outcome stays on screen).
     DismissEnd,
+    /// Ask to confirm giving up (the Game menu).
+    AskSurrender,
+    /// Open the final scores and replay, or go back from them to the game-over window.
+    ShowReplay,
+    BackToEnd,
+    /// Move the replay by this many turns; play or pause it; jump to its start (false) or end (true).
+    ReplayStep(i32),
+    ReplayPlay,
+    ReplayJump(bool),
     /// Start menu: carry on from the automatic save.
     Continue,
     /// Start menu: load a saved game file.
@@ -1041,7 +1054,7 @@ pub fn rebuild_panels(
         Res<TradeRoutes>,
     ),
     cities: Query<(&City, &CityBuildings, &Happiness)>,
-    (city_list, space, history, culture, taken, tips_on, rivers, web, (tree_layout, tree_image), screen): (
+    (city_list, space, history, culture, taken, tips_on, rivers, web, (tree_layout, tree_image, replay_images), screen): (
         Query<(Entity, &City)>,
         Res<bevy_civ::space::SpaceRace>,
         Res<crate::History>,
@@ -1050,7 +1063,7 @@ pub fn rebuild_panels(
         Res<super::tips::Tips>,
         Res<crate::Rivers>,
         Res<super::relations::RelationsWeb>,
-        (Res<super::techtree::TreeLayout>, Res<super::techtree::TreeImage>),
+        (Res<super::techtree::TreeLayout>, Res<super::techtree::TreeImage>, Res<super::replay::ReplayImages>),
         Res<super::layout::Screen>,
     ),
     unit_panel: Query<Entity, With<UnitPanel>>,
@@ -1784,6 +1797,7 @@ pub fn rebuild_panels(
                         w.spawn(label(&art.font_body, format!("{name}: {score}"), 14.0, INK));
                     }
                     w.spawn(row(6.0)).with_children(|r| {
+                        button(r, art, "Final scores and replay", Command::ShowReplay, GREEN, 14.0);
                         button(r, art, "Chronicle", Command::Chronicle, BRONZE, 14.0);
                         button(r, art, "Look around the map", Command::DismissEnd, BRONZE, 14.0);
                         button(r, art, "Save to a file", Command::Game(Action::Save), BRONZE, 14.0);
@@ -2109,7 +2123,83 @@ pub fn rebuild_panels(
                             let tips_label = if tips_on.enabled { "Tips for new players: On" } else { "Tips for new players: Off" };
                             c.spawn(Node::default()).with_children(|r| button(r, art, tips_label, Command::ToggleTips, BRONZE, 15.0));
                             c.spawn(Node::default()).with_children(|r| button(r, art, "Quit to the start menu", Command::QuitToMenu, Color::srgb(0.9, 0.6, 0.5), 15.0));
+                            if state.victory.is_none() {
+                                if ui.confirm_surrender {
+                                    c.spawn(label(&art.font_bold, "Surrender? The game ends in defeat; you then see the final scores and the replay.", 14.0, INK));
+                                    c.spawn(row(6.0)).with_children(|r| {
+                                        button(r, art, "Yes, surrender", Command::Game(Action::Surrender), Color::srgb(0.9, 0.5, 0.45), 15.0);
+                                        button(r, art, "Keep playing", Command::AskSurrender, BRONZE, 15.0);
+                                    });
+                                } else {
+                                    c.spawn(Node::default()).with_children(|r| button(r, art, "Surrender", Command::AskSurrender, Color::srgb(0.9, 0.6, 0.5), 15.0));
+                                }
+                            }
                         });
+                    });
+                }
+                Modal::Replay => {
+                    use super::replay::{GRAPH_SIZE, MAP_SIZE};
+                    framed_window(p, art, 620.0, "The story of the game", |w| {
+                        if let Some(outcome) = &state.victory {
+                            w.spawn(label(&art.font_bold, outcome.clone(), 17.0, INK));
+                        }
+                        // Final standing: score, cities, culture and technologies, best first.
+                        let owners: Vec<(hexx::Hex, u32)> = city_list.iter().map(|(_, c)| (c.position, c.owner)).collect();
+                        let culture_of = culture.totals(owners.iter().copied());
+                        let mut table: Vec<(String, u32, usize, u32, usize, u32)> = std::iter::once(PLAYER)
+                            .chain(civs.players.iter().filter(|c| !c.is_human).map(|c| c.id))
+                            .map(|id| {
+                                let name = if id == PLAYER { format!("{} (us)", state.title) } else { civs.players.iter().find(|c| c.id == id).map(|c| c.name.clone()).unwrap_or_default() };
+                                let score = history.scores.iter().rev().find(|(_, c, _)| *c == id).map(|(_, _, s)| *s).unwrap_or(0);
+                                let techs = if id == PLAYER { tech.researched.len() } else { civs.players.iter().find(|c| c.id == id).map(|c| c.tech.researched.len()).unwrap_or(0) };
+                                let held = owners.iter().filter(|(_, o)| *o == id).count();
+                                (name, score, held, culture_of.get(&id).copied().unwrap_or(0), techs, id)
+                            })
+                            .collect();
+                        table.sort_by_key(|row| std::cmp::Reverse(row.1));
+                        w.spawn(label(&art.font_title, "Final standing", 18.0, INK));
+                        for (rank, (name, score, held, points, techs, id)) in table.iter().enumerate() {
+                            let text = format!("{}. {name}: score {score}, {held} cities, culture {points}, {techs} technologies", rank + 1);
+                            w.spawn(label(if *id == PLAYER { &art.font_bold } else { &art.font_body }, text, 14.0, owner_color(*id).mix(&Color::BLACK, 0.45)));
+                        }
+                        if state.victory.is_some() && history.scores.iter().any(|(_, c, _)| *c == PLAYER) {
+                            w.spawn(label(&art.font_body, format!(
+                                    "Our score: {} for {} citizens, {} for technologies, {} for wonders - {} in all.",
+                                    state.score.population * 2,
+                                    state.score.population,
+                                    state.score.techs,
+                                    state.score.wonders,
+                                    state.score.total
+                                ), 13.0, INK_SOFT));
+                        }
+                        w.spawn(label(&art.font_title, "Score through the game", 18.0, INK));
+                        w.spawn((
+                            Node { width: Val::Percent(100.0), max_width: Val::Px(GRAPH_SIZE.x as f32), aspect_ratio: Some(GRAPH_SIZE.x as f32 / GRAPH_SIZE.y as f32), ..default() },
+                            ImageNode::new(replay_images.graph.clone()),
+                            BackgroundColor(Color::srgba(0.1, 0.08, 0.06, 0.85)),
+                        ));
+                        w.spawn(label(&art.font_title, "The map, turn by turn", 18.0, INK));
+                        w.spawn((
+                            Node { width: Val::Percent(100.0), max_width: Val::Px(MAP_SIZE.x as f32), aspect_ratio: Some(MAP_SIZE.x as f32 / MAP_SIZE.y as f32), ..default() },
+                            ImageNode::new(replay_images.map.clone()),
+                            BackgroundColor(Color::srgba(0.06, 0.05, 0.04, 0.95)),
+                        ));
+                        w.spawn((label(&art.font_bold, "", 15.0, INK), super::replay::ReplayTurnText));
+                        w.spawn(row(6.0)).with_children(|r| {
+                            button(r, art, "|<", Command::ReplayJump(false), BRONZE, 14.0);
+                            button(r, art, "-10", Command::ReplayStep(-10), BRONZE, 14.0);
+                            button(r, art, "-1", Command::ReplayStep(-1), BRONZE, 14.0);
+                            button(r, art, "Play / Pause", Command::ReplayPlay, GREEN, 14.0);
+                            button(r, art, "+1", Command::ReplayStep(1), BRONZE, 14.0);
+                            button(r, art, "+10", Command::ReplayStep(10), BRONZE, 14.0);
+                            button(r, art, ">|", Command::ReplayJump(true), BRONZE, 14.0);
+                        });
+                        if state.victory.is_some() {
+                            w.spawn(row(6.0)).with_children(|r| {
+                                button(r, art, "Back", Command::BackToEnd, BRONZE, 14.0);
+                                button(r, art, "Back to the start menu", Command::QuitToMenu, GREEN, 14.0);
+                            });
+                        }
                     });
                 }
                 Modal::Messages => {
@@ -2796,7 +2886,8 @@ pub fn update_top_bar(
     }
     if let Ok(mut text) = victory.get_single_mut() {
         // The outcome stays across the map once the end-of-game window is put away.
-        let value = state.victory.clone().filter(|_| ui.end_dismissed).unwrap_or_default();
+        // Shown over the map once the game-over window is put away, but not behind another window.
+        let value = state.victory.clone().filter(|_| ui.end_dismissed && ui.modal.is_none()).unwrap_or_default();
         if text.0 != value {
             text.0 = value;
         }
@@ -2903,6 +2994,7 @@ pub fn button_actions(
     mut next: ResMut<NextState<AppState>>,
     mut commands: Commands,
     (mut sounds, mut sound, mut tips): (EventWriter<Sfx>, ResMut<SoundSettings>, ResMut<super::tips::Tips>),
+    (mut replay, history): (ResMut<super::replay::ReplayView>, Option<Res<crate::History>>),
 ) {
     for super::layout::Activated(entity) in activated.read() {
         let Ok(command) = buttons.get(*entity) else { continue };
@@ -2936,7 +3028,45 @@ pub fn button_actions(
                 tips.set_enabled(on);
             }
             Command::DismissEnd => ui.end_dismissed = true,
+            Command::AskSurrender => ui.confirm_surrender = !ui.confirm_surrender,
+            Command::ShowReplay => {
+                ui.end_dismissed = true;
+                replay.playing = false;
+                replay.turn = 0;
+                ui.modal = Some(Modal::Replay);
+            }
+            Command::BackToEnd => {
+                ui.end_dismissed = false;
+                ui.modal = None;
+            }
+            Command::ReplayStep(turns) => {
+                replay.playing = false;
+                if let Some(history) = &history {
+                    replay.step(*turns, history);
+                }
+            }
+            Command::ReplayPlay => {
+                if let Some(history) = &history {
+                    // From the end, play from the start again.
+                    if !replay.playing && replay.turn >= history.span().1 {
+                        replay.turn = history.span().0;
+                    }
+                }
+                replay.playing = !replay.playing;
+            }
+            Command::ReplayJump(to_end) => {
+                replay.playing = false;
+                if let Some(history) = &history {
+                    let (first, last) = history.span();
+                    replay.turn = if *to_end { last } else { first };
+                }
+            }
             Command::Game(action) => {
+                if *action == Action::Surrender {
+                    ui.confirm_surrender = false;
+                    ui.modal = None;
+                    ui.end_dismissed = false;
+                }
                 actions.send(action.clone());
             }
             Command::Toggle(modal) => ui.modal = if ui.modal == Some(*modal) { None } else { Some(*modal) },

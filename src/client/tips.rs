@@ -161,16 +161,20 @@ pub fn show_tip(
     selection: Res<Selection>,
     panel: Query<Entity, With<TipPanel>>,
     mut log_box: Query<&mut Node, (With<super::ui::LogBox>, Without<TipPanel>)>,
+    state: Option<Res<crate::GameState>>,
     mut commands: Commands,
 ) {
-    if !tips.is_changed() && !ui.is_changed() && !screen.is_changed() && !extents.is_changed() && !selection.is_changed() {
+    let over = state.as_ref().is_some_and(|s| s.victory.is_some());
+    let state_changed = state.as_ref().is_some_and(|s| s.is_changed());
+    if !tips.is_changed() && !ui.is_changed() && !screen.is_changed() && !extents.is_changed() && !selection.is_changed() && !state_changed {
         return;
     }
     for entity in &panel {
         commands.entity(entity).despawn_recursive();
     }
     // A window, or on a phone an open city (a sheet over the screen), keeps the tip waiting.
-    let waiting = ui.modal.is_some() || (screen.compact && selection.city.is_some());
+    // A finished game shows no more tips.
+    let waiting = over || ui.modal.is_some() || (screen.compact && selection.city.is_some());
     let tip = tips.current.and_then(|id| TIPS.iter().find(|(t, _, _)| *t == id)).filter(|_| !waiting);
     // On a phone held upright the tip lies across the top, where the message log reaches: the log
     // gives way while it is shown.
