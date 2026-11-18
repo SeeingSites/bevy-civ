@@ -301,6 +301,15 @@ standing.
 Tips for new players appear the first time something happens (your first turn, first city, first
 contact, first disorder...). "No more tips" turns them off; the Game menu turns them back on.
 
+## The end of the game
+When a game ends - won, lost, or by **Surrender** (Game menu, with a confirmation) - the game-over
+window gives the outcome and the standing, and **Final scores and replay** opens the story of the
+game: every people's final score, cities, culture and technologies; a graph of every people's score
+over the whole game; and the map replayed turn by turn, each people's lands and cities in its
+colour, with play/pause, step and jump controls. The replay is recorded as the game goes (only the
+tiles and cities that change hands each turn are kept, in the saved game), so a loaded game replays
+from its start.
+
 ## Saving and loading
 The game saves itself at the end of every turn; **Continue your last game** on the start menu picks
 it up. **F2** (or *Save to a file* in the Game menu) downloads the whole game as a `.json` file.

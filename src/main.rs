@@ -377,6 +377,8 @@ pub enum Action {
     AutoTiles,
     /// Launch our completed spaceship.
     LaunchShip,
+    /// Give up: the game ends in defeat, and the final scores and the replay are shown.
+    Surrender,
     /// Draft a citizen of the selected city into its best defender.
     Draft,
     /// Take back the last plain move.
@@ -578,11 +580,66 @@ impl GoldenAges {
     }
 }
 
-/// Every civilization's score, turn by turn, for the score advisor.
+/// Every civilization's score, turn by turn, for the score advisor - and, for the replay at the end
+/// of the game, how borders and cities changed hands.
 #[derive(Resource, Default, Clone, serde::Serialize, serde::Deserialize)]
 pub struct History {
     /// (turn, civilization, score)
     pub scores: Vec<(u32, u32, u32)>,
+    /// Tiles whose owner changed: (turn, q, r, new owner or [`NOBODY`]).
+    #[serde(default)]
+    pub borders: Vec<(u32, i32, i32, u32)>,
+    /// Cities founded, taken or destroyed: (turn, q, r, owner or [`NOBODY`]).
+    #[serde(default)]
+    pub cities: Vec<(u32, i32, i32, u32)>,
+}
+
+/// No owner (an unclaimed tile, or a city that is gone).
+pub const NOBODY: u32 = u32::MAX;
+
+impl History {
+    /// Who owned each tile, and each city, at the end of `turn`, replayed from the changes.
+    pub fn at(&self, turn: u32) -> (HashMap<Hex, u32>, HashMap<Hex, u32>) {
+        let play = |log: &[(u32, i32, i32, u32)]| {
+            let mut owners = HashMap::new();
+            for (t, q, r, owner) in log.iter().take_while(|(t, ..)| *t <= turn) {
+                let _ = t;
+                if *owner == NOBODY {
+                    owners.remove(&Hex::new(*q, *r));
+                } else {
+                    owners.insert(Hex::new(*q, *r), *owner);
+                }
+            }
+            owners
+        };
+        (play(&self.borders), play(&self.cities))
+    }
+
+    /// The first and last turns recorded.
+    pub fn span(&self) -> (u32, u32) {
+        let turns = self.borders.iter().chain(&self.cities).map(|(t, ..)| *t).chain(self.scores.iter().map(|(t, ..)| *t));
+        turns.fold((u32::MAX, 0), |(lo, hi), t| (lo.min(t), hi.max(t)))
+    }
+}
+
+/// Records, once a turn, the tiles and cities that changed hands (for the replay).
+pub fn record_history(state: Res<GameState>, supplies: Res<Supplies>, cities: Query<&City>, mut history: ResMut<History>, mut last: Local<Option<u32>>) {
+    if *last == Some(state.turn) || state.turn == 0 {
+        return;
+    }
+    *last = Some(state.turn);
+    let (borders, towns) = history.at(state.turn);
+    let turn = state.turn;
+    let now: HashMap<Hex, u32> = supplies.territory.iter().map(|(hex, (owner, _))| (*hex, *owner)).collect();
+    let mut changes: Vec<(u32, i32, i32, u32)> = now.iter().filter(|(hex, owner)| borders.get(hex) != Some(owner)).map(|(hex, owner)| (turn, hex.x, hex.y, *owner)).collect();
+    changes.extend(borders.keys().filter(|hex| !now.contains_key(hex)).map(|hex| (turn, hex.x, hex.y, NOBODY)));
+    changes.sort();
+    history.borders.extend(changes);
+    let now: HashMap<Hex, u32> = cities.iter().map(|c| (c.position, c.owner)).collect();
+    let mut changes: Vec<(u32, i32, i32, u32)> = now.iter().filter(|(hex, owner)| towns.get(hex) != Some(owner)).map(|(hex, owner)| (turn, hex.x, hex.y, *owner)).collect();
+    changes.extend(towns.keys().filter(|hex| !now.contains_key(hex)).map(|hex| (turn, hex.x, hex.y, NOBODY)));
+    changes.sort();
+    history.cities.extend(changes);
 }
 
 /// The city a unit was trained in (a caravan's trade routes start there).
@@ -702,7 +759,7 @@ fn main() {
         )
         .add_systems(Update, savegame::write_save.after(GameLogic).run_if(in_state(AppState::Playing)))
         .add_systems(OnExit(AppState::Playing), cleanup_world)
-        .add_systems(Update, telemetry::report_milestones.after(GameLogic).run_if(in_state(AppState::Playing)))
+        .add_systems(Update, (record_history, telemetry::report_milestones).chain().after(GameLogic).run_if(in_state(AppState::Playing)))
         .add_systems(
             Update,
             (handle_map_click, apply_actions, end_turn_guard, cycle_cities, withdraw_troops, stow_cargo, process_turn, religion_turn, auto_explore, continue_orders, stow_cargo, visit_villages, automate_workers, advance_selection, preview_route, refresh_supplies, work_tiles, nuclear_strikes)
@@ -2834,6 +2891,12 @@ fn apply_actions(
                 let drafted = spawn_unit(&mut commands, at, recruit, PLAYER);
                 commands.entity(drafted).insert(HomeCity(at));
                 log.push(format!("{} drafts a citizen into a {} (size {} now).", city.name, recruit.name(), city.population));
+            }
+            Action::Surrender => {
+                if state.victory.is_none() {
+                    state.victory = Some(format!("Defeat: we surrendered on turn {}.", state.turn));
+                    log.push("We lay down our arms. The game is over.");
+                }
             }
             Action::LaunchShip => {
                 if let Some(arrives) = space.launch(PLAYER, state.turn) {
@@ -5768,6 +5831,30 @@ mod tests {
             let exposed = foreign.reputation == reputation - espionage::EXPOSED_REPUTATION && foreign.grievance(1, PLAYER, turn).is_some();
             assert!(cause != exposed, "exactly one outcome");
         }
+    }
+
+    #[test]
+    fn history_replays_who_held_what_turn_by_turn() {
+        let mut history = History::default();
+        // Turn 1: a tile and a city are ours; turn 5: a rival takes both; turn 9: the city is razed.
+        history.borders.extend([(1, 0, 0, PLAYER), (5, 0, 0, 2)]);
+        history.cities.extend([(1, 0, 0, PLAYER), (5, 0, 0, 2), (9, 0, 0, NOBODY)]);
+        history.scores.extend([(1, PLAYER, 3), (9, PLAYER, 10)]);
+        let (borders, cities) = history.at(3);
+        assert_eq!((borders.get(&Hex::ZERO), cities.get(&Hex::ZERO)), (Some(&PLAYER), Some(&PLAYER)));
+        let (borders, cities) = history.at(7);
+        assert_eq!((borders.get(&Hex::ZERO), cities.get(&Hex::ZERO)), (Some(&2), Some(&2)));
+        assert!(history.at(9).1.is_empty(), "the razed city is gone");
+        assert_eq!(history.span(), (1, 9));
+    }
+
+    #[test]
+    fn surrender_ends_the_game_in_defeat() {
+        let mut app = order_app();
+        app.world_mut().send_event(Action::Surrender);
+        app.update();
+        let outcome = app.world().resource::<GameState>().victory.clone().unwrap_or_default();
+        assert!(outcome.starts_with("Defeat"), "{outcome}");
     }
 
     /// Selects a fresh great person of `kind` at `at` and orders it to act.
