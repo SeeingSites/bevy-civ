@@ -98,7 +98,78 @@ pub enum UnitType {
     Cartel,
     /// A terror cell: modern raiders bred by grievance (see `barbarians`).
     Insurgent,
+    // Unique units: each people's own version of an ordinary unit (see `unique_base` and
+    // `traits::of`), with its own strength and an ability.
+    Praetorian,
+    Hoplite,
+    Companion,
+    Numidian,
+    RoyalChariot,
+    ImmortalGuard,
+    Cataphract,
+    GallicSwordsman,
+    WarElephant,
+    ChuKoNu,
+    Samurai,
+    Keshik,
+    JaguarWarrior,
+    Chasqui,
+    Mandekalu,
+    AskiaRider,
+    Conquistador,
+    ManOWar,
+    Musketeer,
+    Sipahi,
+    Cossack,
 }
+
+/// What sets a unique unit apart (see [`UnitType::ability`]).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Ability {
+    /// +50% attack against units on open ground (grassland, plains, desert) outside cities.
+    Charge,
+    /// +50% attack against a city.
+    Storm,
+    /// Defends at double strength against mounted attackers.
+    ShieldWall,
+    /// +50% defence in a city.
+    Bastion,
+    /// Slips past enemy zones of control.
+    Outrider,
+    /// Each victory brings back plunder: gold for its treasury.
+    Plunder,
+    /// Needs no strategic resource to be trained.
+    SelfSufficient,
+}
+
+impl Ability {
+    pub fn name(&self) -> &'static str {
+        match self {
+            Ability::Charge => "Charge",
+            Ability::Storm => "Storm",
+            Ability::ShieldWall => "Shield wall",
+            Ability::Bastion => "Bastion",
+            Ability::Outrider => "Outrider",
+            Ability::Plunder => "Plunder",
+            Ability::SelfSufficient => "Self-sufficient",
+        }
+    }
+
+    pub fn describe(&self) -> &'static str {
+        match self {
+            Ability::Charge => "+50% attack against units on open ground",
+            Ability::Storm => "+50% attack against cities",
+            Ability::ShieldWall => "double defence against mounted attackers",
+            Ability::Bastion => "+50% defence in a city",
+            Ability::Outrider => "ignores enemy zones of control",
+            Ability::Plunder => "each victory brings back gold",
+            Ability::SelfSufficient => "needs no Horses or Iron",
+        }
+    }
+}
+
+/// Gold a unit with [`Ability::Plunder`] brings back from each victory.
+pub const PLUNDER_GOLD: i32 = 10;
 
 /// Where a unit can go: over land (crossing the sea aboard ships), on the sea, or through the air.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -113,7 +184,7 @@ pub const AIR_RANGE: i32 = 8;
 
 impl UnitType {
     /// Every unit type, in declaration order (also the row order of the sprite atlas).
-    pub const ALL: [UnitType; 48] = [
+    pub const ALL: [UnitType; 69] = [
         UnitType::Settler, UnitType::Worker, UnitType::Warrior, UnitType::Spearman, UnitType::Archer,
         UnitType::Horseman, UnitType::Legion, UnitType::WarChariot, UnitType::Immortal, UnitType::Phalanx,
         UnitType::Catapult, UnitType::Knight, UnitType::Cannon, UnitType::Rifleman, UnitType::Cavalry,
@@ -124,6 +195,7 @@ impl UnitType {
         UnitType::MechInfantry, UnitType::ModernArmor, UnitType::Scout, UnitType::Longbowman, UnitType::Galleon,
         UnitType::Submarine, UnitType::Engineers, UnitType::RadarArtillery, UnitType::Missionary, UnitType::NuclearMissile,
         UnitType::Transport, UnitType::Carrier, UnitType::Cartel, UnitType::Insurgent,
+        UnitType::Praetorian, UnitType::Hoplite, UnitType::Companion, UnitType::Numidian, UnitType::RoyalChariot, UnitType::ImmortalGuard, UnitType::Cataphract, UnitType::GallicSwordsman, UnitType::WarElephant, UnitType::ChuKoNu, UnitType::Samurai, UnitType::Keshik, UnitType::JaguarWarrior, UnitType::Chasqui, UnitType::Mandekalu, UnitType::AskiaRider, UnitType::Conquistador, UnitType::ManOWar, UnitType::Musketeer, UnitType::Sipahi, UnitType::Cossack,
     ];
 
     /// The five kinds of great person.
@@ -131,13 +203,74 @@ impl UnitType {
         [UnitType::GreatGeneral, UnitType::GreatMerchant, UnitType::GreatScientist, UnitType::GreatArtist, UnitType::GreatEngineer];
 
     /// Born in a city from great-person points rather than trained.
+    /// The ordinary unit this people's unique unit stands in for (`None` for ordinary units). A
+    /// unique unit costs, needs and upgrades like its base unit; it differs in strength and ability.
+    pub fn unique_base(&self) -> Option<UnitType> {
+        use UnitType::*;
+        Some(match self {
+            Praetorian => Legion,
+            Hoplite => Phalanx,
+            Companion => Horseman,
+            Numidian => Horseman,
+            RoyalChariot => WarChariot,
+            ImmortalGuard => Immortal,
+            Cataphract => Knight,
+            GallicSwordsman => Legion,
+            WarElephant => Knight,
+            ChuKoNu => Longbowman,
+            Samurai => Knight,
+            Keshik => Knight,
+            JaguarWarrior => Warrior,
+            Chasqui => Spearman,
+            Mandekalu => Knight,
+            AskiaRider => Horseman,
+            Conquistador => Knight,
+            ManOWar => Frigate,
+            Musketeer => Musketman,
+            Sipahi => Cavalry,
+            Cossack => Cavalry,
+            _ => return None,
+        })
+    }
+
+    /// The special ability of a unique unit.
+    pub fn ability(&self) -> Option<Ability> {
+        use UnitType::*;
+        Some(match self {
+            Praetorian => Ability::Storm,
+            Hoplite => Ability::ShieldWall,
+            Companion => Ability::Charge,
+            Numidian => Ability::Plunder,
+            RoyalChariot => Ability::Charge,
+            ImmortalGuard => Ability::Storm,
+            Cataphract => Ability::Charge,
+            GallicSwordsman => Ability::Plunder,
+            WarElephant => Ability::SelfSufficient,
+            ChuKoNu => Ability::Bastion,
+            Samurai => Ability::Storm,
+            Keshik => Ability::Outrider,
+            JaguarWarrior => Ability::Plunder,
+            Chasqui => Ability::Outrider,
+            Mandekalu => Ability::Charge,
+            AskiaRider => Ability::Charge,
+            Conquistador => Ability::Plunder,
+            ManOWar => Ability::Plunder,
+            Musketeer => Ability::Bastion,
+            Sipahi => Ability::Charge,
+            Cossack => Ability::Outrider,
+            _ => return None,
+        })
+    }
+
     pub fn is_great_person(&self) -> bool {
         Self::GREAT_PEOPLE.contains(self)
     }
 
     /// Whether a city can put this unit into production.
     pub fn is_trainable(&self) -> bool {
-        !self.is_great_person() && !self.is_raider()
+        // A unique unit is never ordered by name: a city of its people that trains the ordinary unit
+        // turns out the unique one instead.
+        !self.is_great_person() && !self.is_raider() && self.unique_base().is_none()
     }
 
     /// Modern raiders: cartel gunmen and insurgents, who rise inside a people's own lands and never
@@ -148,6 +281,9 @@ impl UnitType {
 
     /// A world wonder that must stand somewhere in the world before anyone can build this unit.
     pub fn required_wonder(&self) -> Option<crate::building::Building> {
+        if let Some(base) = self.unique_base() {
+            return base.required_wonder();
+        }
         (*self == UnitType::NuclearMissile).then_some(crate::building::Building::Manhattan)
     }
 
@@ -158,6 +294,27 @@ impl UnitType {
     /// The name in the default (Earth) theme.
     pub fn base_name(&self) -> &'static str {
         match self {
+            UnitType::Praetorian => "Praetorian",
+            UnitType::Hoplite => "Hoplite",
+            UnitType::Companion => "Companion Cavalry",
+            UnitType::Numidian => "Numidian Rider",
+            UnitType::RoyalChariot => "Royal Chariot",
+            UnitType::ImmortalGuard => "Immortal Guard",
+            UnitType::Cataphract => "Cataphract",
+            UnitType::GallicSwordsman => "Gallic Swordsman",
+            UnitType::WarElephant => "War Elephant",
+            UnitType::ChuKoNu => "Chu-ko-nu",
+            UnitType::Samurai => "Samurai",
+            UnitType::Keshik => "Keshik",
+            UnitType::JaguarWarrior => "Jaguar Warrior",
+            UnitType::Chasqui => "Chasqui Runner",
+            UnitType::Mandekalu => "Mandekalu Cavalry",
+            UnitType::AskiaRider => "Askia Rider",
+            UnitType::Conquistador => "Conquistador",
+            UnitType::ManOWar => "Man-O-War",
+            UnitType::Musketeer => "Musketeer",
+            UnitType::Sipahi => "Sipahi",
+            UnitType::Cossack => "Cossack",
             UnitType::WarChariot => "War Chariot",
             UnitType::Settler => "Settler",
             UnitType::Worker => "Worker",
@@ -211,8 +368,12 @@ impl UnitType {
 
     /// Technology needed before a city can train this unit.
     pub fn required_tech(&self) -> Option<crate::tech::Tech> {
+        if let Some(base) = self.unique_base() {
+            return base.required_tech();
+        }
         use crate::tech::Tech;
         match self {
+            UnitType::Praetorian | UnitType::Hoplite | UnitType::Companion | UnitType::Numidian | UnitType::RoyalChariot | UnitType::ImmortalGuard | UnitType::Cataphract | UnitType::GallicSwordsman | UnitType::WarElephant | UnitType::ChuKoNu | UnitType::Samurai | UnitType::Keshik | UnitType::JaguarWarrior | UnitType::Chasqui | UnitType::Mandekalu | UnitType::AskiaRider | UnitType::Conquistador | UnitType::ManOWar | UnitType::Musketeer | UnitType::Sipahi | UnitType::Cossack => self.unique_base().and_then(|b| b.required_tech()),
             UnitType::Settler | UnitType::Worker | UnitType::Warrior | UnitType::Scout => None,
             UnitType::Longbowman => Some(Tech::Monarchy),
             UnitType::Galleon => Some(Tech::Navigation),
@@ -256,6 +417,27 @@ impl UnitType {
     /// counterpart for keep values in proportion).
     pub fn stats(&self) -> (u32, u32, u32) {
         match self {
+            UnitType::Praetorian => (4, 2, 1),
+            UnitType::Hoplite => (1, 4, 1),
+            UnitType::Companion => (3, 2, 2),
+            UnitType::Numidian => (2, 2, 3),
+            UnitType::RoyalChariot => (3, 1, 2),
+            UnitType::ImmortalGuard => (4, 3, 1),
+            UnitType::Cataphract => (5, 3, 2),
+            UnitType::GallicSwordsman => (3, 2, 2),
+            UnitType::WarElephant => (4, 4, 1),
+            UnitType::ChuKoNu => (4, 2, 1),
+            UnitType::Samurai => (4, 4, 2),
+            UnitType::Keshik => (4, 2, 2),
+            UnitType::JaguarWarrior => (2, 1, 2),
+            UnitType::Chasqui => (1, 2, 2),
+            UnitType::Mandekalu => (4, 4, 2),
+            UnitType::AskiaRider => (3, 1, 2),
+            UnitType::Conquistador => (3, 2, 2),
+            UnitType::ManOWar => (4, 3, 4),
+            UnitType::Musketeer => (2, 5, 1),
+            UnitType::Sipahi => (8, 3, 3),
+            UnitType::Cossack => (6, 3, 4),
             UnitType::Settler => (0, 0, 1),
             UnitType::Worker => (0, 0, 1),
             UnitType::Warrior => (1, 1, 1),
@@ -307,7 +489,11 @@ impl UnitType {
     }
 
     pub fn cost(&self) -> u32 {
+        if let Some(base) = self.unique_base() {
+            return base.cost();
+        }
         match self {
+            UnitType::Praetorian | UnitType::Hoplite | UnitType::Companion | UnitType::Numidian | UnitType::RoyalChariot | UnitType::ImmortalGuard | UnitType::Cataphract | UnitType::GallicSwordsman | UnitType::WarElephant | UnitType::ChuKoNu | UnitType::Samurai | UnitType::Keshik | UnitType::JaguarWarrior | UnitType::Chasqui | UnitType::Mandekalu | UnitType::AskiaRider | UnitType::Conquistador | UnitType::ManOWar | UnitType::Musketeer | UnitType::Sipahi | UnitType::Cossack => self.unique_base().map_or(0, |b| b.cost()),
             UnitType::Settler => 30,
             UnitType::Worker => 10,
             UnitType::Warrior => 10,
@@ -356,7 +542,11 @@ impl UnitType {
     }
 
     pub fn color(&self) -> Color {
+        if let Some(base) = self.unique_base() {
+            return base.color();
+        }
         match self {
+            UnitType::Praetorian | UnitType::Hoplite | UnitType::Companion | UnitType::Numidian | UnitType::RoyalChariot | UnitType::ImmortalGuard | UnitType::Cataphract | UnitType::GallicSwordsman | UnitType::WarElephant | UnitType::ChuKoNu | UnitType::Samurai | UnitType::Keshik | UnitType::JaguarWarrior | UnitType::Chasqui | UnitType::Mandekalu | UnitType::AskiaRider | UnitType::Conquistador | UnitType::ManOWar | UnitType::Musketeer | UnitType::Sipahi | UnitType::Cossack => self.unique_base().map_or(Color::WHITE, |b| b.color()),
             UnitType::Settler => Color::srgb(0.9, 0.9, 0.2),
             UnitType::Worker => Color::srgb(0.6, 0.4, 0.2),
             UnitType::Warrior => Color::srgb(0.8, 0.2, 0.2),
@@ -400,6 +590,9 @@ impl UnitType {
     }
 
     pub fn domain(&self) -> Domain {
+        if let Some(base) = self.unique_base() {
+            return base.domain();
+        }
         match self {
             UnitType::Galley | UnitType::Galleon | UnitType::Frigate | UnitType::Ironclad | UnitType::Destroyer | UnitType::Battleship | UnitType::Submarine | UnitType::Transport | UnitType::Carrier => Domain::Sea,
             UnitType::Fighter | UnitType::Bomber => Domain::Air,
@@ -415,30 +608,48 @@ impl UnitType {
 
     /// Wheeled: keeps to open ground unless a road leads through forest or mountains.
     pub fn is_wheeled(&self) -> bool {
+        if let Some(base) = self.unique_base() {
+            return base.is_wheeled();
+        }
         matches!(self, UnitType::WarChariot | UnitType::Catapult | UnitType::Cannon | UnitType::Artillery | UnitType::RadarArtillery)
     }
 
     /// A military unit that fights on the ground: the only kind that holds or takes cities.
     pub fn is_army(&self) -> bool {
+        if let Some(base) = self.unique_base() {
+            return base.is_army();
+        }
         self.is_military() && self.domain() == Domain::Land
     }
 
     pub fn is_worker(&self) -> bool {
+        if let Some(base) = self.unique_base() {
+            return base.is_worker();
+        }
         matches!(self, UnitType::Worker | UnitType::Engineers)
     }
 
     /// Turns a worker of this kind takes over a job (Engineers work faster).
     pub fn build_turns(&self) -> u32 {
+        if let Some(base) = self.unique_base() {
+            return base.build_turns();
+        }
         if *self == UnitType::Engineers { 2 } else { 3 }
     }
 
     pub fn is_military(&self) -> bool {
+        if let Some(base) = self.unique_base() {
+            return base.is_military();
+        }
         !matches!(self, UnitType::Settler | UnitType::Worker | UnitType::Engineers | UnitType::Scout | UnitType::Diplomat | UnitType::Caravan | UnitType::Missionary | UnitType::NuclearMissile | UnitType::Transport) && !self.is_great_person()
     }
 
     /// How many units this ship carries: troops (any land unit) for the transports, aircraft for
     /// the Carrier. Warships of the iron age and after carry none.
     pub fn capacity(&self) -> u32 {
+        if let Some(base) = self.unique_base() {
+            return base.capacity();
+        }
         match self {
             UnitType::Galley | UnitType::Frigate => 2,
             UnitType::Galleon => 4,
@@ -450,6 +661,9 @@ impl UnitType {
 
     /// Whether this ship can carry a unit of that kind.
     pub fn carries(&self, cargo: UnitType) -> bool {
+        if let Some(base) = self.unique_base() {
+            return base.carries(cargo);
+        }
         self.capacity() > 0
             && match self {
                 UnitType::Carrier => cargo.domain() == Domain::Air,
@@ -459,11 +673,20 @@ impl UnitType {
 
     /// A ship the computer players use to ferry troops and settlers overseas.
     pub fn is_ferry(&self) -> bool {
+        if let Some(base) = self.unique_base() {
+            return base.is_ferry();
+        }
         matches!(self, UnitType::Galley | UnitType::Galleon | UnitType::Transport)
     }
 
     /// Strategic resources a city must have access to before it can train this unit.
     pub fn required_resources(&self) -> &'static [Resource] {
+        if self.ability() == Some(Ability::SelfSufficient) {
+            return &[];
+        }
+        if let Some(base) = self.unique_base() {
+            return base.required_resources();
+        }
         match self {
             UnitType::Horseman | UnitType::WarChariot => &[Resource::Horses],
             UnitType::Legion | UnitType::Immortal | UnitType::Artillery => &[Resource::Iron],
@@ -484,11 +707,17 @@ impl UnitType {
 
     /// Horse-borne: chariots, horsemen, knights and cavalry (pikemen stand twice as firm against them).
     pub fn is_mounted(&self) -> bool {
+        if let Some(base) = self.unique_base() {
+            return base.is_mounted();
+        }
         matches!(self, UnitType::Horseman | UnitType::WarChariot | UnitType::Knight | UnitType::Cavalry)
     }
 
     /// Defends at double strength against mounted attackers.
     pub fn anti_mounted(&self) -> bool {
+        if self.ability() == Some(Ability::ShieldWall) {
+            return true;
+        }
         *self == UnitType::Pikeman
     }
 
@@ -500,6 +729,9 @@ impl UnitType {
 
     /// What this unit can be upgraded to once that is buildable (in a city, for gold).
     pub fn upgrades_to(&self) -> Option<UnitType> {
+        if let Some(base) = self.unique_base() {
+            return base.upgrades_to();
+        }
         use UnitType::*;
         Some(match self {
             Warrior => Spearman,
@@ -552,6 +784,9 @@ impl UnitType {
     /// most hit points one bombardment can take). Guns - catapults to radar artillery - only
     /// bombard; some warships and the bomber may bombard instead of attacking.
     pub fn bombard(&self) -> Option<(u32, i32, u32)> {
+        if let Some(base) = self.unique_base() {
+            return base.bombard();
+        }
         match self {
             UnitType::Catapult => Some((4, 1, 1)),
             UnitType::Cannon => Some((8, 1, 1)),

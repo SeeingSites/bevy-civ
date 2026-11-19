@@ -778,7 +778,7 @@ pub fn process_ai_turn(
             });
             if let Some(path) = find_route(here, target, land.iter().copied(), &roads, travel) {
                 for next in path.into_iter().skip(1) {
-                    if !unit.can_move() || zoc_blocks(unit.position, next, enemy_armies) {
+                    if !unit.can_move() || (unit.unit_type.ability() != Some(crate::unit::Ability::Outrider) && zoc_blocks(unit.position, next, enemy_armies)) {
                         break;
                     }
                     if let Some((_, range, _)) = gun {

@@ -230,7 +230,7 @@ Battles follow the rules of Civilization III:
   attacker lands a blow with chance attack / (attack + defence), both with all their modifiers;
   whoever is struck loses a hit point. Units have 3 hit points, 4 as veterans and 5 as elites:
   experience adds hit points, never strength. Barracks (and Sun Tzu's War Academy) train veterans,
-  an Airport veteran aircraft, and a people trains its unique unit a rank higher.
+  an Airport veteran aircraft.
 - **Defence**: the defender's bonuses are added up and then multiply its defence: open ground and
   the sea +10%, forest +25%, hills +50%, mountains +100%, a river +25%, fortified +25%, a fortress
   +50%. A city defends by its size: a town (up to the size a city reaches without water works,
@@ -445,7 +445,39 @@ working directory.
   twice as often), Commercial (+1 gold a city), Scientific (+1 science a city and a
   free discovery in each new age),
   Religious (+1 content a city, shorter revolutions), Industrious (+1 shield a city), Agricultural
-  (+1 food a city) - and a unique unit it trains a rank higher (Roman Legion, Spanish Knight...).
+  (+1 food a city) - and a unique unit (see below).
+- **Unique units**: each people's cities turn out its unique unit in place of one ordinary unit
+  (same cost, technology and upgrades): stronger, and with an ability - **Charge** (+50% attack
+  against units on open ground: grassland, plains, desert), **Storm** (+50% attack against cities),
+  **Shield wall** (double defence against mounted troops), **Bastion** (+50% defence in a city),
+  **Outrider** (ignores zones of control), **Plunder** (10 gold from each victory) or
+  **Self-sufficient** (needs no Horses or Iron). Its first victory over another people also begins a
+  golden age. The city panel shows it in place of the ordinary unit; a crest marks it on the map.
+
+| People | Unique unit | In place of | A/D/M | Ability |
+|---|---|---|---|---|
+| Rome | Praetorian | Legion | 4/2/1 | Storm |
+| Greece | Hoplite | Phalanx | 1/4/1 | Shield wall |
+| Macedon | Companion Cavalry | Horseman | 3/2/2 | Charge |
+| Carthage | Numidian Rider | Horseman | 2/2/3 | Plunder |
+| Egypt | Royal Chariot | War Chariot | 3/1/2 | Charge |
+| Persia | Immortal Guard | Immortal | 4/3/1 | Storm |
+| Seleucids | Cataphract | Knight | 5/3/2 | Charge |
+| Gauls | Gallic Swordsman | Legion | 3/2/2 | Plunder |
+| India | War Elephant | Knight | 4/4/1 | Self-sufficient |
+| China | Chu-ko-nu | Longbowman | 4/2/1 | Bastion |
+| Japan | Samurai | Knight | 4/4/2 | Storm |
+| Mongols | Keshik | Knight | 4/2/2 | Outrider |
+| Aztecs | Jaguar Warrior | Warrior | 2/1/2 | Plunder |
+| Inca | Chasqui Runner | Spearman | 1/2/2 | Outrider |
+| Mali | Mandekalu Cavalry | Knight | 4/4/2 | Charge |
+| Songhai | Askia Rider | Horseman | 3/1/2 | Charge |
+| Spain | Conquistador | Knight | 3/2/2 | Plunder |
+| England | Man-O-War | Frigate | 4/3/4 | Plunder |
+| France | Musketeer | Musketman | 2/5/1 | Bastion |
+| Ottomans | Sipahi | Cavalry | 8/3/3 | Charge |
+| Muscovy | Cossack | Cavalry | 6/3/4 | Outrider |
+
 - **Religion**: the first to learn Mysticism, Philosophy, Theology and Printing Press founds the Old
   Gods, the Way of Reason, the One Faith and the Reformed Faith in one of its cities (the holy city).
   Faiths spread by themselves to nearby cities with none, and Missionaries (Mysticism) carry your

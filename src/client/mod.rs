@@ -103,7 +103,7 @@ fn load_art(mut commands: Commands, assets: Res<AssetServer>, mut layouts: ResMu
         resources: assets.load(format!("{}/resources.png", bevy_civ::theme::sprites())),
         resources_layout: grid(96, 96, 18, 1),
         units: assets.load(format!("{}/units.png", bevy_civ::theme::sprites())),
-        units_layout: grid(128, 128, 4, 49),
+        units_layout: grid(128, 128, 8, 35),
         cities: assets.load(format!("{}/cities.png", bevy_civ::theme::sprites())),
         cities_layout: grid(192, 192, 4, 1),
         flag: assets.load(format!("{}/flag.png", bevy_civ::theme::sprites())),

@@ -1200,6 +1200,19 @@ fn cleanup_world(
     commands.insert_resource(Dirty { map: true, ui: true });
 }
 
+/// A unit with [`bevy_civ::unit::Ability::Plunder`] that wins brings gold home to its people.
+fn plunder(state: &mut GameState, civs: &mut Civilizations, log: &mut GameLog, owner: u32, kind: UnitType) {
+    if kind.ability() != Some(bevy_civ::unit::Ability::Plunder) {
+        return;
+    }
+    if owner == PLAYER {
+        state.gold += bevy_civ::unit::PLUNDER_GOLD;
+        log.push(format!("Our {} brings back {} gold in plunder.", kind.name(), bevy_civ::unit::PLUNDER_GOLD));
+    } else if let Some(civ) = civs.players.iter_mut().find(|c| c.id == owner) {
+        civ.gold += bevy_civ::unit::PLUNDER_GOLD;
+    }
+}
+
 fn handle_map_click(
     mut clicks: EventReader<MapClick>,
     mut selection: ResMut<Selection>,
@@ -1541,6 +1554,11 @@ fn handle_map_click(
                         commands.queue(|world: &mut World| world.resource_mut::<GameState>().gold += bevy_civ::barbarians::SEIZED_GOLD);
                         log.push(format!("We seize the cartel's assets: {} gold.", bevy_civ::barbarians::SEIZED_GOLD));
                     }
+                    // A raider's victory brings back plunder.
+                    if unit.unit_type.ability() == Some(bevy_civ::unit::Ability::Plunder) {
+                        commands.queue(|world: &mut World| world.resource_mut::<GameState>().gold += bevy_civ::unit::PLUNDER_GOLD);
+                        log.push(format!("Our {} brings back {} gold in plunder.", unit.unit_type.name(), bevy_civ::unit::PLUNDER_GOLD));
+                    }
                     if great.victory(PLAYER, fought_as, &mut rand::thread_rng()) {
                         spawn_unit(&mut commands, unit.position, UnitType::GreatGeneral, PLAYER);
                         log.push(format!("The victory of our elite {} brings forth a Great General! Keep it with your troops (they fight half again as hard), or form an army in one of our cities.", unit.unit_type.name()));
@@ -1775,7 +1793,7 @@ fn moves_per_turn(unit_type: UnitType, _at: Hex, _map: &MapData, sea_bonus: u32)
 /// land around each tile entered and adding it to `trail`.
 fn walk(unit: &mut Unit, route: &[Hex], map: &MapData, roads: &HashMap<Hex, Road>, enemies: &HashSet<Hex>, fog: &mut FogOfWar, trail: &mut Vec<Hex>) {
     for next in route.iter().skip(1) {
-        if !unit.can_move() || (unit.unit_type.is_army() && bevy_civ::pathfinding::zoc_blocks(unit.position, *next, enemies)) {
+        if !unit.can_move() || (unit.unit_type.is_army() && unit.unit_type.ability() != Some(bevy_civ::unit::Ability::Outrider) && bevy_civ::pathfinding::zoc_blocks(unit.position, *next, enemies)) {
             break;
         }
         let cost = move_cost(unit.unit_type.domain(), unit.position, *next, map, roads);
@@ -3885,7 +3903,9 @@ fn process_turn(
         if let Some(completed) = finished {
             needs_orders = true;
             match completed {
-                ProductionItem::Unit(ut) => {
+                ProductionItem::Unit(ordered) => {
+                    // A people's unique unit takes the place of the ordinary one it stands in for.
+                    let ut = character.map(|c| c.unique).filter(|u| u.unique_base() == Some(ordered)).unwrap_or(ordered);
                     // Keep computer players from flooding the map.
                     let at_cap = !mine && ut.is_army() && army_sizes.get(&city.owner).copied().unwrap_or(0) >= governor::army_cap(city_counts.get(&city.owner).copied().unwrap_or(1));
                     if !at_cap {
@@ -3897,14 +3917,6 @@ fn process_turn(
                         }
                         // Barracks train veterans.
                         let veteran = if ut.domain() == Domain::Air { buildings.has(Building::Airport) } else { buildings.has(Building::Barracks) || wonders.owns(city.owner, Building::SunTzu) };
-                        // A civilization's unique unit is trained a rank higher still.
-                        if character.is_some_and(|c| c.unique == ut) {
-                            commands.queue(move |world: &mut World| {
-                                if let Some(mut unit) = world.get_mut::<Unit>(trained) {
-                                    unit.promote();
-                                }
-                            });
-                        }
                         if ut.is_military() && veteran {
                             commands.queue(move |world: &mut World| {
                                 if let Some(mut unit) = world.get_mut::<Unit>(trained) {
@@ -4764,6 +4776,7 @@ fn process_turn(
         };
         if attacker_won {
             unique_victory(&mut golden, &civs, &foreign.met, &mut log, a_owner, a_type, d_owner);
+            plunder(&mut state, &mut civs, &mut log, a_owner, a_type);
             if a_owner != BARBARIANS && great.victory(a_owner, a_vitals.1, &mut rng) {
                 spawn_unit(&mut commands, a_pos, UnitType::GreatGeneral, a_owner);
                 tally.generals += 1;
@@ -4786,6 +4799,7 @@ fn process_turn(
                 log.push(format!("Our {} repelled a {} {}.", d_type.name(), civ_name(a_owner), a_type.name()));
             }
             unique_victory(&mut golden, &civs, &foreign.met, &mut log, d_owner, d_type, a_owner);
+            plunder(&mut state, &mut civs, &mut log, d_owner, d_type);
             if d_owner != BARBARIANS && great.victory(d_owner, d_vitals.1, &mut rng) {
                 spawn_unit(&mut commands, attack.target, UnitType::GreatGeneral, d_owner);
                 tally.generals += 1;
@@ -6393,11 +6407,11 @@ mod tests {
         let (mut golden, mut log) = (GoldenAges::default(), GameLog::default());
         let met: HashSet<u32> = [1].into();
         // Beating barbarians or winning with another unit does nothing.
-        unique_victory(&mut golden, &civs, &met, &mut log, PLAYER, UnitType::Legion, BARBARIANS);
+        unique_victory(&mut golden, &civs, &met, &mut log, PLAYER, UnitType::Praetorian, BARBARIANS);
         unique_victory(&mut golden, &civs, &met, &mut log, PLAYER, UnitType::Spearman, 1);
         assert!(!golden.active(PLAYER));
         // Rome's Legion beats Egypt: twenty turns of plenty, once a game.
-        unique_victory(&mut golden, &civs, &met, &mut log, PLAYER, UnitType::Legion, 1);
+        unique_victory(&mut golden, &civs, &met, &mut log, PLAYER, UnitType::Praetorian, 1);
         assert!(golden.active(PLAYER) && !golden.active(1));
         assert!(!golden.begin(PLAYER), "only one golden age a game");
         for _ in 0..GOLDEN_AGE_TURNS - 1 {

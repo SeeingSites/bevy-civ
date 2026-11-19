@@ -233,7 +233,7 @@ fn help_lines(topic: HelpTopic) -> Vec<String> {
         .map(String::from)
         .collect(),
         HelpTopic::Peoples => vec![
-            "Every people has two traits - Militaristic (troops promoted twice as often), Commercial (+1 gold a city), Scientific (+1 science a city, a free discovery in each new age), Religious (+1 content a city, shorter revolutions), Industrious (+1 shield a city) or Agricultural (+1 food a city) - and a unique unit, which it trains a rank higher.".to_string(),
+            "Every people has two traits - Militaristic (troops promoted twice as often), Commercial (+1 gold a city), Scientific (+1 science a city, a free discovery in each new age), Religious (+1 content a city, shorter revolutions), Industrious (+1 shield a city) or Agricultural (+1 food a city) - and a unique unit that takes the place of an ordinary one in its cities - stronger, and with an ability: Charge (+50% attack on open ground), Storm (+50% attack against cities), Shield wall (double defence against mounted troops), Bastion (+50% defence in a city), Outrider (ignores zones of control), Plunder (gold from each victory) or Self-sufficient (needs no Horses or Iron).".to_string(),
             "Governments: a revolution brings a few turns of anarchy, in which no taxes are collected and nothing is learned. Each government limits every share of your trade - science, luxury and taxes alike (Empire advisor, Government tab): Despotism 60%, Monarchy 70%, Communism, Republic and Fundamentalism 80%, Democracy 90%. Savings earn 5% interest, up to 2 gold per Bank and 3 per Stock Exchange.".to_string(),
             "Faith: the first to learn Mysticism, Philosophy, Theology and Printing Press founds the Old Gods, the Way of Reason, the One Faith and the Reformed Faith. Faiths spread to nearby cities; Missionaries carry your state religion (your capital's faith) further. Cities of your state religion get +1 content (+2 with a Temple); a holy city's owner earns gold from the faith's followers; shared faith warms relations, different faiths cool them.".to_string(),
             "Diplomacy (E): peace, alliances, gifts, tribute, trade agreements, technology and resource deals. A right of passage lets your units share tiles with theirs; an alliance includes it, and war ends it. Units cannot walk into the units or cities of a people at peace with you: declare war first.".to_string(),
@@ -739,11 +739,16 @@ pub fn update_sound_button(settings: Res<SoundSettings>, mut labels: Query<&mut 
 }
 
 /// The wonders that already stand, and who holds them.
-/// "Religious (+1 content in every city, shorter revolutions) and Militaristic (...). Unique unit: Spanish Knight, trained a rank higher."
+/// "Religious (+1 content in every city, shorter revolutions) and Militaristic (...). Unique unit:
+/// Conquistador (in place of the Knight; 3/2/2; Plunder: each victory brings back gold)."
 pub fn character_line(name: &str, adjective: &str) -> String {
     let c = bevy_civ::traits::of(name);
+    let _ = adjective;
+    let (a, d, m) = c.unique.stats();
+    let base = c.unique.unique_base().map(|b| format!(" in place of the {}", b.name())).unwrap_or_default();
+    let ability = c.unique.ability().map(|x| format!("; {}: {}", x.name(), x.describe())).unwrap_or_default();
     format!(
-        "{} ({}) and {} ({}). Unique unit: {adjective} {}, trained a rank higher. Golden age: with the first {} or {} wonder, or the {}'s first victory over another people.",
+        "{} ({}) and {} ({}). Unique unit: {}{base} ({a}/{d}/{m}{ability}). Golden age: with the first {} or {} wonder, or the {}'s first victory over another people.",
         c.traits[0].name(),
         c.traits[0].effect(),
         c.traits[1].name(),
@@ -1157,15 +1162,11 @@ pub fn rebuild_panels(
                     ));
                 });
                 r.spawn(column(4.0)).with_children(|c| {
-                    let unique = civs.players.iter().find(|c| c.id == unit.owner).filter(|c| bevy_civ::traits::of(&c.name).unique == unit.unit_type);
-                    let title = if unit.is_army_group() {
-                        format!("Army of {} units", 1 + unit.troops.len())
-                    } else if let Some(civ) = unique {
-                        format!("{} {}", civ.adjective, unit.unit_type.name())
-                    } else {
-                        unit.unit_type.name().to_string()
-                    };
+                    let title = if unit.is_army_group() { format!("Army of {} units", 1 + unit.troops.len()) } else { unit.unit_type.name().to_string() };
                     c.spawn(label(&art.font_title, title, 20.0, GOLD));
+                    if let (Some(ability), false) = (unit.unit_type.ability(), unit.is_army_group()) {
+                        c.spawn(label(&art.font_bold, format!("{}: {}", ability.name(), ability.describe()), 13.0, CREAM));
+                    }
                     let status = match (unit.current_build, unit.build_turns_left) {
                         (Some(job), Some(turns)) => format!("Building {:?} ({} turns)", job, turns),
                         _ if !mine => String::new(),
@@ -1645,12 +1646,19 @@ pub fn rebuild_panels(
                     .filter(|u| u.is_trainable() && known(u.required_tech()) && (u.domain() != bevy_civ::unit::Domain::Sea || coastal))
                     .filter(|u| u.required_wonder().is_none_or(|w| wonders.built.contains_key(&w)))
                     .map(|u| {
-                        let (attack, defense, moves) = u.stats();
-                        let attack = match u.bombard() {
-                            Some((b, _, _)) if u.bombard_only() => format!("B{b}"),
+                        // Our unique unit comes out in place of the ordinary one: say so.
+                        let ours = civs.players.iter().find(|c| c.id == PLAYER).map(|c| bevy_civ::traits::of(&c.name).unique).filter(|x| x.unique_base() == Some(u));
+                        let shown = ours.unwrap_or(u);
+                        let (attack, defense, moves) = shown.stats();
+                        let attack = match shown.bombard() {
+                            Some((b, _, _)) if shown.bombard_only() => format!("B{b}"),
                             _ => format!("A{attack}"),
                         };
-                        (ProductionItem::Unit(u), format!("{attack} D{defense} M{moves}"))
+                        let detail = match ours {
+                            Some(x) => format!("as our {}: {attack} D{defense} M{moves}, {}", x.name(), x.ability().map(|a| a.name()).unwrap_or_default()),
+                            None => format!("{attack} D{defense} M{moves}"),
+                        };
+                        (ProductionItem::Unit(u), detail)
                     })
                     .collect(),
                 CityTab::Buildings | CityTab::Wonders => {
