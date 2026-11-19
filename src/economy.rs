@@ -10,7 +10,8 @@
 //! The government also changes what each worked tile gives: under Despotism (and Anarchy) a tile
 //! that would give 3 or more of anything gives one less, a Republic or a Democracy adds a trade to
 //! every tile that already brings some, and a golden age adds a shield and a trade to tiles that
-//! have them.
+//! have them. A city whose people celebrate their ruler (see `celebrating`) escapes the despot's
+//! penalty, and under Monarchy or Communism earns the Republic's extra trade.
 
 use std::collections::HashMap;
 
@@ -94,19 +95,26 @@ impl Rates {
     }
 }
 
-/// What a worked tile gives under a government (and in a golden age).
-pub fn tile_rule(tile: Yield, gov: Government, golden_age: bool) -> Yield {
+/// A city celebrates its ruler when it has three citizens or more, none of them unhappy and at least
+/// half of them happy.
+pub fn celebrating(population: u32, happy: u32, unhappy: u32) -> bool {
+    population >= 3 && unhappy == 0 && happy * 2 >= population
+}
+
+/// What a worked tile gives under a government, in a golden age, and in a city that celebrates.
+pub fn tile_rule(tile: Yield, gov: Government, golden_age: bool, celebrating: bool) -> Yield {
     let (mut food, mut shields, mut trade) = tile;
     let had_shields = shields >= 1;
     let had_trade = trade >= 1;
-    if gov.commerce_bonus() && had_trade {
+    let extra_trade = gov.commerce_bonus() || (celebrating && matches!(gov, Government::Monarchy | Government::Communism));
+    if extra_trade && had_trade {
         trade += 1;
     }
     if golden_age {
         shields += u32::from(had_shields);
         trade += u32::from(had_trade);
     }
-    if gov.tile_penalty() {
+    if gov.tile_penalty() && !celebrating {
         for value in [&mut food, &mut shields, &mut trade] {
             if *value >= 3 {
                 *value -= 1;
@@ -226,13 +234,12 @@ pub fn tax_bonus(buildings: &[Building]) -> u32 {
         .sum()
 }
 
-/// Gold a building costs to keep up every turn: most cost 1, the great works of learning, finance
-/// and industry 2; walls, coastal forts and the Forbidden Palace nothing, nor do wonders and
-/// spaceship parts.
+/// Gold a building costs to keep up every turn: most cost 1, a Factory or a Stock Exchange 2;
+/// walls, coastal forts and the Forbidden Palace nothing, nor do wonders and spaceship parts.
 pub fn upkeep(building: Building) -> u32 {
     use Building::*;
     match building {
-        University | Bank | StockExchange | ResearchLab | Factory | PowerPlant => 2,
+        Factory | StockExchange => 2,
         Walls | CoastalFortress | ForbiddenPalace => 0,
         b if b.is_wonder() || b.is_spaceship_part() => 0,
         _ => 1,
@@ -388,16 +395,24 @@ mod tests {
     #[test]
     fn governments_and_golden_ages_change_the_land() {
         // Despotism: 3 or more of anything gives one less.
-        assert_eq!(tile_rule((3, 1, 2), Government::Despotism, false), (2, 1, 2));
-        assert_eq!(tile_rule((4, 3, 3), Government::Anarchy, false), (3, 2, 2));
+        assert_eq!(tile_rule((3, 1, 2), Government::Despotism, false, false), (2, 1, 2));
+        assert_eq!(tile_rule((4, 3, 3), Government::Anarchy, false, false), (3, 2, 2));
         // A Republic adds a trade to tiles that have some.
-        assert_eq!(tile_rule((1, 0, 2), Government::Republic, false), (1, 0, 3));
-        assert_eq!(tile_rule((2, 0, 0), Government::Democracy, false), (2, 0, 0));
-        assert_eq!(tile_rule((3, 1, 2), Government::Monarchy, false), (3, 1, 2));
+        assert_eq!(tile_rule((1, 0, 2), Government::Republic, false, false), (1, 0, 3));
+        assert_eq!(tile_rule((2, 0, 0), Government::Democracy, false, false), (2, 0, 0));
+        assert_eq!(tile_rule((3, 1, 2), Government::Monarchy, false, false), (3, 1, 2));
         // A golden age adds a shield and a trade where there are some; a despot's penalty eats it.
-        assert_eq!(tile_rule((1, 2, 1), Government::Monarchy, true), (1, 3, 2));
-        assert_eq!(tile_rule((1, 2, 0), Government::Despotism, true), (1, 2, 0));
-        assert_eq!(tile_rule((1, 1, 2), Government::Republic, true), (1, 2, 4));
+        assert_eq!(tile_rule((1, 2, 1), Government::Monarchy, true, false), (1, 3, 2));
+        assert_eq!(tile_rule((1, 2, 0), Government::Despotism, true, false), (1, 2, 0));
+        assert_eq!(tile_rule((1, 1, 2), Government::Republic, true, false), (1, 2, 4));
+        // A celebrating city escapes the despot's penalty; a monarch's earns a republic's trade.
+        assert_eq!(tile_rule((3, 1, 2), Government::Despotism, false, true), (3, 1, 2));
+        assert_eq!(tile_rule((1, 0, 2), Government::Monarchy, false, true), (1, 0, 3));
+        assert_eq!(tile_rule((1, 0, 2), Government::Republic, false, true), (1, 0, 3));
+        assert!(celebrating(6, 3, 0));
+        assert!(!celebrating(6, 3, 1), "nobody unhappy");
+        assert!(!celebrating(6, 2, 0), "half happy");
+        assert!(!celebrating(2, 2, 0), "a town of three or more");
     }
 
     #[test]

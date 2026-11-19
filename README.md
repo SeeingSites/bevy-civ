@@ -334,9 +334,8 @@ working directory.
   Courthouse and a Police Station each halve the distance half and let the city count a quarter
   more cities as optimal; a road or harbour link to the capital takes 15% off the distance half.
   Waste takes 60% of that share of a city's shields (always leaving one). Palace cities have none.
-- **Upkeep**: buildings cost gold every turn - most 1, University, Bank, Stock Exchange, Research
-  Lab, Factory and Power Plant 2; walls, coastal forts, the Forbidden Palace and wonders nothing (no
-  upkeep is paid in anarchy). A city can sell one building a turn for its cost in gold (Overview
+- **Upkeep**: buildings cost gold every turn - most 1, a Factory or a Stock Exchange 2; walls,
+  coastal forts, the Forbidden Palace and wonders nothing (no upkeep is paid in anarchy). A city can sell one building a turn for its cost in gold (Overview
   tab); a treasury that cannot pay its bills sells the dearest to keep, empire-wide.
 - **Finance**: Currency brings the Marketplace; Banking (Currency and The Republic) the Bank (needs
   a Marketplace); Economics (Banking and Printing Press) the Stock Exchange (needs a Bank) and Adam
@@ -363,7 +362,10 @@ working directory.
   mines (+2 shields on hills and mountains, +1 elsewhere), roads (+1 trade on flat land), railroads
   (+1 shield), resources and rivers (+1 trade); a Harbor adds a food to worked ocean tiles. The
   government changes it: under Despotism and Anarchy a tile giving 3 or more of anything gives one
-  less; a Republic or Democracy adds a trade to tiles that already give some. Workers farm and
+  less; a Republic or Democracy adds a trade to tiles that already give some. A city of three or
+  more with nobody unhappy and at least half its people happy celebrates its ruler: under
+  Despotism its tiles escape the penalty, under Monarchy or Communism they earn a republic's extra
+  trade (luxury is the way to it). Workers farm and
   mine, then road the farmed flat land. Each working citizen works one tile of its city's area and
   every citizen eats 2 food; the city's own tile is worked for free with a bonus. A city grows when
   its food box fills: 20 food as a town (up to size 6), 40 as a city (to 12), 60 as a metropolis;

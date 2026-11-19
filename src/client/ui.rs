@@ -196,12 +196,12 @@ fn help_lines(topic: HelpTopic) -> Vec<String> {
             "When the unhappy outnumber the happy the city falls into disorder: no growth, production, science or taxes until it is calmed.",
             "Cities grow when their food box fills: 20 food while a town (up to size 6), 40 as a city (to 12), 60 as a metropolis. Past size 6 a city needs an Aqueduct (a river beside it serves as one), past 12 a Sewer System. A Granary keeps half the food when the city grows. Every citizen eats 2 food; specialists eat without working the land.",
             "Trade: roads on flat land, rivers, the sea and some resources bring trade (the gold coins on a tile). Corruption takes a share of it, the rest is split by the rates (Empire window) into science, luxury and taxes, and buildings multiply each part: a Library, University and Research Lab add half to science each, a Marketplace half to taxes and luxury, a Bank and a Stock Exchange 30% more. Scientists add 3 science and tax collectors 2 gold before those multiply.",
-            "Upkeep: most buildings cost 1 gold a turn, Universities, Banks, Stock Exchanges, Research Labs, Factories and Power Plants 2 (walls and wonders nothing). A building can be sold for its cost in gold, one a turn per city (city panel, Overview); a treasury that cannot pay its bills sells them itself.",
-            "Governments change the land: under Despotism (and Anarchy) a tile that would give 3 or more food, shields or trade gives one less; a Republic or Democracy adds a trade to every tile that has some. A golden age adds a shield and a trade to tiles that have them.",
-            "Each working citizen works one tile of its city's area, and the city's own tile is worked for free. Open a city to see each tile's food, shields and gold (worked tiles ringed in green); click a tile to move a citizen there or off it, or let the governor choose. Farms, mines, roads, railroads, resources and rivers make tiles richer.",
+            "Upkeep: most buildings cost 1 gold a turn, a Factory or a Stock Exchange 2 (walls and wonders nothing). A building can be sold for its cost in gold, one a turn per city (city panel, Overview); a treasury that cannot pay its bills sells them itself.",
+            "Governments change the land: under Despotism (and Anarchy) a tile that would give 3 or more food, shields or trade gives one less; a Republic or Democracy adds a trade to every tile that has some. A golden age adds a shield and a trade to tiles that have them. A city of three or more with nobody unhappy and at least half its people happy celebrates its ruler: under Despotism its tiles escape the penalty, under Monarchy or Communism they earn a republic's extra trade - luxury is the way to it.",
+            "Each working citizen works one tile of its city's area, and the city's own tile is worked for free. Open a city to see each tile's food, shields and trade (worked tiles ringed in green); click a tile to move a citizen there or off it, or let the governor choose. Farms, mines, roads, railroads, resources and rivers make tiles richer.",
             "Modern troubles: once a people knows Sanitation, big unhappy cities may fall into a drug trade (up to 3 levels, each +1 unhappy and -1 gold), spread by smugglers from foreign cities nearby - a Police Station roots it out, and you can demand that a neighbour cracks down. With Industrialization, adulterated food may spoil half a granary and anger a city for 6 turns (likelier where corruption is high) unless it has a Food Safety Agency. GM Farms (Genetic Engineering) add a food on every farmed tile, but people distrust the food (+1 unhappy) without a Food Safety Agency.",
             "Migration: every 5 turns, citizens leave unhappy, hungry or troubled cities for clearly better ones within 10 tiles - at home, or abroad in peoples that know Industrialization and welcome them. Set your policy in the Empire window (Government): welcome migrants and grow (their rulers resent it), or turn them away. Communist and fundamentalist peoples admit none.",
-            "Each city's governor works the land for a focus, always feeding the city first: Growth (the most food), Production (shields), Trade (gold-rich tiles, for science and taxes) or Balanced. With Governor builds on, the governor also puts citizens to entertaining when the city would fall into disorder, and back to work once it is calm without them; and Workers it trains start on automatic. On Auto, the default, it picks one from the city's situation - production for a wonder or for troops in wartime, growth for a small city, trade for a big one with a library or market - and the city panel says why.",
+            "Each city's governor works the land for a focus, always feeding the city first: Growth (the most food), Production (shields), Trade (tiles rich in trade, for science and taxes) or Balanced. With Governor builds on, the governor also puts citizens to entertaining when the city would fall into disorder, and back to work once it is calm without them; and Workers it trains start on automatic. On Auto, the default, it picks one from the city's situation - production for a wonder or for troops in wartime, growth for a small city, trade for a big one with a library or market - and the city panel says why.",
             "Culture from temples, cathedrals, colosseums, libraries, universities and wonders widens a city's borders over time (2 tiles, 3 at 100, 4 at 1,000, 5 at 5,000). Where borders meet, the land goes to the city with the stronger culture for its distance, so a great culture pushes its neighbours' borders back. A city in disorder next to a much greater culture may defect to it.",
             "Corruption takes trade (and waste, less heavily, shields) from cities far from a palace - the capital or a Forbidden Palace - and climbs steeply once a people has more cities than the world's land can support for it (the Empire window says how many); Despotism and Anarchy suffer it most, Democracy least, and under Communism distance does not matter. A Courthouse or a Police Station cuts it, and so does a road or harbour link to the capital. A city keeps training the same unit until told otherwise; a finished building or wonder leaves it waiting for its next project - unless its build queue holds more (switch the city panel to Add to queue and pick up to six projects).",
             "Pollution and nuclear fallout foul the land; past 15 fouled tiles in the world, global warming now and then turns land drier. Clean it up with workers; Mass Transit and Recycling Centers prevent it.",
@@ -1471,6 +1471,13 @@ pub fn rebuild_panels(
                 ));
             } else if happiness.unhappy > 0 {
                 p.spawn(label(&art.font_body, format!("Mood: {} happy, {} content, {} unhappy (disorder if the unhappy outnumber the happy).", happiness.happy, happiness.content, happiness.unhappy), 13.0, MUTED));
+            } else if mine && bevy_civ::economy::celebrating(city.population, happiness.happy, happiness.unhappy) {
+                let gain = match state.government {
+                    Government::Despotism | Government::Anarchy => " - its rich tiles escape the despot's penalty",
+                    Government::Monarchy | Government::Communism => " - +1 trade on tiles with trade, as in a republic",
+                    _ => "",
+                };
+                p.spawn(label(&art.font_bold, format!("Celebrating: the people love their ruler{gain}."), 13.0, GOLD));
             }
             let grow_in = (city.food_to_grow().saturating_sub(city.food_storage) as f32 / food.max(1) as f32).ceil();
             p.spawn(label(&art.font_body, format!("Growth: {}/{} food  (about {} turns)", city.food_storage, city.food_to_grow(), grow_in), 14.0, MUTED));
@@ -1482,7 +1489,7 @@ pub fn rebuild_panels(
                     r.spawn(label(
                         &art.font_body,
                         format!(
-                            "Land: {} of {} citizens work tiles ({f} food, {s} shields, {g} gold; {} eaten). {} to move a citizen.",
+                            "Land: {} of {} citizens work tiles ({f} food, {s} shields, {g} trade; {} eaten). {} to move a citizen.",
                             city.worked.len(),
                             city.population,
                             city.population * bevy_civ::tiles::FOOD_PER_CITIZEN,
@@ -2895,14 +2902,14 @@ pub fn update_tile_info(
             let seen = tile.resource.filter(|r| r.reveal_tech().is_none_or(|t| tech.researched.contains(&t)));
             // As our government (and a golden age) makes it.
             let raw = bevy_civ::tiles::tile_yield(tile.terrain, &tile.improvements, seen, rivers.tiles.contains(&tile.coord));
-            let (f, s, g) = bevy_civ::economy::tile_rule(raw, state.government, golden.active(PLAYER));
+            let (f, s, g) = bevy_civ::economy::tile_rule(raw, state.government, golden.active(PLAYER), false);
             let moves = match bevy_civ::pathfinding::terrain_cost(tile.terrain) {
                 _ if tile.has_road() => "road".to_string(),
                 Some(1) => "1 move".to_string(),
                 Some(n) => format!("{n} moves"),
                 None => "by sea".to_string(),
             };
-            format!("{}  -  {f} food, {s} shields, {g} gold  ({moves})\n{}", tile.terrain.name(), extras.join(", "))
+            format!("{}  -  {f} food, {s} shields, {g} trade  ({moves})\n{}", tile.terrain.name(), extras.join(", "))
         }
         Some(_) => "Unexplored".to_string(),
         None => String::new(),

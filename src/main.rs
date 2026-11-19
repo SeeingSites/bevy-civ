@@ -5472,7 +5472,10 @@ pub fn work_tiles(
             })
         };
         let (gov, golden_age) = land_rule(owner);
-        let ruled = |y| bevy_civ::economy::tile_rule(y, gov, golden_age);
+        // A city that celebrates its ruler escapes the despot's penalty, and under Monarchy or
+        // Communism earns a republic's trade.
+        let festive = happiness.is_some_and(|h| bevy_civ::economy::celebrating(city.population, h.happy, h.unhappy));
+        let ruled = |y| bevy_civ::economy::tile_rule(y, gov, golden_age, festive);
         let enemy_on = |h: &Hex| occupants.iter().any(|(p, o)| p == h && *o != owner && (*o == BARBARIANS || owner == BARBARIANS || diplomacy.get_treaty(owner, *o) == Treaty::War));
         let centre = ruled(bevy_civ::tiles::centre_yield(raw_yield(owner, city.position).unwrap_or((2, 0, 0))));
         let mut candidates: Vec<(Hex, bevy_civ::tiles::Yield)> = areas
