@@ -708,8 +708,8 @@ stand as they do today: the Pyramids in Cairo and the Great Wall in Beijing; the
 the United Nations, Apollo, the Hoover Dam and the Manhattan Project in the United States, the
 Eiffel Tower in Paris; the Internet shared by the whole world (nobody has its bonus); the Cure for
 Cancer still to be found. Forces are those of 2025, scaled: the American carrier fleet, Russian,
-Chinese and American armour and bombers, the nine nuclear arsenals (the US, Russia, China, France,
-the UK, India, Pakistan), submarine fleets and air forces down to a garrison in every city,
+Chinese and American armour and bombers, the nuclear arsenals of the seven nuclear powers here
+(the US, Russia, China, France, the UK, India, Pakistan), submarine fleets and air forces down to a garrison in every city,
 and nobody needs settlers or workers - in a developed world no one founds new cities. Scenario
 options for this: `"developed"`, `"wonders"` (wonder and city, or null) and `"objectives"`.
 
