@@ -168,6 +168,19 @@ fn troubles(world: &mut World) {
         let list: Vec<String> = all.iter().map(|(k, v)| format!("{k} {v}")).collect();
         println!("--- buildings in {n} cities: {}", list.join(", "));
     }
+    {
+        // Growth: how many cities are held at the size their water supply allows.
+        let rivers = world.resource::<crate::Rivers>().tiles.clone();
+        let mut q = world.query::<(&bevy_civ::city::City, &CityBuildings)>();
+        let (mut capped, mut total, mut people) = (0, 0, 0);
+        for (city, built) in q.iter(world) {
+            let fresh = rivers.contains(&city.position) || city.position.all_neighbors().iter().any(|n| rivers.contains(n));
+            total += 1;
+            people += city.population;
+            capped += usize::from(city.population >= Building::size_limit(&built.buildings, fresh));
+        }
+        println!("--- growth: {capped} of {total} cities at their water limit; {:.1} citizens a city", people as f32 / total.max(1) as f32);
+    }
     let (moved, abroad) = world.resource::<GameState>().migrations;
     let (cartels, cells, raids) = world.resource::<GameState>().raiders;
     println!("--- troubles: {drugs} cities with a drug trade, {scandals} in a food scandal; {police} Police Stations, {safety} Food Safety Agencies, {gm} GM Farms; {moved} migrants ({abroad} abroad)");

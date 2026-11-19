@@ -15,10 +15,12 @@ Turn-based, Civilization-style empire building on a hex map, playable in the bro
   the moves still enters but is worn out for the turns it owes (a one-move unit takes 2 turns a hill,
   3 a mountain); roads triple movement and railroads make it free. Wheeled units (chariots,
   catapults, cannon, artillery) keep out of forest and mountains unless a road leads through
-- Cities that grow (up to 8, 16 with an Aqueduct or a river, beyond with a Sewer System), can
+- Cities that grow (up to 6, 12 with an Aqueduct or a river, beyond with a Sewer System), can
   starve, and need happy citizens: disorder stops growth, production, science and taxes
-- Specialists (entertainers, tax collectors, scientists) and corruption by distance
-- Science, luxury and tax rates, capped by your government
+- An economy after Civilization III: trade from the land, corruption and waste by distance from a
+  palace and by empire size, science, luxury and tax rates capped by the government (computer
+  players set theirs too), buildings that multiply science or taxes, and gold upkeep for buildings
+- Specialists (entertainers, tax collectors, scientists)
 - Strategic and luxury resources joined to cities by roads and harbours, and traded with leaders
 - 53 technologies from Pottery to Genetic Engineering, shown as a tree by era; click any to research the way to it
 - Six governments chosen in a revolution (with anarchy): Despotism to Democracy, Communism and
@@ -131,7 +133,7 @@ else's work on it stops (their shields go to the next project) and the news is a
 | Statue of Zeus | Bronze Working | one more unit per city supported free |
 | Mausoleum | Masonry | temples and walls each calm one more citizen |
 | Great Wall | Construction | every city counts as walled |
-| Copernicus' Observatory | Mathematics | +6 science in its city |
+| Copernicus' Observatory | Mathematics | +100% science in its city |
 | Sun Tzu's War Academy | Iron Working | new troops trained as veterans everywhere |
 | Marco Polo's Embassy | Currency | an embassy with every civilization |
 | King Richard's Crusade | Monarchy | +4 shields in its city |
@@ -139,7 +141,7 @@ else's work on it stops (their shields go to the next project) and the news is a
 | Leonardo's Workshop | Engineering | one obsolete unit upgraded free every turn |
 | J.S. Bach's Cathedral | Printing Press | +2 content in every city |
 | Magellan's Expedition | Gunpowder | +2 moves for ships |
-| Isaac Newton's College | Steam Power | +8 science in its city |
+| Isaac Newton's College | Steam Power | +100% science in its city |
 | Adam Smith's Trading Company | Industrialization | +1 gold for every Marketplace, Bank and Harbor |
 | Shakespeare's Theatre | Sanitation | no unhappy citizens in its city |
 | Statue of Liberty | Democracy | revolutions without anarchy |
@@ -229,8 +231,13 @@ Computer players follow the same rules as you and are run by three pieces of cod
   it has none, workers while roads are missing, a Harbor if it is cut off from the capital, an army
   sized to peace or war, settlers, then buildings and wonders. A city in danger pays gold to hurry
   its defender. A city with nothing left to build adds at most a couple of spare workers (and raises no soldiers beyond the army limit). Settlers keep coming (one per six cities) while there is free land within reach.
-- **Economy and diplomacy** (`src/main.rs`, `src/foreign.rs`): science and gold come from their own
-  cities and buildings. Spare gold hurries production and is invested in research. Their merchants
+- **Economy and diplomacy** (`src/main.rs`, `src/foreign.rs`, `src/economy.rs`): science and gold
+  come from their own cities' trade under the same rules as yours. Each turn they set their rates:
+  luxury while cities riot, then the most science their bills allow (keeping a small surplus while
+  the treasury is low, spending a large one down). Their governors build where buildings pay their
+  upkeep (a Courthouse where corruption bites, libraries and markets where there is trade, an
+  Aqueduct when a city nears size 6) and hold back while upkeep leaves little for science. Spare
+  gold hurries production and is invested in research. Their merchants
   propose resource deals: to buy what you can spare and sell what they can. They also buy and
   sell resources among themselves.
 - **Reaching cut-off cities**: a city with no land route to the capital is roaded to the nearest
@@ -282,9 +289,9 @@ Computer players follow the same rules as you and are run by three pieces of cod
 - **Esc** — close a window or deselect
 
 A city's project (anything but a wonder) can be finished at once from the city panel: **Buy now**
-costs two gold a missing shield plus a premium that grows with what is missing, doubled if nothing
-has been built of it yet; under Despotism and Communism **Rush** spends one citizen for every 20
-shields instead.
+costs two gold a missing shield for a building, plus a premium that grows with what is missing for
+a unit, doubled if nothing has been built of it yet (computer players pay the same); under
+Despotism and Communism **Rush** spends one citizen for every 20 shields instead.
 
 Units also have buttons for upgrading (in a city, for gold), bombarding (artillery, warships,
 bombers) and diplomats' missions. A city keeps training the same unit until you change its order;
@@ -309,16 +316,33 @@ keep it as a backup. On the desktop the files are `autosave.json` and `savegame.
 working directory.
 
 ## Rules in brief
-- **Finance**: Currency brings the Marketplace (+2 gold, luxuries count double); Banking (Currency
-  and The Republic) the Bank (+4 gold, needs a Marketplace); Economics (Banking and Printing Press)
-  the Stock Exchange (+3 gold and +50% of the city's building gold, needs a Bank) and Adam Smith's
-  Trading Company. Savings earn 5% interest a turn, up to 2 gold per Bank and 3 per Stock Exchange.
-  A Great Merchant makes a trade mission abroad (gold now) or settles in one of your cities as a
-  trading house (+3 gold there every turn).
-- **Rates**: each of your cities' commerce (its science and taxes) is pooled and split by the rates
-  in the Empire advisor's Government tab: science, luxury, and taxes for the rest. Every 2 luxury
-  make a citizen happy. A government limits any one rate: Despotism 60%, Monarchy and Communism
-  70%, Republic 80%, Democracy 100%, Fundamentalism 50%; Anarchy allows no science.
+- **Trade and rates** (after Civilization III): the land a city works brings in trade - the sea 2,
+  a river 1, a road on grassland, plains or desert 1, some resources more. Corruption takes a share
+  (below), and the rest is split by the rates in the Empire advisor's Government tab into science,
+  luxury and taxes. A government limits every share, taxes included: Despotism 60%, Monarchy 70%,
+  Communism, Republic and Fundamentalism 80%, Democracy 90%; in anarchy nothing is taxed or
+  learned and all trade goes to luxury. Buildings then multiply each part: Library, University
+  (needs a Library) and Research Lab +50% science each, Observatory +25%; Marketplace +50% taxes
+  and luxury, Bank and Stock Exchange +30% each. Scientists add 3 science and tax collectors 2 gold
+  before the multipliers; entertainers calm two citizens. Every 2 luxury make a citizen happy.
+- **Corruption and waste**: a city's corruption has two halves - distance to the nearest palace
+  (the capital or a Forbidden Palace; full at 24 tiles) and rank, the number of its people's cities
+  nearer a palace, which counts against the optimal number of cities (the world's land shared
+  among its peoples, 10 to 20) and climbs twice as fast past it. The government sets the scale:
+  Anarchy 80%, Despotism 60%, Monarchy 45%, Communism 40% (distance does not matter: every city
+  counts as halfway), Republic and Fundamentalism 35%, Democracy 20%, at most 90% of trade. A
+  Courthouse and a Police Station each halve the distance half and let the city count a quarter
+  more cities as optimal; a road or harbour link to the capital takes 15% off the distance half.
+  Waste takes 60% of that share of a city's shields (always leaving one). Palace cities have none.
+- **Upkeep**: buildings cost gold every turn - most 1, University, Bank, Stock Exchange, Research
+  Lab, Factory and Power Plant 2; walls, coastal forts, the Forbidden Palace and wonders nothing (no
+  upkeep is paid in anarchy). A city can sell one building a turn for its cost in gold (Overview
+  tab); a treasury that cannot pay its bills sells the dearest to keep, empire-wide.
+- **Finance**: Currency brings the Marketplace; Banking (Currency and The Republic) the Bank (needs
+  a Marketplace); Economics (Banking and Printing Press) the Stock Exchange (needs a Bank) and Adam
+  Smith's Trading Company. Savings earn 5% interest a turn, up to 2 gold per Bank and 3 per Stock
+  Exchange. A Great Merchant makes a trade mission abroad (gold now) or settles in one of your
+  cities as a trading house (+3 gold there every turn).
 - **Traits and unique units**: every civilization has two traits - Militaristic (troops promoted
   after half their victories), Commercial (+1 gold a city), Scientific (+1 science a city),
   Religious (+1 content a city, shorter revolutions), Industrious (+1 shield a city), Agricultural
@@ -334,12 +358,16 @@ working directory.
   halves it.
 - **Resistance**: a captured city produces nothing for 1 turn plus 1 per 3 citizens (up to 6); a
   garrison of two settles it twice as fast.
-- **Working the land**: every tile yields food, shields and gold - grassland 2/0/0, plains 1/1/0,
+- **Working the land**: every tile yields food, shields and trade - grassland 2/0/0, plains 1/1/0,
   desert 0/1/0, hills 1/0/0, mountains 0/1/0, forest 1/2/0, ocean 1/0/2 - plus farms (+1 food),
-  mines (+2 shields on hills and mountains, +1 elsewhere), roads (+1 gold on flat land), railroads
-  (+1 shield), resources and rivers (+1 gold); a Harbor adds a food to worked ocean tiles. Each
-  working citizen works one tile of its city's area and every citizen eats 2 food; the city's own
-  tile is worked for free with a bonus. A governor picks tiles (food first until the city can grow,
+  mines (+2 shields on hills and mountains, +1 elsewhere), roads (+1 trade on flat land), railroads
+  (+1 shield), resources and rivers (+1 trade); a Harbor adds a food to worked ocean tiles. The
+  government changes it: under Despotism and Anarchy a tile giving 3 or more of anything gives one
+  less; a Republic or Democracy adds a trade to tiles that already give some. Workers farm and
+  mine, then road the farmed flat land. Each working citizen works one tile of its city's area and
+  every citizen eats 2 food; the city's own tile is worked for free with a bonus. A city grows when
+  its food box fills: 20 food as a town (up to size 6), 40 as a city (to 12), 60 as a metropolis;
+  a Granary keeps half the food when it grows. A governor picks tiles (food first until the city can grow,
   then a balance); open a city and its area shows each tile's yield, the worked tiles ringed:
   click a tile to move a citizen there or off it (to entertain), or let the governor choose again.
 - **Governor builds**: each of your cities' governors also chooses its next project when one is
@@ -364,9 +392,9 @@ working directory.
   the game's last 2,000 messages, and its "great events" view is the chronicle offered at the end;
   a New World can be Small, Normal or Large with 3, 5 or 8 peoples; generated background music
   plays during the game (Music on/off in the Game menu).
-- **Big empires**: past 12 cities, every 6 more make one more citizen unhappy in every city; a
-  Forbidden Palace (Monarchy, one per people) is a second seat of government, corruption counting
-  from the nearer of it and the capital. Great people grow rarer: 60 points for the first, then
+- **Big empires**: past 12 cities, every 6 more make one more citizen unhappy in every city, and
+  corruption climbs steeply past the optimal number of cities; a Forbidden Palace (Monarchy, one
+  per people) is a second palace, corruption counting from the nearer of it and the capital. Great people grow rarer: 60 points for the first, then
   180, 360, 600 and so on. Computer players spend their gold more freely.
 - **Capitals and the fallen**: a people that loses its capital moves the palace to its largest
   city (corruption and the state religion follow it). A people with no city and no settler left
@@ -385,9 +413,10 @@ working directory.
 - **Tribal villages**: scattered on the land at the start (about one per 30 land tiles). The first
   unit in finds gold, a technology, warriors who join, maps of the area, or now and then hostile
   tribesmen (scouts are careful and rarely meet them).
-- **Late buildings**: Observatory (Astronomy, +3 science), Research Lab (Computers, +6 science,
-  needs a University), Power Plant (Electronics, +4 shields, needs a Factory), Police Station
-  (Communism, +2 content), Supermarket (Sanitation, +3 food), Mass Transit (Mass Production, no
+- **Late buildings**: Observatory (Astronomy, +25% science), Research Lab (Computers, +50% science,
+  needs a University), Factory (Industrialization, +25% shields), Power Plant (Electronics, +25%
+  shields, needs a Factory), Police Station (Sanitation, +2 content, cuts corruption), Supermarket
+  (Sanitation, +3 food), Mass Transit (Mass Production, no
   pollution), Recycling Center (Ecology, halves pollution), Coastal Fortress (Steel, doubles defence
   against ships) and Airport (Flight, veteran aircraft).
 - **More units**: Scout (explorer, 2 moves), Longbowman (Monarchy), Knight (Chivalry), Galleon
@@ -410,7 +439,8 @@ working directory.
   culture pushes its neighbours back (every city keeps its own ring). Land lost this way takes its
   resources and river gold with it. A city in disorder within 5
   tiles of a civilization with twice its owner's culture may defect.
-- **Golden age**: a civilization's first wonder brings 10 turns of +50% shields and extra gold.
+- **Golden age**: a civilization's first wonder brings 10 turns in which every worked tile that
+  gives a shield gives one more, and so does every tile that gives trade.
 - **Rivers**: +1 gold per river tile in a city's land, +25% defence, and fresh water.
 - **Pollution**: big industrial cities spoil tiles, which yield nothing until cleaned.
 - **Combat**: 3 hit points (4 veteran, 5 elite); winners may be promoted, Barracks train veterans,

@@ -195,16 +195,23 @@ pub fn waste(corruption: f32) -> f32 {
     corruption * WASTE_SHARE
 }
 
-/// Percent a city's buildings add to its science.
+/// Percent a city's buildings add to its science (Copernicus' Observatory and Isaac Newton's
+/// College double it in their city).
 pub fn science_bonus(buildings: &[Building]) -> u32 {
     buildings
         .iter()
         .map(|b| match b {
             Building::Library | Building::University | Building::ResearchLab => 50,
             Building::Observatory => 25,
+            Building::Copernicus | Building::Newton => 100,
             _ => 0,
         })
         .sum()
+}
+
+/// Percent a city's Factory and Power Plant add to its shields (after waste).
+pub fn production_bonus(buildings: &[Building]) -> u32 {
+    buildings.iter().map(|b| if matches!(b, Building::Factory | Building::PowerPlant) { 25 } else { 0 }).sum()
 }
 
 /// Percent a city's buildings add to its taxes and to its luxury.
@@ -312,13 +319,14 @@ pub fn ledger(city: &CityTrade) -> Ledger {
 pub fn computer_rates(gov: Government, luxury: u32, full_taxes: u32, income: i32, costs: i32, treasury: i32) -> Rates {
     let cap = gov.rate_cap();
     if cap == 0 {
-        return Rates { science: 0, luxury: 0 };
+        // Anarchy ignores the rates: keep the usual ones for the government to come.
+        return Rates::default();
     }
     let luxury = luxury.min(cap);
-    let target = if treasury < 100 {
-        2 + costs / 10
-    } else if treasury > 400 {
-        -(treasury - 400) / 10
+    let target = if treasury < 60 {
+        2 + costs / 20
+    } else if treasury > 300 {
+        -(treasury - 300) / 10
     } else {
         0
     };

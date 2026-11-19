@@ -194,22 +194,25 @@ fn help_lines(topic: HelpTopic) -> Vec<String> {
         HelpTopic::Cities => [
             "A city's first five citizens are content; every one beyond is unhappy. Temples (+2), Colosseums and Cathedrals (+3), wonders, masterpieces, entertainers and, under Despotism, Monarchy and Communism, troops in the city (martial law) calm them. Each different luxury the city can reach makes one citizen happy.",
             "When the unhappy outnumber the happy the city falls into disorder: no growth, production, science or taxes until it is calmed.",
-            "Cities grow when their granary fills and cannot pass size 8 without an Aqueduct, or 16 without a Sewer System. Every citizen eats 2 food; specialists eat without working the land.",
+            "Cities grow when their food box fills: 20 food while a town (up to size 6), 40 as a city (to 12), 60 as a metropolis. Past size 6 a city needs an Aqueduct (a river beside it serves as one), past 12 a Sewer System. A Granary keeps half the food when the city grows. Every citizen eats 2 food; specialists eat without working the land.",
+            "Trade: roads on flat land, rivers, the sea and some resources bring trade (the gold coins on a tile). Corruption takes a share of it, the rest is split by the rates (Empire window) into science, luxury and taxes, and buildings multiply each part: a Library, University and Research Lab add half to science each, a Marketplace half to taxes and luxury, a Bank and a Stock Exchange 30% more. Scientists add 3 science and tax collectors 2 gold before those multiply.",
+            "Upkeep: most buildings cost 1 gold a turn, Universities, Banks, Stock Exchanges, Research Labs, Factories and Power Plants 2 (walls and wonders nothing). A building can be sold for its cost in gold, one a turn per city (city panel, Overview); a treasury that cannot pay its bills sells them itself.",
+            "Governments change the land: under Despotism (and Anarchy) a tile that would give 3 or more food, shields or trade gives one less; a Republic or Democracy adds a trade to every tile that has some. A golden age adds a shield and a trade to tiles that have them.",
             "Each working citizen works one tile of its city's area, and the city's own tile is worked for free. Open a city to see each tile's food, shields and gold (worked tiles ringed in green); click a tile to move a citizen there or off it, or let the governor choose. Farms, mines, roads, railroads, resources and rivers make tiles richer.",
             "Modern troubles: once a people knows Sanitation, big unhappy cities may fall into a drug trade (up to 3 levels, each +1 unhappy and -1 gold), spread by smugglers from foreign cities nearby - a Police Station roots it out, and you can demand that a neighbour cracks down. With Industrialization, adulterated food may spoil half a granary and anger a city for 6 turns (likelier where corruption is high) unless it has a Food Safety Agency. GM Farms (Genetic Engineering) add a food on every farmed tile, but people distrust the food (+1 unhappy) without a Food Safety Agency.",
             "Migration: every 5 turns, citizens leave unhappy, hungry or troubled cities for clearly better ones within 10 tiles - at home, or abroad in peoples that know Industrialization and welcome them. Set your policy in the Empire window (Government): welcome migrants and grow (their rulers resent it), or turn them away. Communist and fundamentalist peoples admit none.",
             "Each city's governor works the land for a focus, always feeding the city first: Growth (the most food), Production (shields), Trade (gold-rich tiles, for science and taxes) or Balanced. With Governor builds on, the governor also puts citizens to entertaining when the city would fall into disorder, and back to work once it is calm without them; and Workers it trains start on automatic. On Auto, the default, it picks one from the city's situation - production for a wonder or for troops in wartime, growth for a small city, trade for a big one with a library or market - and the city panel says why.",
             "Culture from temples, cathedrals, colosseums, libraries, universities and wonders widens a city's borders over time (2 tiles, 3 at 100, 4 at 1,000, 5 at 5,000). Where borders meet, the land goes to the city with the stronger culture for its distance, so a great culture pushes its neighbours' borders back. A city in disorder next to a much greater culture may defect to it.",
-            "Corruption grows with distance from the capital and is halved by a Courthouse. A city keeps training the same unit until told otherwise; a finished building or wonder leaves it waiting for its next project - unless its build queue holds more (switch the city panel to Add to queue and pick up to six projects).",
+            "Corruption takes trade (and waste, less heavily, shields) from cities far from a palace - the capital or a Forbidden Palace - and climbs steeply once a people has more cities than the world's land can support for it (the Empire window says how many); Despotism and Anarchy suffer it most, Democracy least, and under Communism distance does not matter. A Courthouse or a Police Station cuts it, and so does a road or harbour link to the capital. A city keeps training the same unit until told otherwise; a finished building or wonder leaves it waiting for its next project - unless its build queue holds more (switch the city panel to Add to queue and pick up to six projects).",
             "Pollution and nuclear fallout foul the land; past 15 fouled tiles in the world, global warming now and then turns land drier. Clean it up with workers; Mass Transit and Recycling Centers prevent it.",
-            "Projects other than wonders can be bought with gold, or rushed under Despotism and Communism by putting citizens to forced labour. Luxury (Empire advisor) makes one citizen happy for every 2 points.",
+            "Projects other than wonders can be bought with gold (2 a missing shield for a building, more for a unit; double if nothing is built yet), or rushed under Despotism and Communism by putting citizens to forced labour. Luxury (Empire advisor) makes one citizen happy for every 2 points.",
         ]
         .into_iter()
         .map(String::from)
         .collect(),
         HelpTopic::Peoples => vec![
             "Every people has two traits - Militaristic (troops promoted after half their victories), Commercial (+1 gold a city), Scientific (+1 science a city), Religious (+1 content a city, shorter revolutions), Industrious (+1 shield a city) or Agricultural (+1 food a city) - and a unique unit, which it trains a rank higher.".to_string(),
-            "Governments: a revolution brings a few turns of anarchy. Each government limits how much of your commerce can go to science or luxury (Empire advisor, Government tab); taxes take the rest, and savings earn 5% interest, up to 2 gold per Bank and 3 per Stock Exchange.".to_string(),
+            "Governments: a revolution brings a few turns of anarchy, in which no taxes are collected and nothing is learned. Each government limits every share of your trade - science, luxury and taxes alike (Empire advisor, Government tab): Despotism 60%, Monarchy 70%, Communism, Republic and Fundamentalism 80%, Democracy 90%. Savings earn 5% interest, up to 2 gold per Bank and 3 per Stock Exchange.".to_string(),
             "Faith: the first to learn Mysticism, Philosophy, Theology and Printing Press founds the Old Gods, the Way of Reason, the One Faith and the Reformed Faith. Faiths spread to nearby cities; Missionaries carry your state religion (your capital's faith) further. Cities of your state religion get +1 content (+2 with a Temple); a holy city's owner earns gold from the faith's followers; shared faith warms relations, different faiths cool them.".to_string(),
             "Diplomacy (E): peace, alliances, gifts, tribute, trade agreements, technology and resource deals. A right of passage lets your units share tiles with theirs; an alliance includes it, and war ends it. Units cannot walk into the units or cities of a people at peace with you: declare war first.".to_string(),
             "Culture from temples, libraries, colosseums, cathedrals, universities and wonders widens borders (2 tiles, 3 at 100 culture, 4 at 1,000, 5 at 5,000) and pushes neighbours' borders back. A city in disorder next to a much greater culture may defect.".to_string(),
@@ -1609,6 +1612,21 @@ pub fn rebuild_panels(
                 wonders.sort_by_key(|b| b.name());
                 let list = |items: &[&Building]| if items.is_empty() { "none yet".to_string() } else { items.iter().map(|b| b.name()).collect::<Vec<_>>().join(", ") };
                 p.spawn(label(&art.font_body, format!("Buildings: {}", list(&plain)), 14.0, CREAM));
+                // Upkeep: a building that is not worth its keep can be sold, one a turn.
+                if !plain.is_empty() {
+                    if state.sold.contains(&city.position) {
+                        p.spawn(label(&art.font_body, "A building was sold here this turn (one a turn).", 13.0, MUTED));
+                    } else {
+                        p.spawn(Node { flex_wrap: FlexWrap::Wrap, column_gap: Val::Px(4.0), row_gap: Val::Px(4.0), align_items: AlignItems::Center, ..default() }).with_children(|r| {
+                            r.spawn(label(&art.font_body, "Sell for gold (one a turn):", 13.0, MUTED));
+                            for building in plain.iter().filter(|b| !b.is_spaceship_part()) {
+                                let upkeep = bevy_civ::economy::upkeep(**building);
+                                let text = format!("{} +{} (-{upkeep}/turn)", building.name(), building.cost());
+                                button(r, art, text, Command::Game(Action::SellBuilding(**building)), BRONZE, 11.0);
+                            }
+                        });
+                    }
+                }
                 p.spawn(label(&art.font_body, format!("Wonders: {}", list(&wonders)), 14.0, CREAM));
                 // Progress towards the next great person, and what this city's points lean towards.
                 let earned = great::city_points(&buildings.buildings, &city.specialists, city.is_capital);
@@ -1889,6 +1907,19 @@ pub fn rebuild_panels(
                                     format!("Empire size: {ours} cities; {sprawl} more unhappy in every city (none up to 12 cities, then one more for every 6). A Forbidden Palace (Monarchy) is a second seat of government against corruption."),
                                     14.0,
                                     if sprawl > 0 { RED } else { INK_SOFT },
+                                ));
+                                // Corruption: how much trade it takes, and the empire size past which it climbs steeply.
+                                let peoples: std::collections::HashSet<u32> = city_list.iter().map(|(_, c)| c.owner).filter(|o| *o != crate::BARBARIANS).collect();
+                                let optimal = bevy_civ::economy::optimal_cities(map.cells.len().saturating_sub(map.water.len()), peoples.len());
+                                let books = state.accounts.get(&PLAYER).copied().unwrap_or_default();
+                                let share = books.corruption * 100 / books.trade.max(1);
+                                w.spawn(label(
+                                    &art.font_body,
+                                    format!(
+                                        "Corruption takes {share}% of our trade (waste takes shields the same way, if less): more in cities far from a palace, and steeply more past {optimal} cities. Courthouses and Police Stations cut it; under Communism distance does not matter."
+                                    ),
+                                    14.0,
+                                    if share >= 25 { RED } else { INK_SOFT },
                                 ));
                                 let fouled = tiles.iter().filter(|t| t.is_polluted()).count();
                                 w.spawn(label(

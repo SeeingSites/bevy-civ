@@ -136,7 +136,8 @@ pub fn choose(city: &CityView, civ: &CivView, supplies: &Supplies, rng: &mut imp
     if civ.room_to_expand && civ.cities < 6 && civ.settlers < 2 && city.population >= 2 && !city.threatened {
         return unit(UnitType::Settler);
     }
-    let wanted_workers = (civ.cities.div_ceil(2) + usize::from(civ.road_work > 3 * civ.workers.max(1))).min(civ.cities.max(1));
+    // About two workers for every three cities, more while roads are wanting.
+    let wanted_workers = ((2 * civ.cities).div_ceil(3) + usize::from(civ.road_work > 3 * civ.workers.max(1))).min(civ.cities.max(1));
     if civ.workers < wanted_workers {
         return unit(worker_kind(civ));
     }
@@ -215,7 +216,7 @@ pub fn choose(city: &CityView, civ: &CivView, supplies: &Supplies, rng: &mut imp
         (Building::Temple, city.population >= bevy_civ::diplomacy::BASE_CONTENT),
         (Building::Aqueduct, near_limit && city.water_limit <= first_limit),
         (Building::Granary, city.population < 8 && spare),
-        (Building::Barracks, civ.at_war && city.population >= 6 && spare),
+        (Building::Barracks, civ.at_war && city.population >= 8 && spare),
         (Building::Courthouse, city.corruption >= 20 && city.trade >= 4),
         (Building::Marketplace, city.trade >= 6),
         (Building::Library, city.trade >= 4),
@@ -225,15 +226,15 @@ pub fn choose(city: &CityView, civ: &CivView, supplies: &Supplies, rng: &mut imp
         (Building::Cathedral, city.population >= 10),
         (Building::SewerSystem, near_limit && city.water_limit == 2 * first_limit),
         (Building::Bank, city.trade >= 10),
-        (Building::University, city.trade >= 10 && spare),
+        (Building::University, city.trade >= 8 && spare),
         (Building::StockExchange, city.trade >= 16),
         (Building::Factory, (city.population >= 8 && spare) || !civ.space_parts.is_empty()),
-        (Building::Observatory, city.trade >= 12 && spare),
+        (Building::Observatory, city.trade >= 10 && spare),
         (Building::Supermarket, city.population >= 12 && spare),
         (Building::PoliceStation, city.population >= 12 || city.narcotics > 0),
         (Building::CoastalFortress, civ.at_war && civ.navy > 0),
         (Building::PowerPlant, city.population >= 10 && spare),
-        (Building::ResearchLab, city.trade >= 14 && spare),
+        (Building::ResearchLab, city.trade >= 12 && spare),
         (Building::FoodSafety, city.population >= 10 && spare),
         (Building::GmFarms, city.population >= 10 && city.built.contains(&Building::FoodSafety) && spare),
         (Building::MassTransit, city.population >= 10 && industrial),
@@ -282,7 +283,7 @@ mod tests {
     }
 
     fn civ(tech: &TechState) -> CivView<'_> {
-        CivView { tech, aggression: 0.4, cities: 2, workers: 1, settlers: 2, military: 3, navy: 0, air: 0, road_work: 0, cut_off: 0, at_war: false, wonders_taken: &NO_WONDERS, caravans: 2, diplomats: 1, missionaries: 0, faith_to_spread: false, wonder_elsewhere: false, space_parts: &[], room_to_expand: true, forbidden_palace: false, ferries: 0, ferry_wanted: 0, thrifty: false }
+        CivView { tech, aggression: 0.4, cities: 2, workers: 2, settlers: 2, military: 3, navy: 0, air: 0, road_work: 0, cut_off: 0, at_war: false, wonders_taken: &NO_WONDERS, caravans: 2, diplomats: 1, missionaries: 0, faith_to_spread: false, wonder_elsewhere: false, space_parts: &[], room_to_expand: true, forbidden_palace: false, ferries: 0, ferry_wanted: 0, thrifty: false }
     }
 
     fn knowing(techs: &[Tech]) -> TechState {

@@ -185,6 +185,9 @@ pub struct GameState {
     /// Cities that drafted a citizen this turn.
     #[serde(default)]
     pub drafted: HashSet<Hex>,
+    /// Cities that sold a building this turn (one a turn).
+    #[serde(default)]
+    pub sold: HashSet<Hex>,
     /// Foreign migrants may settle in our cities.
     #[serde(default = "welcome_by_default")]
     pub welcome_migrants: bool,
@@ -259,6 +262,7 @@ impl Default for GameState {
             war_turns: HashMap::new(),
             warming: 0,
             drafted: HashSet::new(),
+            sold: HashSet::new(),
             welcome_migrants: true,
             migrations: (0, 0),
             raiders: (0, 0, 0),
@@ -409,6 +413,8 @@ pub enum Action {
     AutoBuildAll(bool),
     /// Buy the rest of the selected city's project with gold (not wonders).
     Hurry,
+    /// Sell one of the selected city's buildings for its cost in gold (one a turn).
+    SellBuilding(Building),
     /// Rush the selected city's project with citizens' labour (Despotism and Communism).
     Rush,
     /// K: the selected worker looks after the land by itself (again to take it back).
@@ -1975,14 +1981,14 @@ fn apply_actions(
     mut log: ResMut<GameLog>,
     mut dirty: ResMut<Dirty>,
     (mut cycle, supplies, mut map, mut end_turn, mut focus): (ResMut<Cycle>, Res<Supplies>, ResMut<MapData>, EventWriter<EndTurnRequest>, EventWriter<Focus>),
-    (unit_entities, mut sounds, mut wonders, mut great, mut spies, homes, walled, mut taken, automated, rivers, mut saves, mut religions, mut space, mut last_move, exploring): (
+    (unit_entities, mut sounds, mut wonders, mut great, mut spies, homes, mut walled, mut taken, automated, rivers, mut saves, mut religions, mut space, mut last_move, exploring): (
         Query<Entity, With<Unit>>,
         EventWriter<Sfx>,
         ResMut<WorldWonders>,
         ResMut<GreatPeople>,
         ResMut<Espionage>,
         Query<&HomeCity>,
-        Query<(Entity, &CityBuildings)>,
+        Query<(Entity, &mut CityBuildings)>,
         ResMut<JustCaptured>,
         Query<Entity, With<Automated>>,
         Res<Rivers>,
@@ -2403,6 +2409,20 @@ fn apply_actions(
                 let rates = bevy_civ::economy::Rates { science: *science, luxury: *luxury };
                 if rates.allowed(state.government) {
                     state.set_rates(rates);
+                }
+            }
+            Action::SellBuilding(building) => {
+                let Some(entity) = selection.city else { continue };
+                let Ok(city) = cities.get(entity) else { continue };
+                if city.owner != PLAYER || building.is_wonder() || state.sold.contains(&city.position) {
+                    continue;
+                }
+                let Ok((_, mut built)) = walled.get_mut(entity) else { continue };
+                if built.has(*building) {
+                    built.buildings.retain(|b| b != building);
+                    state.sold.insert(city.position);
+                    state.gold += building.cost() as i32;
+                    log.push(format!("{} sells its {} for {} gold (it cost {} a turn to keep).", city.name, building.name(), building.cost(), bevy_civ::economy::upkeep(*building)));
                 }
             }
             Action::Hurry | Action::Rush => {
@@ -3107,6 +3127,7 @@ fn process_turn(
     dirty.ui = true;
     state.turn += 1;
     state.drafted.clear();
+    state.sold.clear();
     log.turn = state.turn;
     spies.tick();
     golden.tick();
@@ -3854,7 +3875,7 @@ fn process_turn(
                     ferry_wanted: ferries.wanted.get(&owner).copied().unwrap_or(0),
                     // Upkeep already leaves little for science (a computer player), or the treasury
                     // runs at a loss (ours).
-                    thrifty: if mine { state.gold_per_turn < 0 } else { civ.rates.science <= 40 && civ.government != Government::Anarchy },
+                    thrifty: if mine { state.gold_per_turn < 0 } else { civ.rates.science <= 30 && civ.government != Government::Anarchy },
                 };
                 // The unit just trained (if any) now holds the city.
                 let view = governor::CityView { built: buildings.buildings.clone(), defended: view.defended || just_trained, ..view };
@@ -5756,6 +5777,24 @@ mod tests {
         app.update();
         let city = app.world().get::<City>(roma).unwrap();
         assert_eq!((city.population, city.production_progress), (2, Building::Barracks.cost()));
+    }
+
+    #[test]
+    fn a_building_can_be_sold_once_a_turn() {
+        let mut app = order_app();
+        let mut cities = app.world_mut().query::<(Entity, &City)>();
+        let roma = cities.iter(app.world()).find(|(_, c)| c.name == "Roma").map(|(e, _)| e).unwrap();
+        app.world_mut().get_mut::<CityBuildings>(roma).unwrap().buildings = vec![Building::Temple, Building::Library];
+        app.world_mut().resource_mut::<Selection>().city = Some(roma);
+        app.world_mut().resource_mut::<GameState>().gold = 0;
+        app.world_mut().send_event(Action::SellBuilding(Building::Library));
+        app.update();
+        assert_eq!(app.world().resource::<GameState>().gold, Building::Library.cost() as i32);
+        assert_eq!(app.world().get::<CityBuildings>(roma).unwrap().buildings, vec![Building::Temple]);
+        // Only one a turn.
+        app.world_mut().send_event(Action::SellBuilding(Building::Temple));
+        app.update();
+        assert_eq!(app.world().get::<CityBuildings>(roma).unwrap().buildings, vec![Building::Temple]);
     }
 
     #[test]

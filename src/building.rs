@@ -339,7 +339,7 @@ impl Building {
             Building::StockExchange => "+30% taxes and luxury; more interest (needs a Bank)",
             Building::Observatory => "+25% science",
             Building::ResearchLab => "+50% science (needs a University)",
-            Building::PowerPlant => "+4 shields (needs a Factory)",
+            Building::PowerPlant => "+25% shields (needs a Factory)",
             Building::PoliceStation => "+2 content; halves war weariness; cuts corruption; stops narcotics and roots them out",
             Building::FoodSafety => "no adulterated-food scandals; GM food is trusted",
             Building::GmFarms => "+1 food on every farmed tile worked (distrusted without a Food Safety Agency)",
@@ -350,7 +350,7 @@ impl Building {
             Building::Airport => "aircraft trained here are veterans",
             Building::SdiDefense => "shoots down nuclear missiles aimed within 3 tiles",
             Building::ForbiddenPalace => "a second seat of government: corruption counts from here too (one per people)",
-            Building::Factory => "+3 shields; needed for spaceship parts",
+            Building::Factory => "+25% shields; needed for spaceship parts",
             Building::Harbor => "+1 food on worked ocean tiles; links coasts",
             Building::Temple => "+2 content",
             Building::Courthouse => "cuts corruption and waste (halves the part due to distance)",
@@ -386,8 +386,6 @@ impl Building {
     pub fn science_bonus(&self) -> u32 {
         match self {
             Building::GreatLibrary => 5,
-            Building::Copernicus => 6,
-            Building::Newton => 8,
             _ => 0,
         }
     }
@@ -395,10 +393,8 @@ impl Building {
     pub fn production_bonus(&self) -> u32 {
         match self {
             Building::Barracks => 1,
-            Building::Factory => 3,
             Building::Pyramids => 3,
             Building::KingRichards => 4,
-            Building::PowerPlant => 4,
             _ => 0,
         }
     }
@@ -461,7 +457,7 @@ impl Building {
             Building::GreatWall => "every city of its owner counts as walled",
             Building::StatueOfZeus => "one more unit per city supported free",
             Building::Mausoleum => "temples and walls each calm one more citizen",
-            Building::Copernicus => "+6 science here",
+            Building::Copernicus => "+100% science here",
             Building::SunTzu => "new troops trained as veterans everywhere; armies hold a fifth unit",
             Building::MarcoPolo => "an embassy with every civilization",
             Building::KingRichards => "+4 shields here",
@@ -469,7 +465,7 @@ impl Building {
             Building::Leonardo => "upgrades one obsolete unit free every turn",
             Building::Bach => "+2 content in every city",
             Building::Magellan => "+2 moves for ships",
-            Building::Newton => "+8 science here",
+            Building::Newton => "+100% science here",
             Building::AdamSmith => "+1 gold for every Marketplace, Bank and Harbor",
             Building::Shakespeare => "no unhappy citizens here",
             Building::Darwin => "two technologies at once",

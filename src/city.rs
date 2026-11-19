@@ -44,6 +44,16 @@ pub struct City {
     pub auto_build: bool,
 }
 
+/// Food a city of this size must gather to grow: 20 while it is a town (up to size 6), 40 as a
+/// city (up to 12), 60 as a metropolis beyond.
+pub fn food_box(population: u32) -> u32 {
+    match population {
+        0..=6 => 20,
+        7..=12 => 40,
+        _ => 60,
+    }
+}
+
 /// Most projects a city can have waiting.
 pub const QUEUE_LIMIT: usize = 6;
 
@@ -148,11 +158,13 @@ impl City {
     }
 
     /// Shields the city's land and buildings give, less the share `waste` lost (see
-    /// `economy::waste`). Waste always leaves a city at least one shield.
+    /// `economy::waste`; it always leaves a city at least one shield), and a quarter more for a
+    /// Factory and again for a Power Plant.
     pub fn production_per_turn(&self, buildings: &CityBuildings, waste: f32) -> u32 {
         let base = self.land.1 + buildings.total_production_bonus();
         let lost = ((base as f32) * waste.clamp(0.0, 1.0)).round() as u32;
-        base.saturating_sub(lost).max(base.min(1))
+        let kept = base.saturating_sub(lost).max(base.min(1));
+        (kept * (100 + crate::economy::production_bonus(&buildings.buildings)) + 50) / 100
     }
 
     /// Food left over each turn once everyone has eaten (two each): the worked land and the
@@ -180,8 +192,9 @@ impl City {
         self.specialists.iter().filter(|s| matches!(s, Specialist::TaxCollector)).count() as u32
     }
 
+    /// Food the city must gather to grow (see `food_box`).
     pub fn food_to_grow(&self) -> u32 {
-        10 + self.population * 5
+        food_box(self.population)
     }
 
     /// A turn of eating: the city grows when its granary fills (up to the size its water supply
@@ -346,6 +359,10 @@ mod hurry_tests {
         assert_eq!(town.production_per_turn(&none, 1.0), 1);
         town.land = (6, 0, 2);
         assert_eq!(town.production_per_turn(&none, 0.5), 0);
+        // A Factory and a Power Plant each add a quarter.
+        town.land = (6, 12, 2);
+        let industry = CityBuildings { buildings: vec![Building::Factory, Building::PowerPlant] };
+        assert_eq!(town.production_per_turn(&industry, 0.0), 18);
     }
 
     #[test]
@@ -362,7 +379,9 @@ mod hurry_tests {
         assert_eq!(growth, Growth::Grew);
         assert_eq!(plain.food_storage, 2);
         let (_, stored) = full(true, 3);
-        assert_eq!(stored.food_storage, 2 + (10 + 3 * 5) / 2);
+        assert_eq!(stored.food_storage, 2 + 20 / 2);
+        // The box is the same through a town's sizes, then doubles for a city.
+        assert_eq!((food_box(1), food_box(6), food_box(7), food_box(12), food_box(13)), (20, 20, 40, 40, 60));
         // Size 6 is the limit without an aqueduct or fresh water.
         assert_eq!(full(false, 6).0, Growth::Capped);
         let mut riverside = city(ProductionItem::Building(Building::Temple), 0, 6);
