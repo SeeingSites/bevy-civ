@@ -20,12 +20,7 @@ use crate::unit::UnitType;
 pub type Points = [u32; 4];
 
 /// The great people a city can give birth to (generals come from battle).
-pub const CITY_KINDS: [UnitType; 4] = [
-    UnitType::GreatMerchant,
-    UnitType::GreatScientist,
-    UnitType::GreatArtist,
-    UnitType::GreatEngineer,
-];
+pub const CITY_KINDS: [UnitType; 4] = [UnitType::GreatMerchant, UnitType::GreatScientist, UnitType::GreatArtist, UnitType::GreatEngineer];
 
 /// Points needed for a civilization's first great person; each later one needs [`THRESHOLD_STEP`]
 /// times one more than the one before (60, 180, 360, 600...), so great people grow rarer.
@@ -59,29 +54,10 @@ pub fn city_points(buildings: &[Building], specialists: &[Specialist], capital: 
             Building::Marketplace | Building::Harbor => *merchant += 1,
             Building::Bank => *merchant += 2,
             Building::StockExchange => *merchant += 3,
-            Building::Colossus
-            | Building::GreatLighthouse
-            | Building::MarcoPolo
-            | Building::AdamSmith
-            | Building::Magellan => *merchant += 3,
-            Building::Copernicus
-            | Building::Newton
-            | Building::Darwin
-            | Building::Internet
-            | Building::Apollo => *scientist += 3,
-            Building::Michelangelo
-            | Building::Bach
-            | Building::Shakespeare
-            | Building::Mausoleum
-            | Building::Eiffel
-            | Building::Liberty
-            | Building::CureForCancer => *artist += 3,
-            Building::GreatWall
-            | Building::Leonardo
-            | Building::KingRichards
-            | Building::HooverDam
-            | Building::StatueOfZeus
-            | Building::SunTzu => *engineer += 3,
+            Building::Colossus | Building::GreatLighthouse | Building::MarcoPolo | Building::AdamSmith | Building::Magellan => *merchant += 3,
+            Building::Copernicus | Building::Newton | Building::Darwin | Building::Internet | Building::Apollo => *scientist += 3,
+            Building::Michelangelo | Building::Bach | Building::Shakespeare | Building::Mausoleum | Building::Eiffel | Building::Liberty | Building::CureForCancer => *artist += 3,
+            Building::GreatWall | Building::Leonardo | Building::KingRichards | Building::HooverDam | Building::StatueOfZeus | Building::SunTzu => *engineer += 3,
             Building::Library => *scientist += 1,
             Building::University => *scientist += 2,
             Building::GreatLibrary => *scientist += 3,
@@ -148,13 +124,7 @@ impl GreatPeople {
     }
 
     /// Adds a turn's points to a city. Returns the great person born there, if any.
-    pub fn gather(
-        &mut self,
-        owner: u32,
-        at: Hex,
-        earned: Points,
-        rng: &mut impl Rng,
-    ) -> Option<UnitType> {
+    pub fn gather(&mut self, owner: u32, at: Hex, earned: Points, rng: &mut impl Rng) -> Option<UnitType> {
         let threshold = self.threshold(owner);
         let pool = self.city.entry(at).or_default();
         for (have, add) in pool.iter_mut().zip(earned) {
@@ -208,16 +178,7 @@ mod tests {
 
     #[test]
     fn buildings_and_wonders_earn_points_of_their_kind() {
-        let points = city_points(
-            &[
-                Building::Library,
-                Building::GreatLibrary,
-                Building::Marketplace,
-                Building::Pyramids,
-            ],
-            &[Specialist::Entertainer],
-            true,
-        );
+        let points = city_points(&[Building::Library, Building::GreatLibrary, Building::Marketplace, Building::Pyramids], &[Specialist::Entertainer], true);
         assert_eq!(points, [1, 4, 2, 3]);
         assert_eq!(city_points(&[], &[], false), [0; 4]);
     }
@@ -255,15 +216,9 @@ mod tests {
     fn generals_come_from_the_victories_of_elites() {
         let mut rng = rand::rngs::StdRng::seed_from_u64(2);
         let mut people = GreatPeople::default();
-        assert!(
-            (0..400).all(|_| !people.victory(0, 0, &mut rng) && !people.victory(0, 1, &mut rng)),
-            "regulars and veterans never"
-        );
+        assert!((0..400).all(|_| !people.victory(0, 0, &mut rng) && !people.victory(0, 1, &mut rng)), "regulars and veterans never");
         let born = (0..1600).filter(|_| people.victory(0, 2, &mut rng)).count();
-        assert!(
-            (70..130).contains(&born),
-            "about one elite victory in sixteen: {born}"
-        );
+        assert!((70..130).contains(&born), "about one elite victory in sixteen: {born}");
         assert_eq!(people.general.get(&0).copied(), Some(born as u32));
     }
 }

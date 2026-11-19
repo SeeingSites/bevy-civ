@@ -8,11 +8,7 @@ use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
 /// A transparent image to paint into, `width` by `height` pixels.
 pub fn blank(width: u32, height: u32) -> Image {
     Image::new_fill(
-        Extent3d {
-            width: width.max(1),
-            height: height.max(1),
-            depth_or_array_layers: 1,
-        },
+        Extent3d { width: width.max(1), height: height.max(1), depth_or_array_layers: 1 },
         TextureDimension::D2,
         &[0, 0, 0, 0],
         TextureFormat::Rgba8UnormSrgb,
@@ -51,14 +47,7 @@ pub fn line(data: &mut [u8], width: u32, from: Vec2, to: Vec2, thickness: f32, c
 pub fn elbow(data: &mut [u8], width: u32, from: Vec2, to: Vec2, thickness: f32, colour: [u8; 4]) {
     let mid = (from.x + to.x) / 2.0;
     line(data, width, from, Vec2::new(mid, from.y), thickness, colour);
-    line(
-        data,
-        width,
-        Vec2::new(mid, from.y),
-        Vec2::new(mid, to.y),
-        thickness,
-        colour,
-    );
+    line(data, width, Vec2::new(mid, from.y), Vec2::new(mid, to.y), thickness, colour);
     line(data, width, Vec2::new(mid, to.y), to, thickness, colour);
 }
 
@@ -70,26 +59,12 @@ mod tests {
     fn lines_and_elbows_are_painted_where_they_should_be() {
         let (w, h) = (100u32, 50u32);
         let mut data = vec![0u8; (w * h * 4) as usize];
-        line(
-            &mut data,
-            w,
-            Vec2::new(5.0, 5.0),
-            Vec2::new(90.0, 5.0),
-            3.0,
-            [255, 0, 0, 255],
-        );
+        line(&mut data, w, Vec2::new(5.0, 5.0), Vec2::new(90.0, 5.0), 3.0, [255, 0, 0, 255]);
         let red = |data: &[u8], x: u32, y: u32| data[((y * w + x) * 4) as usize];
         assert_eq!(red(&data, 50, 5), 255);
         assert_eq!(red(&data, 50, 30), 0);
         let mut data = vec![0u8; (w * h * 4) as usize];
-        elbow(
-            &mut data,
-            w,
-            Vec2::new(10.0, 10.0),
-            Vec2::new(90.0, 40.0),
-            2.0,
-            [255, 0, 0, 255],
-        );
+        elbow(&mut data, w, Vec2::new(10.0, 10.0), Vec2::new(90.0, 40.0), 2.0, [255, 0, 0, 255]);
         assert_eq!(red(&data, 50, 25), 255, "the vertical leg at the midpoint");
         assert_eq!(red(&data, 80, 40), 255);
         assert_eq!(red(&data, 80, 10), 0);

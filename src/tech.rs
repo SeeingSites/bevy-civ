@@ -34,9 +34,7 @@ pub struct TechState {
 /// The four ages of history. A people enters an age with its first discovery there, and may study
 /// an age's technologies only once it knows every required (not [`Tech::optional`]) technology of
 /// the ages before.
-#[derive(
-    Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, serde::Serialize, serde::Deserialize,
-)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, serde::Serialize, serde::Deserialize)]
 pub enum Era {
     Ancient,
     Middle,
@@ -133,58 +131,16 @@ pub enum Tech {
 
 impl Tech {
     pub const ALL: [Tech; 53] = [
-        Tech::Pottery,
-        Tech::AnimalHusbandry,
-        Tech::Mining,
-        Tech::BronzeWorking,
-        Tech::Masonry,
-        Tech::Alphabet,
-        Tech::TheWheel,
-        Tech::Writing,
-        Tech::CodeOfLaws,
-        Tech::Mysticism,
-        Tech::Seafaring,
-        Tech::IronWorking,
-        Tech::Mathematics,
-        Tech::HorsebackRiding,
-        Tech::Construction,
-        Tech::Philosophy,
-        Tech::Monarchy,
-        Tech::Currency,
-        Tech::Engineering,
-        Tech::Gunpowder,
-        Tech::PrintingPress,
-        Tech::Democracy,
-        Tech::SteamPower,
-        Tech::Industrialization,
-        Tech::Refining,
-        Tech::ReplaceableParts,
-        Tech::MotorizedTransport,
-        Tech::TheRepublic,
-        Tech::Theology,
-        Tech::Fundamentalism,
-        Tech::Communism,
-        Tech::Sanitation,
-        Tech::Electricity,
-        Tech::Computers,
-        Tech::Rocketry,
-        Tech::SpaceFlight,
-        Tech::Plastics,
-        Tech::Superconductors,
-        Tech::Banking,
-        Tech::Economics,
-        Tech::Astronomy,
-        Tech::Chivalry,
-        Tech::Navigation,
-        Tech::TheoryOfGravity,
-        Tech::Medicine,
-        Tech::Steel,
-        Tech::Electronics,
-        Tech::Flight,
-        Tech::AdvancedFlight,
-        Tech::MassProduction,
-        Tech::Ecology,
-        Tech::NuclearFission,
+        Tech::Pottery, Tech::AnimalHusbandry, Tech::Mining, Tech::BronzeWorking, Tech::Masonry,
+        Tech::Alphabet, Tech::TheWheel, Tech::Writing, Tech::CodeOfLaws, Tech::Mysticism, Tech::Seafaring,
+        Tech::IronWorking, Tech::Mathematics, Tech::HorsebackRiding, Tech::Construction,
+        Tech::Philosophy, Tech::Monarchy, Tech::Currency, Tech::Engineering, Tech::Gunpowder,
+        Tech::PrintingPress, Tech::Democracy, Tech::SteamPower, Tech::Industrialization, Tech::Refining,
+        Tech::ReplaceableParts, Tech::MotorizedTransport,
+        Tech::TheRepublic, Tech::Theology, Tech::Fundamentalism, Tech::Communism, Tech::Sanitation,
+        Tech::Electricity, Tech::Computers, Tech::Rocketry, Tech::SpaceFlight, Tech::Plastics, Tech::Superconductors,
+        Tech::Banking, Tech::Economics,
+        Tech::Astronomy, Tech::Chivalry, Tech::Navigation, Tech::TheoryOfGravity, Tech::Medicine, Tech::Steel, Tech::Electronics, Tech::Flight, Tech::AdvancedFlight, Tech::MassProduction, Tech::Ecology, Tech::NuclearFission,
         Tech::GeneticEngineering,
     ];
 
@@ -235,18 +191,14 @@ impl Tech {
     pub fn era(&self) -> Era {
         use Tech::*;
         match self {
-            Pottery | AnimalHusbandry | Mining | BronzeWorking | Masonry | Alphabet | TheWheel
-            | Writing | CodeOfLaws | Mysticism | Seafaring | IronWorking | Mathematics
-            | HorsebackRiding | Construction | Philosophy | Monarchy | Currency | TheRepublic => {
-                Era::Ancient
-            }
-            Engineering | Astronomy | Chivalry | Theology | Banking | Gunpowder | PrintingPress
-            | Navigation | TheoryOfGravity | Democracy | Medicine | Economics => Era::Middle,
-            SteamPower | Industrialization | Electricity | Refining | ReplaceableParts | Steel
-            | Electronics | Sanitation | Communism | Fundamentalism | Flight
-            | MotorizedTransport => Era::Industrial,
-            Computers | Rocketry | SpaceFlight | Plastics | Superconductors | AdvancedFlight
-            | MassProduction | Ecology | NuclearFission | GeneticEngineering => Era::Modern,
+            Pottery | AnimalHusbandry | Mining | BronzeWorking | Masonry | Alphabet | TheWheel | Writing | CodeOfLaws | Mysticism | Seafaring | IronWorking
+            | Mathematics | HorsebackRiding | Construction | Philosophy | Monarchy | Currency | TheRepublic => Era::Ancient,
+            Engineering | Astronomy | Chivalry | Theology | Banking | Gunpowder | PrintingPress | Navigation | TheoryOfGravity | Democracy | Medicine
+            | Economics => Era::Middle,
+            SteamPower | Industrialization | Electricity | Refining | ReplaceableParts | Steel | Electronics | Sanitation | Communism | Fundamentalism
+            | Flight | MotorizedTransport => Era::Industrial,
+            Computers | Rocketry | SpaceFlight | Plastics | Superconductors | AdvancedFlight | MassProduction | Ecology | NuclearFission
+            | GeneticEngineering => Era::Modern,
         }
     }
 
@@ -255,14 +207,7 @@ impl Tech {
     pub fn optional(&self) -> bool {
         matches!(
             self,
-            Tech::HorsebackRiding
-                | Tech::Seafaring
-                | Tech::TheRepublic
-                | Tech::Chivalry
-                | Tech::Democracy
-                | Tech::Navigation
-                | Tech::Communism
-                | Tech::Fundamentalism
+            Tech::HorsebackRiding | Tech::Seafaring | Tech::TheRepublic | Tech::Chivalry | Tech::Democracy | Tech::Navigation | Tech::Communism | Tech::Fundamentalism
         )
     }
 
@@ -400,15 +345,8 @@ impl Default for TechState {
 impl TechState {
     /// A fresh state that already knows the named technologies.
     pub fn knowing(names: &[String]) -> Self {
-        let mut state = Self {
-            current: None,
-            ..Self::default()
-        };
-        state.researched.extend(
-            Tech::ALL
-                .into_iter()
-                .filter(|t| names.iter().any(|n| n == t.base_name())),
-        );
+        let mut state = Self { current: None, ..Self::default() };
+        state.researched.extend(Tech::ALL.into_iter().filter(|t| names.iter().any(|n| n == t.base_name())));
         state.current = Tech::ALL.into_iter().find(|t| state.can_research(*t));
         state
     }
@@ -433,14 +371,7 @@ impl TechState {
             _ => 2,
         };
         let full = tech.cost() * era * (2 + self.researched.len() as u32) / 2;
-        full * (100
-            - self
-                .discount
-                .get(&tech)
-                .copied()
-                .unwrap_or(0)
-                .min(MAX_DIFFUSION))
-            / 100
+        full * (100 - self.discount.get(&tech).copied().unwrap_or(0).min(MAX_DIFFUSION)) / 100
     }
 
     /// Sets each technology's discount from how many of the other `peoples` that we know have it.
@@ -455,40 +386,26 @@ impl TechState {
 
     pub fn can_research(&self, tech: Tech) -> bool {
         !self.researched.contains(&tech)
-            && tech
-                .prerequisites()
-                .iter()
-                .all(|p| self.researched.contains(p))
+            && tech.prerequisites().iter().all(|p| self.researched.contains(p))
             && self.era_open(tech.era())
     }
 
     /// The latest age this people has entered: the age of its most advanced discovery.
     pub fn era(&self) -> Era {
-        self.researched
-            .iter()
-            .map(|t| t.era())
-            .max()
-            .unwrap_or(Era::Ancient)
+        self.researched.iter().map(|t| t.era()).max().unwrap_or(Era::Ancient)
     }
 
     /// Whether this people may study the technologies of `era`: it knows every required technology
     /// of the ages before it.
     pub fn era_open(&self, era: Era) -> bool {
-        Tech::ALL
-            .iter()
-            .all(|t| t.era() >= era || t.optional() || self.researched.contains(t))
+        Tech::ALL.iter().all(|t| t.era() >= era || t.optional() || self.researched.contains(t))
     }
 
     /// Required technologies still missing before the next age opens (empty in the last age, or
     /// once it is open).
     pub fn missing_for_next_era(&self) -> Vec<Tech> {
-        let Some(next) = Era::ALL.into_iter().find(|e| *e > self.era()) else {
-            return Vec::new();
-        };
-        Tech::ALL
-            .into_iter()
-            .filter(|t| t.era() < next && !t.optional() && !self.researched.contains(t))
-            .collect()
+        let Some(next) = Era::ALL.into_iter().find(|e| *e > self.era()) else { return Vec::new() };
+        Tech::ALL.into_iter().filter(|t| t.era() < next && !t.optional() && !self.researched.contains(t)).collect()
     }
 
     /// The age this people has entered since it was last asked, if it entered one; the first look
@@ -513,10 +430,7 @@ impl TechState {
                 visit(state, p, path);
             }
             // The ages before must be finished first.
-            for gate in Tech::ALL
-                .into_iter()
-                .filter(|g| g.era() < tech.era() && !g.optional())
-            {
+            for gate in Tech::ALL.into_iter().filter(|g| g.era() < tech.era() && !g.optional()) {
                 visit(state, gate, path);
             }
             path.push(tech);
@@ -532,9 +446,7 @@ impl TechState {
         if self.goal.is_some_and(|g| self.researched.contains(&g)) {
             self.goal = None;
         }
-        let toward = self
-            .goal
-            .and_then(|g| self.path_to(g).into_iter().find(|t| self.can_research(*t)));
+        let toward = self.goal.and_then(|g| self.path_to(g).into_iter().find(|t| self.can_research(*t)));
         toward.or_else(|| Tech::ALL.into_iter().find(|t| self.can_research(*t)))
     }
 
@@ -544,21 +456,14 @@ impl TechState {
             return;
         }
         self.goal = Some(goal);
-        if !self
-            .current
-            .is_some_and(|c| self.path_to(goal).contains(&c))
-        {
+        if !self.current.is_some_and(|c| self.path_to(goal).contains(&c)) {
             self.current = self.next_pick();
         }
     }
 
     /// Beakers still needed for everything on the way to the goal (at today's costs).
     pub fn beakers_to(&self, goal: Tech) -> u32 {
-        self.path_to(goal)
-            .iter()
-            .map(|t| self.cost_of(*t))
-            .sum::<u32>()
-            .saturating_sub(self.progress)
+        self.path_to(goal).iter().map(|t| self.cost_of(*t)).sum::<u32>().saturating_sub(self.progress)
     }
 
     /// A great scientist's discovery: the current research is completed at once. Returns what was learned.
@@ -576,11 +481,7 @@ impl TechState {
     pub fn turns_left(&self) -> Option<u32> {
         let current = self.current?;
         let left = self.cost_of(current).saturating_sub(self.progress);
-        let by_beakers = if self.science_per_turn == 0 {
-            u32::MAX
-        } else {
-            left.div_ceil(self.science_per_turn)
-        };
+        let by_beakers = if self.science_per_turn == 0 { u32::MAX } else { left.div_ceil(self.science_per_turn) };
         let least = MIN_RESEARCH_TURNS.saturating_sub(self.turns_on).max(1);
         let most = MAX_RESEARCH_TURNS.saturating_sub(self.turns_on).max(1);
         Some(by_beakers.max(least).min(most))
@@ -589,9 +490,7 @@ impl TechState {
     /// A turn of study. A discovery takes at least [`MIN_RESEARCH_TURNS`] turns and at most
     /// [`MAX_RESEARCH_TURNS`]; beakers beyond its cost are lost.
     pub fn process_turn(&mut self) -> Option<Tech> {
-        let Some(current) = self.current else {
-            return None;
-        };
+        let Some(current) = self.current else { return None };
         self.progress += self.science_per_turn;
         self.turns_on += 1;
         let paid = self.progress >= self.cost_of(current) && self.turns_on >= MIN_RESEARCH_TURNS;
@@ -620,15 +519,10 @@ mod tree_tests {
         assert_eq!(path.last(), Some(&goal));
         // Every step comes after what it needs.
         for (i, t) in path.iter().enumerate() {
-            assert!(
-                t.prerequisites().iter().all(|p| path[..i].contains(p)),
-                "{t:?}"
-            );
+            assert!(t.prerequisites().iter().all(|p| path[..i].contains(p)), "{t:?}");
         }
         state.set_goal(goal);
-        assert!(
-            path.contains(&state.current.unwrap()) && state.can_research(state.current.unwrap())
-        );
+        assert!(path.contains(&state.current.unwrap()) && state.can_research(state.current.unwrap()));
         // Research walks the path and the goal is dropped once reached.
         state.science_per_turn = 10_000;
         while !state.researched.contains(&goal) {
@@ -645,22 +539,12 @@ mod tree_tests {
     fn every_prerequisite_comes_earlier_and_every_tech_is_reachable() {
         for tech in Tech::ALL {
             for pre in tech.prerequisites() {
-                assert!(
-                    pre.cost() <= tech.cost(),
-                    "{} needs {} which costs more",
-                    tech.name(),
-                    pre.name()
-                );
+                assert!(pre.cost() <= tech.cost(), "{} needs {} which costs more", tech.name(), pre.name());
             }
         }
         let mut known: HashSet<Tech> = HashSet::new();
         loop {
-            let next: Vec<Tech> = Tech::ALL
-                .into_iter()
-                .filter(|t| {
-                    !known.contains(t) && t.prerequisites().iter().all(|p| known.contains(p))
-                })
-                .collect();
+            let next: Vec<Tech> = Tech::ALL.into_iter().filter(|t| !known.contains(t) && t.prerequisites().iter().all(|p| known.contains(p))).collect();
             if next.is_empty() {
                 break;
             }
@@ -675,47 +559,23 @@ mod tree_tests {
     fn an_age_opens_once_the_required_techs_of_the_ages_before_are_known() {
         let mut state = TechState::knowing(&[]);
         // Gunpowder's prerequisites alone are not enough: the Ancient age must be finished.
-        state.researched.extend([
-            Tech::BronzeWorking,
-            Tech::IronWorking,
-            Tech::Masonry,
-            Tech::Construction,
-            Tech::Alphabet,
-            Tech::Writing,
-            Tech::Mathematics,
-            Tech::Engineering,
-        ]);
+        state.researched.extend([Tech::BronzeWorking, Tech::IronWorking, Tech::Masonry, Tech::Construction, Tech::Alphabet, Tech::Writing, Tech::Mathematics, Tech::Engineering]);
         assert!(!state.can_research(Tech::Gunpowder));
         assert!(state.missing_for_next_era().contains(&Tech::Pottery));
-        for t in Tech::ALL
-            .into_iter()
-            .filter(|t| t.era() == Era::Ancient && !t.optional())
-        {
+        for t in Tech::ALL.into_iter().filter(|t| t.era() == Era::Ancient && !t.optional()) {
             state.researched.insert(t);
         }
-        assert!(
-            state.can_research(Tech::Gunpowder),
-            "optional ancient techs are not needed"
-        );
-        assert!(
-            !state.can_research(Tech::SteamPower)
-                && state.missing_for_next_era().is_empty() == false
-        );
+        assert!(state.can_research(Tech::Gunpowder), "optional ancient techs are not needed");
+        assert!(!state.can_research(Tech::SteamPower) && state.missing_for_next_era().is_empty() == false);
         // Every step of a path is open by the time it is reached, the gates included.
         let fresh = TechState::knowing(&[]);
         let path = fresh.path_to(Tech::SteamPower);
         let mut walk = TechState::knowing(&[]);
         for t in &path {
-            assert!(
-                walk.can_research(*t),
-                "{t:?} is not open when the path reaches it"
-            );
+            assert!(walk.can_research(*t), "{t:?} is not open when the path reaches it");
             walk.researched.insert(*t);
         }
-        assert!(
-            path.contains(&Tech::Medicine) && !path.contains(&Tech::Chivalry),
-            "required, not optional, middle-age techs open the Industrial Age"
-        );
+        assert!(path.contains(&Tech::Medicine) && !path.contains(&Tech::Chivalry), "required, not optional, middle-age techs open the Industrial Age");
     }
 
     #[test]
@@ -739,20 +599,14 @@ mod tree_tests {
         state.science_per_turn = 0;
         let next = state.current.unwrap();
         assert_eq!(state.turns_left(), Some(MAX_RESEARCH_TURNS));
-        let learned = (0..MAX_RESEARCH_TURNS)
-            .filter_map(|_| state.process_turn())
-            .collect::<Vec<_>>();
+        let learned = (0..MAX_RESEARCH_TURNS).filter_map(|_| state.process_turn()).collect::<Vec<_>>();
         assert_eq!(learned, vec![next]);
     }
 
     #[test]
     fn every_tech_is_reachable_through_the_ages_and_entering_one_is_noticed_once() {
         let mut state = TechState::knowing(&[]);
-        assert_eq!(
-            state.enter_new_era(),
-            None,
-            "the first look only takes note"
-        );
+        assert_eq!(state.enter_new_era(), None, "the first look only takes note");
         let mut entered = Vec::new();
         while let Some(next) = Tech::ALL.into_iter().find(|t| state.can_research(*t)) {
             state.researched.insert(next);
@@ -761,10 +615,7 @@ mod tree_tests {
         assert_eq!(state.researched.len(), Tech::ALL.len());
         assert_eq!(entered, vec![Era::Middle, Era::Industrial, Era::Modern]);
         for t in Tech::ALL {
-            assert!(
-                t.prerequisites().iter().all(|p| p.era() <= t.era()),
-                "{t:?} needs a later age"
-            );
+            assert!(t.prerequisites().iter().all(|p| p.era() <= t.era()), "{t:?} needs a later age");
         }
     }
 
@@ -777,18 +628,10 @@ mod tree_tests {
             .into_iter()
             .filter(|t| *t != Tech::Alphabet)
             .filter(|tech| {
-                !(UnitType::ALL
-                    .iter()
-                    .any(|u| u.required_tech() == Some(*tech))
-                    || Building::ALL
-                        .iter()
-                        .any(|b| b.required_tech() == Some(*tech))
-                    || Government::CHOICES
-                        .iter()
-                        .any(|g| g.required_tech() == Some(*tech))
-                    || crate::terrain::Resource::ALL
-                        .iter()
-                        .any(|r| r.reveal_tech() == Some(*tech)))
+                !(UnitType::ALL.iter().any(|u| u.required_tech() == Some(*tech))
+                    || Building::ALL.iter().any(|b| b.required_tech() == Some(*tech))
+                    || Government::CHOICES.iter().any(|g| g.required_tech() == Some(*tech))
+                    || crate::terrain::Resource::ALL.iter().any(|r| r.reveal_tech() == Some(*tech)))
             })
             .map(|t| t.name())
             .collect();

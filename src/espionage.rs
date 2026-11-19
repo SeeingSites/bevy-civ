@@ -39,14 +39,7 @@ pub const EXPOSED_ATTITUDE: i32 = -6;
 
 impl Mission {
     /// Every mission but framing, which also names the people to blame.
-    pub const ALL: [Mission; 6] = [
-        Mission::Embassy,
-        Mission::StealTech,
-        Mission::Sabotage,
-        Mission::StealGold,
-        Mission::InciteUnrest,
-        Mission::StageIncident,
-    ];
+    pub const ALL: [Mission; 6] = [Mission::Embassy, Mission::StealTech, Mission::Sabotage, Mission::StealGold, Mission::InciteUnrest, Mission::StageIncident];
 
     pub fn name(&self) -> &'static str {
         match self {
@@ -67,9 +60,7 @@ impl Mission {
             Mission::Sabotage => "destroy the city's production so far",
             Mission::StealGold => "take a quarter of their treasury (up to 300)",
             Mission::InciteUnrest => "the city stands idle for 3 turns: no growth, no production",
-            Mission::StageIncident => {
-                "a false flag: fake an attack by them on us, for a just cause for war"
-            }
+            Mission::StageIncident => "a false flag: fake an attack by them on us, for a just cause for war",
             Mission::Frame(_) => "a false flag: they blame another people for an attack here",
         }
     }
@@ -93,21 +84,13 @@ impl Mission {
             Mission::StageIncident => 0.6,
             Mission::Frame(_) => 0.5,
         };
-        if walls {
-            base - 0.15
-        } else {
-            base
-        }
+        if walls { base - 0.15 } else { base }
     }
 }
 
 /// Technologies `victim` knows that `thief` does not.
 pub fn stealable(thief: &TechState, victim: &TechState) -> Vec<Tech> {
-    let mut techs: Vec<Tech> = victim
-        .researched
-        .difference(&thief.researched)
-        .copied()
-        .collect();
+    let mut techs: Vec<Tech> = victim.researched.difference(&thief.researched).copied().collect();
     techs.sort_by_key(|t| Tech::ALL.iter().position(|a| a == t));
     techs
 }

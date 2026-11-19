@@ -1,5 +1,5 @@
 use bevy::prelude::*;
-use serde::{Deserialize, Serialize};
+use serde::{Serialize, Deserialize};
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct SaveData {
@@ -83,10 +83,7 @@ pub mod pairs {
 
     use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-    pub fn serialize<K: Serialize, V: Serialize, S: Serializer>(
-        map: &HashMap<K, V>,
-        serializer: S,
-    ) -> Result<S::Ok, S::Error> {
+    pub fn serialize<K: Serialize, V: Serialize, S: Serializer>(map: &HashMap<K, V>, serializer: S) -> Result<S::Ok, S::Error> {
         serializer.collect_seq(map.iter())
     }
 
@@ -96,8 +93,6 @@ pub mod pairs {
         V: Deserialize<'de>,
         D: Deserializer<'de>,
     {
-        Ok(Vec::<(K, V)>::deserialize(deserializer)?
-            .into_iter()
-            .collect())
+        Ok(Vec::<(K, V)>::deserialize(deserializer)?.into_iter().collect())
     }
 }

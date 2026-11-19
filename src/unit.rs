@@ -1,6 +1,6 @@
-use crate::terrain::{Improvement, Resource};
 use bevy::prelude::*;
 use hexx::Hex;
+use crate::terrain::{Improvement, Resource};
 
 #[derive(Component, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Unit {
@@ -194,93 +194,23 @@ pub const AIR_RANGE: i32 = 8;
 impl UnitType {
     /// Every unit type, in declaration order (also the row order of the sprite atlas).
     pub const ALL: [UnitType; 77] = [
-        UnitType::Settler,
-        UnitType::Worker,
-        UnitType::Warrior,
-        UnitType::Spearman,
-        UnitType::Archer,
-        UnitType::Horseman,
-        UnitType::Legion,
-        UnitType::WarChariot,
-        UnitType::Immortal,
-        UnitType::Phalanx,
-        UnitType::Catapult,
-        UnitType::Knight,
-        UnitType::Cannon,
-        UnitType::Rifleman,
-        UnitType::Cavalry,
-        UnitType::Tank,
-        UnitType::Artillery,
-        UnitType::Diplomat,
-        UnitType::Caravan,
-        UnitType::Galley,
-        UnitType::Frigate,
-        UnitType::Ironclad,
-        UnitType::Destroyer,
-        UnitType::Battleship,
-        UnitType::Fighter,
-        UnitType::Bomber,
-        UnitType::GreatGeneral,
-        UnitType::GreatMerchant,
-        UnitType::GreatScientist,
-        UnitType::GreatArtist,
-        UnitType::GreatEngineer,
-        UnitType::Pikeman,
-        UnitType::Musketman,
-        UnitType::Infantry,
-        UnitType::MechInfantry,
-        UnitType::ModernArmor,
-        UnitType::Scout,
-        UnitType::Longbowman,
-        UnitType::Galleon,
-        UnitType::Submarine,
-        UnitType::Engineers,
-        UnitType::RadarArtillery,
-        UnitType::Missionary,
-        UnitType::NuclearMissile,
-        UnitType::Transport,
-        UnitType::Carrier,
-        UnitType::Cartel,
-        UnitType::Insurgent,
-        UnitType::Praetorian,
-        UnitType::Hoplite,
-        UnitType::Companion,
-        UnitType::Numidian,
-        UnitType::RoyalChariot,
-        UnitType::ImmortalGuard,
-        UnitType::Cataphract,
-        UnitType::GallicSwordsman,
-        UnitType::WarElephant,
-        UnitType::ChuKoNu,
-        UnitType::Samurai,
-        UnitType::Keshik,
-        UnitType::JaguarWarrior,
-        UnitType::Chasqui,
-        UnitType::Mandekalu,
-        UnitType::AskiaRider,
-        UnitType::Conquistador,
-        UnitType::ManOWar,
-        UnitType::Musketeer,
-        UnitType::Sipahi,
-        UnitType::Cossack,
-        UnitType::Marine,
-        UnitType::Panzer,
-        UnitType::GuardsRifleman,
-        UnitType::Bandeirante,
-        UnitType::LightHorse,
-        UnitType::Mountie,
-        UnitType::Charro,
-        UnitType::Commando,
+        UnitType::Settler, UnitType::Worker, UnitType::Warrior, UnitType::Spearman, UnitType::Archer,
+        UnitType::Horseman, UnitType::Legion, UnitType::WarChariot, UnitType::Immortal, UnitType::Phalanx,
+        UnitType::Catapult, UnitType::Knight, UnitType::Cannon, UnitType::Rifleman, UnitType::Cavalry,
+        UnitType::Tank, UnitType::Artillery, UnitType::Diplomat, UnitType::Caravan, UnitType::Galley,
+        UnitType::Frigate, UnitType::Ironclad, UnitType::Destroyer, UnitType::Battleship, UnitType::Fighter,
+        UnitType::Bomber, UnitType::GreatGeneral, UnitType::GreatMerchant, UnitType::GreatScientist,
+        UnitType::GreatArtist, UnitType::GreatEngineer, UnitType::Pikeman, UnitType::Musketman, UnitType::Infantry,
+        UnitType::MechInfantry, UnitType::ModernArmor, UnitType::Scout, UnitType::Longbowman, UnitType::Galleon,
+        UnitType::Submarine, UnitType::Engineers, UnitType::RadarArtillery, UnitType::Missionary, UnitType::NuclearMissile,
+        UnitType::Transport, UnitType::Carrier, UnitType::Cartel, UnitType::Insurgent,
+        UnitType::Praetorian, UnitType::Hoplite, UnitType::Companion, UnitType::Numidian, UnitType::RoyalChariot, UnitType::ImmortalGuard, UnitType::Cataphract, UnitType::GallicSwordsman, UnitType::WarElephant, UnitType::ChuKoNu, UnitType::Samurai, UnitType::Keshik, UnitType::JaguarWarrior, UnitType::Chasqui, UnitType::Mandekalu, UnitType::AskiaRider, UnitType::Conquistador, UnitType::ManOWar, UnitType::Musketeer, UnitType::Sipahi, UnitType::Cossack,
+        UnitType::Marine, UnitType::Panzer, UnitType::GuardsRifleman, UnitType::Bandeirante, UnitType::LightHorse, UnitType::Mountie, UnitType::Charro, UnitType::Commando,
     ];
 
     /// The five kinds of great person.
-    pub const GREAT_PEOPLE: [UnitType; 5] = [
-        UnitType::GreatGeneral,
-        UnitType::GreatMerchant,
-        UnitType::GreatScientist,
-        UnitType::GreatArtist,
-        UnitType::GreatEngineer,
-    ];
+    pub const GREAT_PEOPLE: [UnitType; 5] =
+        [UnitType::GreatGeneral, UnitType::GreatMerchant, UnitType::GreatScientist, UnitType::GreatArtist, UnitType::GreatEngineer];
 
     /// Born in a city from great-person points rather than trained.
     /// The ordinary unit this people's unique unit stands in for (`None` for ordinary units). A
@@ -390,14 +320,6 @@ impl UnitType {
     /// The name in the default (Earth) theme.
     pub fn base_name(&self) -> &'static str {
         match self {
-            UnitType::Marine => "Marine",
-            UnitType::Panzer => "Panzer",
-            UnitType::GuardsRifleman => "Guards Rifleman",
-            UnitType::Bandeirante => "Bandeirante",
-            UnitType::LightHorse => "Light Horse",
-            UnitType::Mountie => "Mountie",
-            UnitType::Charro => "Charro",
-            UnitType::Commando => "Commando",
             UnitType::Praetorian => "Praetorian",
             UnitType::Hoplite => "Hoplite",
             UnitType::Companion => "Companion Cavalry",
@@ -419,6 +341,14 @@ impl UnitType {
             UnitType::Musketeer => "Musketeer",
             UnitType::Sipahi => "Sipahi",
             UnitType::Cossack => "Cossack",
+            UnitType::Marine => "Marine",
+            UnitType::Panzer => "Panzer",
+            UnitType::GuardsRifleman => "Guards Rifleman",
+            UnitType::Bandeirante => "Bandeirante",
+            UnitType::LightHorse => "Light Horse",
+            UnitType::Mountie => "Mountie",
+            UnitType::Charro => "Charro",
+            UnitType::Commando => "Commando",
             UnitType::WarChariot => "War Chariot",
             UnitType::Settler => "Settler",
             UnitType::Worker => "Worker",
@@ -477,35 +407,7 @@ impl UnitType {
         }
         use crate::tech::Tech;
         match self {
-            UnitType::Praetorian
-            | UnitType::Hoplite
-            | UnitType::Companion
-            | UnitType::Numidian
-            | UnitType::RoyalChariot
-            | UnitType::ImmortalGuard
-            | UnitType::Cataphract
-            | UnitType::GallicSwordsman
-            | UnitType::WarElephant
-            | UnitType::ChuKoNu
-            | UnitType::Samurai
-            | UnitType::Keshik
-            | UnitType::JaguarWarrior
-            | UnitType::Chasqui
-            | UnitType::Mandekalu
-            | UnitType::AskiaRider
-            | UnitType::Conquistador
-            | UnitType::ManOWar
-            | UnitType::Musketeer
-            | UnitType::Sipahi
-            | UnitType::Cossack
-            | UnitType::Marine
-            | UnitType::Panzer
-            | UnitType::GuardsRifleman
-            | UnitType::Bandeirante
-            | UnitType::LightHorse
-            | UnitType::Mountie
-            | UnitType::Charro
-            | UnitType::Commando => self.unique_base().and_then(|b| b.required_tech()),
+            UnitType::Praetorian | UnitType::Hoplite | UnitType::Companion | UnitType::Numidian | UnitType::RoyalChariot | UnitType::ImmortalGuard | UnitType::Cataphract | UnitType::GallicSwordsman | UnitType::WarElephant | UnitType::ChuKoNu | UnitType::Samurai | UnitType::Keshik | UnitType::JaguarWarrior | UnitType::Chasqui | UnitType::Mandekalu | UnitType::AskiaRider | UnitType::Conquistador | UnitType::ManOWar | UnitType::Musketeer | UnitType::Sipahi | UnitType::Cossack | UnitType::Marine | UnitType::Panzer | UnitType::GuardsRifleman | UnitType::Bandeirante | UnitType::LightHorse | UnitType::Mountie | UnitType::Charro | UnitType::Commando => self.unique_base().and_then(|b| b.required_tech()),
             UnitType::Settler | UnitType::Worker | UnitType::Warrior | UnitType::Scout => None,
             UnitType::Longbowman => Some(Tech::Monarchy),
             UnitType::Galleon => Some(Tech::Navigation),
@@ -541,11 +443,7 @@ impl UnitType {
             UnitType::Battleship => Some(Tech::Steel),
             UnitType::Fighter => Some(Tech::Flight),
             UnitType::Bomber => Some(Tech::AdvancedFlight),
-            UnitType::GreatGeneral
-            | UnitType::GreatMerchant
-            | UnitType::GreatScientist
-            | UnitType::GreatArtist
-            | UnitType::GreatEngineer => None,
+            UnitType::GreatGeneral | UnitType::GreatMerchant | UnitType::GreatScientist | UnitType::GreatArtist | UnitType::GreatEngineer => None,
         }
     }
 
@@ -553,14 +451,6 @@ impl UnitType {
     /// counterpart for keep values in proportion).
     pub fn stats(&self) -> (u32, u32, u32) {
         match self {
-            UnitType::Marine => (8, 10, 1),
-            UnitType::Panzer => (18, 8, 3),
-            UnitType::GuardsRifleman => (4, 8, 1),
-            UnitType::Bandeirante => (3, 4, 2),
-            UnitType::LightHorse => (7, 3, 3),
-            UnitType::Mountie => (6, 4, 3),
-            UnitType::Charro => (6, 3, 3),
-            UnitType::Commando => (7, 9, 2),
             UnitType::Praetorian => (4, 2, 1),
             UnitType::Hoplite => (1, 4, 1),
             UnitType::Companion => (3, 2, 2),
@@ -582,6 +472,14 @@ impl UnitType {
             UnitType::Musketeer => (2, 5, 1),
             UnitType::Sipahi => (8, 3, 3),
             UnitType::Cossack => (6, 3, 4),
+            UnitType::Marine => (8, 10, 1),
+            UnitType::Panzer => (18, 8, 3),
+            UnitType::GuardsRifleman => (4, 8, 1),
+            UnitType::Bandeirante => (3, 4, 2),
+            UnitType::LightHorse => (7, 3, 3),
+            UnitType::Mountie => (6, 4, 3),
+            UnitType::Charro => (6, 3, 3),
+            UnitType::Commando => (7, 9, 2),
             UnitType::Settler => (0, 0, 1),
             UnitType::Worker => (0, 0, 1),
             UnitType::Warrior => (1, 1, 1),
@@ -628,11 +526,7 @@ impl UnitType {
             UnitType::Battleship => (12, 10, 5),
             UnitType::Fighter => (6, 5, 8),
             UnitType::Bomber => (12, 2, 8),
-            UnitType::GreatGeneral
-            | UnitType::GreatMerchant
-            | UnitType::GreatScientist
-            | UnitType::GreatArtist
-            | UnitType::GreatEngineer => (0, 0, 2),
+            UnitType::GreatGeneral | UnitType::GreatMerchant | UnitType::GreatScientist | UnitType::GreatArtist | UnitType::GreatEngineer => (0, 0, 2),
         }
     }
 
@@ -641,35 +535,7 @@ impl UnitType {
             return base.cost();
         }
         match self {
-            UnitType::Praetorian
-            | UnitType::Hoplite
-            | UnitType::Companion
-            | UnitType::Numidian
-            | UnitType::RoyalChariot
-            | UnitType::ImmortalGuard
-            | UnitType::Cataphract
-            | UnitType::GallicSwordsman
-            | UnitType::WarElephant
-            | UnitType::ChuKoNu
-            | UnitType::Samurai
-            | UnitType::Keshik
-            | UnitType::JaguarWarrior
-            | UnitType::Chasqui
-            | UnitType::Mandekalu
-            | UnitType::AskiaRider
-            | UnitType::Conquistador
-            | UnitType::ManOWar
-            | UnitType::Musketeer
-            | UnitType::Sipahi
-            | UnitType::Cossack
-            | UnitType::Marine
-            | UnitType::Panzer
-            | UnitType::GuardsRifleman
-            | UnitType::Bandeirante
-            | UnitType::LightHorse
-            | UnitType::Mountie
-            | UnitType::Charro
-            | UnitType::Commando => self.unique_base().map_or(0, |b| b.cost()),
+            UnitType::Praetorian | UnitType::Hoplite | UnitType::Companion | UnitType::Numidian | UnitType::RoyalChariot | UnitType::ImmortalGuard | UnitType::Cataphract | UnitType::GallicSwordsman | UnitType::WarElephant | UnitType::ChuKoNu | UnitType::Samurai | UnitType::Keshik | UnitType::JaguarWarrior | UnitType::Chasqui | UnitType::Mandekalu | UnitType::AskiaRider | UnitType::Conquistador | UnitType::ManOWar | UnitType::Musketeer | UnitType::Sipahi | UnitType::Cossack | UnitType::Marine | UnitType::Panzer | UnitType::GuardsRifleman | UnitType::Bandeirante | UnitType::LightHorse | UnitType::Mountie | UnitType::Charro | UnitType::Commando => self.unique_base().map_or(0, |b| b.cost()),
             UnitType::Settler => 30,
             UnitType::Worker => 10,
             UnitType::Warrior => 10,
@@ -713,11 +579,7 @@ impl UnitType {
             UnitType::Fighter => 90,
             UnitType::Bomber => 110,
             // Never trained; this is only their value as a prize.
-            UnitType::GreatGeneral
-            | UnitType::GreatMerchant
-            | UnitType::GreatScientist
-            | UnitType::GreatArtist
-            | UnitType::GreatEngineer => 200,
+            UnitType::GreatGeneral | UnitType::GreatMerchant | UnitType::GreatScientist | UnitType::GreatArtist | UnitType::GreatEngineer => 200,
         }
     }
 
@@ -726,35 +588,7 @@ impl UnitType {
             return base.color();
         }
         match self {
-            UnitType::Praetorian
-            | UnitType::Hoplite
-            | UnitType::Companion
-            | UnitType::Numidian
-            | UnitType::RoyalChariot
-            | UnitType::ImmortalGuard
-            | UnitType::Cataphract
-            | UnitType::GallicSwordsman
-            | UnitType::WarElephant
-            | UnitType::ChuKoNu
-            | UnitType::Samurai
-            | UnitType::Keshik
-            | UnitType::JaguarWarrior
-            | UnitType::Chasqui
-            | UnitType::Mandekalu
-            | UnitType::AskiaRider
-            | UnitType::Conquistador
-            | UnitType::ManOWar
-            | UnitType::Musketeer
-            | UnitType::Sipahi
-            | UnitType::Cossack
-            | UnitType::Marine
-            | UnitType::Panzer
-            | UnitType::GuardsRifleman
-            | UnitType::Bandeirante
-            | UnitType::LightHorse
-            | UnitType::Mountie
-            | UnitType::Charro
-            | UnitType::Commando => self.unique_base().map_or(Color::WHITE, |b| b.color()),
+            UnitType::Praetorian | UnitType::Hoplite | UnitType::Companion | UnitType::Numidian | UnitType::RoyalChariot | UnitType::ImmortalGuard | UnitType::Cataphract | UnitType::GallicSwordsman | UnitType::WarElephant | UnitType::ChuKoNu | UnitType::Samurai | UnitType::Keshik | UnitType::JaguarWarrior | UnitType::Chasqui | UnitType::Mandekalu | UnitType::AskiaRider | UnitType::Conquistador | UnitType::ManOWar | UnitType::Musketeer | UnitType::Sipahi | UnitType::Cossack | UnitType::Marine | UnitType::Panzer | UnitType::GuardsRifleman | UnitType::Bandeirante | UnitType::LightHorse | UnitType::Mountie | UnitType::Charro | UnitType::Commando => self.unique_base().map_or(Color::WHITE, |b| b.color()),
             UnitType::Settler => Color::srgb(0.9, 0.9, 0.2),
             UnitType::Worker => Color::srgb(0.6, 0.4, 0.2),
             UnitType::Warrior => Color::srgb(0.8, 0.2, 0.2),
@@ -791,15 +625,9 @@ impl UnitType {
             UnitType::Diplomat => Color::srgb(0.8, 0.8, 0.9),
             UnitType::Caravan => Color::srgb(0.9, 0.7, 0.4),
             UnitType::Galley | UnitType::Frigate => Color::srgb(0.6, 0.45, 0.3),
-            UnitType::Ironclad | UnitType::Destroyer | UnitType::Battleship => {
-                Color::srgb(0.5, 0.52, 0.56)
-            }
+            UnitType::Ironclad | UnitType::Destroyer | UnitType::Battleship => Color::srgb(0.5, 0.52, 0.56),
             UnitType::Fighter | UnitType::Bomber => Color::srgb(0.55, 0.6, 0.5),
-            UnitType::GreatGeneral
-            | UnitType::GreatMerchant
-            | UnitType::GreatScientist
-            | UnitType::GreatArtist
-            | UnitType::GreatEngineer => Color::srgb(0.95, 0.82, 0.35),
+            UnitType::GreatGeneral | UnitType::GreatMerchant | UnitType::GreatScientist | UnitType::GreatArtist | UnitType::GreatEngineer => Color::srgb(0.95, 0.82, 0.35),
         }
     }
 
@@ -808,15 +636,7 @@ impl UnitType {
             return base.domain();
         }
         match self {
-            UnitType::Galley
-            | UnitType::Galleon
-            | UnitType::Frigate
-            | UnitType::Ironclad
-            | UnitType::Destroyer
-            | UnitType::Battleship
-            | UnitType::Submarine
-            | UnitType::Transport
-            | UnitType::Carrier => Domain::Sea,
+            UnitType::Galley | UnitType::Galleon | UnitType::Frigate | UnitType::Ironclad | UnitType::Destroyer | UnitType::Battleship | UnitType::Submarine | UnitType::Transport | UnitType::Carrier => Domain::Sea,
             UnitType::Fighter | UnitType::Bomber => Domain::Air,
             _ => Domain::Land,
         }
@@ -833,14 +653,7 @@ impl UnitType {
         if let Some(base) = self.unique_base() {
             return base.is_wheeled();
         }
-        matches!(
-            self,
-            UnitType::WarChariot
-                | UnitType::Catapult
-                | UnitType::Cannon
-                | UnitType::Artillery
-                | UnitType::RadarArtillery
-        )
+        matches!(self, UnitType::WarChariot | UnitType::Catapult | UnitType::Cannon | UnitType::Artillery | UnitType::RadarArtillery)
     }
 
     /// A military unit that fights on the ground: the only kind that holds or takes cities.
@@ -863,29 +676,14 @@ impl UnitType {
         if let Some(base) = self.unique_base() {
             return base.build_turns();
         }
-        if *self == UnitType::Engineers {
-            2
-        } else {
-            3
-        }
+        if *self == UnitType::Engineers { 2 } else { 3 }
     }
 
     pub fn is_military(&self) -> bool {
         if let Some(base) = self.unique_base() {
             return base.is_military();
         }
-        !matches!(
-            self,
-            UnitType::Settler
-                | UnitType::Worker
-                | UnitType::Engineers
-                | UnitType::Scout
-                | UnitType::Diplomat
-                | UnitType::Caravan
-                | UnitType::Missionary
-                | UnitType::NuclearMissile
-                | UnitType::Transport
-        ) && !self.is_great_person()
+        !matches!(self, UnitType::Settler | UnitType::Worker | UnitType::Engineers | UnitType::Scout | UnitType::Diplomat | UnitType::Caravan | UnitType::Missionary | UnitType::NuclearMissile | UnitType::Transport) && !self.is_great_person()
     }
 
     /// How many units this ship carries: troops (any land unit) for the transports, aircraft for
@@ -920,10 +718,7 @@ impl UnitType {
         if let Some(base) = self.unique_base() {
             return base.is_ferry();
         }
-        matches!(
-            self,
-            UnitType::Galley | UnitType::Galleon | UnitType::Transport
-        )
+        matches!(self, UnitType::Galley | UnitType::Galleon | UnitType::Transport)
     }
 
     /// Strategic resources a city must have access to before it can train this unit.
@@ -946,9 +741,7 @@ impl UnitType {
             UnitType::Tank | UnitType::Bomber => &[Resource::Oil, Resource::Rubber],
             UnitType::Frigate => &[Resource::Iron, Resource::Saltpeter],
             UnitType::Ironclad => &[Resource::Coal, Resource::Iron],
-            UnitType::Destroyer | UnitType::Fighter | UnitType::Submarine | UnitType::Carrier => {
-                &[Resource::Oil]
-            }
+            UnitType::Destroyer | UnitType::Fighter | UnitType::Submarine | UnitType::Carrier => &[Resource::Oil],
             UnitType::Battleship => &[Resource::Oil, Resource::Iron],
             _ => &[],
         }
@@ -959,10 +752,7 @@ impl UnitType {
         if let Some(base) = self.unique_base() {
             return base.is_mounted();
         }
-        matches!(
-            self,
-            UnitType::Horseman | UnitType::WarChariot | UnitType::Knight | UnitType::Cavalry
-        )
+        matches!(self, UnitType::Horseman | UnitType::WarChariot | UnitType::Knight | UnitType::Cavalry)
     }
 
     /// Defends at double strength against mounted attackers.
@@ -1018,9 +808,7 @@ impl UnitType {
         let mut best = None;
         let mut step = *self;
         for _ in 0..12 {
-            let Some(next) = step.upgrades_to() else {
-                break;
-            };
+            let Some(next) = step.upgrades_to() else { break };
             if can_equip(next) {
                 best = Some(next);
             }
@@ -1093,10 +881,7 @@ impl Unit {
         let mut cost = 0;
         let mut any = false;
         let mut leader = self.unit_type;
-        for (i, kind) in std::iter::once(self.unit_type)
-            .chain(self.troops.iter().copied())
-            .enumerate()
-        {
+        for (i, kind) in std::iter::once(self.unit_type).chain(self.troops.iter().copied()).enumerate() {
             if let Some(to) = kind.best_upgrade(&can_equip) {
                 cost += kind.upgrade_cost(to);
                 any = true;
@@ -1128,11 +913,7 @@ impl Unit {
 
     /// The most an army's slowest member can move in a turn (no limit for a single unit).
     pub fn troop_moves(&self) -> u32 {
-        self.troops
-            .iter()
-            .map(|t| t.stats().2)
-            .min()
-            .unwrap_or(u32::MAX)
+        self.troops.iter().map(|t| t.stats().2).min().unwrap_or(u32::MAX)
     }
 
     /// "Rifleman" or "Army (Rifleman, Musketman, Pikeman)".
@@ -1140,10 +921,7 @@ impl Unit {
         if self.troops.is_empty() {
             self.unit_type.name().to_string()
         } else {
-            let names: Vec<&str> = std::iter::once(self.unit_type)
-                .chain(self.troops.iter().copied())
-                .map(|t| t.name())
-                .collect();
+            let names: Vec<&str> = std::iter::once(self.unit_type).chain(self.troops.iter().copied()).map(|t| t.name()).collect();
             format!("Army ({})", names.join(", "))
         }
     }
@@ -1168,11 +946,7 @@ impl Unit {
 
     /// What it can still move this turn.
     pub fn budget(&self) -> crate::pathfinding::Budget {
-        crate::pathfinding::Budget {
-            moves: self.movement_left,
-            road_credit: self.road_credit,
-            debt: 0,
-        }
+        crate::pathfinding::Budget { moves: self.movement_left, road_credit: self.road_credit, debt: 0 }
     }
 
     /// Whether it can take another step this turn (part-moves left on a road count).
@@ -1194,6 +968,7 @@ impl Unit {
         self.road_credit = budget.road_credit;
         self.fatigue += budget.debt;
     }
+
 
     /// Gives up the rest of this turn's movement.
     pub fn end_move(&mut self) {
@@ -1268,9 +1043,7 @@ pub fn can_join_army(unit: &Unit) -> bool {
 /// march with it. Returns the leader's index in `units` and the indices of the units absorbed (to
 /// remove), or None if fewer than two units can join.
 pub fn plan_army(units: &[&Unit], capacity: usize) -> Option<(usize, Vec<usize>)> {
-    let mut eligible: Vec<usize> = (0..units.len())
-        .filter(|i| can_join_army(units[*i]))
-        .collect();
+    let mut eligible: Vec<usize> = (0..units.len()).filter(|i| can_join_army(units[*i])).collect();
     if eligible.len() < 2 {
         return None;
     }
@@ -1316,47 +1089,19 @@ mod army_tests {
     #[test]
     fn upgrades_skip_a_step_the_city_cannot_equip() {
         // No saltpeter: a longbowman cannot become a musketman or rifleman, but can become infantry.
-        let no_saltpeter = |to: UnitType| {
-            !to.required_resources().contains(&Resource::Saltpeter) && to != UnitType::MechInfantry
-        };
-        assert_eq!(
-            UnitType::Longbowman.best_upgrade(no_saltpeter),
-            Some(UnitType::Infantry)
-        );
+        let no_saltpeter = |to: UnitType| !to.required_resources().contains(&Resource::Saltpeter) && to != UnitType::MechInfantry;
+        assert_eq!(UnitType::Longbowman.best_upgrade(no_saltpeter), Some(UnitType::Infantry));
         assert_eq!(UnitType::Longbowman.best_upgrade(|_| false), None);
-        assert_eq!(
-            UnitType::Warrior.best_upgrade(|to| to == UnitType::Spearman),
-            Some(UnitType::Spearman)
-        );
+        assert_eq!(UnitType::Warrior.best_upgrade(|to| to == UnitType::Spearman), Some(UnitType::Spearman));
     }
 
     fn unit(kind: UnitType, hp: u32, level: u8) -> Unit {
-        Unit {
-            unit_type: kind,
-            movement_left: 1,
-            owner: 0,
-            position: Hex::ZERO,
-            build_turns_left: None,
-            current_build: None,
-            fortified: false,
-            road_credit: 0,
-            hp,
-            level,
-            troops: Vec::new(),
-            fatigue: 0,
-            carrier: None,
-        }
+        Unit { unit_type: kind, movement_left: 1, owner: 0, position: Hex::ZERO, build_turns_left: None, current_build: None, fortified: false, road_credit: 0, hp, level, troops: Vec::new(), fatigue: 0, carrier: None }
     }
 
     #[test]
     fn the_strongest_leads_and_the_army_pools_hit_points() {
-        let units = [
-            unit(UnitType::Spearman, 3, 0),
-            unit(UnitType::Musketman, 2, 1),
-            unit(UnitType::Worker, 3, 0),
-            unit(UnitType::Knight, 3, 0),
-            unit(UnitType::Warrior, 3, 0),
-        ];
+        let units = [unit(UnitType::Spearman, 3, 0), unit(UnitType::Musketman, 2, 1), unit(UnitType::Worker, 3, 0), unit(UnitType::Knight, 3, 0), unit(UnitType::Warrior, 3, 0)];
         let refs: Vec<&Unit> = units.iter().collect();
         let (leader, absorbed) = plan_army(&refs, 3).unwrap();
         // The knight (attack 4, defence 3) outranks the veteran musketman (2, 4).
@@ -1373,14 +1118,8 @@ mod army_tests {
         // An army does not join another.
         assert!(plan_army(&[&army, &units[0]], 3).is_none());
         // A unit joins the army while there is room: 3 units, or 4 with Sun Tzu.
-        assert!(
-            !army.take_into_army(&units[0], army_capacity(false)),
-            "full"
-        );
-        assert!(
-            !army.take_into_army(&units[2], army_capacity(true)),
-            "workers never join"
-        );
+        assert!(!army.take_into_army(&units[0], army_capacity(false)), "full");
+        assert!(!army.take_into_army(&units[2], army_capacity(true)), "workers never join");
         assert!(army.take_into_army(&units[0], army_capacity(true)));
         assert_eq!((army.members(), army.max_hp(), army.hp), (4, 12, 11));
         assert!(!army.take_into_army(&units[4], army_capacity(true)), "full");

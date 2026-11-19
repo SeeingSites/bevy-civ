@@ -105,8 +105,7 @@ pub struct NewGame {
 }
 
 /// The New World's map sizes: (name, columns, rows).
-pub const MAP_SIZES: [(&str, i32, i32); 3] =
-    [("Small", 34, 22), ("Normal", 44, 28), ("Large", 56, 36)];
+pub const MAP_SIZES: [(&str, i32, i32); 3] = [("Small", 34, 22), ("Normal", 44, 28), ("Large", 56, 36)];
 /// How many peoples a New World may hold.
 pub const PEOPLE_CHOICES: [usize; 3] = [3, 5, 8];
 pub const DEFAULT_PEOPLES: usize = 5;
@@ -125,15 +124,10 @@ pub fn catalog() -> Vec<Scenario> {
 /// The start menu's games, with or without the expansions' scenarios and peoples.
 pub fn catalog_with(expansions: bool) -> Vec<Scenario> {
     let theme = bevy_civ::theme::id();
-    let all: Vec<Scenario> = BUILT_IN
-        .iter()
-        .filter_map(|json| serde_json::from_str::<Scenario>(json).ok())
-        .collect();
+    let all: Vec<Scenario> = BUILT_IN.iter().filter_map(|json| serde_json::from_str::<Scenario>(json).ok()).collect();
     let fallback = all.first().cloned();
-    let built_in: Vec<Scenario> = all
-        .into_iter()
-        .filter(|s| bevy_civ::theme::plays(&s.theme) && (expansions || s.expansion.is_none()))
-        .collect();
+    let built_in: Vec<Scenario> =
+        all.into_iter().filter(|s| bevy_civ::theme::plays(&s.theme) && (expansions || s.expansion.is_none())).collect();
     let mut random = Scenario {
         id: "random".into(),
         name: "New World".into(),
@@ -145,18 +139,13 @@ pub fn catalog_with(expansions: bool) -> Vec<Scenario> {
     };
     // The random map borrows its peoples from the theme's first scenario (Earth's, by default);
     // their homes are chosen when the game starts.
-    let first = built_in
-        .iter()
-        .find(|s| s.expansion.is_none())
-        .or(fallback.as_ref());
+    let first = built_in.iter().find(|s| s.expansion.is_none()).or(fallback.as_ref());
     if let Some(first) = first {
         random.civs = first.civs.iter().take(8).cloned().collect();
     }
     // An expansion's own peoples (those its scenario adds) join them, starting from nothing like
     // everyone else.
-    let known: Vec<String> = first
-        .map(|f| f.civs.iter().map(|c| c.name.clone()).collect())
-        .unwrap_or_default();
+    let known: Vec<String> = first.map(|f| f.civs.iter().map(|c| c.name.clone()).collect()).unwrap_or_default();
     for expansion in built_in.iter().filter(|s| s.expansion.is_some()) {
         for civ in expansion.civs.iter().filter(|c| !known.contains(&c.name)) {
             let mut civ = civ.clone();
@@ -172,24 +161,12 @@ pub fn catalog_with(expansions: bool) -> Vec<Scenario> {
 
 fn neighbours(col: i32, row: i32) -> [(i32, i32); 6] {
     let odd = col & 1;
-    [
-        (col, row - 1),
-        (col, row + 1),
-        (col - 1, row - 1 + odd),
-        (col - 1, row + odd),
-        (col + 1, row - 1 + odd),
-        (col + 1, row + odd),
-    ]
+    [(col, row - 1), (col, row + 1), (col - 1, row - 1 + odd), (col - 1, row + odd), (col + 1, row - 1 + odd), (col + 1, row + odd)]
 }
 
 /// Fills in a random map and start positions for the "New World" scenario.
 /// `player` is kept among the civilizations that take part; its new index is returned.
-pub fn generate_random(
-    template: &Scenario,
-    player: usize,
-    map_size: usize,
-    peoples: usize,
-) -> (Scenario, usize) {
+pub fn generate_random(template: &Scenario, player: usize, map_size: usize, peoples: usize) -> (Scenario, usize) {
     let (_, cols, rows) = MAP_SIZES[map_size.min(MAP_SIZES.len() - 1)];
     #[allow(non_snake_case)]
     let (COLS, ROWS) = (cols, rows);
@@ -200,12 +177,7 @@ pub fn generate_random(
             .map(|i| {
                 let f = freq * (1.0 + i as f32 * 0.6);
                 let a = rng.gen_range(0.0..std::f32::consts::TAU);
-                (
-                    a.cos() * f,
-                    a.sin() * f,
-                    rng.gen_range(0.0..std::f32::consts::TAU),
-                    1.0 / (1.0 + i as f32 * 0.5),
-                )
+                (a.cos() * f, a.sin() * f, rng.gen_range(0.0..std::f32::consts::TAU), 1.0 / (1.0 + i as f32 * 0.5))
             })
             .collect()
     };
@@ -213,12 +185,7 @@ pub fn generate_random(
     let moisture = waves(0.26);
     let sample = |field: &[(f32, f32, f32, f32)], x: f32, y: f32| {
         let total: f32 = field.iter().map(|w| w.3).sum();
-        0.5 + 0.5
-            * field
-                .iter()
-                .map(|(fx, fy, phase, amp)| (x * fx + y * fy + phase).sin() * amp)
-                .sum::<f32>()
-            / total
+        0.5 + 0.5 * field.iter().map(|(fx, fy, phase, amp)| (x * fx + y * fy + phase).sin() * amp).sum::<f32>() / total
     };
 
     let mut grid = vec![vec!['~'; COLS as usize]; ROWS as usize];
@@ -226,9 +193,7 @@ pub fn generate_random(
         for col in 0..COLS {
             let x = col as f32 * 1.5;
             let y = row as f32 * 1.732 + if col & 1 == 1 { 0.866 } else { 0.0 };
-            let edge = ((col.min(COLS - 1 - col) as f32 / 5.0)
-                .min(row.min(ROWS - 1 - row) as f32 / 4.0))
-            .min(1.0);
+            let edge = ((col.min(COLS - 1 - col) as f32 / 5.0).min(row.min(ROWS - 1 - row) as f32 / 4.0)).min(1.0);
             let h = sample(&height, x, y) + rng.gen_range(-0.04..0.04) - (1.0 - edge) * 0.45;
             let m = sample(&moisture, x, y) + rng.gen_range(-0.05..0.05);
             grid[row as usize][col as usize] = if h < 0.42 {
@@ -250,30 +215,18 @@ pub fn generate_random(
     }
 
     // Homes: land tiles with room around them, spread as far apart as possible.
-    let land = |grid: &Vec<Vec<char>>, col: i32, row: i32| {
-        col >= 0 && row >= 0 && col < COLS && row < ROWS && grid[row as usize][col as usize] != '~'
-    };
+    let land = |grid: &Vec<Vec<char>>, col: i32, row: i32| col >= 0 && row >= 0 && col < COLS && row < ROWS && grid[row as usize][col as usize] != '~';
     let mut sites: Vec<(i32, i32)> = (0..ROWS)
         .flat_map(|row| (0..COLS).map(move |col| (col, row)))
-        .filter(|(col, row)| {
-            land(&grid, *col, *row)
-                && neighbours(*col, *row)
-                    .iter()
-                    .filter(|(c, r)| land(&grid, *c, *r))
-                    .count()
-                    >= 5
-        })
+        .filter(|(col, row)| land(&grid, *col, *row) && neighbours(*col, *row).iter().filter(|(c, r)| land(&grid, *c, *r)).count() >= 5)
         .collect();
     sites.shuffle(&mut rng);
     let mut homes: Vec<(i32, i32)> = sites.first().copied().into_iter().collect();
     while homes.len() < civs_wanted && homes.len() < sites.len() {
-        let best = sites.iter().copied().max_by_key(|s| {
-            homes
-                .iter()
-                .map(|h| offset_to_hex(s.0, s.1).distance_to(offset_to_hex(h.0, h.1)))
-                .min()
-                .unwrap_or(0)
-        });
+        let best = sites
+            .iter()
+            .copied()
+            .max_by_key(|s| homes.iter().map(|h| offset_to_hex(s.0, s.1).distance_to(offset_to_hex(h.0, h.1))).min().unwrap_or(0));
         match best {
             Some(site) => homes.push(site),
             None => break,
@@ -291,40 +244,20 @@ pub fn generate_random(
         .zip(&homes)
         .map(|(index, (col, row))| {
             let mut civ = template.civs[*index].clone();
-            let capital = civ
-                .cities
-                .first()
-                .map(|c| c.name.clone())
-                .unwrap_or_else(|| civ.name.clone());
+            let capital = civ.cities.first().map(|c| c.name.clone()).unwrap_or_else(|| civ.name.clone());
             for (c, r) in neighbours(*col, *row).into_iter().chain([(*col, *row)]) {
                 if land(&grid, c, r) {
                     grid[r as usize][c as usize] = if (c + r) % 2 == 0 { 'g' } else { 'p' };
                 }
             }
-            let spots: Vec<(i32, i32)> = neighbours(*col, *row)
-                .into_iter()
-                .filter(|(c, r)| land(&grid, *c, *r))
-                .collect();
-            civ.cities = vec![CityDef {
-                name: capital,
-                col: *col,
-                row: *row,
-                pop: 1,
-                capital: true,
-            }];
+            let spots: Vec<(i32, i32)> = neighbours(*col, *row).into_iter().filter(|(c, r)| land(&grid, *c, *r)).collect();
+            civ.cities = vec![CityDef { name: capital, col: *col, row: *row, pop: 1, capital: true }];
             civ.units = ["Settler", "Worker", "Warrior"]
                 .iter()
                 .enumerate()
                 .map(|(i, kind)| {
-                    let (c, r) = spots
-                        .get(i % spots.len().max(1))
-                        .copied()
-                        .unwrap_or((*col, *row));
-                    UnitDef {
-                        kind: kind.to_string(),
-                        col: c,
-                        row: r,
-                    }
+                    let (c, r) = spots.get(i % spots.len().max(1)).copied().unwrap_or((*col, *row));
+                    UnitDef { kind: kind.to_string(), col: c, row: r }
                 })
                 .collect();
             civ

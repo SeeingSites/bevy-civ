@@ -36,34 +36,18 @@ pub fn pointer_input(
     mut pointer: ResMut<Pointer>,
     mut hovered: ResMut<Hovered>,
     mut clicks: EventWriter<MapClick>,
-    mut camera: Query<
-        (
-            &Camera,
-            &GlobalTransform,
-            &mut Transform,
-            &mut OrthographicProjection,
-        ),
-        With<Camera2d>,
-    >,
+    mut camera: Query<(&Camera, &GlobalTransform, &mut Transform, &mut OrthographicProjection), With<Camera2d>>,
     ui: Res<UiState>,
     scrollables: Query<&bevy::ui::RelativeCursorPosition, With<super::layout::Scrollable>>,
 ) {
-    let Ok(window) = windows.get_single() else {
-        return;
-    };
+    let Ok(window) = windows.get_single() else { return };
     // The wheel over a panel or window scrolls it (see `ui::scroll_panels`), not the map.
     let over_scrollable = super::layout::over_scrollable(&scrollables);
     // Shift (or the "move together" switch) orders the whole stack.
     let group = ui.group_move || keys.any_pressed([KeyCode::ShiftLeft, KeyCode::ShiftRight]);
-    let Ok((cam, cam_global, mut cam_transform, mut projection)) = camera.get_single_mut() else {
-        return;
-    };
+    let Ok((cam, cam_global, mut cam_transform, mut projection)) = camera.get_single_mut() else { return };
     let over_ui = interactions.iter().any(|i| *i != Interaction::None);
-    let to_hex = |screen: Vec2| {
-        cam.viewport_to_world_2d(cam_global, screen)
-            .ok()
-            .map(|w| map.layout.world_pos_to_hex(w))
-    };
+    let to_hex = |screen: Vec2| cam.viewport_to_world_2d(cam_global, screen).ok().map(|w| map.layout.world_pos_to_hex(w));
     let scale = projection.scale;
     let mut pan = Vec2::ZERO;
     let mut zoom = 1.0f32;
@@ -100,11 +84,7 @@ pub fn pointer_input(
         if let Some(touch) = touches.iter_just_released().next() {
             if pointer.press.take().is_some() && !pointer.dragging {
                 if let Some(hex) = to_hex(touch.position()) {
-                    clicks.send(MapClick {
-                        hex,
-                        secondary: false,
-                        group,
-                    });
+                    clicks.send(MapClick { hex, secondary: false, group });
                 }
             }
             pointer.dragging = false;
@@ -120,19 +100,11 @@ pub fn pointer_input(
             }
             if mouse.just_pressed(MouseButton::Right) && !over_ui {
                 if let Some(hex) = to_hex(cursor) {
-                    clicks.send(MapClick {
-                        hex,
-                        secondary: true,
-                        group,
-                    });
+                    clicks.send(MapClick { hex, secondary: true, group });
                 }
             }
             let dragging_left = mouse.pressed(MouseButton::Left) && pointer.press.is_some();
-            if dragging_left
-                && pointer
-                    .press
-                    .is_some_and(|start| cursor.distance(start) > DRAG_THRESHOLD)
-            {
+            if dragging_left && pointer.press.is_some_and(|start| cursor.distance(start) > DRAG_THRESHOLD) {
                 pointer.dragging = true;
             }
             if (dragging_left && pointer.dragging) || mouse.pressed(MouseButton::Middle) {
@@ -141,21 +113,13 @@ pub fn pointer_input(
             if mouse.just_released(MouseButton::Left) {
                 if pointer.press.take().is_some() && !pointer.dragging {
                     if let Some(hex) = to_hex(cursor) {
-                        clicks.send(MapClick {
-                            hex,
-                            secondary: false,
-                            group,
-                        });
+                        clicks.send(MapClick { hex, secondary: false, group });
                     }
                 }
                 pointer.dragging = false;
             }
             pointer.last = cursor;
-            hovered.0 = if over_ui {
-                None
-            } else {
-                to_hex(cursor).filter(|h| map.cells.contains(h))
-            };
+            hovered.0 = if over_ui { None } else { to_hex(cursor).filter(|h| map.cells.contains(h)) };
         } else {
             hovered.0 = None;
         }
@@ -175,18 +139,10 @@ pub fn pointer_input(
 
     // --- keyboard pan ----------------------------------------------------------------------
     let mut key_pan = Vec2::ZERO;
-    if keys.any_pressed([KeyCode::KeyW, KeyCode::ArrowUp]) {
-        key_pan.y += 1.0;
-    }
-    if keys.any_pressed([KeyCode::KeyS, KeyCode::ArrowDown]) {
-        key_pan.y -= 1.0;
-    }
-    if keys.any_pressed([KeyCode::KeyA, KeyCode::ArrowLeft]) {
-        key_pan.x -= 1.0;
-    }
-    if keys.any_pressed([KeyCode::KeyD, KeyCode::ArrowRight]) {
-        key_pan.x += 1.0;
-    }
+    if keys.any_pressed([KeyCode::KeyW, KeyCode::ArrowUp]) { key_pan.y += 1.0; }
+    if keys.any_pressed([KeyCode::KeyS, KeyCode::ArrowDown]) { key_pan.y -= 1.0; }
+    if keys.any_pressed([KeyCode::KeyA, KeyCode::ArrowLeft]) { key_pan.x -= 1.0; }
+    if keys.any_pressed([KeyCode::KeyD, KeyCode::ArrowRight]) { key_pan.x += 1.0; }
 
     // Glide to a newly selected unit unless the player is steering the camera.
     if let Some(Focus(hex)) = focus.read().last() {
@@ -208,14 +164,8 @@ pub fn pointer_input(
     cam_transform.translation.x += -pan.x * scale + key_pan.x * 620.0 * scale * time.delta_secs();
     cam_transform.translation.y += pan.y * scale + key_pan.y * 620.0 * scale * time.delta_secs();
     let margin = HEX_SIZE * 3.0;
-    cam_transform.translation.x = cam_transform
-        .translation
-        .x
-        .clamp(map.min.x - margin, map.max.x + margin);
-    cam_transform.translation.y = cam_transform
-        .translation
-        .y
-        .clamp(map.min.y - margin, map.max.y + margin);
+    cam_transform.translation.x = cam_transform.translation.x.clamp(map.min.x - margin, map.max.x + margin);
+    cam_transform.translation.y = cam_transform.translation.y.clamp(map.min.y - margin, map.max.y + margin);
 }
 
 pub fn keyboard_input(
@@ -250,15 +200,9 @@ pub fn keyboard_input(
         (KeyCode::KeyT, Action::TradeRoute),
         (KeyCode::F2, Action::Save),
     ];
-    let ctrl = keys.any_pressed([
-        KeyCode::ControlLeft,
-        KeyCode::ControlRight,
-        KeyCode::SuperLeft,
-        KeyCode::SuperRight,
-    ]);
+    let ctrl = keys.any_pressed([KeyCode::ControlLeft, KeyCode::ControlRight, KeyCode::SuperLeft, KeyCode::SuperRight]);
     // Held, or let go in this same frame (a quick Shift+Tab can arrive all at once).
-    let shift = keys.any_pressed([KeyCode::ShiftLeft, KeyCode::ShiftRight])
-        || keys.any_just_released([KeyCode::ShiftLeft, KeyCode::ShiftRight]);
+    let shift = keys.any_pressed([KeyCode::ShiftLeft, KeyCode::ShiftRight]) || keys.any_just_released([KeyCode::ShiftLeft, KeyCode::ShiftRight]);
     for (key, action) in bindings {
         if keys.just_pressed(key) {
             // Ctrl+Z (Cmd+Z) undoes the last move; Z alone is sentry. Shift+Tab goes back through a stack.
@@ -273,11 +217,7 @@ pub fn keyboard_input(
         }
     }
     let mut toggle = |modal: Modal, ui: &mut UiState| {
-        ui.modal = if ui.modal == Some(modal) {
-            None
-        } else {
-            Some(modal)
-        };
+        ui.modal = if ui.modal == Some(modal) { None } else { Some(modal) };
         dirty.ui = true;
     };
     if keys.just_pressed(KeyCode::KeyQ) {

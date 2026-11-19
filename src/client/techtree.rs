@@ -34,12 +34,7 @@ impl TreeLayout {
             if let Some(d) = memo.get(&t) {
                 return *d;
             }
-            let d = t
-                .prerequisites()
-                .iter()
-                .map(|p| depth(*p, memo) + 1)
-                .max()
-                .unwrap_or(0);
+            let d = t.prerequisites().iter().map(|p| depth(*p, memo) + 1).max().unwrap_or(0);
             memo.insert(t, d);
             d
         }
@@ -59,14 +54,7 @@ impl TreeLayout {
             // Order by the average row of the prerequisites (first column: as listed).
             let key = |t: &Tech, rows: &HashMap<Tech, f32>| {
                 let pre = t.prerequisites();
-                if pre.is_empty() {
-                    0.0
-                } else {
-                    pre.iter()
-                        .map(|p| rows.get(p).copied().unwrap_or(0.0))
-                        .sum::<f32>()
-                        / pre.len() as f32
-                }
+                if pre.is_empty() { 0.0 } else { pre.iter().map(|p| rows.get(p).copied().unwrap_or(0.0)).sum::<f32>() / pre.len() as f32 }
             };
             if c > 0 {
                 column.sort_by(|a, b| key(a, &row_of).total_cmp(&key(b, &row_of)));
@@ -78,10 +66,7 @@ impl TreeLayout {
                 at.insert(*t, Vec2::new(PAD + c as f32 * COLUMN, PAD + row * ROW));
             }
         }
-        let size = UVec2::new(
-            (2.0 * PAD + (columns.len() as f32 - 1.0) * COLUMN + BOX_WIDTH) as u32,
-            (2.0 * PAD + (tallest as f32 - 1.0) * ROW + BOX_HEIGHT) as u32,
-        );
+        let size = UVec2::new((2.0 * PAD + (columns.len() as f32 - 1.0) * COLUMN + BOX_WIDTH) as u32, (2.0 * PAD + (tallest as f32 - 1.0) * ROW + BOX_HEIGHT) as u32);
         Self { at, size }
     }
 }
@@ -92,9 +77,7 @@ pub struct TreeImage(pub Handle<Image>);
 
 pub fn setup_tree(mut commands: Commands, mut images: ResMut<Assets<Image>>) {
     let layout = TreeLayout::new();
-    commands.insert_resource(TreeImage(
-        images.add(super::paint::blank(layout.size.x, layout.size.y)),
-    ));
+    commands.insert_resource(TreeImage(images.add(super::paint::blank(layout.size.x, layout.size.y))));
     commands.insert_resource(layout);
 }
 
@@ -112,9 +95,7 @@ pub fn draw_tree(
     mut images: ResMut<Assets<Image>>,
     mut drawn: Local<Option<(usize, Option<Tech>)>>,
 ) {
-    let (Some(layout), Some(image)) = (layout, image) else {
-        return;
-    };
+    let (Some(layout), Some(image)) = (layout, image) else { return };
     if ui.modal != Some(Modal::Science) {
         *drawn = None;
         return;
@@ -123,9 +104,7 @@ pub fn draw_tree(
     if *drawn == Some(key) {
         return;
     }
-    let Some(picture) = images.get_mut(&image.0) else {
-        return;
-    };
+    let Some(picture) = images.get_mut(&image.0) else { return };
     picture.data.fill(0);
     let path = tech.goal.map(|g| tech.path_to(g)).unwrap_or_default();
     let on_path = |t: &Tech| path.contains(t);
@@ -133,13 +112,9 @@ pub fn draw_tree(
     // The ordinary lines first, so the path is drawn on top.
     for pass in 0..2 {
         for t in Tech::ALL {
-            let Some(to) = layout.at.get(&t) else {
-                continue;
-            };
+            let Some(to) = layout.at.get(&t) else { continue };
             for p in t.prerequisites() {
-                let Some(from) = layout.at.get(&p) else {
-                    continue;
-                };
+                let Some(from) = layout.at.get(&p) else { continue };
                 let goal_link = on_path(&t) && (on_path(&p) || tech.researched.contains(&p));
                 if goal_link != (pass == 1) {
                     continue;
@@ -173,17 +148,10 @@ mod tests {
                 assert!(layout.at[&p].x < layout.at[&t].x, "{p:?} before {t:?}");
             }
             let at = layout.at[&t];
-            assert!(
-                at.x + BOX_WIDTH <= layout.size.x as f32
-                    && at.y + BOX_HEIGHT <= layout.size.y as f32
-            );
+            assert!(at.x + BOX_WIDTH <= layout.size.x as f32 && at.y + BOX_HEIGHT <= layout.size.y as f32);
         }
         // No two boxes share a place.
-        let mut places: Vec<(i32, i32)> = layout
-            .at
-            .values()
-            .map(|v| (v.x as i32, v.y as i32))
-            .collect();
+        let mut places: Vec<(i32, i32)> = layout.at.values().map(|v| (v.x as i32, v.y as i32)).collect();
         places.sort();
         places.dedup();
         assert_eq!(places.len(), Tech::ALL.len());

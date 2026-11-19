@@ -34,9 +34,7 @@ pub fn place(land: &[Hex], starts: &[Hex], rng: &mut impl Rng) -> HashSet<Hex> {
     while sites.len() < wanted && tries < wanted * 40 && !land.is_empty() {
         tries += 1;
         let at = land[rng.gen_range(0..land.len())];
-        if starts.iter().all(|s| s.distance_to(at) >= 4)
-            && sites.iter().all(|v| v.distance_to(at) >= 3)
-        {
+        if starts.iter().all(|s| s.distance_to(at) >= 4) && sites.iter().all(|v| v.distance_to(at) >= 3) {
             sites.insert(at);
         }
     }
@@ -62,24 +60,15 @@ mod tests {
 
     #[test]
     fn villages_keep_clear_of_starts_and_each_other() {
-        let land: Vec<Hex> = (0..30)
-            .flat_map(|q| (0..10).map(move |r| Hex::new(q, r)))
-            .collect();
+        let land: Vec<Hex> = (0..30).flat_map(|q| (0..10).map(move |r| Hex::new(q, r))).collect();
         let mut rng = rand::rngs::StdRng::seed_from_u64(5);
         let sites = place(&land, &[Hex::new(2, 2)], &mut rng);
         assert!(!sites.is_empty() && sites.len() <= land.len() / 30);
         assert!(sites.iter().all(|s| s.distance_to(Hex::new(2, 2)) >= 4));
         for a in &sites {
-            assert!(sites
-                .iter()
-                .filter(|b| *b != a)
-                .all(|b| b.distance_to(*a) >= 3));
+            assert!(sites.iter().filter(|b| *b != a).all(|b| b.distance_to(*a) >= 3));
         }
         let finds: Vec<Find> = (0..500).map(|_| roll(false, &mut rng)).collect();
-        assert!(
-            finds.iter().any(|f| matches!(f, Find::Gold(_)))
-                && finds.contains(&Find::Hostile)
-                && finds.contains(&Find::Technology)
-        );
+        assert!(finds.iter().any(|f| matches!(f, Find::Gold(_))) && finds.contains(&Find::Hostile) && finds.contains(&Find::Technology));
     }
 }

@@ -1,7 +1,7 @@
-use crate::building::CityBuildings;
+use bevy::prelude::*;
 use crate::city::City;
 use crate::tech::TechState;
-use bevy::prelude::*;
+use crate::building::CityBuildings;
 
 #[derive(Resource, Default, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Score {
@@ -24,11 +24,6 @@ impl Score {
         }
         let techs = tech.researched.len() as u32 * 10;
         let total = population * 2 + techs + wonders;
-        Self {
-            population,
-            techs,
-            wonders,
-            total,
-        }
+        Self { population, techs, wonders, total }
     }
 }

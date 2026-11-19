@@ -37,13 +37,8 @@ pub const DEFECTION_REACH: i32 = 5;
 /// Chance a city in disorder defects this turn to a far greater culture nearby. As in Civ III, a
 /// city far from its own capital, and one whose land the tempter's borders already hold, goes more
 /// readily, and troops in the city hold it back: each one divides the chance.
-pub fn defection_chance(
-    distance_to_capital: u32,
-    tiles_held_by_tempter: u32,
-    garrison: u32,
-) -> f64 {
-    let lure =
-        (1.0 + distance_to_capital as f64 / 10.0) * (1.0 + tiles_held_by_tempter as f64 / 6.0);
+pub fn defection_chance(distance_to_capital: u32, tiles_held_by_tempter: u32, garrison: u32) -> f64 {
+    let lure = (1.0 + distance_to_capital as f64 / 10.0) * (1.0 + tiles_held_by_tempter as f64 / 6.0);
     (DEFECTION_CHANCE * lure / (1 + garrison) as f64).min(0.6)
 }
 
@@ -55,10 +50,7 @@ pub const WONDER_CULTURE: u32 = 4;
 /// Library or Cathedral 3, a University 4, a wonder [`WONDER_CULTURE`].
 pub fn building_culture(building: Building) -> u32 {
     match building {
-        Building::Temple
-        | Building::Colosseum
-        | Building::ResearchLab
-        | Building::ForbiddenPalace => 2,
+        Building::Temple | Building::Colosseum | Building::ResearchLab | Building::ForbiddenPalace => 2,
         Building::Library | Building::Cathedral => 3,
         Building::University => 4,
         b if b.is_wonder() => WONDER_CULTURE,
@@ -74,21 +66,12 @@ pub fn historic_after(last_turn: u32) -> u32 {
 
 /// Culture a city earns each turn from its buildings and wonders - double for each that has stood
 /// `historic` turns (`age` says how long each has stood) - and from the palace in a capital.
-pub fn per_turn(
-    buildings: &[Building],
-    capital: bool,
-    age: impl Fn(Building) -> u32,
-    historic: u32,
-) -> u32 {
+pub fn per_turn(buildings: &[Building], capital: bool, age: impl Fn(Building) -> u32, historic: u32) -> u32 {
     let from_buildings: u32 = buildings
         .iter()
         .map(|b| {
             let points = building_culture(*b);
-            if points > 0 && age(*b) >= historic {
-                2 * points
-            } else {
-                points
-            }
+            if points > 0 && age(*b) >= historic { 2 * points } else { points }
         })
         .sum();
     from_buildings + if capital { PALACE_CULTURE } else { 0 }
@@ -150,10 +133,7 @@ impl CultureLedger {
 
     /// Culture a city has earned for `owner` since it came into its hands (nothing if it is not theirs).
     pub fn held_by(&self, city: Hex, owner: u32) -> u32 {
-        self.held
-            .get(&city)
-            .filter(|(o, _)| *o == owner)
-            .map_or(0, |(_, points)| *points)
+        self.held.get(&city).filter(|(o, _)| *o == owner).map_or(0, |(_, points)| *points)
     }
 
     /// A game saved before peoples kept their own culture: credit every city's culture to its
@@ -178,51 +158,25 @@ impl CultureLedger {
 
     /// Turns a city's building has stood by `turn`.
     pub fn age(&self, city: Hex, building: Building, turn: u32) -> u32 {
-        let since = self
-            .built
-            .get(&city)
-            .and_then(|list| list.iter().find(|(b, _)| *b == building))
-            .map_or(0, |(_, t)| *t);
+        let since = self.built.get(&city).and_then(|list| list.iter().find(|(b, _)| *b == building)).map_or(0, |(_, t)| *t);
         turn.saturating_sub(since)
     }
 
     /// Culture a city earns each turn now (see [`per_turn`]), in a game of `last_turn` turns.
-    pub fn earned(
-        &self,
-        city: Hex,
-        buildings: &[Building],
-        capital: bool,
-        turn: u32,
-        last_turn: u32,
-    ) -> u32 {
-        per_turn(
-            buildings,
-            capital,
-            |b| self.age(city, b, turn),
-            historic_after(last_turn),
-        )
+    pub fn earned(&self, city: Hex, buildings: &[Building], capital: bool, turn: u32, last_turn: u32) -> u32 {
+        per_turn(buildings, capital, |b| self.age(city, b, turn), historic_after(last_turn))
     }
 
     /// The culture each people holding a city has earned over the game, given who owns which city.
     pub fn totals(&self, owners: impl Iterator<Item = (Hex, u32)>) -> HashMap<u32, u32> {
-        owners
-            .map(|(_, owner)| (owner, self.of_people(owner)))
-            .collect()
+        owners.map(|(_, owner)| (owner, self.of_people(owner))).collect()
     }
 }
 
 /// The civilization (if any) that has won by culture.
 pub fn cultural_winner(totals: &HashMap<u32, u32>, threshold: u32) -> Option<u32> {
-    let (leader, best) = totals
-        .iter()
-        .max_by_key(|(_, c)| **c)
-        .map(|(o, c)| (*o, *c))?;
-    let second = totals
-        .iter()
-        .filter(|(o, _)| **o != leader)
-        .map(|(_, c)| *c)
-        .max()
-        .unwrap_or(0);
+    let (leader, best) = totals.iter().max_by_key(|(_, c)| **c).map(|(o, c)| (*o, *c))?;
+    let second = totals.iter().filter(|(o, _)| **o != leader).map(|(_, c)| *c).max().unwrap_or(0);
     (best >= threshold && best * 10 >= second * VICTORY_LEAD_TENTHS).then_some(leader)
 }
 
@@ -231,11 +185,7 @@ impl CultureLedger {
     /// owns which city: by the culture it has earned (see [`cultural_winner`]), or by what one of
     /// its cities has earned under its rule.
     pub fn winner(&self, owners: &[(Hex, u32)], last_turn: u32) -> Option<u32> {
-        cultural_winner(
-            &self.totals(owners.iter().copied()),
-            victory_culture(last_turn),
-        )
-        .or_else(|| {
+        cultural_winner(&self.totals(owners.iter().copied()), victory_culture(last_turn)).or_else(|| {
             let (_, owner, points) = self.best_city(owners)?;
             (points >= city_victory_culture(last_turn)).then_some(owner)
         })
@@ -243,10 +193,7 @@ impl CultureLedger {
 
     /// The city that has earned the most culture under its present owner: (city, owner, culture).
     pub fn best_city(&self, owners: &[(Hex, u32)]) -> Option<(Hex, u32, u32)> {
-        owners
-            .iter()
-            .map(|(at, owner)| (*at, *owner, self.held_by(*at, *owner)))
-            .max_by_key(|(_, _, points)| *points)
+        owners.iter().map(|(at, owner)| (*at, *owner, self.held_by(*at, *owner))).max_by_key(|(_, _, points)| *points)
     }
 }
 
@@ -266,92 +213,30 @@ mod tests {
     #[test]
     fn old_buildings_earn_double_culture() {
         let new = |_: Building| 0;
-        assert_eq!(
-            per_turn(
-                &[
-                    Building::Temple,
-                    Building::Cathedral,
-                    Building::Oracle,
-                    Building::Granary
-                ],
-                true,
-                new,
-                100
-            ),
-            2 + 3 + WONDER_CULTURE + PALACE_CULTURE
-        );
-        assert_eq!(
-            per_turn(&[Building::Library, Building::University], false, new, 100),
-            3 + 4
-        );
+        assert_eq!(per_turn(&[Building::Temple, Building::Cathedral, Building::Oracle, Building::Granary], true, new, 100), 2 + 3 + WONDER_CULTURE + PALACE_CULTURE);
+        assert_eq!(per_turn(&[Building::Library, Building::University], false, new, 100), 3 + 4);
         let mut ledger = CultureLedger::default();
         let city = Hex::new(3, 1);
         ledger.record(city, Building::Temple, 10);
         ledger.record(city, Building::Library, 80);
-        assert_eq!(
-            (
-                ledger.age(city, Building::Temple, 110),
-                ledger.age(city, Building::Library, 110)
-            ),
-            (100, 30)
-        );
-        assert_eq!(
-            ledger.age(city, Building::Colosseum, 110),
-            110,
-            "standing since the start"
-        );
+        assert_eq!((ledger.age(city, Building::Temple, 110), ledger.age(city, Building::Library, 110)), (100, 30));
+        assert_eq!(ledger.age(city, Building::Colosseum, 110), 110, "standing since the start");
         assert_eq!(historic_after(400), 100);
         // The Temple has stood 100 turns: double; the Library not yet.
-        assert_eq!(
-            ledger.earned(
-                city,
-                &[Building::Temple, Building::Library],
-                false,
-                110,
-                400
-            ),
-            2 * 2 + 3
-        );
+        assert_eq!(ledger.earned(city, &[Building::Temple, Building::Library], false, 110, 400), 2 * 2 + 3);
         // Rebuilt, a building starts again.
         ledger.record(city, Building::Temple, 105);
-        assert_eq!(
-            ledger.earned(
-                city,
-                &[Building::Temple, Building::Library],
-                false,
-                110,
-                400
-            ),
-            2 + 3
-        );
+        assert_eq!(ledger.earned(city, &[Building::Temple, Building::Library], false, 110, 400), 2 + 3);
     }
 
     #[test]
     fn culture_widens_borders_and_decides_the_cultural_victory() {
-        assert_eq!(
-            (
-                border_radius(0),
-                border_radius(150),
-                border_radius(9_999),
-                border_radius(10_000)
-            ),
-            (2, 3, 4, 5)
-        );
-        assert_eq!(
-            (
-                next_border_step(0),
-                next_border_step(999),
-                next_border_step(12_000)
-            ),
-            (Some(100), Some(1_000), None)
-        );
+        assert_eq!((border_radius(0), border_radius(150), border_radius(9_999), border_radius(10_000)), (2, 3, 4, 5));
+        assert_eq!((next_border_step(0), next_border_step(999), next_border_step(12_000)), (Some(100), Some(1_000), None));
         let mut ledger = CultureLedger::default();
         let threshold = victory_culture(400);
         assert_eq!((threshold, victory_culture(200)), (60_000, 30_000));
-        assert_eq!(
-            (city_victory_culture(400), city_victory_culture(300)),
-            (15_000, 11_250)
-        );
+        assert_eq!((city_victory_culture(400), city_victory_culture(300)), (15_000, 11_250));
         // Many cities of modest culture: the total counts.
         let ours: Vec<(Hex, u32)> = (0..10).map(|i| (Hex::new(i * 4, 0), 0)).collect();
         let theirs = (Hex::new(0, 9), 1);
@@ -365,22 +250,10 @@ mod tests {
         // A rival not far enough behind: no win by the total - but a great enough city wins alone.
         ledger.add(theirs.0, theirs.1, 10_000);
         let totals = ledger.totals(owners.iter().copied());
-        assert_eq!(
-            cultural_winner(&totals, threshold),
-            None,
-            "not twice the next"
-        );
-        assert_eq!(
-            ledger.winner(&owners, 400),
-            Some(1),
-            "their great city wins"
-        );
+        assert_eq!(cultural_winner(&totals, threshold), None, "not twice the next");
+        assert_eq!(ledger.winner(&owners, 400), Some(1), "their great city wins");
         assert_eq!(ledger.best_city(&owners), Some((theirs.0, 1, 60_000)));
-        assert_eq!(
-            CultureLedger::default().winner(&owners, 400),
-            None,
-            "no culture, no winner"
-        );
+        assert_eq!(CultureLedger::default().winner(&owners, 400), None, "no culture, no winner");
     }
 
     #[test]
@@ -396,17 +269,9 @@ mod tests {
         // So the great city wins nothing for its conqueror until it has earned it again.
         let owners = [(city, 2)];
         assert_eq!(ledger.best_city(&owners), Some((city, 2, 300)));
-        assert_eq!(
-            ledger.winner(&owners, 400),
-            None,
-            "the conqueror has earned too little there"
-        );
+        assert_eq!(ledger.winner(&owners, 400), None, "the conqueror has earned too little there");
         ledger.add(city, 2, 19_700);
-        assert_eq!(
-            ledger.winner(&owners, 400),
-            Some(2),
-            "20,000 earned under its rule"
-        );
+        assert_eq!(ledger.winner(&owners, 400), Some(2), "20,000 earned under its rule");
         // An old save: every city's culture goes to its present owner, once.
         let mut old = CultureLedger::default();
         old.city.insert(city, 5_000);

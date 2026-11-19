@@ -36,13 +36,7 @@ pub struct Screen {
 
 impl Default for Screen {
     fn default() -> Self {
-        Self {
-            width: 1280.0,
-            height: 720.0,
-            portrait: false,
-            compact: false,
-            scale: 1.0,
-        }
+        Self { width: 1280.0, height: 720.0, portrait: false, compact: false, scale: 1.0 }
     }
 }
 
@@ -51,16 +45,9 @@ impl Screen {
     pub fn for_window(width: f32, height: f32) -> Self {
         // Scale down only what is too narrow to lay out at all; otherwise keep text readable.
         let short = width.min(height);
-        let scale =
-            (width / MIN_LAYOUT_WIDTH).min(1.0).max(0.7) * if short < 420.0 { 0.9 } else { 1.0 };
+        let scale = (width / MIN_LAYOUT_WIDTH).min(1.0).max(0.7) * if short < 420.0 { 0.9 } else { 1.0 };
         let (w, h) = (width / scale, height / scale);
-        Self {
-            width: w,
-            height: h,
-            portrait: h > w,
-            compact: w < COMPACT_WIDTH || h < 480.0,
-            scale,
-        }
+        Self { width: w, height: h, portrait: h > w, compact: w < COMPACT_WIDTH || h < 480.0, scale }
     }
 
     /// The most a panel may take of the width, leaving a margin either side.
@@ -135,9 +122,7 @@ pub fn activate_buttons(
     mut pending: Local<Option<Entity>>,
     mut activated: EventWriter<Activated>,
 ) {
-    let touch = touches.iter().next().is_some()
-        || touches.iter_just_released().next().is_some()
-        || touches.iter_just_pressed().next().is_some();
+    let touch = touches.iter().next().is_some() || touches.iter_just_released().next().is_some() || touches.iter_just_pressed().next().is_some();
     for (entity, interaction) in &buttons {
         if *interaction == Interaction::Pressed {
             if touch {
@@ -167,16 +152,7 @@ pub fn scroll_panels(
     keys: Res<ButtonInput<KeyCode>>,
     touches: Res<Touches>,
     mut drag: ResMut<TouchScroll>,
-    mut panels: Query<
-        (
-            Entity,
-            &bevy::ui::RelativeCursorPosition,
-            &mut ScrollPosition,
-            &Node,
-            &ComputedNode,
-        ),
-        With<Scrollable>,
-    >,
+    mut panels: Query<(Entity, &bevy::ui::RelativeCursorPosition, &mut ScrollPosition, &Node, &ComputedNode), With<Scrollable>>,
 ) {
     let shift = keys.any_pressed([KeyCode::ShiftLeft, KeyCode::ShiftRight]);
     let (mut delta, mut delta_x) = (0.0f32, 0.0f32);
@@ -244,9 +220,7 @@ pub fn scroll_panels(
 }
 
 /// Whether the pointer (or finger) is over a scrollable panel, so the map should not pan or zoom.
-pub fn over_scrollable(
-    panels: &Query<&bevy::ui::RelativeCursorPosition, With<Scrollable>>,
-) -> bool {
+pub fn over_scrollable(panels: &Query<&bevy::ui::RelativeCursorPosition, With<Scrollable>>) -> bool {
     panels.iter().any(|c| c.mouse_over())
 }
 
@@ -255,28 +229,16 @@ pub fn over_scrollable(
 pub fn fit_canvas(mut windows: Query<&mut Window, With<PrimaryWindow>>) {
     #[cfg(target_arch = "wasm32")]
     {
-        let Some(page) = web_sys::window() else {
-            return;
-        };
-        let width = page
-            .inner_width()
-            .ok()
-            .and_then(|v| v.as_f64())
-            .unwrap_or(0.0) as f32;
-        let height = page
-            .inner_height()
-            .ok()
-            .and_then(|v| v.as_f64())
-            .unwrap_or(0.0) as f32;
+        let Some(page) = web_sys::window() else { return };
+        let width = page.inner_width().ok().and_then(|v| v.as_f64()).unwrap_or(0.0) as f32;
+        let height = page.inner_height().ok().and_then(|v| v.as_f64()).unwrap_or(0.0) as f32;
         let ratio = page.device_pixel_ratio() as f32;
         if width < 1.0 || height < 1.0 {
             return;
         }
         for mut window in &mut windows {
             let res = &window.resolution;
-            let same = (res.width() - width).abs() < 0.5
-                && (res.height() - height).abs() < 0.5
-                && res.scale_factor_override() == Some(ratio);
+            let same = (res.width() - width).abs() < 0.5 && (res.height() - height).abs() < 0.5 && res.scale_factor_override() == Some(ratio);
             if !same {
                 window.resolution.set_scale_factor_override(Some(ratio));
                 window.resolution.set(width, height);
@@ -296,13 +258,10 @@ pub fn classify_screen(
     mut first: Local<bool>,
 ) {
     let changed = resized.read().count() > 0 || !*first;
-    let Ok(window) = windows.get_single() else {
-        return;
-    };
+    let Ok(window) = windows.get_single() else { return };
     // The window may be resized without an event reaching us first (see `fit_canvas`), so also
     // compare sizes.
-    let size_moved = (window.width() / screen.scale - screen.width).abs() > 1.0
-        || (window.height() / screen.scale - screen.height).abs() > 1.0;
+    let size_moved = (window.width() / screen.scale - screen.width).abs() > 1.0 || (window.height() / screen.scale - screen.height).abs() > 1.0;
     if !changed && !size_moved {
         return;
     }
@@ -317,10 +276,7 @@ pub fn classify_screen(
 }
 
 /// Measures the docked panels others must keep clear of.
-pub fn measure_docks(
-    docks: Query<(&Dock, &ComputedNode, &Node)>,
-    mut extents: ResMut<DockExtents>,
-) {
+pub fn measure_docks(docks: Query<(&Dock, &ComputedNode, &Node)>, mut extents: ResMut<DockExtents>) {
     let mut next = DockExtents::default();
     for (dock, computed, node) in &docks {
         if node.display == Display::None {
@@ -334,10 +290,7 @@ pub fn measure_docks(
             _ => {}
         }
     }
-    if (extents.top - next.top).abs() > 0.5
-        || (extents.bottom_left - next.bottom_left).abs() > 0.5
-        || (extents.bottom_right - next.bottom_right).abs() > 0.5
-    {
+    if (extents.top - next.top).abs() > 0.5 || (extents.bottom_left - next.bottom_left).abs() > 0.5 || (extents.bottom_right - next.bottom_right).abs() > 0.5 {
         *extents = next;
     }
 }
@@ -348,17 +301,9 @@ pub fn measure_docks(
 /// - compact screens: the bottom corners share the bottom strip (the left one takes what the right
 ///   one leaves), and the right panel becomes a full-width sheet over the bottom strip, below the
 ///   top bar.
-pub fn place_docks(
-    screen: Res<Screen>,
-    extents: Res<DockExtents>,
-    mut docks: Query<(&Dock, Option<&DockSize>, &mut Node)>,
-) {
+pub fn place_docks(screen: Res<Screen>, extents: Res<DockExtents>, mut docks: Query<(&Dock, Option<&DockSize>, &mut Node)>) {
     let s = *screen;
-    let right_width = docks
-        .iter()
-        .find(|(d, _, _)| **d == Dock::BottomRight)
-        .and_then(|(_, size, _)| size.map(|z| z.width))
-        .unwrap_or(200.0);
+    let right_width = docks.iter().find(|(d, _, _)| **d == Dock::BottomRight).and_then(|(_, size, _)| size.map(|z| z.width)).unwrap_or(200.0);
     for (dock, size, mut node) in &mut docks {
         let want = size.map(|z| z.width);
         let set = |node: &mut Node, field: fn(&mut Node) -> &mut Val, value: Val| {
@@ -376,31 +321,17 @@ pub fn place_docks(
             Dock::BottomRight => {
                 set(&mut node, |n| &mut n.right, Val::Px(MARGIN));
                 set(&mut node, |n| &mut n.bottom, Val::Px(MARGIN));
-                let width = if s.compact {
-                    want.unwrap_or(200.0).min(s.usable_width(MARGIN) * 0.38)
-                } else {
-                    want.unwrap_or(200.0)
-                };
+                let width = if s.compact { want.unwrap_or(200.0).min(s.usable_width(MARGIN) * 0.38) } else { want.unwrap_or(200.0) };
                 set(&mut node, |n| &mut n.width, Val::Px(width));
             }
             Dock::BottomLeft => {
                 set(&mut node, |n| &mut n.left, Val::Px(MARGIN));
                 set(&mut node, |n| &mut n.bottom, Val::Px(MARGIN));
                 // Whatever the bottom-right panel leaves of the width.
-                let room = s.usable_width(MARGIN)
-                    - if s.compact {
-                        right_width.min(s.usable_width(MARGIN) * 0.38)
-                    } else {
-                        right_width
-                    }
-                    - MARGIN;
+                let room = s.usable_width(MARGIN) - if s.compact { right_width.min(s.usable_width(MARGIN) * 0.38) } else { right_width } - MARGIN;
                 let width = want.unwrap_or(360.0).min(room.max(160.0));
                 set(&mut node, |n| &mut n.width, Val::Px(width));
-                set(
-                    &mut node,
-                    |n| &mut n.max_height,
-                    Val::Px((s.height - extents.top - 2.0 * MARGIN).max(120.0)),
-                );
+                set(&mut node, |n| &mut n.max_height, Val::Px((s.height - extents.top - 2.0 * MARGIN).max(120.0)));
             }
             Dock::Right => {
                 let top = extents.top + MARGIN;
@@ -415,17 +346,9 @@ pub fn place_docks(
                 } else {
                     set(&mut node, |n| &mut n.left, Val::Auto);
                     set(&mut node, |n| &mut n.right, Val::Px(MARGIN));
-                    set(
-                        &mut node,
-                        |n| &mut n.width,
-                        Val::Px(want.unwrap_or(430.0).min(s.usable_width(MARGIN))),
-                    );
+                    set(&mut node, |n| &mut n.width, Val::Px(want.unwrap_or(430.0).min(s.usable_width(MARGIN))));
                     set(&mut node, |n| &mut n.top, Val::Px(top));
-                    set(
-                        &mut node,
-                        |n| &mut n.bottom,
-                        Val::Px(extents.bottom_right + 2.0 * MARGIN),
-                    );
+                    set(&mut node, |n| &mut n.bottom, Val::Px(extents.bottom_right + 2.0 * MARGIN));
                 }
             }
             Dock::Centre => {
@@ -445,19 +368,9 @@ impl Plugin for LayoutPlugin {
             .init_resource::<DockExtents>()
             .init_resource::<TouchScroll>()
             .add_event::<Activated>()
-            .add_systems(
-                Update,
-                (activate_buttons, scroll_panels)
-                    .chain()
-                    .in_set(LayoutInput),
-            )
+            .add_systems(Update, (activate_buttons, scroll_panels).chain().in_set(LayoutInput))
             .add_systems(PreUpdate, fit_canvas)
-            .add_systems(
-                PostUpdate,
-                (classify_screen, measure_docks, place_docks)
-                    .chain()
-                    .before(bevy::ui::UiSystem::Layout),
-            );
+            .add_systems(PostUpdate, (classify_screen, measure_docks, place_docks).chain().before(bevy::ui::UiSystem::Layout));
     }
 }
 
@@ -469,16 +382,9 @@ mod tests {
     fn phones_are_compact_both_ways_and_desktops_are_not() {
         let portrait = Screen::for_window(390.0, 844.0);
         assert!(portrait.compact && portrait.portrait);
-        assert!(
-            portrait.width >= MIN_LAYOUT_WIDTH - 1.0,
-            "laid out at least {MIN_LAYOUT_WIDTH} wide, got {}",
-            portrait.width
-        );
+        assert!(portrait.width >= MIN_LAYOUT_WIDTH - 1.0, "laid out at least {MIN_LAYOUT_WIDTH} wide, got {}", portrait.width);
         let landscape = Screen::for_window(844.0, 390.0);
-        assert!(
-            landscape.compact && !landscape.portrait,
-            "a short landscape phone is compact too"
-        );
+        assert!(landscape.compact && !landscape.portrait, "a short landscape phone is compact too");
         let desktop = Screen::for_window(1280.0, 800.0);
         assert!(!desktop.compact && desktop.scale == 1.0);
         let tablet = Screen::for_window(820.0, 1180.0);

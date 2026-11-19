@@ -1,8 +1,8 @@
+use bevy::prelude::*;
+use hexx::Hex;
 use crate::building::CityBuildings;
 use crate::diplomacy::Happiness;
 use crate::government::Government;
-use bevy::prelude::*;
-use hexx::Hex;
 
 #[derive(Component, Clone, serde::Serialize, serde::Deserialize)]
 pub struct City {
@@ -115,10 +115,7 @@ impl ProductionItem {
 impl City {
     /// Shields still needed to finish the current project.
     pub fn shields_left(&self) -> u32 {
-        self.production_queue
-            .as_ref()
-            .map(|i| i.cost().saturating_sub(self.production_progress))
-            .unwrap_or(0)
+        self.production_queue.as_ref().map(|i| i.cost().saturating_sub(self.production_progress)).unwrap_or(0)
     }
 
     /// Whether the current project can be hurried at all (wonders cannot: caravans and great engineers help those).
@@ -142,11 +139,7 @@ impl City {
             Some(ProductionItem::Unit(_)) => 2 * left + left * left / 20,
             _ => 2 * left,
         };
-        Some(if self.production_progress == 0 {
-            gold * 2
-        } else {
-            gold
-        })
+        Some(if self.production_progress == 0 { gold * 2 } else { gold })
     }
 
     /// Citizens it takes to rush the current project under a government that allows it (one for
@@ -161,8 +154,7 @@ impl City {
 
     /// Citizens working the land (specialists do not).
     pub fn workers(&self) -> u32 {
-        self.population
-            .saturating_sub(self.specialists.len() as u32)
+        self.population.saturating_sub(self.specialists.len() as u32)
     }
 
     /// Shields the city's land and buildings give, less the share `waste` lost (see
@@ -178,8 +170,7 @@ impl City {
     /// Food left over each turn once everyone has eaten (two each): the worked land and the
     /// buildings feed the city, and specialists eat without farming. Can be negative.
     pub fn food_balance(&self, buildings: &CityBuildings) -> i32 {
-        (self.land.0 + buildings.total_food_bonus()) as i32
-            - (self.population * crate::tiles::FOOD_PER_CITIZEN) as i32
+        (self.land.0 + buildings.total_food_bonus()) as i32 - (self.population * crate::tiles::FOOD_PER_CITIZEN) as i32
     }
 
     /// The surplus shown in the city panel (never below zero; see `food_balance`).
@@ -189,26 +180,16 @@ impl City {
 
     /// Citizens its entertainers calm (two each).
     pub fn luxury_from_specialists(&self) -> u32 {
-        self.specialists
-            .iter()
-            .filter(|s| matches!(s, Specialist::Entertainer))
-            .count() as u32
-            * 2
+        self.specialists.iter().filter(|s| matches!(s, Specialist::Entertainer)).count() as u32 * 2
     }
 
     /// Its scientists and tax collectors.
     pub fn scientists(&self) -> u32 {
-        self.specialists
-            .iter()
-            .filter(|s| matches!(s, Specialist::Scientist))
-            .count() as u32
+        self.specialists.iter().filter(|s| matches!(s, Specialist::Scientist)).count() as u32
     }
 
     pub fn tax_collectors(&self) -> u32 {
-        self.specialists
-            .iter()
-            .filter(|s| matches!(s, Specialist::TaxCollector))
-            .count() as u32
+        self.specialists.iter().filter(|s| matches!(s, Specialist::TaxCollector)).count() as u32
     }
 
     /// Food the city must gather to grow (see `food_box`).
@@ -241,9 +222,7 @@ impl City {
         if self.food_storage < self.food_to_grow() {
             return Growth::Steady;
         }
-        if self.population
-            >= crate::building::Building::size_limit(&buildings.buildings, fresh_water)
-        {
+        if self.population >= crate::building::Building::size_limit(&buildings.buildings, fresh_water) {
             self.food_storage = self.food_to_grow();
             return Growth::Capped;
         }
@@ -257,11 +236,7 @@ impl City {
         Growth::Grew
     }
 
-    pub fn process_production(
-        &mut self,
-        buildings: &CityBuildings,
-        waste: f32,
-    ) -> Option<ProductionItem> {
+    pub fn process_production(&mut self, buildings: &CityBuildings, waste: f32) -> Option<ProductionItem> {
         let Some(item) = &self.production_queue else {
             // No project: the shields are kept for the next one.
             self.production_progress += self.production_per_turn(buildings, waste);
@@ -354,9 +329,9 @@ mod hurry_tests {
             land: (0, 0, 0),
             focus: Default::default(),
             pinned: Vec::new(),
-            narcotics: 0,
-            scandal: 0,
-            auto_build: true,
+                narcotics: 0,
+                scandal: 0,
+                auto_build: true,
         }
     }
 
@@ -367,11 +342,7 @@ mod hurry_tests {
         assert_eq!(temple.hurry_cost(), Some(2 * 20));
         let fresh = city(ProductionItem::Building(Building::Temple), 0, 5);
         assert_eq!(fresh.hurry_cost(), Some(2 * (2 * 30)));
-        assert_eq!(
-            city(ProductionItem::Building(Building::Pyramids), 10, 5).hurry_cost(),
-            None,
-            "no buying wonders"
-        );
+        assert_eq!(city(ProductionItem::Building(Building::Pyramids), 10, 5).hurry_cost(), None, "no buying wonders");
         // Units: a premium that grows with what is missing.
         let legion = city(ProductionItem::Unit(UnitType::Legion), 5, 5);
         let left = (UnitType::Legion.cost() - 5) as i32;
@@ -390,9 +361,7 @@ mod hurry_tests {
         assert_eq!(town.production_per_turn(&none, 0.5), 0);
         // A Factory and a Power Plant each add a quarter.
         town.land = (6, 12, 2);
-        let industry = CityBuildings {
-            buildings: vec![Building::Factory, Building::PowerPlant],
-        };
+        let industry = CityBuildings { buildings: vec![Building::Factory, Building::PowerPlant] };
         assert_eq!(town.production_per_turn(&industry, 0.0), 18);
     }
 
@@ -402,13 +371,7 @@ mod hurry_tests {
             let mut town = city(ProductionItem::Building(Building::Temple), 0, population);
             town.food_storage = town.food_to_grow() - 1;
             town.land = (population * 2 + 3, 1, 0);
-            let built = CityBuildings {
-                buildings: if granary {
-                    vec![Building::Granary]
-                } else {
-                    vec![]
-                },
-            };
+            let built = CityBuildings { buildings: if granary { vec![Building::Granary] } else { vec![] } };
             let growth = town.process_food(&built, false);
             (growth, town)
         };
@@ -418,25 +381,13 @@ mod hurry_tests {
         let (_, stored) = full(true, 3);
         assert_eq!(stored.food_storage, 2 + 20 / 2);
         // The box is the same through a town's sizes, then doubles for a city.
-        assert_eq!(
-            (
-                food_box(1),
-                food_box(6),
-                food_box(7),
-                food_box(12),
-                food_box(13)
-            ),
-            (20, 20, 40, 40, 60)
-        );
+        assert_eq!((food_box(1), food_box(6), food_box(7), food_box(12), food_box(13)), (20, 20, 40, 40, 60));
         // Size 6 is the limit without an aqueduct or fresh water.
         assert_eq!(full(false, 6).0, Growth::Capped);
         let mut riverside = city(ProductionItem::Building(Building::Temple), 0, 6);
         riverside.food_storage = riverside.food_to_grow();
         riverside.land = (20, 1, 0);
-        assert_eq!(
-            riverside.process_food(&CityBuildings { buildings: vec![] }, true),
-            Growth::Grew
-        );
+        assert_eq!(riverside.process_food(&CityBuildings { buildings: vec![] }, true), Growth::Grew);
         assert_eq!(Building::size_limit(&[Building::Aqueduct], false), 12);
         assert_eq!(Building::size_limit(&[], true), 12);
     }
@@ -447,11 +398,7 @@ mod hurry_tests {
         assert_eq!(barracks.rush_citizens(Government::Despotism), Some(2));
         assert_eq!(barracks.rush_citizens(Government::Democracy), None);
         let small = city(ProductionItem::Building(Building::Barracks), 0, 2);
-        assert_eq!(
-            small.rush_citizens(Government::Despotism),
-            None,
-            "a city keeps one citizen"
-        );
+        assert_eq!(small.rush_citizens(Government::Despotism), None, "a city keeps one citizen");
     }
 }
 

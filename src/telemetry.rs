@@ -28,14 +28,8 @@ pub fn report_milestones(
         *reported = Reported::default();
         return;
     };
-    let scenario = game
-        .as_ref()
-        .map(|g| g.scenario.id.clone())
-        .unwrap_or_else(|| "saved".into());
-    let difficulty = game
-        .as_ref()
-        .map(|g| g.difficulty.name())
-        .unwrap_or("unknown");
+    let scenario = game.as_ref().map(|g| g.scenario.id.clone()).unwrap_or_else(|| "saved".into());
+    let difficulty = game.as_ref().map(|g| g.difficulty.name()).unwrap_or("unknown");
     let ours = cities.iter().filter(|c| c.owner == PLAYER).count();
     let detail = |extra: String| {
         format!(
@@ -48,11 +42,7 @@ pub fn report_milestones(
     match reported.turn {
         // A new game, or one continued from a save.
         None => {
-            let resumed = if state.turn > 1 {
-                r#","resumed":true"#
-            } else {
-                ""
-            };
+            let resumed = if state.turn > 1 { r#","resumed":true"# } else { "" };
             emit("game_start", &scenario, state.turn, &detail(resumed.into()));
         }
         Some(last) if last != state.turn => {
@@ -70,12 +60,7 @@ pub fn report_milestones(
     if let (Some(result), false) = (&state.victory, reported.ended) {
         reported.ended = true;
         let won = !result.starts_with("Defeat") && !result.contains("fallen");
-        emit(
-            "game_over",
-            &scenario,
-            state.turn,
-            &detail(format!(r#","won":{won},"result":{result:?}"#)),
-        );
+        emit("game_over", &scenario, state.turn, &detail(format!(r#","won":{won},"result":{result:?}"#)));
     }
 }
 

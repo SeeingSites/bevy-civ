@@ -19,8 +19,8 @@ pub mod map;
 pub mod paint;
 pub mod relations;
 pub mod replay;
-pub mod sfx;
 pub mod techtree;
+pub mod sfx;
 pub mod tips;
 pub mod ui;
 
@@ -58,10 +58,7 @@ pub struct Art {
 
 impl Art {
     pub fn atlas(&self, layout: &Handle<TextureAtlasLayout>, index: usize) -> TextureAtlas {
-        TextureAtlas {
-            layout: layout.clone(),
-            index,
-        }
+        TextureAtlas { layout: layout.clone(), index }
     }
 }
 
@@ -96,20 +93,8 @@ pub mod icon {
     pub const CULTURE: usize = 10;
 }
 
-fn load_art(
-    mut commands: Commands,
-    assets: Res<AssetServer>,
-    mut layouts: ResMut<Assets<TextureAtlasLayout>>,
-) {
-    let mut grid = |w: u32, h: u32, cols: u32, rows: u32| {
-        layouts.add(TextureAtlasLayout::from_grid(
-            UVec2::new(w, h),
-            cols,
-            rows,
-            None,
-            None,
-        ))
-    };
+fn load_art(mut commands: Commands, assets: Res<AssetServer>, mut layouts: ResMut<Assets<TextureAtlasLayout>>) {
+    let mut grid = |w: u32, h: u32, cols: u32, rows: u32| layouts.add(TextureAtlasLayout::from_grid(UVec2::new(w, h), cols, rows, None, None));
     commands.insert_resource(Art {
         terrain: assets.load(format!("{}/terrain.png", bevy_civ::theme::sprites())),
         terrain_layout: grid(192, 224, 8, 7),
@@ -164,12 +149,7 @@ pub fn owner_name(owner: u32, civs: &bevy_civ::ai::Civilizations) -> String {
     match owner {
         crate::PLAYER => "Your".into(),
         crate::BARBARIANS => bevy_civ::theme::term("barbarian", "Barbarian").into(),
-        id => civs
-            .players
-            .iter()
-            .find(|c| c.id == id)
-            .map(|c| c.adjective.clone())
-            .unwrap_or_else(|| "Unknown".into()),
+        id => civs.players.iter().find(|c| c.id == id).map(|c| c.adjective.clone()).unwrap_or_else(|| "Unknown".into()),
     }
 }
 
@@ -184,72 +164,23 @@ impl Plugin for ClientPlugin {
             .init_resource::<ui::UiState>()
             .init_resource::<ui::MenuState>()
             .add_systems(PreStartup, load_art)
-            .add_systems(
-                Startup,
-                (
-                    map::setup_map_view,
-                    ui::setup_ui,
-                    ui::setup_menu,
-                    relations::setup_web,
-                    techtree::setup_tree,
-                    replay::setup_replay,
-                ),
-            )
-            .add_systems(
-                Update,
-                (
-                    ui::button_actions,
-                    ui::rebuild_menu,
-                    ui::button_visuals,
-                    ui::fit_ui_scale,
-                    ui::apply_key_hints,
-                    ui::scroll_panels,
-                    ui::update_sound_button,
-                    relations::draw_web,
-                    techtree::draw_tree,
-                    replay::run_replay,
-                )
-                    .chain()
-                    .after(layout::LayoutInput)
-                    .before(GameLogic),
-            )
-            .add_systems(
-                Update,
-                ui::poll_import.run_if(in_state(crate::AppState::Menu)),
-            )
+            .add_systems(Startup, (map::setup_map_view, ui::setup_ui, ui::setup_menu, relations::setup_web, techtree::setup_tree, replay::setup_replay))
+            .add_systems(Update, (ui::button_actions, ui::rebuild_menu, ui::button_visuals, ui::fit_ui_scale, ui::apply_key_hints, ui::scroll_panels, ui::update_sound_button, relations::draw_web, techtree::draw_tree, replay::run_replay).chain().after(layout::LayoutInput).before(GameLogic))
+            .add_systems(Update, ui::poll_import.run_if(in_state(crate::AppState::Menu)))
             .init_resource::<tips::Tips>()
             .init_resource::<battles::BattleTheatre>()
             .add_systems(
                 Update,
-                (
-                    battles::queue_battles,
-                    battles::stage_battles,
-                    battles::animate_fallen,
-                    battles::animate_battle_text,
-                    map::update_villages,
-                    map::show_city_area,
-                )
+                (battles::queue_battles, battles::stage_battles, battles::animate_fallen, battles::animate_battle_text, map::update_villages, map::show_city_area)
                     .chain()
                     .after(GameLogic)
                     .run_if(in_state(crate::AppState::Playing)),
             )
             .add_systems(OnEnter(crate::AppState::Playing), tips::reset)
+            .add_systems(Update, (tips::queue_tips.run_if(in_state(crate::AppState::Playing)), tips::show_tip).chain().after(GameLogic))
             .add_systems(
                 Update,
-                (
-                    tips::queue_tips.run_if(in_state(crate::AppState::Playing)),
-                    tips::show_tip,
-                )
-                    .chain()
-                    .after(GameLogic),
-            )
-            .add_systems(
-                Update,
-                (
-                    input::pointer_input,
-                    input::keyboard_input,
-                    ui::minimap_click,
-                )
+                (input::pointer_input, input::keyboard_input, ui::minimap_click)
                     .chain()
                     .after(ui::button_actions)
                     .before(GameLogic)

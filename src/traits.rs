@@ -26,14 +26,7 @@ pub enum Trait {
 }
 
 impl Trait {
-    pub const ALL: [Trait; 6] = [
-        Trait::Militaristic,
-        Trait::Commercial,
-        Trait::Scientific,
-        Trait::Religious,
-        Trait::Industrious,
-        Trait::Agricultural,
-    ];
+    pub const ALL: [Trait; 6] = [Trait::Militaristic, Trait::Commercial, Trait::Scientific, Trait::Religious, Trait::Industrious, Trait::Agricultural];
 
     pub fn name(&self) -> &'static str {
         match self {
@@ -99,11 +92,7 @@ pub fn of_wonder(wonder: Building) -> &'static [Trait] {
 
 /// "Scientific and Commercial": the traits a wonder speaks to, for its description.
 pub fn wonder_traits(wonder: Building) -> String {
-    of_wonder(wonder)
-        .iter()
-        .map(|t| t.name())
-        .collect::<Vec<_>>()
-        .join(" and ")
+    of_wonder(wonder).iter().map(|t| t.name()).collect::<Vec<_>>().join(" and ")
 }
 
 /// A civilization's two traits and its unique unit.
@@ -121,12 +110,7 @@ impl Character {
     /// Extra (food, shields, gold, science) in each of its cities.
     pub fn city_bonus(&self) -> (u32, u32, u32, u32) {
         let n = |t: Trait| u32::from(self.has(t));
-        (
-            n(Trait::Agricultural),
-            n(Trait::Industrious),
-            n(Trait::Commercial),
-            n(Trait::Scientific),
-        )
+        (n(Trait::Agricultural), n(Trait::Industrious), n(Trait::Commercial), n(Trait::Scientific))
     }
 
     /// Extra content citizens in each of its cities.
@@ -189,24 +173,15 @@ pub fn of(name: &str) -> Character {
         "Canada" => ([Agricultural, Scientific], U::Mountie),
         "Mexico" => ([Religious, Agricultural], U::Charro),
         _ => {
-            let seed = key
-                .bytes()
-                .fold(7u32, |h, b| h.wrapping_mul(31).wrapping_add(b as u32));
+            let seed = key.bytes().fold(7u32, |h, b| h.wrapping_mul(31).wrapping_add(b as u32));
             let first = Trait::ALL[(seed % 6) as usize];
             let second = Trait::ALL[((seed / 6) % 5 + 1 + seed % 6) as usize % 6];
-            let pool: Vec<UnitType> = UnitType::ALL
-                .into_iter()
-                .filter(|u| u.unique_base().is_some())
-                .collect();
+            let pool: Vec<UnitType> = UnitType::ALL.into_iter().filter(|u| u.unique_base().is_some()).collect();
             ([first, second], pool[(seed / 30) as usize % pool.len()])
         }
     };
     // A theme without unique units: every people trains the ordinary units.
-    let unique = if crate::theme::unique_units() {
-        unique
-    } else {
-        U::Infantry
-    };
+    let unique = if crate::theme::unique_units() { unique } else { U::Infantry };
     Character { traits, unique }
 }
 
@@ -223,14 +198,7 @@ mod tests {
 
     #[test]
     fn every_civilization_has_two_different_traits() {
-        for name in [
-            "Rome",
-            "the Aztecs",
-            "Atlantis",
-            "Nowhere",
-            "the Observers",
-            "",
-        ] {
+        for name in ["Rome", "the Aztecs", "Atlantis", "Nowhere", "the Observers", ""] {
             let c = of(name);
             assert_ne!(c.traits[0], c.traits[1], "{name}");
         }
@@ -244,28 +212,15 @@ mod tests {
 
     #[test]
     fn every_wonder_speaks_to_a_trait_and_every_trait_has_ancient_wonders() {
-        let wonders: Vec<Building> = Building::ALL
-            .into_iter()
-            .filter(|b| b.is_wonder())
-            .collect();
+        let wonders: Vec<Building> = Building::ALL.into_iter().filter(|b| b.is_wonder()).collect();
         for w in &wonders {
             assert!(!of_wonder(*w).is_empty(), "{w:?} speaks to no trait");
         }
         for t in Trait::ALL {
-            let early = wonders
-                .iter()
-                .filter(|w| {
-                    of_wonder(**w).contains(&t)
-                        && w.required_tech()
-                            .is_some_and(|tech| tech.era() == crate::tech::Era::Ancient)
-                })
-                .count();
+            let early = wonders.iter().filter(|w| of_wonder(**w).contains(&t) && w.required_tech().is_some_and(|tech| tech.era() == crate::tech::Era::Ancient)).count();
             assert!(early >= 1, "no ancient wonder for {t:?}");
         }
         assert!(of("Rome").admires(Building::Colossus) && !of("Rome").admires(Building::Oracle));
-        assert_eq!(
-            wonder_traits(Building::Leonardo),
-            "Scientific and Industrious"
-        );
+        assert_eq!(wonder_traits(Building::Leonardo), "Scientific and Industrious");
     }
 }

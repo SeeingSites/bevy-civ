@@ -22,12 +22,7 @@ pub enum Faith {
 }
 
 impl Faith {
-    pub const ALL: [Faith; 4] = [
-        Faith::OldGods,
-        Faith::WayOfReason,
-        Faith::OneFaith,
-        Faith::Reformed,
-    ];
+    pub const ALL: [Faith; 4] = [Faith::OldGods, Faith::WayOfReason, Faith::OneFaith, Faith::Reformed];
 
     pub fn name(&self) -> &'static str {
         crate::theme::rename(crate::theme::Kind::Faith, self, self.base_name())
@@ -86,10 +81,7 @@ impl Religions {
 
     /// The faith a city is a holy city of, if any.
     pub fn holy_faith(&self, city: Hex) -> Option<Faith> {
-        self.holy
-            .iter()
-            .find(|(_, at)| **at == city)
-            .map(|(f, _)| *f)
+        self.holy.iter().find(|(_, at)| **at == city).map(|(f, _)| *f)
     }
 
     /// Cities following each faith.
@@ -107,11 +99,7 @@ impl Religions {
     pub fn spread(&mut self, cities: &[Hex], rng: &mut impl Rng) -> Vec<(Hex, Faith)> {
         let mut converted = Vec::new();
         for &city in cities.iter().filter(|c| !self.city.contains_key(c)) {
-            let nearest = self
-                .city
-                .iter()
-                .filter(|(at, _)| at.distance_to(city) <= SPREAD_REACH)
-                .min_by_key(|(at, _)| (at.distance_to(city), at.x, at.y));
+            let nearest = self.city.iter().filter(|(at, _)| at.distance_to(city) <= SPREAD_REACH).min_by_key(|(at, _)| (at.distance_to(city), at.x, at.y));
             let Some((at, faith)) = nearest else { continue };
             let chance = (0.09 - 0.008 * at.distance_to(city) as f64).max(0.02);
             if rng.gen_bool(chance) {

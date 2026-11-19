@@ -24,10 +24,7 @@ pub struct Calendar {
 
 impl Default for Calendar {
     fn default() -> Self {
-        Self {
-            before: "{year} BC".into(),
-            after: "{year} AD".into(),
-        }
+        Self { before: "{year} BC".into(), after: "{year} AD".into() }
     }
 }
 
@@ -106,9 +103,7 @@ impl Theme {
         if year < 0 {
             self.calendar.before.replace("{year}", &(-year).to_string())
         } else {
-            self.calendar
-                .after
-                .replace("{year}", &year.max(1).to_string())
+            self.calendar.after.replace("{year}", &year.max(1).to_string())
         }
     }
 }
@@ -136,11 +131,7 @@ pub fn activate(theme: Theme) {
 
 /// Activates a built-in theme by id; returns false (leaving the current one) if there is none.
 pub fn activate_built_in(id: &str) -> bool {
-    match BUILT_IN
-        .iter()
-        .find(|(name, _)| *name == id)
-        .map(|(_, json)| Theme::parse(json))
-    {
+    match BUILT_IN.iter().find(|(name, _)| *name == id).map(|(_, json)| Theme::parse(json)) {
         Some(Ok(theme)) => {
             activate(theme);
             true
@@ -161,31 +152,21 @@ pub fn plays(theme: &str) -> bool {
 
 /// The id of the theme in force ("earth" by default).
 pub fn id() -> &'static str {
-    active()
-        .map(|t| t.id.as_str())
-        .filter(|id| !id.is_empty())
-        .unwrap_or("earth")
+    active().map(|t| t.id.as_str()).filter(|id| !id.is_empty()).unwrap_or("earth")
 }
 
 /// The name of `value` under the theme in force, or `default` (its Earth name).
 pub fn rename<T: std::fmt::Debug>(kind: Kind, value: &T, default: &'static str) -> &'static str {
-    let Some(theme) = active() else {
-        return default;
-    };
+    let Some(theme) = active() else { return default };
     if theme.table(kind).is_empty() {
         return default;
     }
-    theme
-        .rename_in(kind, &format!("{value:?}"))
-        .unwrap_or(default)
+    theme.rename_in(kind, &format!("{value:?}")).unwrap_or(default)
 }
 
 /// A proper noun or set word under the theme in force, or `default`.
 pub fn term(key: &str, default: &'static str) -> &'static str {
-    active()
-        .and_then(|t| t.terms.get(key))
-        .map(String::as_str)
-        .unwrap_or(default)
+    active().and_then(|t| t.terms.get(key)).map(String::as_str).unwrap_or(default)
 }
 
 /// A year as the theme in force writes it.
@@ -198,9 +179,7 @@ pub fn year(year: i32) -> String {
 
 /// The folder under `assets/` that sprite sheets come from.
 pub fn sprites() -> &'static str {
-    active()
-        .and_then(|t| t.sprites.as_deref())
-        .unwrap_or("sprites")
+    active().and_then(|t| t.sprites.as_deref()).unwrap_or("sprites")
 }
 
 #[cfg(test)]
@@ -214,10 +193,7 @@ mod tests {
                  "terms": { "destination": "Home" } }"#,
         )
         .unwrap();
-        assert_eq!(
-            theme.rename_in(Kind::Unit, "Musketman"),
-            Some("Plasma Trooper")
-        );
+        assert_eq!(theme.rename_in(Kind::Unit, "Musketman"), Some("Plasma Trooper"));
         assert_eq!(theme.rename_in(Kind::Unit, "Warrior"), None);
         assert_eq!(theme.rename_in(Kind::Tech, "Musketman"), None);
         assert_eq!(theme.year(-300), "300 BL");
