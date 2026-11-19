@@ -8,6 +8,7 @@ use crate::pathfinding::{find_path, find_route, land_step, road_network, zoc_blo
 use crate::unit::{Domain, AIR_RANGE};
 use rand::Rng;
 use crate::cargo::Berth;
+use crate::combat::{bombard_odds, defence_against, odds, strengths, Ground, Side};
 use std::collections::HashSet;
 
 /// What the computer players' ferries are doing: where each loaded ship is taking its troops, and
@@ -171,35 +172,41 @@ pub fn pick_research(tech: &TechState, aggression: f32) -> Option<Tech> {
     Tech::ALL.into_iter().filter(|t| tech.can_research(*t)).max_by(|a, b| score(*a).total_cmp(&score(*b)))
 }
 
+/// A rough measure of a unit's might: its attack and defence together.
 pub fn unit_strength(unit: &Unit) -> f32 {
     let (atk, def, _) = unit.unit_type.stats();
-    (atk as f32) * unit.unit_type.attack_bonus(crate::terrain::Terrain::Plains)
-        + (def as f32) * unit.unit_type.defense_bonus()
+    (atk + def) as f32
 }
 
 /// An attack an AI unit wants to make this turn; the caller resolves the combat.
 pub struct AiAttack {
     pub attacker: Entity,
     pub target: Hex,
+    /// A gun's bombardment rather than an attack (resolved first).
+    pub bombard: bool,
 }
 
-/// Walls and digging in, as one factor on a garrison's defence, as the computer players reckon it.
-pub const SIEGE_FORTIFICATION: f32 = 1.5;
 /// Safety margin on the number of attackers a siege needs.
 pub const SIEGE_MARGIN: f32 = 1.0;
 /// Most attackers a siege ever waits for.
 pub const SIEGE_MAX: f32 = 8.0;
+/// The chance of winning a cautious leader's troops want before they attack (warlike leaders
+/// attack whatever stands in their way).
+pub const CAUTIOUS_ODDS: f64 = 0.5;
+/// A city with enemy troops this close keeps two defenders instead of one.
+pub const MENACE_RANGE: i32 = 2;
+/// A people with this many cities or fewer keeps one more defender in each.
+pub const LAST_STAND_CITIES: usize = 3;
 
-/// One land unit seen by the siege planner: where, whose, attack and defence of each man in it,
-/// and how many men (an army counts every member).
+/// One land unit seen by the siege planner: where, whose, what it is, how many men (an army counts
+/// every member) and the hit points they have left.
 pub struct Fighter {
     pub at: Hex,
     pub owner: u32,
-    pub attack: f32,
-    pub defence: f32,
+    pub kind: UnitType,
     pub men: u32,
-    /// Hit points left, as a share of full (wounded defenders are cheaper to kill).
-    pub vigour: f32,
+    pub hp: u32,
+    pub level: u8,
 }
 
 impl Fighter {
@@ -207,37 +214,61 @@ impl Fighter {
         if !unit.unit_type.is_army() || unit.unit_type.domain() != Domain::Land {
             return None;
         }
-        let (atk, def, _) = unit.unit_type.stats();
-        let shape = (1.0 + 0.25 * unit.level as f32) * (1.0 + crate::unit::ARMY_MEMBER_BONUS * unit.troops.len() as f32);
-        Some(Fighter {
-            at: unit.position,
-            owner: unit.owner,
-            attack: atk as f32 * unit.unit_type.attack_bonus(crate::terrain::Terrain::Plains) * shape,
-            defence: def as f32 * unit.unit_type.defense_bonus() * shape,
-            men: unit.members(),
-            vigour: (unit.hp as f32 / unit.max_hp().max(1) as f32).clamp(0.34, 1.0),
-        })
+        Some(Fighter { at: unit.position, owner: unit.owner, kind: unit.unit_type, men: unit.members(), hp: unit.hp.max(1), level: unit.level })
+    }
+
+    /// The unit as one side of a battle.
+    pub fn side(&self) -> Side {
+        Side { kind: self.kind, hp: self.hp, level: self.level, led: false, members: self.men }
+    }
+
+    /// Whether it can attack at all.
+    pub fn attacks(&self) -> bool {
+        self.kind.stats().0 > 0
     }
 }
 
-/// Whether `attackers` gathered before a city can take its `garrison`: a blow by one attacker lands
-/// with chance p = attack / (attack + defence), and a unit that fights to the end deals about
-/// (1 - p) / p blows for each it takes, so each defender costs about (1 - p) / p attackers.
-pub fn siege_ready(attackers: &[&Fighter], garrison: &[&Fighter], aggression: f32) -> bool {
+/// Whether `attackers` gathered before a city can take its `garrison`, which defends on `ground`
+/// (the city's land, size and walls, dug in), once the `guns` in range have bombarded it. Every
+/// attack meets the garrison's best defender against that attacker. A blow lands with chance
+/// p = attack / (attack + defence), and an attacker that fights to the end deals about p / (1 - p)
+/// blows for each it takes: so every hit point of the garrison costs about (1 - p) / p of an
+/// attacker's.
+pub fn siege_ready(attackers: &[&Fighter], guns: &[&Fighter], garrison: &[&Fighter], ground: &Ground, aggression: f32) -> bool {
     let men: f32 = attackers.iter().map(|f| f.men as f32).sum();
     if men < 1.0 {
         return false;
     }
-    let attack = attackers.iter().map(|f| f.attack * f.men as f32).sum::<f32>() / men;
-    let defence = garrison.iter().map(|f| f.defence).fold(0.0, f32::max) * SIEGE_FORTIFICATION;
-    let defenders: f32 = garrison.iter().map(|f| f.men as f32 * f.vigour).sum();
-    if defenders == 0.0 {
+    let held: f32 = garrison.iter().map(|f| f.hp as f32).sum();
+    if held == 0.0 {
         return true;
     }
-    let p = attack / (attack + defence).max(0.01);
+    // Bombardment first: each gun takes its rate of fire times the chance of a hit, from whoever
+    // defends best against it (but never a defender's last hit point).
+    let shelled: f32 = guns
+        .iter()
+        .filter_map(|g| {
+            let (_, _, rate) = g.kind.bombard()?;
+            let best = garrison.iter().map(|d| d.side()).max_by(|a, b| defence_against(g.kind, a, ground).total_cmp(&defence_against(g.kind, b, ground)))?;
+            Some(rate as f32 * bombard_odds(g.kind, &best, ground))
+        })
+        .sum();
+    let held = (held - shelled).max(garrison.len() as f32);
+    // Attackers' hit points lost for each of the garrison's, averaged over the men.
+    let cost = attackers
+        .iter()
+        .map(|a| {
+            let side = a.side();
+            let (attack, defence) = garrison.iter().map(|d| strengths(&side, &d.side(), ground)).fold((0.0f32, 0.0f32), |best, s| (s.0, best.1.max(s.1)));
+            let p = attack / (attack + defence).max(0.01);
+            (1.0 - p) / p.max(0.02) * a.men as f32
+        })
+        .sum::<f32>()
+        / men;
+    let hp_per_man = attackers.iter().map(|a| a.hp as f32).sum::<f32>() / men;
     // Warlike leaders commit with fewer men.
     let margin = if aggression > 0.6 { SIEGE_MARGIN * 0.5 } else { SIEGE_MARGIN };
-    let needed = (defenders * (1.0 - p) / p.max(0.02) * margin + 1.0).min(SIEGE_MAX);
+    let needed = (held * cost / hp_per_man.max(1.0) * margin + 1.0).min(SIEGE_MAX);
     men >= needed
 }
 
@@ -245,6 +276,7 @@ pub fn siege_ready(attackers: &[&Fighter], garrison: &[&Fighter], aggression: f3
 ///
 /// `hostile(a, b)` says whether owner `a` is willing to attack owner `b`. `must_fall`: cities
 /// worth marching much further for (the capital of a people whose spaceship is in flight).
+/// `ground_at(tile)`: what a defender there stands on (its land, river, works and city).
 /// `road_jobs` lists, per owner and in order of urgency, the tiles that owner wants a road on;
 /// `owns(tile, owner)` says whether a tile lies inside that owner's borders.
 pub fn process_ai_turn(
@@ -258,6 +290,7 @@ pub fn process_ai_turn(
     ferries: &mut Ferries,
     commands: &mut Commands,
     must_fall: &[Hex],
+    ground_at: &dyn Fn(Hex) -> Ground,
 ) -> Vec<AiAttack> {
     let mut rng = rand::thread_rng();
     let mut attacks = Vec::new();
@@ -275,6 +308,16 @@ pub fn process_ai_turn(
         .map(|(_, u)| (u.position, u.owner, unit_strength(u)))
         .collect();
     let fighters: Vec<Fighter> = units.iter().filter_map(|(_, u)| Fighter::of(&u)).collect();
+    // The unit that would meet an attack on each tile (the best defence, then the most hit points),
+    // and whether it is dug in.
+    let mut guards: HashMap<Hex, (Side, bool, u32)> = HashMap::new();
+    for (_, u) in units.iter() {
+        let side = Side { kind: u.unit_type, hp: u.hp, level: u.level, led: false, members: u.members() };
+        let rank = |s: &Side| s.kind.stats().1 * 10 + s.hp;
+        if guards.get(&u.position).is_none_or(|(g, _, _)| rank(&side) > rank(g)) {
+            guards.insert(u.position, (side, u.fortified, u.owner));
+        }
+    }
     // Who stands where at the start of the AI phase (strongest unit per tile).
     let mut occupied: HashMap<Hex, (u32, f32)> = HashMap::new();
     for (pos, owner, strength) in &unit_snapshots {
@@ -337,8 +380,24 @@ pub fn process_ai_turn(
         .map(|(_, u)| u.position)
         .collect();
 
-    // The best defender standing in each city is its garrison and stays there.
-    let mut holders: HashMap<Hex, (Entity, f32)> = HashMap::new();
+    // Cities of computer players with enemy troops close by: they keep a second defender.
+    let menaced: HashSet<Hex> = city_positions
+        .iter()
+        .filter(|(p, o)| *o != 0 && fighters.iter().any(|f| f.attacks() && hostile(*o, f.owner) && f.at.distance_to(*p) <= MENACE_RANGE))
+        .map(|(p, _)| *p)
+        .collect();
+    // A people down to its last few cities turtles: a defender more in each.
+    let mut city_counts: HashMap<u32, usize> = HashMap::new();
+    for (_, owner) in city_positions {
+        *city_counts.entry(*owner).or_default() += 1;
+    }
+    let owner_of: HashMap<Hex, u32> = city_positions.iter().copied().collect();
+    let keep = |city: &Hex| {
+        let last_stand = owner_of.get(city).and_then(|o| city_counts.get(o)).is_some_and(|n| *n <= LAST_STAND_CITIES);
+        1 + usize::from(menaced.contains(city)) + usize::from(last_stand)
+    };
+    // The best defenders standing in each city are its garrison and stay there.
+    let mut holders: HashMap<Hex, Vec<(Entity, f32)>> = HashMap::new();
     let mut field_armies: HashMap<u32, usize> = HashMap::new();
     for (entity, unit) in units.iter() {
         if unit.owner == 0 || !unit.unit_type.is_army() {
@@ -346,22 +405,24 @@ pub fn process_ai_turn(
         }
         *field_armies.entry(unit.owner).or_default() += 1;
         if city_positions.iter().any(|(p, o)| *p == unit.position && *o == unit.owner) {
-            let defence = unit.unit_type.stats().1 as f32 * unit.unit_type.defense_bonus();
-            if holders.get(&unit.position).is_none_or(|(_, best)| defence > *best) {
-                holders.insert(unit.position, (entity, defence));
-            }
+            // A gun holds a city only when there is nothing else.
+            let defence = unit.unit_type.stats().1 as f32 - if unit.unit_type.bombard_only() { 0.5 } else { 0.0 };
+            holders.entry(unit.position).or_default().push((entity, defence));
         }
     }
-    let garrison: std::collections::HashSet<Entity> = holders.values().map(|(e, _)| *e).collect();
+    for (city, list) in holders.iter_mut() {
+        list.sort_by(|a, b| b.1.total_cmp(&a.1).then(a.0.index().cmp(&b.0.index())));
+        list.truncate(keep(city));
+    }
+    let garrison: std::collections::HashSet<Entity> = holders.values().flatten().map(|(e, _)| *e).collect();
     for (pos, owner) in city_positions {
-        if holders.contains_key(pos) {
-            if let Some(count) = field_armies.get_mut(owner) {
-                *count = count.saturating_sub(1);
-            }
+        if let (Some(list), Some(count)) = (holders.get(pos), field_armies.get_mut(owner)) {
+            *count = count.saturating_sub(list.len());
         }
     }
-    // Cities of computer players that nobody is holding.
-    let mut undefended: Vec<(Hex, u32)> = city_positions.iter().copied().filter(|(p, o)| *o != 0 && !holders.contains_key(p)).collect();
+    // Cities of computer players that nobody is holding, and menaced ones with a single defender:
+    // the nearest troops come to hold them.
+    let mut undefended: Vec<(Hex, u32)> = city_positions.iter().copied().filter(|(p, o)| *o != 0 && holders.get(p).map_or(0, |l| l.len()) < keep(p)).collect();
 
     for (entity, mut unit) in units.iter_mut() {
         if unit.owner == 0 || unit.movement_left == 0 || unit.build_turns_left.is_some() {
@@ -584,7 +645,7 @@ pub fn process_ai_turn(
                     }
                     if occupied.get(&next).is_some_and(|(other, _)| *other != owner) {
                         if Some(next) == prey {
-                            attacks.push(AiAttack { attacker: entity, target: next });
+                            attacks.push(AiAttack { attacker: entity, target: next, bombard: false });
                             unit.end_move();
                         }
                         break;
@@ -603,6 +664,22 @@ pub fn process_ai_turn(
             continue;
         }
         unit.fortified = false;
+
+        // A gun bombards the best target within its range: the garrison of an enemy city first,
+        // then the stoutest enemy in the field.
+        let gun = unit.unit_type.bombard_only().then(|| unit.unit_type.bombard()).flatten();
+        if let Some((_, range, _)) = gun {
+            let target = guards
+                .iter()
+                .filter(|(at, (_, _, other))| here.distance_to(**at) <= range && **at != here && hostile(owner, *other) && is_land(**at))
+                .max_by_key(|(at, (g, _, _))| (city_positions.iter().any(|(p, _)| p == *at), g.kind.stats().1 * 10 + g.hp, at.x, at.y))
+                .map(|(at, _)| *at);
+            if let Some(target) = target {
+                attacks.push(AiAttack { attacker: entity, target, bombard: true });
+                unit.end_move();
+                continue;
+            }
+        }
 
         // Goal, in order: hold an undefended city of ours, strike a beatable enemy nearby,
         // march on the nearest enemy city.
@@ -665,13 +742,21 @@ pub fn process_ai_turn(
             // gathered - at least two or three units, and half again the garrison's strength.
             let defended = occupied.get(&city).is_some_and(|(other, _)| *other != owner);
             let needed = if !defended { 1 } else if aggression > 0.6 { 2 } else { 3 };
-            let near: Vec<&Fighter> = fighters.iter().filter(|f| f.owner == owner && f.attack > 0.0 && here.distance_to(f.at) <= 3).collect();
+            // The army gathered close by (troops in our own cities hold them and do not count).
+            let near: Vec<&Fighter> = fighters
+                .iter()
+                .filter(|f| f.owner == owner && f.attacks() && here.distance_to(f.at) <= 3 && !city_positions.iter().any(|(p, o)| *p == f.at && *o == owner))
+                .collect();
             let garrison_of: Vec<&Fighter> = fighters.iter().filter(|f| f.at == city && f.owner != owner).collect();
-            let ready = !defended || (near.len() >= needed && siege_ready(&near, &garrison_of, aggression));
+            let ground = Ground { fortified: true, ..ground_at(city) };
+            // Guns already within range soften the garrison up before the assault.
+            let guns: Vec<&Fighter> = fighters.iter().filter(|f| f.owner == owner && f.kind.bombard_only() && f.kind.bombard().is_some_and(|(_, range, _)| f.at.distance_to(city) <= range)).collect();
+            let ready = !defended || (near.len() >= needed && siege_ready(&near, &guns, &garrison_of, &ground, aggression));
             let available = field_armies.get(&owner).copied().unwrap_or(0);
             if available < needed {
                 None
-            } else if !ready && here.distance_to(city) <= 3 {
+            } else if !ready && here.distance_to(city) <= 3 && gun.is_none() {
+                // The army waits; guns close in to bombard.
                 continue;
             } else {
                 siege = ready.then_some(city);
@@ -691,14 +776,26 @@ pub fn process_ai_turn(
                     if !unit.can_move() || zoc_blocks(unit.position, next, enemy_armies) {
                         break;
                     }
+                    if let Some((_, range, _)) = gun {
+                        // A gun keeps its distance: it stops once its target is in range, and never
+                        // walks into an enemy's unit or city.
+                        let enemy_city = city_positions.iter().any(|(p, o)| *p == next && *o != owner);
+                        if (unit.position.distance_to(target) <= range && occupied.get(&target).is_some_and(|(o, _)| *o != owner)) || enemy_city || occupied.get(&next).is_some_and(|(o, _)| *o != owner) {
+                            break;
+                        }
+                    }
                     let boarding = is_land(unit.position) != is_land(next);
                     match occupied.get(&next) {
-                        Some((other, strength)) if *other != owner => {
-                            // Attack if the odds look acceptable (or the siege is ready: every unit
-                            // gathered before the city joins in, wearing the garrison down); otherwise
-                            // hold position.
-                            if hostile(owner, *other) && (aggression > 0.6 || my_strength >= *strength || siege == Some(next)) {
-                                attacks.push(AiAttack { attacker: entity, target: next });
+                        Some((other, _)) if *other != owner => {
+                            // Attack if the odds are good (a warlike leader always does), or the
+                            // siege is ready: every unit gathered before the city joins in, wearing
+                            // the garrison down. Otherwise hold position.
+                            let good_odds = guards.get(&next).is_some_and(|(guard, dug_in, _)| {
+                                let me = Side { kind: unit.unit_type, hp: unit.hp, level: unit.level, led: false, members: unit.members() };
+                                odds(&me, guard, &Ground { fortified: *dug_in, ..ground_at(next) }).win >= CAUTIOUS_ODDS
+                            });
+                            if hostile(owner, *other) && (aggression > 0.6 || good_odds || siege == Some(next)) {
+                                attacks.push(AiAttack { attacker: entity, target: next, bombard: false });
                                 unit.end_move();
                             }
                             break;
@@ -892,7 +989,7 @@ mod tests {
         mut commands: Commands,
     ) {
         let cities = [(Hex::ZERO, 1)];
-        process_ai_turn(&mut civs, &mut units, &cities, &tiles, &|_, _| false, &mut jobs.0, &|hex, _| hex.distance_to(Hex::ZERO) <= 2, &mut Ferries::default(), &mut commands, &[]);
+        process_ai_turn(&mut civs, &mut units, &cities, &tiles, &|_, _| false, &mut jobs.0, &|hex, _| hex.distance_to(Hex::ZERO) <= 2, &mut Ferries::default(), &mut commands, &[], &|_| Ground::open(Terrain::Plains));
     }
 
     fn rival() -> Civ {
@@ -1012,7 +1109,7 @@ mod tests {
     ) {
         // Rival city at the origin, the player's city three tiles east; they are at war.
         let cities = [(Hex::ZERO, 1), (Hex::new(3, 0), 0)];
-        process_ai_turn(&mut civs, &mut units, &cities, &tiles, &|a, b| a != b, &mut HashMap::new(), &|_, _| false, &mut Ferries::default(), &mut commands, &[]);
+        process_ai_turn(&mut civs, &mut units, &cities, &tiles, &|a, b| a != b, &mut HashMap::new(), &|_, _| false, &mut Ferries::default(), &mut commands, &[], &|_| Ground::open(Terrain::Plains));
     }
 
     #[test]
@@ -1020,11 +1117,14 @@ mod tests {
         let (mut world, worker) = world_with_worker(Terrain::Plains);
         world.despawn(worker);
         let phalanx = soldier(&mut world, UnitType::Phalanx, 1, 0);
+        // This people has a single city: it keeps a second defender there.
+        let spearman = soldier(&mut world, UnitType::Spearman, 1, 0);
         let warrior = soldier(&mut world, UnitType::Warrior, 1, 0);
         world.run_system_once(war_phase).unwrap();
         let held = world.get::<Unit>(phalanx).unwrap();
         assert_eq!(held.position, Hex::ZERO);
         assert!(held.fortified, "the stronger defender holds the city");
+        assert!(world.get::<Unit>(spearman).unwrap().fortified, "and the next one, in a people's last cities");
         // The enemy city is undefended, so a single unit is enough to march on it.
         assert_eq!(world.get::<Unit>(warrior).unwrap().position, Hex::new(1, 0));
     }
@@ -1033,7 +1133,9 @@ mod tests {
     fn a_lone_unit_waits_for_support_before_a_defended_city() {
         let (mut world, worker) = world_with_worker(Terrain::Plains);
         world.despawn(worker);
-        soldier(&mut world, UnitType::Phalanx, 1, 0); // garrison
+        // The garrison: two, as the enemy is close.
+        soldier(&mut world, UnitType::Phalanx, 1, 0);
+        soldier(&mut world, UnitType::Spearman, 1, 0);
         let scout = soldier(&mut world, UnitType::Warrior, 1, 1);
         let support = soldier(&mut world, UnitType::Warrior, 1, -3);
         soldier(&mut world, UnitType::Warrior, 1, -3);
@@ -1041,6 +1143,54 @@ mod tests {
         world.run_system_once(war_phase).unwrap();
         assert_eq!(world.get::<Unit>(scout).unwrap().position, Hex::new(1, 0), "too few have gathered to attack");
         assert_eq!(world.get::<Unit>(support).unwrap().position, Hex::new(-2, 0), "the rest of the army closes up");
+    }
+
+    fn war_attacks(mut civs: ResMut<Civilizations>, mut units: Query<(Entity, &mut Unit)>, tiles: Query<&mut HexTile>, mut commands: Commands) -> Vec<(Hex, bool)> {
+        let cities = [(Hex::ZERO, 1), (Hex::new(3, 0), 0)];
+        process_ai_turn(&mut civs, &mut units, &cities, &tiles, &|a, b| a != b, &mut HashMap::new(), &|_, _| false, &mut Ferries::default(), &mut commands, &[], &|_| Ground::open(Terrain::Plains))
+            .into_iter()
+            .map(|a| (a.target, a.bombard))
+            .collect()
+    }
+
+    #[test]
+    fn guns_bombard_from_range_and_never_storm() {
+        let (mut world, worker) = world_with_worker(Terrain::Plains);
+        world.despawn(worker);
+        soldier(&mut world, UnitType::Phalanx, 1, 0); // garrison
+        let artillery = soldier(&mut world, UnitType::Artillery, 1, 1);
+        let cannon = soldier(&mut world, UnitType::Cannon, 1, 0);
+        soldier(&mut world, UnitType::Warrior, 0, 3); // the defender
+        let attacks = world.run_system_once(war_attacks).unwrap();
+        assert_eq!(attacks, vec![(Hex::new(3, 0), true)], "the artillery shells the city from two tiles away");
+        assert_eq!(world.get::<Unit>(artillery).unwrap().position, Hex::new(1, 0));
+        // The cannon (range 1) closes in, but does not attack or walk into the city.
+        let at = world.get::<Unit>(cannon).unwrap().position;
+        assert!(at.distance_to(Hex::new(3, 0)) >= 1 && at != Hex::new(3, 0));
+    }
+
+    #[test]
+    fn menaced_and_last_cities_keep_more_defenders() {
+        let (mut world, worker) = world_with_worker(Terrain::Plains);
+        world.despawn(worker);
+        let phalanx = soldier(&mut world, UnitType::Phalanx, 1, 0);
+        let spearman = soldier(&mut world, UnitType::Spearman, 1, 0);
+        let warrior = soldier(&mut world, UnitType::Warrior, 1, 0);
+        let archer = soldier(&mut world, UnitType::Archer, 1, 0);
+        let legion = soldier(&mut world, UnitType::Legion, 0, 2); // an enemy two tiles away
+        world.run_system_once(war_phase).unwrap();
+        // Menaced, and its people's last city: three hold it.
+        for held in [phalanx, spearman, warrior] {
+            assert!(world.get::<Unit>(held).unwrap().fortified, "the three best defenders hold the city");
+        }
+        assert!(!world.get::<Unit>(archer).unwrap().fortified, "the fourth takes the field");
+        // With the enemy gone, one defender is enough - but this people has a single city left, so
+        // it keeps two in any case.
+        world.despawn(legion);
+        world.get_mut::<Unit>(spearman).unwrap().movement_left = 1;
+        world.get_mut::<Unit>(warrior).unwrap().movement_left = 1;
+        world.run_system_once(war_phase).unwrap();
+        assert!(world.get::<Unit>(spearman).unwrap().fortified && !world.get::<Unit>(warrior).unwrap().fortified);
     }
 
     #[test]
@@ -1082,7 +1232,7 @@ mod tests {
 
     fn naval_phase(mut civs: ResMut<Civilizations>, mut units: Query<(Entity, &mut Unit)>, tiles: Query<&mut HexTile>, mut commands: Commands) -> Vec<Hex> {
         let cities = [(Hex::ZERO, 1)];
-        process_ai_turn(&mut civs, &mut units, &cities, &tiles, &|a, b| a != b, &mut HashMap::new(), &|_, _| false, &mut Ferries::default(), &mut commands, &[])
+        process_ai_turn(&mut civs, &mut units, &cities, &tiles, &|a, b| a != b, &mut HashMap::new(), &|_, _| false, &mut Ferries::default(), &mut commands, &[], &|_| Ground::open(Terrain::Plains))
             .into_iter()
             .map(|a| a.target)
             .collect()
@@ -1097,23 +1247,37 @@ mod tests {
 
     #[test]
     fn a_siege_waits_for_enough_men_to_wear_the_garrison_down() {
-        let man = |kind: UnitType, at: Hex| {
-            let (atk, def, _) = kind.stats();
-            Fighter { at, owner: 1, attack: atk as f32 * kind.attack_bonus(Terrain::Plains), defence: def as f32 * kind.defense_bonus(), men: 1, vigour: 1.0 }
-        };
+        let man = |kind: UnitType, at: Hex| Fighter { at, owner: 1, kind, men: 1, hp: 3, level: 0 };
         let city = Hex::new(5, 0);
+        // Two mechanized infantry dug in behind walls: 18 x (1 + 0.1 + 0.25 + 1) each.
+        let walled = Ground { fortified: true, walls: true, city: Some(6), ..Ground::open(Terrain::Plains) };
         let garrison = [man(UnitType::MechInfantry, city), man(UnitType::MechInfantry, city)];
-        let few: Vec<Fighter> = (0..3).map(|_| man(UnitType::RadarArtillery, Hex::ZERO)).collect();
-        let many: Vec<Fighter> = (0..12).map(|_| man(UnitType::RadarArtillery, Hex::ZERO)).collect();
+        let few: Vec<Fighter> = (0..3).map(|_| man(UnitType::Tank, Hex::ZERO)).collect();
+        let many: Vec<Fighter> = (0..12).map(|_| man(UnitType::Tank, Hex::ZERO)).collect();
         let g: Vec<&Fighter> = garrison.iter().collect();
-        assert!(!siege_ready(&few.iter().collect::<Vec<_>>(), &g, 0.4), "three guns cannot take two walled mechanized infantry");
-        assert!(siege_ready(&many.iter().collect::<Vec<_>>(), &g, 0.4));
+        assert!(!siege_ready(&few.iter().collect::<Vec<_>>(), &[], &g, &walled, 0.4), "three tanks cannot take two walled mechanized infantry");
+        assert!(siege_ready(&many.iter().collect::<Vec<_>>(), &[], &g, &walled, 0.4));
+        // Without walls (in a town on open ground) fewer will do.
+        let open = Ground { fortified: true, city: Some(6), ..Ground::open(Terrain::Plains) };
+        let six: Vec<Fighter> = (0..6).map(|_| man(UnitType::Tank, Hex::ZERO)).collect();
+        let six: Vec<&Fighter> = six.iter().collect();
+        assert!(!siege_ready(&six, &[], &g, &walled, 0.4) && siege_ready(&six, &[], &g, &open, 0.4));
         // An empty city (or one held by workers only) falls to anyone.
-        assert!(siege_ready(&few.iter().collect::<Vec<_>>(), &[], 0.4));
+        assert!(siege_ready(&few.iter().collect::<Vec<_>>(), &[], &[], &walled, 0.4));
         // Warlike leaders commit sooner.
-        let eight: Vec<Fighter> = (0..8).map(|_| man(UnitType::RadarArtillery, Hex::ZERO)).collect();
-        let eight: Vec<&Fighter> = eight.iter().collect();
-        assert!(!siege_ready(&eight, &g, 0.4) || siege_ready(&eight, &g, 0.9));
+        let five: Vec<Fighter> = (0..5).map(|_| man(UnitType::Tank, Hex::ZERO)).collect();
+        let five: Vec<&Fighter> = five.iter().collect();
+        assert!(!siege_ready(&five, &[], &g, &walled, 0.4) && siege_ready(&five, &[], &g, &walled, 0.9));
+        // Three radar artillery in range shell the garrison first: six tanks will then do.
+        let guns: Vec<Fighter> = (0..3).map(|_| man(UnitType::RadarArtillery, Hex::new(3, 0))).collect();
+        let guns: Vec<&Fighter> = guns.iter().collect();
+        assert!(siege_ready(&six, &guns, &g, &walled, 0.4));
+        // Pikemen hold off knights better than swordsmen.
+        let pikes = [man(UnitType::Pikeman, city)];
+        let pikes: Vec<&Fighter> = pikes.iter().collect();
+        let knights: Vec<Fighter> = (0..2).map(|_| man(UnitType::Knight, Hex::ZERO)).collect();
+        let swords: Vec<Fighter> = (0..2).map(|_| man(UnitType::Immortal, Hex::ZERO)).collect();
+        assert!(siege_ready(&swords.iter().collect::<Vec<_>>(), &[], &pikes, &open, 0.4) && !siege_ready(&knights.iter().collect::<Vec<_>>(), &[], &pikes, &open, 0.4));
     }
 
     #[test]

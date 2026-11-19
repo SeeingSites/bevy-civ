@@ -23,8 +23,9 @@ Turn-based, Civilization-style empire building on a hex map, playable in the bro
 - 53 technologies from Pottery to Genetic Engineering, shown as a tree by era; click any to research the way to it
 - Six governments chosen in a revolution (with anarchy): Despotism to Democracy, Communism and
   Fundamentalism; martial law where it applies
-- Combat in rounds with hit points, veterans and elites, retreat, walls, fortification, river and
-  terrain defence, artillery bombardment, great generals, zone of control and unit upgrades
+- Combat by Civilization III's rules: rounds over hit points, veterans and elites, retreat, city
+  size and walls, fortification, river and terrain defence, guns that bombard from range, great
+  generals, zone of control and unit upgrades
 - A defender for every age: Warrior, Spearman, Phalanx, Pikeman, Musketman, Rifleman, Infantry and
   Mech. Infantry, and Modern Armor after the Tank
 - Ships and aircraft: transports carry troops across the sea, carriers carry aircraft
@@ -33,7 +34,7 @@ Turn-based, Civilization-style empire building on a hex map, playable in the bro
 - Governors: with Governor builds on, a city picks its projects, calms disorder with entertainers (and releases them when they are no longer needed) and sends the Workers it trains to work on automatic; a city in disorder says so plainly in its panel
 - Auto-explore (C): scouts, soldiers and warships roam to the edge of the known world by themselves, turn after turn
 - Ending the turn with a city that has no soldier in it and an enemy in sight nearby asks for a second End Turn
-- Armies: a great general in one of your cities forms up to four land units (five with Sun Tzu) into one army, 10% stronger per member; more troops can join later
+- Armies: a great general in one of your cities forms up to three land units (four with Sun Tzu) into one army, 10% stronger per member; more troops can join later
 - Battles played out on the map, one at a time: the camera goes to every battle you fight (also
   attacks on your units in the other peoples' turns), the attacker lunges, blows land, the fallen
   topple and the result floats over the tile; the next unit waits until the battle is over
@@ -157,7 +158,8 @@ A captured city's wonders change hands with it.
 Factory for engineers), its wonders, its specialists and, in the capital, the court (artists). When
 a city's points reach the threshold (40, then 30 more for each great person a civilization has had)
 one is born there, its kind drawn in proportion to the points; the city panel's Overview shows the
-progress. **Great generals** come from battle instead: every fourth victory, attacking or defending.
+progress. **Great generals** come from battle instead, as Civilization III's great leaders do: one
+victory in sixteen won by an elite unit (attacking or defending) brings one forth.
 Select a great person and press **U** (or its Use button):
 
 - **Great Scientist**: completes the current research at once.
@@ -204,6 +206,61 @@ other and from you, and you hear about it when they target you. Now and then an 
 stages an incident to justify a war, and one at war frames its enemy in a neutral city to drag that
 city's owner into the fight; you hear the rumours when you are involved.
 
+## Combat
+Battles follow the rules of Civilization III:
+
+- **Rounds**: a battle is fought in rounds until one side has no hit points left. Each round the
+  attacker lands a blow with chance attack / (attack + defence), both with all their modifiers;
+  whoever is struck loses a hit point. Units have 3 hit points, 4 as veterans and 5 as elites:
+  experience adds hit points, never strength. Barracks (and Sun Tzu's War Academy) train veterans,
+  an Airport veteran aircraft, and a people trains its unique unit a rank higher.
+- **Defence**: the defender's bonuses are added up and then multiply its defence: open ground and
+  the sea +10%, forest +25%, hills +50%, mountains +100%, a river +25%, fortified +25%, a fortress
+  +50%. A city defends by its size: a town (up to the size a city reaches without water works,
+  8 now) has no defences of its own, a city (up to the size an Aqueduct allows, 16) +50%, a
+  metropolis beyond that +100%. City walls (and the Great Wall) give +100% against land attacks
+  wherever that is more than the city's own; a Coastal Fortress +100% against ships. Pikemen
+  defend twice as hard against mounted units (chariots, horsemen, knights, cavalry). The attacker
+  fights at its plain attack. This game adds two multipliers of its own: a Great General on the
+  tile (+50%) and an army's extra members (+10% each), for attack and defence alike.
+- **Retreat**: a fast unit (2 moves or more) attacking a slow one, brought down to its last hit
+  point while the defender has more than one, pulls back instead of dying half the time - 58% as a
+  veteran, 66% as an elite. There is no retreat from a fast defender.
+- **Promotion**: a victor (attacking or defending) may be promoted: a regular to veteran one time in
+  four, a veteran to elite one time in eight; twice as often for a militaristic people, half as
+  often after beating barbarians. A promotion adds a hit point at once.
+- **Guns**: catapults, cannon, artillery and radar artillery cannot attack or take cities. They
+  bombard (B, or click an enemy within range): a gun fires as many rounds as its rate of fire, each
+  hitting with chance bombard / (bombard + defence) against the defender's full defence, and every
+  hit takes a hit point - but never the last one, and the gun takes no harm. Frigates, ironclads,
+  battleships and bombers may bombard too. Shell a garrison, then storm it in the same turn: units
+  in their own city heal fully every turn.
+
+| Unit | Attack | Defence | Moves | Bombard (range, rate of fire) | Shields |
+|---|---|---|---|---|---|
+| Warrior | 1 | 1 | 1 | | 10 |
+| Spearman | 1 | 2 | 1 | | 20 |
+| Archer | 2 | 1 | 1 | | 20 |
+| Horseman | 2 | 1 | 2 | | 20 |
+| War Chariot | 2 | 1 | 2 | | 20 |
+| Phalanx | 1 | 3 | 1 | | 30 |
+| Legion (swordsmen) | 3 | 2 | 1 | | 30 |
+| Immortal | 4 | 2 | 1 | | 40 |
+| Catapult | 0 | 1 | 1 | 4 (1, 1) | 20 |
+| Pikeman | 1 | 2 (4 against mounted) | 1 | | 30 |
+| Longbowman | 4 | 1 | 1 | | 30 |
+| Knight | 4 | 3 | 2 | | 50 |
+| Musketman | 2 | 4 | 1 | | 30 |
+| Cannon | 0 | 1 | 1 | 8 (1, 1) | 40 |
+| Cavalry | 6 | 3 | 3 | | 70 |
+| Rifleman | 4 | 6 | 1 | | 50 |
+| Artillery | 0 | 2 | 1 | 12 (2, 2) | 80 |
+| Infantry | 6 | 10 | 1 | | 70 |
+| Tank | 16 | 8 | 2 | | 100 |
+| Radar Artillery | 0 | 2 | 2 | 16 (2, 3) | 100 |
+| Mech. Infantry | 12 | 18 | 2 | | 110 |
+| Modern Armor | 24 | 16 | 3 | | 150 |
+
 ## Ships and aircraft
 - **Warships** (Galley, Frigate, Ironclad, Destroyer, Battleship) are built in coastal cities. They
   sail on water and into your own cities, can attack units at sea or on the shore, and cannot take
@@ -215,8 +272,9 @@ city's owner into the fight; you hear the rumours when you are involved.
 ## Computer players
 Computer players follow the same rules as you and are run by three pieces of code:
 
-- **Armies** (`src/ai.rs`): the best defender in each city is its garrison and stays put; an empty
-  city is re-occupied by the nearest unit; field units strike beatable enemies nearby and march on
+- **Armies** (`src/ai.rs`): the best defender in each city is its garrison and stays put (the best
+  two while enemy troops are within 2 tiles, and one more in every city of a people down to three
+  cities or fewer); an empty city, or one short of defenders, is reinforced by the nearest unit; field units strike beatable enemies nearby and march on
   enemy cities, but gather outside a defended city until enough of the army has arrived. Workers
   road resources and cities, then farm and mine. Settlers walk clear of existing cities to found
   new ones: each settler heads for the best free site in reach (good land, resources, not too far),
@@ -241,10 +299,14 @@ Computer players follow the same rules as you and are run by three pieces of cod
 - **Wars of conquest**: an aggressive power with 1.4 times a neighbour's military strength is far
   likelier to attack it and slow to make peace while it wins. Armies grow with the empire (two units
   a city, up to 6 plus three for every two cities, so a great empire keeps a field army beyond its garrisons). A defended city is stormed only once the army
-  gathered before it can wear the garrison down: the planner weighs each side's attack against the
-  garrison's best defence (fortified, walled), and every defender costs about (1-p)/p attackers,
-  p being the odds of one blow. Warlike leaders commit with half the margin. Then every unit there
-  joins the assault.
+  gathered before it can wear the garrison down: the planner weighs each attacker against the
+  garrison's best defence against it, with every bonus of the city (its land, size and walls, dug
+  in), takes off what the guns in range will knock off by bombarding first, and every hit point
+  left costs about (1-p)/p of an attacker's, p being the odds of one blow. Warlike leaders commit
+  with half the margin. Then every unit there joins the assault, guns firing first. Elsewhere a
+  cautious leader's troops attack only at even odds or better, a warlike leader's whatever stands
+  in their way. One unit in four that an army raises for the field is a gun, once guns are known;
+  guns keep their distance and bombard.
   The last cities of a people with three or fewer, and the capital of a people whose spaceship is in
   flight, draw armies from much further away.
 - **Settling overseas**: a seafaring people looks for free land up to 20 tiles from its cities and
@@ -268,7 +330,7 @@ Computer players follow the same rules as you and are run by three pieces of cod
 - **N** or the **Next Unit** button — go to the next unit without skipping this one
 - **H** — fortify (or put a non-military unit to sleep) so it is no longer asked for orders
 - **Enter** or the **End Turn** button — end the turn now
-- **B** — settler founds a city
+- **B** — settler founds a city; a gun, warship or bomber bombards
 - **F / M / R / X** — worker builds Farm / Mine / Road (Railroad on a road, with Steam Power) /
   clears terrain or cleans pollution; **K** — automate the worker
 - **Shift-click** — move the whole stack (or switch on *Move together* in the unit panel)
@@ -329,7 +391,7 @@ working directory.
   make a citizen happy. A government limits any one rate: Despotism 60%, Monarchy and Communism
   70%, Republic 80%, Democracy 100%, Fundamentalism 50%; Anarchy allows no science.
 - **Traits and unique units**: every civilization has two traits - Militaristic (troops promoted
-  after half their victories), Commercial (+1 gold a city), Scientific (+1 science a city),
+  twice as often), Commercial (+1 gold a city), Scientific (+1 science a city),
   Religious (+1 content a city, shorter revolutions), Industrious (+1 shield a city), Agricultural
   (+1 food a city) - and a unique unit it trains a rank higher (Roman Legion, Spanish Knight...).
 - **Religion**: the first to learn Mysticism, Philosophy, Theology and Printing Press founds the Old
@@ -338,6 +400,11 @@ working directory.
   state religion - your capital's faith - to any city at peace with you (U). Cities of your state
   religion get +1 content (+2 with a Temple); the holy city's owner earns a gold for every two
   cities of its faith; peoples of one faith grow friendlier, of different faiths cooler.
+- **Unit support**: as in Civilization III, each city supports a few military units free - 4 under
+  Despotism or Fundamentalism, 3 under Monarchy or Communism, 2 in anarchy, none under a Republic or
+  Democracy - and every unit beyond costs a gold a turn (2 under a Republic or Democracy, nothing
+  under Fundamentalism); the Statue of Zeus supports one more per city. Computer players are held
+  to an army size instead (see Computer players).
 - **War weariness**: under a Republic every 12 turns of war make one more citizen unhappy in every
   city (up to 2), under Democracy every 8 (up to 3); peace brings it back down; a Police Station
   halves it.
@@ -357,7 +424,7 @@ working directory.
   hand - then units repeat until you change the order and buildings wait for one.
 - **Barbarians**: from turn 10, every 8 turns a band rises on wild land outside every border and
   away from any unit; it grows (one to three units) and re-arms with the age of the world, from
-  warriors to infantry and artillery.
+  warriors to infantry and cavalry.
 - **United Nations**: the wonder (Computers) holds a vote for Secretary-General every 10 turns
   between its owner and the highest-scoring other people; every people votes for itself if a
   candidate, else for the candidate it likes better (or abstains); a majority of all the members wins
@@ -387,7 +454,7 @@ working directory.
   the queue, otherwise units keep repeating). Click a queued project to take it off.
 - **Pillage and fortresses**: troops on improved enemy land (at war) press P to wreck the railroad,
   fortress, mine, farm or road there, for 5 gold; computer troops raid your land too. Workers build
-  a Fortress (O, needs Construction) in the field: troops in it defend as if behind walls.
+  a Fortress (O, needs Construction) in the field: troops in it defend 50% harder.
 - **Right of passage**: ask a people at peace for one (Diplomacy); your units and theirs may then
   share tiles and pass through each other. Walking into the units or an empty city of a people at
   peace is refused (declare war first). An alliance includes passage; war ends it.
@@ -397,7 +464,7 @@ working directory.
 - **Late buildings**: Observatory (Astronomy, +3 science), Research Lab (Computers, +6 science,
   needs a University), Power Plant (Electronics, +4 shields, needs a Factory), Police Station
   (Communism, +2 content), Supermarket (Sanitation, +3 food), Mass Transit (Mass Production, no
-  pollution), Recycling Center (Ecology, halves pollution), Coastal Fortress (Steel, doubles defence
+  pollution), Recycling Center (Ecology, halves pollution), Coastal Fortress (Steel, +100% defence
   against ships) and Airport (Flight, veteran aircraft).
 - **More units**: Scout (explorer, 2 moves), Longbowman (Monarchy), Knight (Chivalry), Galleon
   (Navigation), Submarine (Electronics), Engineers (Steam Power: workers that move 2 and finish jobs
@@ -422,8 +489,9 @@ working directory.
 - **Golden age**: a civilization's first wonder brings 10 turns of +50% shields and extra gold.
 - **Rivers**: +1 gold per river tile in a city's land, +25% defence, and fresh water.
 - **Pollution**: big industrial cities spoil tiles, which yield nothing until cleaned.
-- **Combat**: 3 hit points (4 veteran, 5 elite); winners may be promoted, Barracks train veterans,
-  wounds heal while resting (fully in a city). Faster attackers retreat rather than die.
+- **Combat**: Civilization III's rules (see [Combat](#combat)): 3 hit points (4 veteran, 5 elite);
+  winners may be promoted, Barracks train veterans, wounds heal while resting (fully in a city).
+  Fast attackers may pull back from slow defenders; guns bombard but cannot attack.
 - **Armies**: select a Great General in one of your cities with two or three land units and press
   U (Form Army). The strongest unit leads; the army fights with its strength and the hit points of
   every member, moves at its slowest member's pace and is re-equipped member by member. The general is used up.

@@ -64,12 +64,13 @@ impl Government {
         }
     }
 
-    /// Free unit support per city
+    /// Military units each city supports free (Civilization III's figures: four under Despotism,
+    /// three under Monarchy and Communism, none under a Republic or Democracy).
     pub fn free_unit_support(&self) -> u32 {
         match self {
             Government::Anarchy => 2,
-            Government::Despotism => 1,
-            Government::Monarchy => 2,
+            Government::Despotism => 4,
+            Government::Monarchy => 3,
             Government::Republic => 0,
             Government::Democracy => 0,
             Government::Communism => 3,

@@ -151,7 +151,7 @@ fn help_lines(topic: HelpTopic) -> Vec<String> {
         HelpTopic::Basics => [
             "Click a unit or city to select it; click again or press Tab (Shift+Tab back) for the next unit on that tile - or pick one from the cards in the unit panel. Click a tile (or right-click) to move; far destinations become standing orders. Hover over a tile to see the route and how many turns it takes.",
             "Space: skip a unit (or go to a city that needs a project, then end the turn). Enter: end the turn (if a city has no soldier and an enemy is in sight nearby, the game says so first; End Turn again goes ahead). N: next unit. H: fortify or sleep. Z: sentry (sleep until an enemy comes near). C: a scout, soldier or ship explores by itself, turn after turn, until nothing is left to find. J: a worker or settler joins the city it stands in. I: board a ship in port. [ and ]: previous and next city. Ctrl+Z or Backspace: take back the last move. L: messages. Esc: close or deselect.",
-            "Workers and Engineers: F farm, M mine, R road (railroad on a road, with Steam Power), O fortress (Construction), X clear land or clean pollution, K automate. Settlers: B found a city.",
+            "Workers and Engineers: F farm, M mine, R road (railroad on a road, with Steam Power), O fortress (Construction), X clear land or clean pollution, K automate. Settlers: B found a city. Guns, warships and bombers: B bombard (or click an enemy within range).",
             "U uses the selected unit: a great person's gift, a General forming an army, a Missionary preaching, a caravan helping a wonder. T opens a caravan's trade route. P pillages enemy land. Diplomats act from the unit panel next to a foreign city.",
             "Q science, E foreign affairs, G trade, Y empire (government, rates, cities, military, score), F1 this encyclopedia, V sound, F2 save a file (the game also saves itself every turn).",
             "Terrain: hills and forest cost 2 moves, mountains 3. A unit without the moves still enters, but is worn out for as many turns as it owes (a one-move unit takes 2 turns a hill, 3 a mountain). Roads triple movement and railroads make it free. Wheeled units - chariots, catapults, cannon, artillery - cannot enter forest or mountains except along a road.",
@@ -178,6 +178,11 @@ fn help_lines(topic: HelpTopic) -> Vec<String> {
                 } else if u.capacity() > 0 {
                     let kind = if u == UnitType::Carrier { "aircraft" } else { "troops" };
                     format!("{}: attack {a}, defence {d}, moves {m}; carries {} {kind}; {} shields{needs}{res}", u.name(), u.capacity(), u.cost())
+                } else if let Some((b, r, f)) = u.bombard() {
+                    let only = if u.bombard_only() { " (cannot attack)" } else { "" };
+                    format!("{}: attack {a}, defence {d}, moves {m}; bombard {b}, range {r}, rate of fire {f}{only}; {} shields{needs}{res}", u.name(), u.cost())
+                } else if u.anti_mounted() {
+                    format!("{}: attack {a}, defence {d} (twice that against mounted units), moves {m}; {} shields{needs}{res}", u.name(), u.cost())
                 } else {
                     format!("{}: attack {a}, defence {d}, moves {m}; {} shields{needs}{res}", u.name(), u.cost())
                 }
@@ -210,20 +215,24 @@ fn help_lines(topic: HelpTopic) -> Vec<String> {
         .map(String::from)
         .collect(),
         HelpTopic::Peoples => vec![
-            "Every people has two traits - Militaristic (troops promoted after half their victories), Commercial (+1 gold a city), Scientific (+1 science a city), Religious (+1 content a city, shorter revolutions), Industrious (+1 shield a city) or Agricultural (+1 food a city) - and a unique unit, which it trains a rank higher.".to_string(),
+            "Every people has two traits - Militaristic (troops promoted twice as often), Commercial (+1 gold a city), Scientific (+1 science a city), Religious (+1 content a city, shorter revolutions), Industrious (+1 shield a city) or Agricultural (+1 food a city) - and a unique unit, which it trains a rank higher.".to_string(),
             "Governments: a revolution brings a few turns of anarchy. Each government limits how much of your commerce can go to science or luxury (Empire advisor, Government tab); taxes take the rest, and savings earn 5% interest, up to 2 gold per Bank and 3 per Stock Exchange.".to_string(),
             "Faith: the first to learn Mysticism, Philosophy, Theology and Printing Press founds the Old Gods, the Way of Reason, the One Faith and the Reformed Faith. Faiths spread to nearby cities; Missionaries carry your state religion (your capital's faith) further. Cities of your state religion get +1 content (+2 with a Temple); a holy city's owner earns gold from the faith's followers; shared faith warms relations, different faiths cool them.".to_string(),
             "Diplomacy (E): peace, alliances, gifts, tribute, trade agreements, technology and resource deals. A right of passage lets your units share tiles with theirs; an alliance includes it, and war ends it. Units cannot walk into the units or cities of a people at peace with you: declare war first.".to_string(),
             "Culture from temples, libraries, colosseums, cathedrals, universities and wonders widens borders (2 tiles, 3 at 100 culture, 4 at 1,000, 5 at 5,000) and pushes neighbours' borders back. A city in disorder next to a much greater culture may defect.".to_string(),
-            "Great people come from great-person points: Merchants trade abroad or settle as trading houses, Scientists complete research, Artists make masterpieces, Engineers finish projects; Generals come from victories.".to_string(),
+            "Great people come from great-person points: Merchants trade abroad or settle as trading houses, Scientists complete research, Artists make masterpieces, Engineers finish projects; Generals come from battle - one victory in sixteen won by an elite unit brings one forth.".to_string(),
         ],
         HelpTopic::War => vec![
             "Just causes for war: refusing your demand to withdraw troops or stop smugglers, a spy caught, a city taken, an attack on your ally or a border incident gives you a grievance for 30 turns (the foreign advisor lists them). Declaring war with one costs 3 reputation instead of 15, and the enemy's allies may stay out. Others' grievances against you make them readier to attack.".to_string(),
             "False flags: a Diplomat can Stage an Incident (a faked attack gives you a just cause) or Frame another people for an attack in a city (its owner blames them). If exposed, you lose 10 reputation and everyone trusts you less. Computer players use them too.".to_string(),
-            "Attack by moving onto an enemy. Battles are fought in rounds over hit points (3, 4 for a veteran, 5 for an elite); winners may be promoted, faster attackers may retreat, wounds heal while resting.".to_string(),
-            "Defence: hills and forest +50%, mountains double, rivers +25%, fortifying +25%, city walls or a fortress double against land attacks, a Coastal Fortress double against ships. A Great General on the tile makes troops fight half again as hard.".to_string(),
-            "Armies: a Great General in one of your cities forms up to four land units (five with Sun Tzu's War Academy) into one army. It fights as its best unit with the hit points of all, 10% harder for every member beyond the first, and moves at its slowest member's pace. Troops standing with an army that has room can join it (U).".to_string(),
-            "Artillery, some ships and bombers bombard without risk. Troops cannot slip past enemy troops (zone of control). Pillage (P) wrecks improvements on enemy land; computer raiders do the same to yours.".to_string(),
+            "Attack by moving onto an enemy. Battles are fought in rounds, as in Civilization III: each round the attacker lands a blow with chance attack / (attack + defence), and whoever is struck loses a hit point. Units have 3 hit points, 4 as veterans and 5 as elites - experience adds hit points, not strength. A victor may be promoted: a regular one time in four, a veteran one time in eight (twice as often for a militaristic people, half as often against barbarians). Wounds heal while resting.".to_string(),
+            {
+                let (town, city) = (Building::size_limit(&[], false), Building::size_limit(&[Building::Aqueduct], false));
+                format!("Defence: the defender's bonuses add up - open ground +10%, forest +25%, hills +50%, mountains +100%, a river +25%, fortified +25%, a fortress +50%. A town (up to {town} citizens) has no defences of its own, a city of {} to {city} +50%, a metropolis +100%; city walls give +100% against land attacks where that is more, a Coastal Fortress +100% against ships. Pikemen defend twice as hard against mounted units. A Great General on the tile makes troops fight half again as hard.", town + 1)
+            },
+            "Retreat: a fast unit (2 moves or more) attacking a slow one pulls back with its last hit point half the time (veterans a little more often, elites two times in three) instead of dying - never from a fast defender, or one on its last hit point.".to_string(),
+            "Armies: a Great General in one of your cities forms up to three land units (four with Sun Tzu's War Academy) into one army, as in Civilization III. It fights as its best unit with the hit points of all, 10% harder for every member beyond the first, and moves at its slowest member's pace. Troops standing with an army that has room can join it (U).".to_string(),
+            "Guns - catapults, cannon, artillery, radar artillery - cannot attack or take cities: they bombard (B, or click the target) from up to their range (artillery 2 tiles), firing their rate of fire in rounds against the defender's full defence. Each hit takes a hit point but never the last, and the gun comes to no harm: shell a garrison, then storm it in the same turn. Frigates, ironclads, battleships and bombers may bombard too. Troops cannot slip past enemy troops (zone of control). Pillage (P) wrecks improvements on enemy land; computer raiders do the same to yours.".to_string(),
             "A captured city resists for a while (longer for a big one; a garrison of two halves it) and produces nothing. Under a Republic or Democracy a long war makes citizens unhappy (a Police Station halves it).".to_string(),
             "Modern raiders rise inside your own lands, on the barbarians' side. Cartel Gunmen form near a city with a drug trade and no Police Station (likelier the worse it is); while near, its drug trade cannot be rooted out, and an undefended city pays them off - killing them seizes their assets. Insurgents form, once you know Electronics, near a city with grievances (disorder, occupation, a faith not its ruler's, a long war); in an undefended city they wreck a building and kill a citizen. A Police Station stops both forming in its city and foils half of all plots; a garrison keeps them out.".to_string(),
             "Older units are upgraded in your cities for gold once the better unit can be built there. Under Monarchy, Republic, Communism or Fundamentalism, once you know Gunpowder, a city can draft a citizen into its best defender once a turn.".to_string(),
@@ -1133,7 +1142,10 @@ pub fn rebuild_panels(
                     };
                     c.spawn(label(&art.font_body, format!("{} unit  {}", owner_name(unit.owner, &civs), status), 14.0, owner_color(unit.owner).mix(&Color::WHITE, 0.55)));
                     c.spawn(row(12.0)).with_children(|s| {
-                        stat(s, art, icon::ATTACK, attack.to_string(), CREAM);
+                        match unit.unit_type.bombard() {
+                            Some((b, _, _)) if unit.unit_type.bombard_only() => stat(s, art, icon::ATTACK, format!("B{b}"), CREAM),
+                            _ => stat(s, art, icon::ATTACK, attack.to_string(), CREAM),
+                        }
                         stat(s, art, icon::DEFENSE, defense.to_string(), CREAM);
                         stat(s, art, icon::MOVES, format!("{}/{}", moves_left(unit), moves), CREAM);
                         if unit.unit_type.is_military() {
@@ -1578,7 +1590,11 @@ pub fn rebuild_panels(
                     .filter(|u| u.required_wonder().is_none_or(|w| wonders.built.contains_key(&w)))
                     .map(|u| {
                         let (attack, defense, moves) = u.stats();
-                        (ProductionItem::Unit(u), format!("A{attack} D{defense} M{moves}"))
+                        let attack = match u.bombard() {
+                            Some((b, _, _)) if u.bombard_only() => format!("B{b}"),
+                            _ => format!("A{attack}"),
+                        };
+                        (ProductionItem::Unit(u), format!("{attack} D{defense} M{moves}"))
                     })
                     .collect(),
                 CityTab::Buildings | CityTab::Wonders => {
