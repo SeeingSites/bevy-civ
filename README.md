@@ -530,7 +530,10 @@ the default `audio` feature: `cargo run --no-default-features --features full`.
 ## Autoplay
 `cargo run --release -- --autoplay [rome|earth|discovery] [turns]` plays a whole game between
 computer players under the real rules, without a window, and prints a snapshot every 25 turns plus
-the milestones (eras, wonders, governments, spaceships) and how it ends. The Game Simulator
+the milestones (ages, wonders, governments, golden ages, spaceships) and how it ends, with the
+technologies the computer players traded and the largest peoples' shares of the world's cities,
+land and citizens. With `BEVY_CIV_CULTURE_TRACE=1` it also prints the leading peoples' culture
+(and the best city's) every five turns, for tuning the cultural victory. The Game Simulator
 workflow runs all three scenarios to 400 turns on demand. Across recent batches of 18
 games (six per scenario), the space race, culture and diplomacy each win a share, mostly between
 turns 250 and 380; a few games go to the turn limit and are decided on score.
