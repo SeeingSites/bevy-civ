@@ -21,6 +21,11 @@ const gear = {
   veil: () => `<path d="M34,64 q-6,-44 30,-44 q36,0 30,44 q-2,18 4,32 h-18 l-2,-44 h-28 l-2,44 h-18 q6,-14 4,-32 Z" fill="#f1ecdf"/><path d="M48,32 l4,-10 l6,6 l6,-10 l6,10 l6,-6 l4,10 Z" fill="${GOLD}"/>`,
   beret: () => `<path d="M36,44 q4,-24 34,-22 q24,2 22,18 q-28,-8 -56,4 Z" fill="#2a2f5a"/><path d="M84,30 q14,-16 22,-12 q-6,10 -18,16 Z" fill="#f1ecdf"/>`,
   bigTurban: () => `<path d="M32,48 q-4,-38 32,-38 q36,0 32,38 q-32,-14 -64,0 Z" fill="#f4f1e6"/><path d="M38,34 q26,-14 52,2 M34,44 q30,-14 60,0" fill="none" stroke="rgba(0,0,0,0.2)" stroke-width="2"/><path d="M60,14 q4,-10 8,0 v10 h-8 Z" fill="#c8281c"/>`,
+  // Modern heads of government: hair only (the suit and tie are drawn by the robe and trim).
+  shortHair: (c) => () => `<path d="M42,52 q-2,-30 22,-30 q24,0 22,30 q-4,-14 -22,-16 q-18,2 -22,16 Z" fill="${c}"/>`,
+  sidePart: (c) => () => `<path d="M42,54 q-4,-32 22,-32 q26,0 22,30 q-10,-18 -30,-14 q-8,2 -14,16 Z" fill="${c}"/>`,
+  bob: (c) => () => `<path d="M40,72 q-6,-48 24,-48 q30,0 24,48 l-8,0 q2,-26 -16,-30 q-18,4 -16,30 Z" fill="${c}"/>`,
+  bun: (c) => () => `<path d="M42,56 q-4,-32 22,-32 q26,0 22,32 q-6,-16 -22,-18 q-16,2 -22,18 Z" fill="${c}"/><circle cx="64" cy="20" r="9" fill="${c}"/>`,
   steppeHat: () => `<path d="M40,44 q4,-30 24,-38 q20,8 24,38 Z" fill="#2f6a8f"/><path d="M60,8 h8 v8 h-8 Z" fill="${GOLD}"/><path d="M34,42 q30,-12 60,0 v10 q-30,-10 -60,0 Z" fill="#7a5530"/><path d="M38,44 q26,-8 52,0" fill="none" stroke="#a37a4a" stroke-width="3" stroke-dasharray="3 3"/>`,
   furCrown: () => `<path d="M44,40 q0,-22 20,-22 q20,0 20,22 Z" fill="${GOLD}"/><path d="M38,40 h52 v10 h-52 Z" fill="#5a3d24"/><path d="M62,10 h4 v10 h-4 Z M58,13 h12 v3 h-12 Z" fill="${GOLD}"/>`,
 };
@@ -53,6 +58,11 @@ const LEADERS = [
   ['#6a1f1f', '#d1a074', '#b3261e', GOLD, gear.bigTurban, beard.full('#22160e'), false],
   ['#3a2f4a', '#e6bd98', '#7a2a22', GOLD, gear.furCrown, beard.long('#6b4a2a'), false],
   ['#2a4a5a', '#c9925e', '#2f6a8f', GOLD, gear.steppeHat, beard.droop('#22160e'), false],
+  // Modern heads of government (generic, not real people): dark suits, a coloured tie or scarf.
+  ['#2a3a5a', '#e0b088', '#22263a', '#b3261e', gear.shortHair('#5a3a1c'), beard.none, false],
+  ['#3a2a3a', '#c98f62', '#2a2f3a', '#2a6fb0', gear.bob('#22160e'), beard.none, true],
+  ['#2a4a3a', '#9a6a44', '#1f2430', '#d9a441', gear.sidePart('#1a120c'), beard.thin('#1a120c'), false],
+  ['#4a3a2a', '#e6c3a0', '#30303a', '#4f8a3a', gear.bun('#8a8f98'), beard.none, true],
 ];
 
 function portrait(index) {
