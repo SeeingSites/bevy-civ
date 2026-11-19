@@ -97,7 +97,7 @@ pub fn best_defender(city: &CityView, civ: &CivView, supplies: &Supplies) -> Uni
         .into_iter()
         .filter(|u| u.is_army() && can_train(*u, city, civ, supplies))
         .max_by(|a, b| {
-            let score = |u: &UnitType| u.stats().1 as f32 * u.defense_bonus() + u.stats().0 as f32 * 0.1 - u.cost() as f32 * 0.001;
+            let score = |u: &UnitType| u.stats().1 as f32 + u.stats().0 as f32 * 0.1 - u.cost() as f32 * 0.001;
             score(a).total_cmp(&score(b))
         })
         .unwrap_or(UnitType::Warrior)
@@ -113,6 +113,26 @@ pub fn best_attacker(city: &CityView, civ: &CivView, supplies: &Supplies) -> Uni
             score(a).total_cmp(&score(b))
         })
         .unwrap_or(UnitType::Warrior)
+}
+
+/// One unit in this many that an army raises for the field is a gun, to bombard the cities it
+/// besieges (guns cannot attack).
+pub const GUN_SHARE: f64 = 0.25;
+
+/// The best gun the city can build: the most bombardment for its rate of fire.
+pub fn best_gun(city: &CityView, civ: &CivView, supplies: &Supplies) -> Option<UnitType> {
+    UnitType::ALL
+        .into_iter()
+        .filter(|u| u.bombard_only() && can_train(*u, city, civ, supplies))
+        .max_by_key(|u| u.bombard().map_or(0, |(strength, _, rate)| strength * rate))
+}
+
+/// A unit for the field army: the best attacker, now and then a gun.
+fn field_unit(city: &CityView, civ: &CivView, supplies: &Supplies, rng: &mut impl Rng) -> UnitType {
+    match best_gun(city, civ, supplies) {
+        Some(gun) if rng.gen_bool(GUN_SHARE) => gun,
+        _ => best_attacker(city, civ, supplies),
+    }
 }
 
 /// Picks the next project: safety first, then the workers and harbours that connect the empire,
@@ -146,7 +166,7 @@ pub fn choose(city: &CityView, civ: &CivView, supplies: &Supplies, rng: &mut imp
     let wanted_army = if civ.at_war { 2 * civ.cities + 2 } else { civ.cities + 1 }.min(cap);
     if civ.military < wanted_army {
         let offensive = civ.at_war || civ.aggression > 0.6;
-        return unit(if offensive { best_attacker(city, civ, supplies) } else { best_defender(city, civ, supplies) });
+        return unit(if offensive { field_unit(city, civ, supplies, rng) } else { best_defender(city, civ, supplies) });
     }
     // At war, a coastal city adds warships and an industrial power adds aircraft.
     if civ.at_war {
@@ -236,7 +256,7 @@ pub fn choose(city: &CityView, civ: &CivView, supplies: &Supplies, rng: &mut imp
         return unit(UnitType::NuclearMissile);
     }
     if civ.military < cap {
-        return unit(best_attacker(city, civ, supplies));
+        return unit(field_unit(city, civ, supplies, rng));
     }
     // Nothing left to build: a few spare hands at most. More would only pile up (a city that has
     // everything keeps producing); the army is capped, so its units are simply not raised.
@@ -293,8 +313,9 @@ mod tests {
         let tech = knowing(&[Tech::IronWorking, Tech::BronzeWorking]);
         let view = city();
         let at_war = CivView { at_war: true, military: 0, ..civ(&tech) };
-        assert_ne!(best_attacker(&view, &at_war, &Supplies::default()), UnitType::Legion);
-        assert_eq!(best_attacker(&view, &at_war, &supplies_with(&[Good::Iron])), UnitType::Legion);
+        let without = best_attacker(&view, &at_war, &Supplies::default());
+        assert!(!without.required_resources().contains(&Good::Iron), "{without:?}");
+        assert_eq!(best_attacker(&view, &at_war, &supplies_with(&[Good::Iron])), UnitType::Immortal);
     }
 
     #[test]

@@ -1,7 +1,7 @@
 //! What sets each civilization apart: two traits and a unique unit.
 //!
 //! Traits give small, steady advantages in every city (more gold, science, shields, food or
-//! contentment) or in war (troops promoted more often). A civilization's unique unit is one of the
+//! contentment) or in war (troops promoted twice as often). A civilization's unique unit is one of the
 //! ordinary units, trained by that civilization one rank higher (a veteran, or elite with Barracks).
 //! Both follow from the civilization's name, so they need no saving.
 
@@ -9,7 +9,7 @@ use crate::unit::UnitType;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Trait {
-    /// Troops are promoted after half their victories instead of a third.
+    /// Troops are promoted twice as often.
     Militaristic,
     /// +1 gold in every city.
     Commercial,
@@ -39,7 +39,7 @@ impl Trait {
 
     pub fn effect(&self) -> &'static str {
         match self {
-            Trait::Militaristic => "troops are promoted after half their victories",
+            Trait::Militaristic => "troops are promoted twice as often",
             Trait::Commercial => "+1 gold in every city",
             Trait::Scientific => "+1 science in every city",
             Trait::Religious => "+1 content in every city, shorter revolutions",
@@ -72,9 +72,10 @@ impl Character {
         u32::from(self.has(Trait::Religious))
     }
 
-    /// Chance a victorious unit is promoted.
-    pub fn promotion_chance(&self) -> f64 {
-        if self.has(Trait::Militaristic) { 0.5 } else { 1.0 / 3.0 }
+    /// Chance a victorious unit of this level is promoted (twice the usual for a militaristic
+    /// people; see [`crate::combat::promotion_chance`]).
+    pub fn promotion_chance(&self, level: u8, against_barbarians: bool) -> f64 {
+        crate::combat::promotion_chance(level, self.has(Trait::Militaristic), against_barbarians)
     }
 
     /// "Militaristic and Commercial".
@@ -136,6 +137,6 @@ mod tests {
         assert_eq!(of("Rome").unique, UnitType::Legion);
         assert_eq!(of("Rome").city_bonus(), (0, 0, 1, 0));
         assert_eq!(of("Egypt").content(), 1);
-        assert!(of("Rome").promotion_chance() > of("Egypt").promotion_chance());
+        assert!(of("Rome").promotion_chance(0, false) > of("Egypt").promotion_chance(0, false));
     }
 }

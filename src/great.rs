@@ -3,7 +3,8 @@
 //! Cities earn great-person points every turn from their buildings, wonders and specialists. When a
 //! city's points reach its civilization's threshold, a great person is born there: the kind is drawn
 //! at random, weighted by the points of each kind. Each birth raises the civilization's threshold.
-//! Generals are different: they come from victories in battle, counted for the whole civilization.
+//! Generals are different: like Civilization III's great leaders, they come from battle - now and
+//! then an elite unit's victory brings one forth.
 
 use std::collections::HashMap;
 
@@ -25,9 +26,9 @@ pub const CITY_KINDS: [UnitType; 4] = [UnitType::GreatMerchant, UnitType::GreatS
 /// times one more than the one before (60, 180, 360, 600...), so great people grow rarer.
 pub const FIRST_THRESHOLD: u32 = 60;
 pub const THRESHOLD_STEP: u32 = 60;
-/// General points per battle won, and the points needed for each general.
-pub const GENERAL_PER_VICTORY: u32 = 10;
-pub const GENERAL_THRESHOLD: u32 = 40;
+/// The chance that a victory won by an elite unit brings forth a great general (Civilization III's
+/// great leaders come this way).
+pub const LEADER_CHANCE: f64 = 1.0 / 16.0;
 
 /// Gold a great merchant settled in one of its own cities brings in every turn.
 pub const SETTLED_MERCHANT_GOLD: u32 = 3;
@@ -105,7 +106,7 @@ pub struct GreatPeople {
     pub city: HashMap<Hex, Points>,
     /// Great people born so far, by civilization (raises the next threshold).
     pub born: HashMap<u32, u32>,
-    /// General points from battles won, by civilization.
+    /// Great generals born in battle, by civilization (older saves kept victory points here).
     pub general: HashMap<u32, u32>,
     /// Masterpieces made by great artists, by city tile.
     #[serde(with = "crate::save::pairs")]
@@ -138,16 +139,15 @@ impl GreatPeople {
         Some(kind)
     }
 
-    /// Counts a battle won. Returns true when it brings forth a great general.
-    pub fn victory(&mut self, owner: u32) -> bool {
-        let points = self.general.entry(owner).or_default();
-        *points += GENERAL_PER_VICTORY;
-        if *points >= GENERAL_THRESHOLD {
-            *points -= GENERAL_THRESHOLD;
-            true
-        } else {
-            false
+    /// A battle won by a unit of `owner` that fought at this level (0 regular, 1 veteran, 2 elite).
+    /// Returns true when the victory brings forth a great general: only an elite's can, one time in
+    /// sixteen.
+    pub fn victory(&mut self, owner: u32, level: u8, rng: &mut impl Rng) -> bool {
+        let born = level >= 2 && rng.gen_bool(LEADER_CHANCE);
+        if born {
+            *self.general.entry(owner).or_default() += 1;
         }
+        born
     }
 
     /// Points a city has gathered so far.
@@ -213,10 +213,12 @@ mod tests {
     }
 
     #[test]
-    fn generals_come_from_victories() {
+    fn generals_come_from_the_victories_of_elites() {
+        let mut rng = rand::rngs::StdRng::seed_from_u64(2);
         let mut people = GreatPeople::default();
-        let wins: Vec<bool> = (0..8).map(|_| people.victory(0)).collect();
-        assert_eq!(wins.iter().filter(|w| **w).count(), 2);
-        assert!(wins[3] && wins[7]);
+        assert!((0..400).all(|_| !people.victory(0, 0, &mut rng) && !people.victory(0, 1, &mut rng)), "regulars and veterans never");
+        let born = (0..1600).filter(|_| people.victory(0, 2, &mut rng)).count();
+        assert!((70..130).contains(&born), "about one elite victory in sixteen: {born}");
+        assert_eq!(people.general.get(&0).copied(), Some(born as u32));
     }
 }

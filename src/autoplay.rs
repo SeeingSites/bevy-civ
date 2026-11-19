@@ -196,6 +196,12 @@ fn armies(world: &mut World) {
         }
         println!("--- civilian units: {}", civ_units.iter().map(|(k, v)| format!("{k} {v}")).collect::<Vec<_>>().join(", "));
     }
+    let t = world.resource::<bevy_civ::combat::BattleTally>().clone();
+    let share = |n: u32| 100 * n / t.battles.max(1);
+    println!(
+        "--- battles: {} ({}% won by the attacker, {}% pulled back), {} promotions, {} won by elites, {} generals born; {} bombardments took {} hit points",
+        t.battles, share(t.won), share(t.retreated), t.promotions, t.elite_wins, t.generals, t.bombardments, t.shelled
+    );
     let ferries = world.resource::<bevy_civ::ai::Ferries>();
     let landed: Vec<String> = civs.players.iter().filter_map(|c| ferries.landed.get(&c.id).map(|n| format!("{} {n}", c.name.trim_start_matches("the ")))).collect();
     println!("--- landed overseas: {}", if landed.is_empty() { "none".to_string() } else { landed.join(", ") });

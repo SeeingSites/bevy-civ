@@ -252,6 +252,8 @@ impl UnitType {
         }
     }
 
+    /// Attack, defence and moves, as Civilization III rates them (the units this game has no
+    /// counterpart for keep values in proportion).
     pub fn stats(&self) -> (u32, u32, u32) {
         match self {
             UnitType::Settler => (0, 0, 1),
@@ -260,34 +262,37 @@ impl UnitType {
             UnitType::Spearman => (1, 2, 1),
             UnitType::Archer => (2, 1, 1),
             UnitType::Horseman => (2, 1, 2),
-            UnitType::Legion => (2, 2, 1),
-            UnitType::WarChariot => (2, 1, 3),
-            UnitType::Immortal => (1, 3, 1),
+            // The swordsmen of the iron age.
+            UnitType::Legion => (3, 2, 1),
+            UnitType::WarChariot => (2, 1, 2),
+            UnitType::Immortal => (4, 2, 1),
             UnitType::Phalanx => (1, 3, 1),
-            UnitType::Catapult => (4, 1, 1),
-            UnitType::Knight => (4, 2, 2),
-            UnitType::Cannon => (6, 1, 1),
-            UnitType::Rifleman => (5, 7, 1),
-            UnitType::Pikeman => (1, 4, 1),
-            UnitType::Musketman => (2, 6, 1),
+            // Guns only bombard (see `bombard`).
+            UnitType::Catapult => (0, 1, 1),
+            UnitType::Knight => (4, 3, 2),
+            UnitType::Cannon => (0, 1, 1),
+            UnitType::Rifleman => (4, 6, 1),
+            // Twice as strong against mounted attackers (see `anti_mounted`).
+            UnitType::Pikeman => (1, 2, 1),
+            UnitType::Musketman => (2, 4, 1),
             UnitType::Infantry => (6, 10, 1),
-            UnitType::MechInfantry => (6, 14, 2),
-            UnitType::ModernArmor => (20, 12, 3),
+            UnitType::MechInfantry => (12, 18, 2),
+            UnitType::ModernArmor => (24, 16, 3),
             UnitType::Scout => (0, 0, 2),
             UnitType::Longbowman => (4, 1, 1),
             UnitType::Galleon => (2, 2, 5),
             UnitType::Submarine => (10, 2, 5),
             UnitType::Engineers => (0, 0, 2),
-            UnitType::RadarArtillery => (16, 2, 2),
+            UnitType::RadarArtillery => (0, 2, 2),
             UnitType::Missionary => (0, 0, 2),
             UnitType::NuclearMissile => (0, 0, 0),
             UnitType::Transport => (0, 3, 5),
             UnitType::Carrier => (1, 9, 5),
             UnitType::Cartel => (5, 4, 2),
             UnitType::Insurgent => (6, 3, 1),
-            UnitType::Cavalry => (6, 2, 2),
-            UnitType::Tank => (10, 5, 2),
-            UnitType::Artillery => (8, 2, 1),
+            UnitType::Cavalry => (6, 3, 3),
+            UnitType::Tank => (16, 8, 2),
+            UnitType::Artillery => (0, 2, 1),
             UnitType::Diplomat => (0, 0, 2),
             UnitType::Caravan => (0, 0, 1),
             UnitType::Galley => (1, 1, 3),
@@ -309,16 +314,16 @@ impl UnitType {
             UnitType::Spearman => 20,
             UnitType::Archer => 20,
             UnitType::Horseman => 20,
-            UnitType::Legion => 25,
-            UnitType::WarChariot => 30,
-            UnitType::Immortal => 25,
+            UnitType::Legion => 30,
+            UnitType::WarChariot => 20,
+            UnitType::Immortal => 40,
             UnitType::Phalanx => 30,
-            UnitType::Catapult => 40,
+            UnitType::Catapult => 20,
             UnitType::Knight => 50,
-            UnitType::Cannon => 60,
+            UnitType::Cannon => 40,
             UnitType::Rifleman => 50,
             UnitType::Pikeman => 30,
-            UnitType::Musketman => 40,
+            UnitType::Musketman => 30,
             UnitType::Infantry => 70,
             UnitType::MechInfantry => 110,
             UnitType::ModernArmor => 150,
@@ -327,13 +332,13 @@ impl UnitType {
             UnitType::Galleon => 40,
             UnitType::Submarine => 100,
             UnitType::Engineers => 30,
-            UnitType::RadarArtillery => 120,
+            UnitType::RadarArtillery => 100,
             UnitType::Missionary => 30,
             UnitType::NuclearMissile => 160,
             UnitType::Transport => 60,
             UnitType::Carrier => 150,
             UnitType::Cartel | UnitType::Insurgent => 0,
-            UnitType::Cavalry => 60,
+            UnitType::Cavalry => 70,
             UnitType::Tank => 100,
             UnitType::Artillery => 80,
             UnitType::Diplomat => 30,
@@ -477,23 +482,20 @@ impl UnitType {
         }
     }
 
-    pub fn attack_bonus(&self, terrain: crate::terrain::Terrain) -> f32 {
-        match self {
-            UnitType::Legion => 1.25,
-            UnitType::WarChariot if matches!(terrain, crate::terrain::Terrain::Plains | crate::terrain::Terrain::Grassland) => 1.5,
-            UnitType::Catapult | UnitType::Cannon | UnitType::Artillery | UnitType::RadarArtillery => 1.3,
-            _ => 1.0,
-        }
+    /// Horse-borne: chariots, horsemen, knights and cavalry (pikemen stand twice as firm against them).
+    pub fn is_mounted(&self) -> bool {
+        matches!(self, UnitType::Horseman | UnitType::WarChariot | UnitType::Knight | UnitType::Cavalry)
     }
 
-    pub fn defense_bonus(&self) -> f32 {
-        match self {
-            UnitType::Immortal | UnitType::Phalanx => 1.5,
-            UnitType::Legion => 1.2,
-            UnitType::Tank => 1.3,
-            UnitType::Pikeman => 1.25,
-            _ => 1.0,
-        }
+    /// Defends at double strength against mounted attackers.
+    pub fn anti_mounted(&self) -> bool {
+        *self == UnitType::Pikeman
+    }
+
+    /// A fast unit (two moves or more): on land it may pull back from a losing fight against a
+    /// slow one.
+    pub fn is_fast(&self) -> bool {
+        self.stats().2 >= 2
     }
 
     /// What this unit can be upgraded to once that is buildable (in a city, for gold).
@@ -546,9 +548,31 @@ impl UnitType {
         (to.cost() as i32 - self.cost() as i32).max(10) * 2 + 20
     }
 
-    /// Artillery that can bombard a neighbouring tile without risk.
+    /// Bombardment, as Civilization III rates it: strength, range in tiles, and rate of fire (the
+    /// most hit points one bombardment can take). Guns - catapults to radar artillery - only
+    /// bombard; some warships and the bomber may bombard instead of attacking.
+    pub fn bombard(&self) -> Option<(u32, i32, u32)> {
+        match self {
+            UnitType::Catapult => Some((4, 1, 1)),
+            UnitType::Cannon => Some((8, 1, 1)),
+            UnitType::Artillery => Some((12, 2, 2)),
+            UnitType::RadarArtillery => Some((16, 2, 3)),
+            UnitType::Frigate => Some((3, 1, 1)),
+            UnitType::Ironclad => Some((5, 1, 1)),
+            UnitType::Battleship => Some((12, 2, 2)),
+            UnitType::Bomber => Some((12, 1, 2)),
+            _ => None,
+        }
+    }
+
+    /// Can bombard a tile within its range, without risk.
     pub fn can_bombard(&self) -> bool {
-        matches!(self, UnitType::Catapult | UnitType::Cannon | UnitType::Artillery | UnitType::RadarArtillery | UnitType::Frigate | UnitType::Ironclad | UnitType::Battleship | UnitType::Bomber)
+        self.bombard().is_some()
+    }
+
+    /// A gun: it bombards, but cannot attack (or take a city).
+    pub fn bombard_only(&self) -> bool {
+        self.can_bombard() && self.stats().0 == 0
     }
 
     pub fn unique_for_civ(civ_id: u32) -> Option<Self> {
@@ -732,9 +756,9 @@ pub fn army_capacity(sun_tzu: bool) -> usize {
 /// hit points).
 pub const ARMY_MEMBER_BONUS: f32 = 0.1;
 
-/// Units that can join an army: ground troops that are not already in one.
+/// Units that can join an army: ground troops (not guns) that are not already in one.
 pub fn can_join_army(unit: &Unit) -> bool {
-    unit.unit_type.is_army() && unit.troops.is_empty()
+    unit.unit_type.is_army() && !unit.unit_type.bombard_only() && unit.troops.is_empty()
 }
 
 /// Forms an army from units standing together: the strongest leads, and up to `capacity` in all
@@ -802,21 +826,22 @@ mod army_tests {
         let units = [unit(UnitType::Spearman, 3, 0), unit(UnitType::Musketman, 2, 1), unit(UnitType::Worker, 3, 0), unit(UnitType::Knight, 3, 0), unit(UnitType::Warrior, 3, 0)];
         let refs: Vec<&Unit> = units.iter().collect();
         let (leader, absorbed) = plan_army(&refs, 3).unwrap();
-        assert_eq!(units[leader].unit_type, UnitType::Musketman);
-        assert_eq!(absorbed.len(), 2);
+        // The knight (attack 4, defence 3) outranks the veteran musketman (2, 4).
+        assert_eq!(units[leader].unit_type, UnitType::Knight);
+        assert_eq!(absorbed, vec![1, 0]);
         assert!(!absorbed.contains(&2), "workers do not join");
         let mut army = units[leader].clone();
         let members: Vec<Unit> = absorbed.iter().map(|i| units[*i].clone()).collect();
         join_army(&mut army, &members);
-        assert_eq!(army.max_hp(), 12);
+        assert_eq!(army.max_hp(), 9);
         assert_eq!(army.hp, 8);
         assert_eq!(army.troop_moves(), 1);
-        assert!(army.display_name().starts_with("Army (Musketman"));
+        assert!(army.display_name().starts_with("Army (Knight"));
         // An army does not join another.
         assert!(plan_army(&[&army, &units[0]], 3).is_none());
         // A unit joins the army while there is room: 4 units, or 5 with Sun Tzu.
         assert!(army.take_into_army(&units[0], army_capacity(false)));
-        assert_eq!((army.members(), army.max_hp(), army.hp), (4, 16, 11));
+        assert_eq!((army.members(), army.max_hp(), army.hp), (4, 12, 11));
         assert!(!army.take_into_army(&units[4], army_capacity(false)), "full");
         assert!(army.take_into_army(&units[4], army_capacity(true)));
         assert!(!army.take_into_army(&units[2], army_capacity(true)), "workers never join");
