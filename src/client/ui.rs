@@ -98,12 +98,13 @@ pub enum HelpTopic {
     Wonders,
     Cities,
     Peoples,
+    Science,
     War,
     Victory,
 }
 
 impl HelpTopic {
-    const ALL: [HelpTopic; 9] = [
+    const ALL: [HelpTopic; 10] = [
         HelpTopic::Start,
         HelpTopic::Basics,
         HelpTopic::Units,
@@ -111,6 +112,7 @@ impl HelpTopic {
         HelpTopic::Wonders,
         HelpTopic::Cities,
         HelpTopic::Peoples,
+        HelpTopic::Science,
         HelpTopic::War,
         HelpTopic::Victory,
     ];
@@ -124,6 +126,7 @@ impl HelpTopic {
             HelpTopic::Wonders => "Wonders",
             HelpTopic::Cities => "Cities & happiness",
             HelpTopic::Peoples => "Peoples & faith",
+            HelpTopic::Science => "Science & ages",
             HelpTopic::War => "War",
             HelpTopic::Victory => "Victory",
         }
@@ -193,11 +196,23 @@ fn help_lines(topic: HelpTopic) -> Vec<String> {
             .filter(|b| !b.is_wonder())
             .map(|b| format!("{}: {} ({} shields{})", b.name(), b.effect(), b.cost(), b.required_tech().map(|t| format!(", needs {}", t.name())).unwrap_or_default()))
             .collect(),
-        HelpTopic::Wonders => Building::ALL
-            .into_iter()
-            .filter(|b| b.is_wonder())
-            .map(|b| format!("{}: {} ({} shields{}). One per world.", b.name(), b.wonder_effect(), b.cost(), b.required_tech().map(|t| format!(", needs {}", t.name())).unwrap_or_default()))
-            .collect(),
+        HelpTopic::Wonders => std::iter::once(format!(
+            "Each wonder can be built only once in the world. Each speaks to one or two traits (in brackets): a people's first wonder that matches one of its own traits begins its golden age - {} turns in which every worked tile that yields a shield or gold yields one more. The first victory of a people's unique unit over another people begins it too. Each people has one golden age a game.",
+            crate::GOLDEN_AGE_TURNS
+        ))
+        .chain(std::iter::once("A few ancient wonders grow obsolete once their owner learns what supersedes them: their effect ends, though their culture goes on.".to_string()))
+        .chain(Building::ALL.into_iter().filter(|b| b.is_wonder()).map(|b| {
+            format!(
+                "{}: {}{} ({} shields{}) [{}]",
+                b.name(),
+                b.wonder_effect(),
+                b.obsoleted_by().map(|t| format!("; obsolete with {}", t.name())).unwrap_or_default(),
+                b.cost(),
+                b.required_tech().map(|t| format!(", needs {}", t.name())).unwrap_or_default(),
+                bevy_civ::traits::wonder_traits(b)
+            )
+        }))
+        .collect(),
         HelpTopic::Cities => [
             "A city's first five citizens are content; every one beyond is unhappy. Temples (+2), Colosseums and Cathedrals (+3), wonders, masterpieces, entertainers and, under Despotism, Monarchy and Communism, troops in the city (martial law) calm them. Each different luxury the city can reach makes one citizen happy.",
             "When the unhappy outnumber the happy the city falls into disorder: no growth, production, science or taxes until it is calmed.",
@@ -209,7 +224,7 @@ fn help_lines(topic: HelpTopic) -> Vec<String> {
             "Modern troubles: once a people knows Sanitation, big unhappy cities may fall into a drug trade (up to 3 levels, each +1 unhappy and -1 gold), spread by smugglers from foreign cities nearby - a Police Station roots it out, and you can demand that a neighbour cracks down. With Industrialization, adulterated food may spoil half a granary and anger a city for 6 turns (likelier where corruption is high) unless it has a Food Safety Agency. GM Farms (Genetic Engineering) add a food on every farmed tile, but people distrust the food (+1 unhappy) without a Food Safety Agency.",
             "Migration: every 5 turns, citizens leave unhappy, hungry or troubled cities for clearly better ones within 10 tiles - at home, or abroad in peoples that know Industrialization and welcome them. Set your policy in the Empire window (Government): welcome migrants and grow (their rulers resent it), or turn them away. Communist and fundamentalist peoples admit none.",
             "Each city's governor works the land for a focus, always feeding the city first: Growth (the most food), Production (shields), Trade (tiles rich in trade, for science and taxes) or Balanced. With Governor builds on, the governor also puts citizens to entertaining when the city would fall into disorder, and back to work once it is calm without them; and Workers it trains start on automatic. On Auto, the default, it picks one from the city's situation - production for a wonder or for troops in wartime, growth for a small city, trade for a big one with a library or market - and the city panel says why.",
-            "Culture from temples, cathedrals, colosseums, libraries, universities and wonders widens a city's borders over time (2 tiles, 3 at 100, 4 at 1,000, 5 at 5,000). Where borders meet, the land goes to the city with the stronger culture for its distance, so a great culture pushes its neighbours' borders back. A city in disorder next to a much greater culture may defect to it.",
+            "Culture: each turn a Temple or Colosseum earns 2, a Library or Cathedral 3, a University 4, a Research Lab or Forbidden Palace 2, a wonder 4 and the palace 1; a building or wonder that has stood a quarter of the game (100 turns of 400) earns double. Culture widens a city's borders over time (2 tiles, 3 at 100, 4 at 1,000, 5 at 10,000). Where borders meet, the land goes to the city with the stronger culture for its distance, so a great culture pushes its neighbours' borders back. A city in disorder near a people of twice its owner's culture may defect - likelier far from its capital and where their borders hold its land; troops inside hold it back.",
             "Corruption takes trade (and waste, less heavily, shields) from cities far from a palace - the capital or a Forbidden Palace - and climbs steeply once a people has more cities than the world's land can support for it (the Empire window says how many); Despotism and Anarchy suffer it most, Democracy least, and under Communism distance does not matter. A Courthouse or a Police Station cuts it, and so does a road or harbour link to the capital. A city keeps training the same unit until told otherwise; a finished building or wonder leaves it waiting for its next project - unless its build queue holds more (switch the city panel to Add to queue and pick up to six projects).",
             "Pollution and nuclear fallout foul the land; past 15 fouled tiles in the world, global warming now and then turns land drier. Clean it up with workers; Mass Transit and Recycling Centers prevent it.",
             "Projects other than wonders can be bought with gold (2 a missing shield for a building, more for a unit; double if nothing is built yet), or rushed under Despotism and Communism by putting citizens to forced labour. Luxury (Empire advisor) makes one citizen happy for every 2 points.",
@@ -218,12 +233,18 @@ fn help_lines(topic: HelpTopic) -> Vec<String> {
         .map(String::from)
         .collect(),
         HelpTopic::Peoples => vec![
-            "Every people has two traits - Militaristic (troops promoted twice as often), Commercial (+1 gold a city), Scientific (+1 science a city), Religious (+1 content a city, shorter revolutions), Industrious (+1 shield a city) or Agricultural (+1 food a city) - and a unique unit, which it trains a rank higher.".to_string(),
+            "Every people has two traits - Militaristic (troops promoted twice as often), Commercial (+1 gold a city), Scientific (+1 science a city, a free discovery in each new age), Religious (+1 content a city, shorter revolutions), Industrious (+1 shield a city) or Agricultural (+1 food a city) - and a unique unit, which it trains a rank higher.".to_string(),
             "Governments: a revolution brings a few turns of anarchy, in which no taxes are collected and nothing is learned. Each government limits every share of your trade - science, luxury and taxes alike (Empire advisor, Government tab): Despotism 60%, Monarchy 70%, Communism, Republic and Fundamentalism 80%, Democracy 90%. Savings earn 5% interest, up to 2 gold per Bank and 3 per Stock Exchange.".to_string(),
             "Faith: the first to learn Mysticism, Philosophy, Theology and Printing Press founds the Old Gods, the Way of Reason, the One Faith and the Reformed Faith. Faiths spread to nearby cities; Missionaries carry your state religion (your capital's faith) further. Cities of your state religion get +1 content (+2 with a Temple); a holy city's owner earns gold from the faith's followers; shared faith warms relations, different faiths cool them.".to_string(),
             "Diplomacy (E): peace, alliances, gifts, tribute, trade agreements, technology and resource deals. A right of passage lets your units share tiles with theirs; an alliance includes it, and war ends it. Units cannot walk into the units or cities of a people at peace with you: declare war first.".to_string(),
-            "Culture from temples, libraries, colosseums, cathedrals, universities and wonders widens borders (2 tiles, 3 at 100 culture, 4 at 1,000, 5 at 5,000) and pushes neighbours' borders back. A city in disorder next to a much greater culture may defect.".to_string(),
+            "Culture from temples, libraries, colosseums, cathedrals, universities and wonders (double from those that have stood a quarter of the game) widens borders (2 tiles, 3 at 100 culture, 4 at 1,000, 5 at 10,000) and pushes neighbours' borders back. A city in disorder near a much greater culture may defect.".to_string(),
             "Great people come from great-person points: Merchants trade abroad or settle as trading houses, Scientists complete research, Artists make masterpieces, Engineers finish projects; Generals come from battle - one victory in sixteen won by an elite unit brings one forth.".to_string(),
+        ],
+        HelpTopic::Science => vec![
+            "History runs through four ages: Ancient Times, the Middle Ages, the Industrial Age and the Modern Age. A people enters an age with its first discovery there - but it can study an age's technologies only once it knows every required technology of the ages before. A few are optional (Horseback Riding, Seafaring, The Republic; Chivalry, Navigation, Democracy; Communism, Fundamentalism). The science advisor (Q) says what is still missing.".to_string(),
+            "Each discovery makes the next ones dearer. A technology already known to the peoples you have met is cheaper: half price once every other people knows it, less of a saving the fewer do. Every discovery takes at least 4 turns (beakers beyond its cost are lost) and at most 40, however little science goes into it.".to_string(),
+            "The first people to learn Philosophy founds the Way of Reason and makes a free discovery. A Scientific people makes a free discovery each time it enters a new age. The Great Library teaches its owner every technology known to two or more of the peoples it has met, until the owner learns Theory of Gravity.".to_string(),
+            "Knowledge changes hands: you can swap or buy technologies with friendly leaders (foreign advisor, E), diplomats steal it, and computer players trade it among themselves - a technology for a technology with neighbours on good terms, or for gold.".to_string(),
         ],
         HelpTopic::War => vec![
             "Just causes for war: refusing your demand to withdraw troops or stop smugglers, a spy caught, a city taken, an attack on your ally or a border incident gives you a grievance for 30 turns (the foreign advisor lists them). Declaring war with one costs 3 reputation instead of 15, and the enemy's allies may stay out. Others' grievances against you make them readier to attack.".to_string(),
@@ -245,8 +266,14 @@ fn help_lines(topic: HelpTopic) -> Vec<String> {
         HelpTopic::Victory => vec![
             "Conquest: take every rival city. Domination: hold two in five of the cities in the world (at least five).".to_string(),
             "Diplomacy: once the United Nations (Computers) stands, every 10 turns the world votes for Secretary-General between its owner and the highest-scoring other people. Each candidate votes for itself; every other people backs the candidate it likes better, but only one it is friendly with (peace treaties, alliances, gifts, trade and a shared faith build goodwill) - otherwise it abstains. A majority of all the members wins.".to_string(),
-            "Space: the race to Alpha Centauri, the nearest star. Research Space Flight, Plastics and Superconductors; cities with a Factory build 4 Space Structures, 2 to 4 Components (engines) and 2 Modules. Launch from the Empire advisor's Space page: the voyage takes 18 turns, 2 fewer for each extra engine. The first ship to arrive wins - unless its capital falls first, and every rival will try to make it fall.".to_string(),
-            format!("Culture: reach {} culture points (in a game of {} turns; scaled to the game's length) and {} times as much as any rival.", bevy_civ::culture::VICTORY_CULTURE, 400, bevy_civ::culture::VICTORY_LEAD_TENTHS as f32 / 10.0),
+            "Space: the race to Alpha Centauri, the nearest star. Research Space Flight, Plastics and Superconductors; once anyone has built the Apollo Program, cities with a Factory build 4 Space Structures, 2 to 4 Components (engines) and 2 Modules. Launch from the Empire advisor's Space page: the voyage takes 18 turns, 2 fewer for each extra engine. The first ship to arrive wins - unless its capital falls first, and every rival will try to make it fall.".to_string(),
+            format!(
+                "Culture: gather {} culture points with {} times as much as any rival, or {} in a single city under your rule (in a game of {} turns; scaled to the game's length). A people keeps the culture it has earned even if its cities fall; a conqueror counts only what a captured city earns from then on.",
+                bevy_civ::culture::VICTORY_CULTURE,
+                bevy_civ::culture::VICTORY_LEAD_TENTHS as f32 / 10.0,
+                bevy_civ::culture::CITY_VICTORY_CULTURE,
+                400
+            ),
             "Score: if nobody has won by the last turn (chosen when the game begins), the highest score wins. Score counts 2 points a citizen, 10 a technology and 50 a wonder, for everyone alike. A rival who holds two in five of the cities wins by domination.".to_string(),
         ],
     }
@@ -716,11 +743,14 @@ pub fn update_sound_button(settings: Res<SoundSettings>, mut labels: Query<&mut 
 pub fn character_line(name: &str, adjective: &str) -> String {
     let c = bevy_civ::traits::of(name);
     format!(
-        "{} ({}) and {} ({}). Unique unit: {adjective} {}, trained a rank higher.",
+        "{} ({}) and {} ({}). Unique unit: {adjective} {}, trained a rank higher. Golden age: with the first {} or {} wonder, or the {}'s first victory over another people.",
         c.traits[0].name(),
         c.traits[0].effect(),
         c.traits[1].name(),
         c.traits[1].effect(),
+        c.unique.name(),
+        c.traits[0].name(),
+        c.traits[1].name(),
         c.unique.name()
     )
 }
@@ -1630,11 +1660,21 @@ pub fn rebuild_panels(
                         .filter(|b| b.is_wonder() == wonder_tab && known(b.required_tech()) && !buildings.buildings.contains(b) && (!b.needs_coast() || coastal))
                         .filter(|b| !wonders.is_taken(*b))
                         .filter(|b| !b.is_spaceship_part() || (buildings.has(Building::Factory) && space.wants(PLAYER, *b, true)))
+                        .filter(|b| b.required_wonder().is_none_or(|w| wonders.built.contains_key(&w)))
                         .filter(|b| b.required_building().is_none_or(|r| buildings.has(r)))
                         .filter(|b| !(b.one_per_people() && has_forbidden_palace))
                         .map(|b| {
                             let upkeep = bevy_civ::economy::upkeep(b);
-                            let effect = if upkeep > 0 { format!("{}; upkeep {upkeep} gold", b.effect()) } else { b.effect().to_string() };
+                            let mut effect = if upkeep > 0 { format!("{}; upkeep {upkeep} gold", b.effect()) } else { b.effect().to_string() };
+                            // A wonder's spirit: one that speaks to our traits begins our golden age.
+                            if let Some(t) = b.obsoleted_by() {
+                                effect += &format!(" (until {})", t.name());
+                            }
+                            if b.is_wonder() {
+                                let ours = civs.players.iter().find(|c| c.id == PLAYER).is_some_and(|c| bevy_civ::traits::of(&c.name).admires(b));
+                                let spirit = bevy_civ::traits::wonder_traits(b);
+                                effect += &if ours { format!(" [{spirit}: our golden age]") } else { format!(" [{spirit}]") };
+                            }
                             (ProductionItem::Building(b), effect)
                         })
                         .collect()
@@ -1678,7 +1718,10 @@ pub fn rebuild_panels(
                 // Culture and the reach of the city's borders.
                 let points = culture.of(city.position);
                 let next = bevy_civ::culture::next_border_step(points).map(|step| format!(" (borders widen at {step})")).unwrap_or_default();
-                p.spawn(label(&art.font_body, format!("Culture: {points}, +{} a turn{next}", bevy_civ::culture::per_turn(&buildings.buildings, city.is_capital)), 14.0, CREAM));
+                let earned = culture.earned(city.position, &buildings.buildings, city.is_capital, state.turn, state.last_turn);
+                let ours = culture.held_by(city.position, city.owner);
+                let since = if ours < points { format!(" ({ours} earned under its present rulers)") } else { String::new() };
+                p.spawn(label(&art.font_body, format!("Culture: {points}{since}, +{earned} a turn{next}"), 14.0, CREAM));
                 // Citizens: workers on the land, and specialists who eat without farming.
                 use bevy_civ::city::Specialist;
                 let count = |kind: &Specialist| city.specialists.iter().filter(|s| *s == kind).count();
@@ -2132,7 +2175,9 @@ pub fn rebuild_panels(
                                 w.spawn(label(
                                     &art.font_body,
                                     format!(
-                                        "The race to {destination}, the nearest star ({LIGHT_YEARS} light-years). Cities with a Factory build {} structures (Space Flight), {} to {} components - engines; each extra one saves two turns (Plastics) - and {} modules (Superconductors). The first ship to arrive wins; a ship in flight is lost if its capital falls.",
+                                        "The race to {destination}, the nearest star ({LIGHT_YEARS} light-years). Once the {} stands somewhere in the world ({}), cities with a Factory build {} structures (Space Flight), {} to {} components - engines; each extra one saves two turns (Plastics) - and {} modules (Superconductors). The first ship to arrive wins; a ship in flight is lost if its capital falls.",
+                                        Building::Apollo.name(),
+                                        wonders.built.get(&Building::Apollo).map(|(_, city)| format!("it stands in {city}")).unwrap_or_else(|| "not yet built".to_string()),
                                         NEEDED[0], NEEDED[1], MOST[1], NEEDED[2]
                                     ),
                                     14.0,
@@ -2353,7 +2398,7 @@ pub fn rebuild_panels(
                         match tech.current {
                             Some(current) => {
                                 let cost = tech.cost_of(current);
-                                let left = (cost.saturating_sub(tech.progress) as f32 / tech.science_per_turn.max(1) as f32).ceil();
+                                let left = tech.turns_left().unwrap_or(0);
                                 // The pace is only known once the first turn's science is counted.
                                 let pace = if state.turn <= 1 { "the pace shows after the first turn".to_string() } else { format!("about {left} turns") };
                                 w.spawn(label(&art.font_bold, format!("Researching {}  -  {}/{} beakers, {pace}", current.name(), tech.progress, cost), 16.0, INK));
@@ -2363,6 +2408,27 @@ pub fn rebuild_panels(
                                 w.spawn(label(&art.font_bold, "Our scholars are idle. Choose a field of study.", 16.0, INK));
                             }
                         }
+                        // The age we live in, and what still stands between us and the next.
+                        let era = tech.era();
+                        let missing = tech.missing_for_next_era();
+                        let next_era = bevy_civ::tech::Era::ALL.into_iter().find(|e| *e > era);
+                        let ages = match next_era {
+                            Some(next) if missing.is_empty() => format!("We live in the {}; the {} is open to our scholars.", era.name(), next.name()),
+                            Some(next) => format!(
+                                "We live in the {}. To enter the {}, learn: {}.",
+                                era.name(),
+                                next.name(),
+                                missing.iter().map(|t| t.name()).collect::<Vec<_>>().join(", ")
+                            ),
+                            None => format!("We live in the {}.", era.name()),
+                        };
+                        w.spawn(label(&art.font_body, ages, 13.0, INK_SOFT));
+                        w.spawn(label(
+                            &art.font_body,
+                            "A discovery takes 4 to 40 turns; one known to the peoples we have met costs less (half when all know it). The numbers below are each one's cost in beakers.",
+                            12.0,
+                            INK_SOFT,
+                        ));
                         w.spawn(label(&art.font_title, "Choose research", 16.0, INK_SOFT));
                         w.spawn(row(6.0)).with_children(|r| {
                             for t in Tech::ALL.into_iter().filter(|t| tech.can_research(*t)) {
@@ -2376,7 +2442,7 @@ pub fn rebuild_panels(
                         let path = tech.goal.map(|g| tech.path_to(g)).unwrap_or_default();
                         match tech.goal {
                             Some(goal) => {
-                                let turns = (tech.beakers_to(goal) as f32 / tech.science_per_turn.max(1) as f32).ceil();
+                                let turns = ((tech.beakers_to(goal) as f32 / tech.science_per_turn.max(1) as f32).ceil() as u32).max(path.len() as u32 * bevy_civ::tech::MIN_RESEARCH_TURNS);
                                 let pace = if state.turn <= 1 { "the pace shows after the first turn".to_string() } else { format!("about {turns} turns") };
                                 let steps: Vec<&str> = path.iter().map(|t| t.name()).collect();
                                 w.spawn(row(8.0)).with_children(|r| {

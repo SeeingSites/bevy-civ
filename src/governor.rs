@@ -93,6 +93,7 @@ pub fn can_build(building: &Building, city: &CityView, civ: &CivView, supplies: 
     !city.built.contains(building)
         && !(building.is_wonder() && civ.wonders_taken.contains(building))
         && (!building.is_spaceship_part() || (city.built.contains(&Building::Factory) && civ.space_parts.contains(building)))
+        && building.required_wonder().is_none_or(|w| civ.wonders_taken.contains(&w))
         && building.required_tech().is_none_or(|t| civ.tech.researched.contains(&t))
         && supplies.has(city.position, building.required_resources())
         && (!building.needs_coast() || city.coastal)
@@ -215,7 +216,11 @@ pub fn choose(city: &CityView, civ: &CivView, supplies: &Supplies, rng: &mut imp
         return unit(UnitType::Diplomat);
     }
 
-    // The space race comes first once a civilization can build its ship.
+    // The space race comes first once a civilization can build its ship - and before that, the
+    // Apollo Program that opens it to everyone, in one city at a time.
+    if city.population >= 6 && !civ.wonder_elsewhere && can_build(&Building::Apollo, city, civ, supplies) {
+        return ProductionItem::Building(Building::Apollo);
+    }
     if let Some(part) = civ.space_parts.iter().find(|p| can_build(p, city, civ, supplies)) {
         return ProductionItem::Building(*part);
     }

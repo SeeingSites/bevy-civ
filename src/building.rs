@@ -298,6 +298,12 @@ impl Building {
         matches!(self, Building::SpaceStructure | Building::SpaceComponent | Building::SpaceModule)
     }
 
+    /// A world wonder that must stand somewhere in the world before anyone can build this: the
+    /// Apollo Program opens the space race to every people.
+    pub fn required_wonder(&self) -> Option<Building> {
+        self.is_spaceship_part().then_some(Building::Apollo)
+    }
+
     /// Citizens this building makes content in its city.
     pub fn content(&self) -> u32 {
         match self {
@@ -385,7 +391,6 @@ impl Building {
     /// see `economy::science_bonus`).
     pub fn science_bonus(&self) -> u32 {
         match self {
-            Building::GreatLibrary => 5,
             _ => 0,
         }
     }
@@ -393,7 +398,6 @@ impl Building {
     pub fn production_bonus(&self) -> u32 {
         match self {
             Building::Barracks => 1,
-            Building::Pyramids => 3,
             Building::KingRichards => 4,
             _ => 0,
         }
@@ -403,7 +407,6 @@ impl Building {
     /// `economy::tax_bonus`).
     pub fn gold_bonus(&self) -> u32 {
         match self {
-            Building::Colossus => 3,
             _ => 0,
         }
     }
@@ -418,9 +421,9 @@ impl Building {
         *self == Building::ForbiddenPalace
     }
 
-    /// Only a city on the coast can build it.
+    /// Only a city on the coast can build it (the seafaring wonders too, as in Civ III).
     pub fn needs_coast(&self) -> bool {
-        matches!(self, Building::Harbor | Building::CoastalFortress)
+        matches!(self, Building::Harbor | Building::CoastalFortress | Building::Colossus | Building::GreatLighthouse | Building::Magellan)
     }
 
     /// A building the city must already have before it can build this one.
@@ -448,10 +451,10 @@ impl Building {
     /// What a wonder does, in a few words (its yields in its own city, plus anything wider).
     pub fn wonder_effect(&self) -> &'static str {
         match self {
-            Building::Pyramids => "+3 shields here",
-            Building::GreatLibrary => "+5 science here",
+            Building::Pyramids => "a Granary in every city of its owner (+2 food where there is none)",
+            Building::GreatLibrary => "teaches its owner every technology known to two or more of the peoples it has met (until it learns Theory of Gravity)",
             Building::HangingGardens => "+2 food here, +1 content in every city",
-            Building::Colossus => "+3 gold here",
+            Building::Colossus => "+1 gold on every ocean tile its city works",
             Building::Oracle => "+2 content in every city",
             Building::GreatLighthouse => "+1 move for ships and troops at sea",
             Building::GreatWall => "every city of its owner counts as walled",
@@ -473,10 +476,10 @@ impl Building {
             Building::HooverDam => "+25% shields in every city",
             Building::Eiffel => "+2 culture a turn in every city",
             Building::Internet => "+3 science in every city with a Library",
-            Building::Apollo => "the whole world revealed",
+            Building::Apollo => "the whole world revealed to its owner; opens the space race: no people can build spaceship parts until it stands",
             Building::CureForCancer => "+2 content in every city",
             Building::Manhattan => "lets every people who knows Rocketry build Nuclear Missiles",
-            Building::UnitedNations => "every 10 turns the world votes for Secretary-General: two thirds of the votes win a diplomatic victory",
+            Building::UnitedNations => "every 10 turns the world votes for Secretary-General: a majority of all the members wins a diplomatic victory",
             _ => "",
         }
     }
@@ -493,10 +496,31 @@ impl Building {
     }
 }
 
+impl Building {
+    /// The technology that makes a wonder obsolete once its owner knows it, as in Civ III: its
+    /// effect ends, though its culture goes on.
+    pub fn obsoleted_by(&self) -> Option<crate::tech::Tech> {
+        use crate::tech::Tech;
+        match self {
+            Building::Oracle => Some(Tech::Theology),
+            Building::GreatWall => Some(Tech::Gunpowder),
+            Building::GreatLighthouse => Some(Tech::Navigation),
+            Building::GreatLibrary => Some(Tech::TheoryOfGravity),
+            Building::Colossus => Some(Tech::Flight),
+            Building::Leonardo => Some(Tech::MotorizedTransport),
+            _ => None,
+        }
+    }
+}
+
 /// Which wonders stand in the world, and where: each can be built only once.
 #[derive(Resource, Default, Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct WorldWonders {
     pub built: std::collections::HashMap<Building, (u32, String)>,
+    /// Wonders made obsolete: their owner knows what supersedes them (see
+    /// [`Building::obsoleted_by`]), so their effects have ended.
+    #[serde(default)]
+    pub expired: std::collections::HashSet<Building>,
 }
 
 impl WorldWonders {
@@ -504,14 +528,30 @@ impl WorldWonders {
         self.built.contains_key(&wonder)
     }
 
-    /// Whether `owner` has the wonder.
+    /// Whether `owner` has the wonder and it is still in effect (not obsolete).
     pub fn owns(&self, owner: u32, wonder: Building) -> bool {
-        self.built.get(&wonder).is_some_and(|(o, _)| *o == owner)
+        self.built.get(&wonder).is_some_and(|(o, _)| *o == owner) && !self.expired.contains(&wonder)
     }
 
-    /// Content citizens every city of `owner` gets from its wonders.
+    /// Content citizens every city of `owner` gets from its wonders still in effect.
     pub fn empire_content(&self, owner: u32) -> u32 {
-        self.built.iter().filter(|(_, (o, _))| *o == owner).map(|(w, _)| w.empire_content()).sum()
+        self.built.iter().filter(|(w, (o, _))| *o == owner && !self.expired.contains(*w)).map(|(w, _)| w.empire_content()).sum()
+    }
+
+    /// Notes which wonders their owners have made obsolete (`knows(owner, tech)`); a wonder taken by
+    /// a people that does not know the technology works again. Returns those newly obsolete, with
+    /// their owners.
+    pub fn refresh_expired(&mut self, knows: impl Fn(u32, crate::tech::Tech) -> bool) -> Vec<(Building, u32)> {
+        let mut fresh = Vec::new();
+        for (wonder, (owner, _)) in &self.built {
+            let gone = wonder.obsoleted_by().is_some_and(|t| knows(*owner, t));
+            if gone && self.expired.insert(*wonder) {
+                fresh.push((*wonder, *owner));
+            } else if !gone {
+                self.expired.remove(wonder);
+            }
+        }
+        fresh
     }
 
     /// Extra moves a ship (or troops at sea) of `owner` gets each turn.
@@ -559,6 +599,17 @@ mod tests {
         world.transfer_city("Carthage", 1);
         assert_eq!(world.sea_moves(1), 1);
         assert_eq!(world.sea_moves(2), 0);
+        // Navigation makes the Lighthouse obsolete for its owner; a new owner without it uses it again.
+        let fresh = world.refresh_expired(|owner, tech| owner == 1 && tech == crate::tech::Tech::Navigation);
+        assert_eq!(fresh, vec![(Building::GreatLighthouse, 1)]);
+        assert_eq!(world.sea_moves(1), 0);
+        assert!(world.is_taken(Building::GreatLighthouse), "it still stands");
+        world.transfer_city("Carthage", 2);
+        assert!(world.refresh_expired(|owner, tech| owner == 1 && tech == crate::tech::Tech::Navigation).is_empty());
+        assert_eq!(world.sea_moves(2), 1);
+        // Theology ends the Oracle's calm.
+        world.refresh_expired(|_, tech| tech == crate::tech::Tech::Theology);
+        assert_eq!(world.empire_content(1), 0);
     }
 }
 
