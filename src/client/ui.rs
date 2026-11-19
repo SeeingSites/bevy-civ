@@ -782,7 +782,7 @@ fn wonders_of_the_world(p: &mut ChildBuilder, art: &Art, wonders: &WorldWonders,
     p.spawn(label(&art.font_title, "Wonders of the world", 14.0, GOLD));
     for (wonder, (owner, city)) in built {
         if *owner == crate::NOBODY {
-            p.spawn(label(&art.font_body, format!("{}: lost to history", wonder.name()), 13.0, INK_SOFT));
+            p.spawn(label(&art.font_body, format!("{}: {city}", wonder.name()), 13.0, INK_SOFT));
             continue;
         }
         p.spawn(label(&art.font_body, format!("{}: {} ({}) - {}", wonder.name(), city, owner_name(*owner, civs), wonder.wonder_effect()), 13.0, owner_color(*owner).mix(&Color::WHITE, 0.55)));
