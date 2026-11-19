@@ -1049,6 +1049,16 @@ pub fn army_capacity(sun_tzu: bool) -> usize {
     ARMY_SIZE + usize::from(sun_tzu)
 }
 
+/// The stoutest ordinary defender a people knowing `knows` can train without any strategic
+/// resource: what a city falls back to building (never a Warrior in 1939).
+pub fn plain_defender(knows: impl Fn(crate::tech::Tech) -> bool) -> UnitType {
+    UnitType::ALL
+        .into_iter()
+        .filter(|u| u.is_army() && u.unique_base().is_none() && !u.bombard_only() && u.required_resources().is_empty() && u.required_tech().is_none_or(&knows))
+        .max_by_key(|u| (u.stats().1, std::cmp::Reverse(u.cost())))
+        .unwrap_or(UnitType::Warrior)
+}
+
 /// Each member beyond the first makes an army fight this much harder (on top of pooling their
 /// hit points).
 pub const ARMY_MEMBER_BONUS: f32 = 0.1;

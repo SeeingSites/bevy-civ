@@ -553,10 +553,13 @@ working directory.
   city (corruption and the state religion follow it). A people with no city and no settler left
   is out of the game: its troops disband and it leaves diplomacy. Scores count citizens (2),
   technologies (10) and wonders (50) the same way for everyone. Holding two in five of the world's
-  cities (at least five) for 10 turns in a row, from turn 150, wins by domination; everyone is
+  cities (at least five; half of them in a world that began with fewer than eight peoples) for 10
+  turns in a row, from turn 150, wins by domination; everyone is
   warned when a people first reaches it. A people down to three cities or fewer makes a **last
   stand**: its cities' defenders get +50%, so nobody is wiped out in a stroke. A scenario's peoples
-  keep the government it starts them under for 50 turns.
+  keep the government it starts them under for 50 turns. A city whose project loses a resource, or
+  that has just changed hands, falls back to the stoutest defender its people can always train (no
+  Warriors in 1939).
 - **Build queue**: in the city panel, switch "Click to" from *Build now* to *Add to queue* and pick
   up to six projects; each starts when the one before is done (a unit in production gives way to
   the queue, otherwise units keep repeating). Click a queued project to take it off.
@@ -680,7 +683,7 @@ from the start menu (off by default, remembered):
 |------|-----------------------------------|-----------|
 | Age of Revolution | the United States, France, Spain, Prussia, Austria | *The American Revolution* (1775): the colonies and France against Britain, Spain watching. *The Napoleonic Wars* (1805): France and Spain against the Third Coalition (Britain, Austria, Russia); Prussia and the Ottomans neutral |
 | World Wars | Germany, Italy, Russia, the Ottomans | *The Great War* (1914): the Central Powers against the Entente, Italy neutral, the Ottomans allied to Germany. *The Second World War* (1939): Germany against Britain and France, Japan against China, the US and USSR at peace |
-| Modern Nations | the United Kingdom, Canada, Mexico, Brazil, Australia | *The Modern World* (2025): thirteen powers |
+| Modern Nations | the United Kingdom, Canada, Mexico, Brazil, Australia | *The Modern World* (2025): fourteen powers |
 
 A pack's nations can be led in a New World or on the Whole Earth from their real homelands; they
 join only a game whose player leads them, so the classic line-up never changes. One that shares an

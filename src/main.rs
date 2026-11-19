@@ -3577,6 +3577,15 @@ fn process_turn(
     let mut finance: HashMap<u32, (u32, u32)> = HashMap::new();
     // Each civilization's traits and unique unit.
     let characters: HashMap<u32, bevy_civ::traits::Character> = civs.players.iter().map(|c| (c.id, bevy_civ::traits::of(&c.name))).collect();
+    // What each people's cities fall back to building: the stoutest defender it can always train.
+    let fallback_unit: HashMap<u32, UnitType> = civs
+        .players
+        .iter()
+        .map(|c| {
+            let known = if c.id == PLAYER { &tech.researched } else { &c.tech.researched };
+            (c.id, bevy_civ::unit::plain_defender(|t| known.contains(&t)))
+        })
+        .collect();
     let mut hurried: HashMap<u32, u32> = HashMap::new();
     let mut city_counts: HashMap<u32, usize> = HashMap::new();
     for (city, _, _) in cities.iter() {
@@ -3883,7 +3892,7 @@ fn process_turn(
                     let names: Vec<&str> = missing.iter().map(|g| g.name()).collect();
                     log.push(format!("{} has no access to {} and stops work on {}.", city.name, names.join(" or "), item.name()));
                 }
-                city.production_queue = Some(ProductionItem::Unit(UnitType::Warrior));
+                city.production_queue = Some(ProductionItem::Unit(fallback_unit.get(&city.owner).copied().unwrap_or(UnitType::Warrior)));
                 needs_orders = true;
             }
         }
@@ -4898,7 +4907,7 @@ fn process_turn(
             city.resistance = bevy_civ::city::resistance_turns(city.population);
             wonders.transfer_city(&city.name, new_owner);
             city.production_progress = 0;
-            city.production_queue = Some(ProductionItem::Unit(UnitType::Warrior));
+            city.production_queue = Some(ProductionItem::Unit(fallback_unit.get(&new_owner).copied().unwrap_or(UnitType::Warrior)));
         }
     }
     // Computer players keep their armies modern: troops in their cities are re-equipped while the
@@ -5387,16 +5396,17 @@ fn process_turn(
         for (city, _, _) in cities.iter().filter(|(c, _, _)| c.owner != BARBARIANS) {
             *held.entry(city.owner).or_default() += 1;
         }
-        let top = held.into_iter().filter(|(_, n)| dominates(*n, total_cities)).max_by_key(|(_, n)| *n).map(|(o, _)| o);
+        let peoples = civs.players.iter().filter(|c| observer.is_none() || c.id != PLAYER).count();
+        let top = held.into_iter().filter(|(_, n)| dominates(*n, total_cities, peoples)).max_by_key(|(_, n)| *n).map(|(o, _)| o);
         match top {
             Some(o) if state.dominance.0 == o && state.dominance.1 > 0 => state.dominance.1 += 1,
             Some(o) => {
                 state.dominance = (o, 1);
                 if observer.is_none() {
                     log.push(if o == PLAYER {
-                        format!("We hold two in five of the world's cities. Keep them {DOMINATION_HOLD} turns (from turn {DOMINATION_EARLIEST}) for a domination victory.")
+                        format!("We hold a dominating share of the world's cities. Keep them {DOMINATION_HOLD} turns (from turn {DOMINATION_EARLIEST}) for a domination victory.")
                     } else {
-                        format!("{} now hold two in five of the world's cities! If they keep them {DOMINATION_HOLD} turns, they dominate the world.", capitalised(&civ_named(o)))
+                        format!("{} now hold a dominating share of the world's cities! If they keep them {DOMINATION_HOLD} turns, they dominate the world.", capitalised(&civ_named(o)))
                     });
                 }
             }
@@ -5430,7 +5440,7 @@ fn process_turn(
     } else if player_cities == 0 {
         state.victory = Some("Your civilization has fallen.".into());
     } else if let Some((name, held)) = {
-        // A rival holding two in five of the world's cities dominates it.
+        // A rival holding a dominating share of the world's cities long enough dominates it.
         let mut held: HashMap<u32, usize> = HashMap::new();
         for (city, _, _) in cities.iter().filter(|(c, _, _)| c.owner != PLAYER && c.owner != BARBARIANS) {
             *held.entry(city.owner).or_default() += 1;
@@ -5773,19 +5783,23 @@ pub fn visit_villages(
 /// Share of the world's cities (in fifths, at least five cities) that wins by domination.
 pub const DOMINATION_FIFTHS: usize = 2;
 
-/// Whether holding `held` of the world's `total` cities is a domination victory.
 /// Great generals a computer player keeps at a time.
 pub const GENERALS_KEPT: usize = 3;
 
-/// Turns a dominating share must be held, and the earliest turn it can win.
 /// Turns a people keeps the government a scenario starts it under.
 pub const SCENARIO_GOVERNMENT_TURNS: u32 = 50;
 
+/// Turns a dominating share must be held, and the earliest turn it can win.
 pub const DOMINATION_HOLD: u32 = 10;
 pub const DOMINATION_EARLIEST: u32 = 150;
+/// A world of fewer peoples than this is dominated only by holding half its cities.
+pub const SMALL_WORLD_PEOPLES: usize = 8;
 
-pub fn dominates(held: usize, total: usize) -> bool {
-    held >= 5 && held * 5 >= total * DOMINATION_FIFTHS
+/// Whether holding `held` of the world's `total` cities dominates a world that began with
+/// `peoples` peoples: two in five of them, or half in a small world (where two in five comes too
+/// easily).
+pub fn dominates(held: usize, total: usize, peoples: usize) -> bool {
+    held >= 5 && if peoples < SMALL_WORLD_PEOPLES { held * 2 >= total } else { held * 5 >= total * DOMINATION_FIFTHS }
 }
 
 /// Puts every city's working citizens on tiles of its area: the player's own choices are kept (and
