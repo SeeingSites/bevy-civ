@@ -335,8 +335,8 @@ working directory.
   study an age's technologies only once it knows every required technology of the ages before
   (optional: Horseback Riding, Seafaring and The Republic; Chivalry, Navigation and Democracy;
   Communism and Fundamentalism). Each discovery makes the next ones dearer, and a technology is
-  cheaper the more of the other peoples know it - of those you have met - down to half price when
-  all of them do. A discovery takes at least 4 turns (beakers beyond its cost are lost) and at most
+  cheaper the more of the other peoples know it - of those you have met (computer players count
+  every people) - down to half price when all of them do. A discovery takes at least 4 turns (beakers beyond its cost are lost) and at most
   40, however little science goes into it. The first people to learn Philosophy founds the Way of
   Reason and makes a free discovery; a Scientific people makes one on entering each new age.
 - **Rates**: each of your cities' commerce (its science and taxes) is pooled and split by the rates

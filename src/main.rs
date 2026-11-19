@@ -5974,4 +5974,85 @@ mod tests {
         let rails: HashMap<Hex, Road> = route.iter().map(|h| (*h, Road::Rail)).collect();
         assert_eq!(walked(&rails, &mut fog), 9);
     }
+
+    fn people(id: u32, name: &str, techs: &[&str]) -> bevy_civ::ai::Civ {
+        bevy_civ::ai::Civ {
+            id,
+            name: name.into(),
+            is_human: id == PLAYER,
+            gold: 100,
+            tech: TechState::knowing(&techs.iter().map(|t| t.to_string()).collect::<Vec<_>>()),
+            aggression: 0.5,
+            leader: "Leader".into(),
+            adjective: name.into(),
+            portrait: 0,
+            city_names: vec![],
+            government: bevy_civ::government::Government::Despotism,
+            anarchy: 0,
+            pending_government: None,
+            eliminated: false,
+        }
+    }
+
+    #[test]
+    fn a_golden_age_comes_once_from_a_unique_unit_and_enriches_productive_tiles() {
+        let civs = Civilizations { players: vec![people(PLAYER, "Rome", &[]), people(1, "Egypt", &[])] };
+        let (mut golden, mut log) = (GoldenAges::default(), GameLog::default());
+        let met: HashSet<u32> = [1].into();
+        // Beating barbarians or winning with another unit does nothing.
+        unique_victory(&mut golden, &civs, &met, &mut log, PLAYER, UnitType::Legion, BARBARIANS);
+        unique_victory(&mut golden, &civs, &met, &mut log, PLAYER, UnitType::Spearman, 1);
+        assert!(!golden.active(PLAYER));
+        // Rome's Legion beats Egypt: twenty turns of plenty, once a game.
+        unique_victory(&mut golden, &civs, &met, &mut log, PLAYER, UnitType::Legion, 1);
+        assert!(golden.active(PLAYER) && !golden.active(1));
+        assert!(!golden.begin(PLAYER), "only one golden age a game");
+        for _ in 0..GOLDEN_AGE_TURNS - 1 {
+            golden.tick();
+        }
+        assert!(golden.active(PLAYER));
+        golden.tick();
+        assert!(!golden.active(PLAYER));
+        // A shield more where the land gives shields, a gold more where it gives gold.
+        assert_eq!(GoldenAges::tile((2, 0, 1)), (2, 0, 2));
+        assert_eq!(GoldenAges::tile((1, 2, 0)), (1, 3, 0));
+    }
+
+    #[test]
+    fn the_great_library_teaches_what_two_known_peoples_know_and_scientists_mark_new_ages() {
+        let ancient: Vec<&str> = Tech::ALL.into_iter().filter(|t| t.era() == bevy_civ::tech::Era::Ancient && !t.optional()).map(|t| t.base_name()).collect();
+        let mut civs = Civilizations {
+            players: vec![
+                people(PLAYER, "Rome", &[]),
+                people(1, "Egypt", &["Pottery", "Mining", "Alphabet"]),
+                people(2, "Persia", &["Pottery", "Mining"]),
+                people(3, "Greece", &["Pottery", "Alphabet"]),
+            ],
+        };
+        let mut tech = TechState::knowing(&["Bronze Working".to_string()]);
+        let mut wonders = WorldWonders::default();
+        wonders.complete(Building::GreatLibrary, PLAYER, "Roma");
+        let holding: HashSet<u32> = [PLAYER, 1, 2, 3].into();
+        let mut log = GameLog::default();
+        // We have met only Egypt and Persia: Pottery and Mining are known to both; the Alphabet to Egypt alone.
+        great_library(&mut civs, &mut tech, &wonders, &[1, 2].into(), &holding, &mut log);
+        assert!(tech.researched.contains(&Tech::Pottery) && tech.researched.contains(&Tech::Mining));
+        assert!(!tech.researched.contains(&Tech::Alphabet));
+        // Once we know Theory of Gravity it teaches no more.
+        tech.researched.insert(GREAT_LIBRARY_UNTIL);
+        great_library(&mut civs, &mut tech, &wonders, &[1, 2, 3].into(), &holding, &mut log);
+        assert!(!tech.researched.contains(&Tech::Alphabet));
+
+        // Greece is Scientific: entering the Middle Ages brings a free discovery; Egypt's does not.
+        let mut civs = Civilizations { players: vec![people(PLAYER, "Rome", &[]), people(1, "Egypt", &ancient), people(2, "Greece", &ancient)] };
+        let mut tech = TechState::knowing(&[]);
+        new_ages(&mut civs, &mut tech, &HashSet::new(), &holding, &mut log);
+        for civ in civs.players.iter_mut() {
+            civ.tech.learn(Tech::Engineering);
+            civ.tech.current = Some(Tech::Astronomy);
+        }
+        new_ages(&mut civs, &mut tech, &HashSet::new(), &holding, &mut log);
+        assert!(civs.players[2].tech.researched.contains(&Tech::Astronomy), "a scientific people's free discovery");
+        assert!(!civs.players[1].tech.researched.contains(&Tech::Astronomy));
+    }
 }
