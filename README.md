@@ -47,7 +47,7 @@ Turn-based, Civilization-style empire building on a hex map, playable in the bro
 - Caravans (trade routes, help with wonders) and diplomats (embassies and espionage)
 - Diplomacy: treaties, attitude and reputation, tribute, tech exchange, resource deals
 - Computer players that research, expand, build, trade, spy, race for wonders and the stars
-- Victory by conquest, domination, diplomacy (United Nations), culture (as in Civ III: 100,000 points with twice any rival's, or 20,000 in a single city, scaled to the game's length), space race, or score at the last turn
+- Victory by conquest, domination, diplomacy (United Nations), culture (after Civ III: 60,000 points with twice any rival's, or 15,000 in a single city, scaled to the game's length), space race, or score at the last turn
 - Multi-turn orders, route preview, worker automation, stack moves, raze or keep captured cities
 - Advisors (science, foreign, trade, empire: government, cities, military, score) and an encyclopedia
 - Saved games: automatic every turn, and as files that anyone can load
@@ -550,8 +550,10 @@ working directory.
   its owner's culture may defect: 20% a turn, more the further it lies from its own capital
   (+10% of that for every tile) and the more of its land the tempter's borders hold (+1/6 for each
   tile), divided by one plus the troops in it (at most 60%).
-- **Cultural victory**: 100,000 culture points with twice as much as any other people, or 20,000 in
-  a single city under your rule (Civ III's numbers, for a 400-turn game; scaled to shorter games).
+- **Cultural victory**: 60,000 culture points with twice as much as any other people, or 15,000 in
+  a single city under your rule (for a 400-turn game; scaled to shorter games). Civ III asks
+  100,000 and 20,000 over a longer game; these are tuned so culture, space, diplomacy and
+  domination all win a fair share of games.
   As in Civ III a people keeps the culture it has earned even if its cities fall, and a conqueror
   counts only what a captured city earns from then on (the city keeps its own culture for its
   borders).
@@ -571,7 +573,7 @@ working directory.
   someone has built the Apollo Program, cities with a Factory build 4 structures, 2 to 4 components
   (engines) and 2 modules. Launch from the
   Empire advisor's Space page, which shows every known ship's voyage from Sol to Alpha Centauri
-  (4.37 light-years): 18 turns, 2 fewer per extra engine. Computer players launch when ready. The
+  (4.37 light-years): 24 turns, 2 fewer per extra engine. Computer players launch when ready. The
   first ship to arrive wins; a ship in flight is lost with its capital - so a launch turns the world
   against the launcher: rivals declare war and march on its capital.
 - **Nuclear weapons**: the Manhattan Project (Nuclear Fission) lets everyone who knows Rocketry build

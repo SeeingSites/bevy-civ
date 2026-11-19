@@ -16,7 +16,7 @@ pub const NEEDED: [u32; 3] = [4, 2, 2];
 /// The most of each part a ship can carry (more components, faster).
 pub const MOST: [u32; 3] = [4, 4, 2];
 /// Turns from launch to arrival with the fewest engines; each extra component saves two.
-pub const FLIGHT_TURNS: u32 = 18;
+pub const FLIGHT_TURNS: u32 = 24;
 /// Where the ships are bound, and how far.
 pub const DESTINATION: &str = "Alpha Centauri";
 

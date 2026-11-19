@@ -13,17 +13,17 @@ use crate::building::Building;
 
 /// Culture a civilization needs for a cultural victory, with [`VICTORY_LEAD_TENTHS`] / 10 times
 /// anyone else's - or that one of its cities needs alone ([`CITY_VICTORY_CULTURE`]), as in Civ III.
-pub const VICTORY_CULTURE: u32 = 100_000;
+pub const VICTORY_CULTURE: u32 = 60_000;
 /// How far ahead of the next civilization a cultural victory takes (in tenths: 20 = twice).
 pub const VICTORY_LEAD_TENTHS: u32 = 20;
-pub const CITY_VICTORY_CULTURE: u32 = 20_000;
+pub const CITY_VICTORY_CULTURE: u32 = 15_000;
 
-/// Culture a cultural victory takes in a game of `last_turn` turns (100,000 in a 400-turn game).
+/// Culture a cultural victory takes in a game of `last_turn` turns (60,000 in a 400-turn game).
 pub fn victory_culture(last_turn: u32) -> u32 {
     VICTORY_CULTURE * last_turn.max(100) / 400
 }
 
-/// Culture a single city needs for a cultural victory in a game of `last_turn` turns (20,000 in a
+/// Culture a single city needs for a cultural victory in a game of `last_turn` turns (15,000 in a
 /// 400-turn game).
 pub fn city_victory_culture(last_turn: u32) -> u32 {
     CITY_VICTORY_CULTURE * last_turn.max(100) / 400
@@ -235,8 +235,8 @@ mod tests {
         assert_eq!((next_border_step(0), next_border_step(999), next_border_step(12_000)), (Some(100), Some(1_000), None));
         let mut ledger = CultureLedger::default();
         let threshold = victory_culture(400);
-        assert_eq!((threshold, victory_culture(200)), (100_000, 50_000));
-        assert_eq!((city_victory_culture(400), city_victory_culture(300)), (20_000, 15_000));
+        assert_eq!((threshold, victory_culture(200)), (60_000, 30_000));
+        assert_eq!((city_victory_culture(400), city_victory_culture(300)), (15_000, 11_250));
         // Many cities of modest culture: the total counts.
         let ours: Vec<(Hex, u32)> = (0..10).map(|i| (Hex::new(i * 4, 0), 0)).collect();
         let theirs = (Hex::new(0, 9), 1);
@@ -247,7 +247,7 @@ mod tests {
         let owners: Vec<(Hex, u32)> = ours.iter().copied().chain([theirs]).collect();
         let totals = ledger.totals(owners.iter().copied());
         assert_eq!(cultural_winner(&totals, threshold), Some(0));
-        // A rival not far enough behind: no win by the total - but a city of 20,000 wins alone.
+        // A rival not far enough behind: no win by the total - but a great enough city wins alone.
         ledger.add(theirs.0, theirs.1, 10_000);
         let totals = ledger.totals(owners.iter().copied());
         assert_eq!(cultural_winner(&totals, threshold), None, "not twice the next");
