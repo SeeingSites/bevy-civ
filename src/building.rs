@@ -71,13 +71,67 @@ pub enum Building {
 
 impl Building {
     pub const ALL: [Building; 61] = [
-        Building::Granary, Building::Barracks, Building::Library, Building::Marketplace, Building::Walls,
-        Building::Aqueduct, Building::University, Building::Bank, Building::Factory, Building::Harbor,
-        Building::Temple, Building::Courthouse, Building::Colosseum, Building::Cathedral, Building::SewerSystem, Building::StockExchange,
-        Building::Observatory, Building::ResearchLab, Building::PowerPlant, Building::PoliceStation, Building::Supermarket, Building::FoodSafety, Building::GmFarms, Building::MassTransit, Building::RecyclingCenter, Building::CoastalFortress, Building::Airport, Building::SdiDefense, Building::ForbiddenPalace,
-        Building::SpaceStructure, Building::SpaceComponent, Building::SpaceModule, Building::Pyramids,
-        Building::GreatLibrary, Building::HangingGardens, Building::Colossus, Building::Oracle,
-        Building::GreatLighthouse, Building::GreatWall, Building::StatueOfZeus, Building::Mausoleum, Building::Copernicus, Building::SunTzu, Building::MarcoPolo, Building::KingRichards, Building::Michelangelo, Building::Leonardo, Building::Bach, Building::Magellan, Building::Newton, Building::AdamSmith, Building::Shakespeare, Building::Darwin, Building::Liberty, Building::HooverDam, Building::Eiffel, Building::Internet, Building::Apollo, Building::CureForCancer, Building::Manhattan, Building::UnitedNations,
+        Building::Granary,
+        Building::Barracks,
+        Building::Library,
+        Building::Marketplace,
+        Building::Walls,
+        Building::Aqueduct,
+        Building::University,
+        Building::Bank,
+        Building::Factory,
+        Building::Harbor,
+        Building::Temple,
+        Building::Courthouse,
+        Building::Colosseum,
+        Building::Cathedral,
+        Building::SewerSystem,
+        Building::StockExchange,
+        Building::Observatory,
+        Building::ResearchLab,
+        Building::PowerPlant,
+        Building::PoliceStation,
+        Building::Supermarket,
+        Building::FoodSafety,
+        Building::GmFarms,
+        Building::MassTransit,
+        Building::RecyclingCenter,
+        Building::CoastalFortress,
+        Building::Airport,
+        Building::SdiDefense,
+        Building::ForbiddenPalace,
+        Building::SpaceStructure,
+        Building::SpaceComponent,
+        Building::SpaceModule,
+        Building::Pyramids,
+        Building::GreatLibrary,
+        Building::HangingGardens,
+        Building::Colossus,
+        Building::Oracle,
+        Building::GreatLighthouse,
+        Building::GreatWall,
+        Building::StatueOfZeus,
+        Building::Mausoleum,
+        Building::Copernicus,
+        Building::SunTzu,
+        Building::MarcoPolo,
+        Building::KingRichards,
+        Building::Michelangelo,
+        Building::Leonardo,
+        Building::Bach,
+        Building::Magellan,
+        Building::Newton,
+        Building::AdamSmith,
+        Building::Shakespeare,
+        Building::Darwin,
+        Building::Liberty,
+        Building::HooverDam,
+        Building::Eiffel,
+        Building::Internet,
+        Building::Apollo,
+        Building::CureForCancer,
+        Building::Manhattan,
+        Building::UnitedNations,
     ];
 
     pub fn name(&self) -> &'static str {
@@ -295,7 +349,10 @@ impl Building {
 
     /// A part for its civilization's spaceship: buildable again and again, and only in a city with a Factory.
     pub fn is_spaceship_part(&self) -> bool {
-        matches!(self, Building::SpaceStructure | Building::SpaceComponent | Building::SpaceModule)
+        matches!(
+            self,
+            Building::SpaceStructure | Building::SpaceComponent | Building::SpaceModule
+        )
     }
 
     /// A world wonder that must stand somewhere in the world before anyone can build this: the
@@ -372,11 +429,44 @@ impl Building {
 
     /// The wonders added after the first six (each with its own effect, mostly handled in the game's turn).
     fn is_later_wonder(&self) -> bool {
-        matches!(self, Building::GreatWall | Building::StatueOfZeus | Building::Mausoleum | Building::Copernicus | Building::SunTzu | Building::MarcoPolo | Building::KingRichards | Building::Michelangelo | Building::Leonardo | Building::Bach | Building::Magellan | Building::Newton | Building::AdamSmith | Building::Shakespeare | Building::Darwin | Building::Liberty | Building::HooverDam | Building::Eiffel | Building::Internet | Building::Apollo | Building::CureForCancer | Building::Manhattan | Building::UnitedNations)
+        matches!(
+            self,
+            Building::GreatWall
+                | Building::StatueOfZeus
+                | Building::Mausoleum
+                | Building::Copernicus
+                | Building::SunTzu
+                | Building::MarcoPolo
+                | Building::KingRichards
+                | Building::Michelangelo
+                | Building::Leonardo
+                | Building::Bach
+                | Building::Magellan
+                | Building::Newton
+                | Building::AdamSmith
+                | Building::Shakespeare
+                | Building::Darwin
+                | Building::Liberty
+                | Building::HooverDam
+                | Building::Eiffel
+                | Building::Internet
+                | Building::Apollo
+                | Building::CureForCancer
+                | Building::Manhattan
+                | Building::UnitedNations
+        )
     }
 
     pub fn is_wonder(&self) -> bool {
-        matches!(self, Building::Pyramids | Building::GreatLibrary | Building::HangingGardens | Building::Colossus | Building::Oracle | Building::GreatLighthouse) || self.is_later_wonder()
+        matches!(
+            self,
+            Building::Pyramids
+                | Building::GreatLibrary
+                | Building::HangingGardens
+                | Building::Colossus
+                | Building::Oracle
+                | Building::GreatLighthouse
+        ) || self.is_later_wonder()
     }
 
     pub fn food_bonus(&self) -> u32 {
@@ -423,7 +513,14 @@ impl Building {
 
     /// Only a city on the coast can build it (the seafaring wonders too, as in Civ III).
     pub fn needs_coast(&self) -> bool {
-        matches!(self, Building::Harbor | Building::CoastalFortress | Building::Colossus | Building::GreatLighthouse | Building::Magellan)
+        matches!(
+            self,
+            Building::Harbor
+                | Building::CoastalFortress
+                | Building::Colossus
+                | Building::GreatLighthouse
+                | Building::Magellan
+        )
     }
 
     /// A building the city must already have before it can build this one.
@@ -535,13 +632,20 @@ impl WorldWonders {
 
     /// Content citizens every city of `owner` gets from its wonders still in effect.
     pub fn empire_content(&self, owner: u32) -> u32 {
-        self.built.iter().filter(|(w, (o, _))| *o == owner && !self.expired.contains(*w)).map(|(w, _)| w.empire_content()).sum()
+        self.built
+            .iter()
+            .filter(|(w, (o, _))| *o == owner && !self.expired.contains(*w))
+            .map(|(w, _)| w.empire_content())
+            .sum()
     }
 
     /// Notes which wonders their owners have made obsolete (`knows(owner, tech)`); a wonder taken by
     /// a people that does not know the technology works again. Returns those newly obsolete, with
     /// their owners.
-    pub fn refresh_expired(&mut self, knows: impl Fn(u32, crate::tech::Tech) -> bool) -> Vec<(Building, u32)> {
+    pub fn refresh_expired(
+        &mut self,
+        knows: impl Fn(u32, crate::tech::Tech) -> bool,
+    ) -> Vec<(Building, u32)> {
         let mut fresh = Vec::new();
         for (wonder, (owner, _)) in &self.built {
             let gone = wonder.obsoleted_by().is_some_and(|t| knows(*owner, t));
@@ -556,7 +660,8 @@ impl WorldWonders {
 
     /// Extra moves a ship (or troops at sea) of `owner` gets each turn.
     pub fn sea_moves(&self, owner: u32) -> u32 {
-        u32::from(self.owns(owner, Building::GreatLighthouse)) + 2 * u32::from(self.owns(owner, Building::Magellan))
+        u32::from(self.owns(owner, Building::GreatLighthouse))
+            + 2 * u32::from(self.owns(owner, Building::Magellan))
     }
 
     /// Whether `owner`'s cities all count as walled (the Great Wall).
@@ -600,12 +705,15 @@ mod tests {
         assert_eq!(world.sea_moves(1), 1);
         assert_eq!(world.sea_moves(2), 0);
         // Navigation makes the Lighthouse obsolete for its owner; a new owner without it uses it again.
-        let fresh = world.refresh_expired(|owner, tech| owner == 1 && tech == crate::tech::Tech::Navigation);
+        let fresh = world
+            .refresh_expired(|owner, tech| owner == 1 && tech == crate::tech::Tech::Navigation);
         assert_eq!(fresh, vec![(Building::GreatLighthouse, 1)]);
         assert_eq!(world.sea_moves(1), 0);
         assert!(world.is_taken(Building::GreatLighthouse), "it still stands");
         world.transfer_city("Carthage", 2);
-        assert!(world.refresh_expired(|owner, tech| owner == 1 && tech == crate::tech::Tech::Navigation).is_empty());
+        assert!(world
+            .refresh_expired(|owner, tech| owner == 1 && tech == crate::tech::Tech::Navigation)
+            .is_empty());
         assert_eq!(world.sea_moves(2), 1);
         // Theology ends the Oracle's calm.
         world.refresh_expired(|_, tech| tech == crate::tech::Tech::Theology);
@@ -660,9 +768,21 @@ mod finance_tests {
 
     #[test]
     fn finance_buildings_come_in_order() {
-        assert_eq!(Building::StockExchange.required_building(), Some(Building::Bank));
-        assert_eq!(Building::University.required_building(), Some(Building::Library));
-        assert_eq!(Building::Bank.required_building(), Some(Building::Marketplace));
-        assert_eq!(Building::Bank.required_tech(), Some(crate::tech::Tech::Banking));
+        assert_eq!(
+            Building::StockExchange.required_building(),
+            Some(Building::Bank)
+        );
+        assert_eq!(
+            Building::University.required_building(),
+            Some(Building::Library)
+        );
+        assert_eq!(
+            Building::Bank.required_building(),
+            Some(Building::Marketplace)
+        );
+        assert_eq!(
+            Building::Bank.required_tech(),
+            Some(crate::tech::Tech::Banking)
+        );
     }
 }

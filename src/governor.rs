@@ -84,21 +84,32 @@ pub fn army_cap(cities: usize) -> usize {
 
 fn can_train(unit: UnitType, city: &CityView, civ: &CivView, supplies: &Supplies) -> bool {
     unit.is_trainable()
-        && unit.required_tech().is_none_or(|t| civ.tech.researched.contains(&t))
-        && unit.required_wonder().is_none_or(|w| civ.wonders_taken.contains(&w))
+        && unit
+            .required_tech()
+            .is_none_or(|t| civ.tech.researched.contains(&t))
+        && unit
+            .required_wonder()
+            .is_none_or(|w| civ.wonders_taken.contains(&w))
         && supplies.has(city.position, unit.required_resources())
 }
 
 pub fn can_build(building: &Building, city: &CityView, civ: &CivView, supplies: &Supplies) -> bool {
     !city.built.contains(building)
         && !(building.is_wonder() && civ.wonders_taken.contains(building))
-        && (!building.is_spaceship_part() || (city.built.contains(&Building::Factory) && civ.space_parts.contains(building)))
-        && building.required_wonder().is_none_or(|w| civ.wonders_taken.contains(&w))
-        && building.required_tech().is_none_or(|t| civ.tech.researched.contains(&t))
+        && (!building.is_spaceship_part()
+            || (city.built.contains(&Building::Factory) && civ.space_parts.contains(building)))
+        && building
+            .required_wonder()
+            .is_none_or(|w| civ.wonders_taken.contains(&w))
+        && building
+            .required_tech()
+            .is_none_or(|t| civ.tech.researched.contains(&t))
         && supplies.has(city.position, building.required_resources())
         && (!building.needs_coast() || city.coastal)
         && !(building.one_per_people() && civ.forbidden_palace)
-        && building.required_building().is_none_or(|b| city.built.contains(&b))
+        && building
+            .required_building()
+            .is_none_or(|b| city.built.contains(&b))
 }
 
 /// The unit that holds a city best.
@@ -107,7 +118,9 @@ pub fn best_defender(city: &CityView, civ: &CivView, supplies: &Supplies) -> Uni
         .into_iter()
         .filter(|u| u.is_army() && can_train(*u, city, civ, supplies))
         .max_by(|a, b| {
-            let score = |u: &UnitType| u.stats().1 as f32 + u.stats().0 as f32 * 0.1 - u.cost() as f32 * 0.001;
+            let score = |u: &UnitType| {
+                u.stats().1 as f32 + u.stats().0 as f32 * 0.1 - u.cost() as f32 * 0.001
+            };
             score(a).total_cmp(&score(b))
         })
         .unwrap_or(UnitType::Warrior)
@@ -119,7 +132,9 @@ pub fn best_attacker(city: &CityView, civ: &CivView, supplies: &Supplies) -> Uni
         .into_iter()
         .filter(|u| u.is_army() && can_train(*u, city, civ, supplies))
         .max_by(|a, b| {
-            let score = |u: &UnitType| u.stats().0 as f32 + u.stats().1 as f32 * 0.4 + u.stats().2 as f32 * 0.5;
+            let score = |u: &UnitType| {
+                u.stats().0 as f32 + u.stats().1 as f32 * 0.4 + u.stats().2 as f32 * 0.5
+            };
             score(a).total_cmp(&score(b))
         })
         .unwrap_or(UnitType::Warrior)
@@ -147,18 +162,30 @@ fn field_unit(city: &CityView, civ: &CivView, supplies: &Supplies, rng: &mut imp
 
 /// Picks the next project: safety first, then the workers and harbours that connect the empire,
 /// then an army sized to the situation, then growth and buildings.
-pub fn choose(city: &CityView, civ: &CivView, supplies: &Supplies, rng: &mut impl Rng) -> ProductionItem {
+pub fn choose(
+    city: &CityView,
+    civ: &CivView,
+    supplies: &Supplies,
+    rng: &mut impl Rng,
+) -> ProductionItem {
     let unit = ProductionItem::Unit;
     if !city.defended {
         return unit(best_defender(city, civ, supplies));
     }
     // A young empire with land to fill expands first: two settlers at a time, from any city that
     // has grown past its first citizen (unless an enemy is close).
-    if civ.room_to_expand && civ.cities < 6 && civ.settlers < 2 && city.population >= 2 && !city.threatened {
+    if civ.room_to_expand
+        && civ.cities < 6
+        && civ.settlers < 2
+        && city.population >= 2
+        && !city.threatened
+    {
         return unit(UnitType::Settler);
     }
     // About two workers for every three cities, more while roads are wanting.
-    let wanted_workers = ((2 * civ.cities).div_ceil(3) + usize::from(civ.road_work > 3 * civ.workers.max(1))).min(civ.cities.max(1));
+    let wanted_workers = ((2 * civ.cities).div_ceil(3)
+        + usize::from(civ.road_work > 3 * civ.workers.max(1)))
+    .min(civ.cities.max(1));
     if civ.workers < wanted_workers {
         return unit(worker_kind(civ));
     }
@@ -168,23 +195,39 @@ pub fn choose(city: &CityView, civ: &CivView, supplies: &Supplies, rng: &mut imp
     }
     // Troops or settlers waiting in port and no ship to carry them: a coastal city builds one.
     if city.coastal && civ.ferry_wanted > 0 && civ.ferries < civ.ferry_wanted.div_ceil(6).min(3) {
-        let ferry = [UnitType::Transport, UnitType::Galleon, UnitType::Galley].into_iter().find(|u| can_train(*u, city, civ, supplies));
+        let ferry = [UnitType::Transport, UnitType::Galleon, UnitType::Galley]
+            .into_iter()
+            .find(|u| can_train(*u, city, civ, supplies));
         if let Some(ferry) = ferry {
             return unit(ferry);
         }
     }
     let cap = army_cap(civ.cities);
-    let wanted_army = if civ.at_war { 2 * civ.cities + 2 } else { civ.cities + 1 }.min(cap);
+    let wanted_army = if civ.at_war {
+        2 * civ.cities + 2
+    } else {
+        civ.cities + 1
+    }
+    .min(cap);
     if civ.military < wanted_army {
         let offensive = civ.at_war || civ.aggression > 0.6;
-        return unit(if offensive { field_unit(city, civ, supplies, rng) } else { best_defender(city, civ, supplies) });
+        return unit(if offensive {
+            field_unit(city, civ, supplies, rng)
+        } else {
+            best_defender(city, civ, supplies)
+        });
     }
     // At war, a coastal city adds warships and an industrial power adds aircraft.
     if civ.at_war {
         let strongest = |domain: Domain| {
             UnitType::ALL
                 .into_iter()
-                .filter(|u| u.domain() == domain && !u.is_ferry() && *u != UnitType::Carrier && can_train(*u, city, civ, supplies))
+                .filter(|u| {
+                    u.domain() == domain
+                        && !u.is_ferry()
+                        && *u != UnitType::Carrier
+                        && can_train(*u, city, civ, supplies)
+                })
                 .max_by_key(|u| u.stats().0 + u.stats().1)
         };
         if city.coastal && civ.navy < 2 {
@@ -200,28 +243,53 @@ pub fn choose(city: &CityView, civ: &CivView, supplies: &Supplies, rng: &mut imp
     }
     // Expand while there is room: a settler at a time for a small empire, more for a big one.
     let settlers_wanted = 1 + civ.cities / 6;
-    if civ.room_to_expand && civ.settlers < settlers_wanted && civ.cities < 24 && city.population >= 3 && !city.threatened && rng.gen_bool(0.5) {
+    if civ.room_to_expand
+        && civ.settlers < settlers_wanted
+        && civ.cities < 24
+        && city.population >= 3
+        && !city.threatened
+        && rng.gen_bool(0.5)
+    {
         return unit(UnitType::Settler);
     }
     // Caravans carry shields to a wonder going up elsewhere, or open trade routes.
     let caravan_wanted = civ.wonder_elsewhere || (civ.cities >= 2 && rng.gen_bool(0.2));
-    if civ.caravans < 2 && city.population >= 4 && caravan_wanted && can_train(UnitType::Caravan, city, civ, supplies) {
+    if civ.caravans < 2
+        && city.population >= 4
+        && caravan_wanted
+        && can_train(UnitType::Caravan, city, civ, supplies)
+    {
         return unit(UnitType::Caravan);
     }
     // One diplomat to open embassies and spy, once the civilization has a few cities.
-    if civ.faith_to_spread && civ.missionaries == 0 && rng.gen_bool(0.25) && can_train(UnitType::Missionary, city, civ, supplies) {
+    if civ.faith_to_spread
+        && civ.missionaries == 0
+        && rng.gen_bool(0.25)
+        && can_train(UnitType::Missionary, city, civ, supplies)
+    {
         return unit(UnitType::Missionary);
     }
-    if civ.diplomats == 0 && civ.cities >= 3 && rng.gen_bool(0.3) && can_train(UnitType::Diplomat, city, civ, supplies) {
+    if civ.diplomats == 0
+        && civ.cities >= 3
+        && rng.gen_bool(0.3)
+        && can_train(UnitType::Diplomat, city, civ, supplies)
+    {
         return unit(UnitType::Diplomat);
     }
 
     // The space race comes first once a civilization can build its ship - and before that, the
     // Apollo Program that opens it to everyone, in one city at a time.
-    if city.population >= 6 && !civ.wonder_elsewhere && can_build(&Building::Apollo, city, civ, supplies) {
+    if city.population >= 6
+        && !civ.wonder_elsewhere
+        && can_build(&Building::Apollo, city, civ, supplies)
+    {
         return ProductionItem::Building(Building::Apollo);
     }
-    if let Some(part) = civ.space_parts.iter().find(|p| can_build(p, city, civ, supplies)) {
+    if let Some(part) = civ
+        .space_parts
+        .iter()
+        .find(|p| can_build(p, city, civ, supplies))
+    {
         return ProductionItem::Building(*part);
     }
     // A drug trade is dealt with first.
@@ -238,44 +306,81 @@ pub fn choose(city: &CityView, civ: &CivView, supplies: &Supplies, rng: &mut imp
     let industrial = city.built.contains(&Building::Factory);
     let wish = [
         (Building::Walls, city.threatened || civ.at_war),
-        (Building::Temple, city.population >= bevy_civ::diplomacy::BASE_CONTENT),
-        (Building::Aqueduct, near_limit && city.water_limit <= first_limit),
+        (
+            Building::Temple,
+            city.population >= bevy_civ::diplomacy::BASE_CONTENT,
+        ),
+        (
+            Building::Aqueduct,
+            near_limit && city.water_limit <= first_limit,
+        ),
         (Building::Granary, city.population < 8 && spare),
-        (Building::Barracks, civ.at_war && city.population >= 8 && spare),
-        (Building::Courthouse, city.corruption >= 20 && city.trade >= 4),
+        (
+            Building::Barracks,
+            civ.at_war && city.population >= 8 && spare,
+        ),
+        (
+            Building::Courthouse,
+            city.corruption >= 20 && city.trade >= 4,
+        ),
         (Building::Marketplace, city.trade >= 6),
         (Building::Library, city.trade >= 4),
         (Building::Harbor, true),
-        (Building::ForbiddenPalace, civ.cities >= 8 && !city.near_capital),
+        (
+            Building::ForbiddenPalace,
+            civ.cities >= 8 && !city.near_capital,
+        ),
         (Building::Colosseum, city.population >= 8),
         (Building::Cathedral, city.population >= 10),
-        (Building::SewerSystem, near_limit && city.water_limit == 2 * first_limit),
+        (
+            Building::SewerSystem,
+            near_limit && city.water_limit == 2 * first_limit,
+        ),
         (Building::University, city.trade >= 6 && spare),
         (Building::Bank, city.trade >= 10),
         (Building::StockExchange, city.trade >= 16),
-        (Building::Factory, (city.population >= 8 && spare) || !civ.space_parts.is_empty()),
+        (
+            Building::Factory,
+            (city.population >= 8 && spare) || !civ.space_parts.is_empty(),
+        ),
         (Building::Observatory, city.trade >= 8 && spare),
         (Building::Supermarket, city.population >= 12 && spare),
-        (Building::PoliceStation, city.population >= 12 || city.narcotics > 0),
+        (
+            Building::PoliceStation,
+            city.population >= 12 || city.narcotics > 0,
+        ),
         (Building::CoastalFortress, civ.at_war && civ.navy > 0),
         (Building::PowerPlant, city.population >= 10 && spare),
         (Building::ResearchLab, city.trade >= 10 && spare),
         (Building::FoodSafety, city.population >= 10 && spare),
-        (Building::GmFarms, city.population >= 10 && city.built.contains(&Building::FoodSafety) && spare),
+        (
+            Building::GmFarms,
+            city.population >= 10 && city.built.contains(&Building::FoodSafety) && spare,
+        ),
         (Building::MassTransit, city.population >= 10 && industrial),
-        (Building::RecyclingCenter, city.population >= 10 && industrial && spare),
+        (
+            Building::RecyclingCenter,
+            city.population >= 10 && industrial && spare,
+        ),
         (Building::Airport, civ.at_war && civ.air > 0 && spare),
     ];
-    if let Some((building, _)) = wish.into_iter().find(|(b, wanted)| *wanted && can_build(b, city, civ, supplies)) {
+    if let Some((building, _)) = wish
+        .into_iter()
+        .find(|(b, wanted)| *wanted && can_build(b, city, civ, supplies))
+    {
         return ProductionItem::Building(building);
     }
     if city.population >= 6 {
-        if let Some(wonder) = Building::ALL.into_iter().find(|b| b.is_wonder() && can_build(b, city, civ, supplies)) {
+        if let Some(wonder) = Building::ALL
+            .into_iter()
+            .find(|b| b.is_wonder() && can_build(b, city, civ, supplies))
+        {
             return ProductionItem::Building(wonder);
         }
     }
     // At war, a people with the bomb now and then builds a missile.
-    if civ.at_war && can_train(UnitType::NuclearMissile, city, civ, supplies) && rng.gen_bool(0.04) {
+    if civ.at_war && can_train(UnitType::NuclearMissile, city, civ, supplies) && rng.gen_bool(0.04)
+    {
         return unit(UnitType::NuclearMissile);
     }
     if civ.military < cap {
@@ -291,24 +396,69 @@ pub fn choose(city: &CityView, civ: &CivView, supplies: &Supplies, rng: &mut imp
 
 /// Engineers once the civilization can train them, workers before.
 fn worker_kind(civ: &CivView) -> UnitType {
-    if UnitType::Engineers.required_tech().is_some_and(|t| civ.tech.researched.contains(&t)) { UnitType::Engineers } else { UnitType::Worker }
+    if UnitType::Engineers
+        .required_tech()
+        .is_some_and(|t| civ.tech.researched.contains(&t))
+    {
+        UnitType::Engineers
+    } else {
+        UnitType::Worker
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    static NO_WONDERS: std::sync::LazyLock<std::collections::HashSet<Building>> = std::sync::LazyLock::new(Default::default);
+    static NO_WONDERS: std::sync::LazyLock<std::collections::HashSet<Building>> =
+        std::sync::LazyLock::new(Default::default);
     use bevy_civ::tech::Tech;
     use bevy_civ::terrain::Resource as Good;
     use std::collections::HashSet;
 
     fn city() -> CityView {
-        CityView { position: Hex::ZERO, population: 4, built: vec![], coastal: false, linked: true, defended: true, threatened: false, near_capital: true, narcotics: 0, trade: 8, corruption: 10, water_limit: 6 }
+        CityView {
+            position: Hex::ZERO,
+            population: 4,
+            built: vec![],
+            coastal: false,
+            linked: true,
+            defended: true,
+            threatened: false,
+            near_capital: true,
+            narcotics: 0,
+            trade: 8,
+            corruption: 10,
+            water_limit: 6,
+        }
     }
 
     fn civ(tech: &TechState) -> CivView<'_> {
-        CivView { tech, aggression: 0.4, cities: 2, workers: 2, settlers: 2, military: 3, navy: 0, air: 0, road_work: 0, cut_off: 0, at_war: false, wonders_taken: &NO_WONDERS, caravans: 2, diplomats: 1, missionaries: 0, faith_to_spread: false, wonder_elsewhere: false, space_parts: &[], room_to_expand: true, forbidden_palace: false, ferries: 0, ferry_wanted: 0, thrifty: false }
+        CivView {
+            tech,
+            aggression: 0.4,
+            cities: 2,
+            workers: 2,
+            settlers: 2,
+            military: 3,
+            navy: 0,
+            air: 0,
+            road_work: 0,
+            cut_off: 0,
+            at_war: false,
+            wonders_taken: &NO_WONDERS,
+            caravans: 2,
+            diplomats: 1,
+            missionaries: 0,
+            faith_to_spread: false,
+            wonder_elsewhere: false,
+            space_parts: &[],
+            room_to_expand: true,
+            forbidden_palace: false,
+            ferries: 0,
+            ferry_wanted: 0,
+            thrifty: false,
+        }
     }
 
     fn knowing(techs: &[Tech]) -> TechState {
@@ -319,15 +469,25 @@ mod tests {
 
     fn supplies_with(goods: &[Good]) -> Supplies {
         let mut supplies = Supplies::default();
-        supplies.city.insert(Hex::ZERO, goods.iter().copied().collect::<HashSet<_>>());
+        supplies
+            .city
+            .insert(Hex::ZERO, goods.iter().copied().collect::<HashSet<_>>());
         supplies
     }
 
     #[test]
     fn an_undefended_city_trains_its_best_defender_first() {
         let tech = knowing(&[Tech::BronzeWorking]);
-        let view = CityView { defended: false, ..city() };
-        let pick = choose(&view, &civ(&tech), &Supplies::default(), &mut rand::thread_rng());
+        let view = CityView {
+            defended: false,
+            ..city()
+        };
+        let pick = choose(
+            &view,
+            &civ(&tech),
+            &Supplies::default(),
+            &mut rand::thread_rng(),
+        );
         assert_eq!(pick, ProductionItem::Unit(UnitType::Phalanx));
     }
 
@@ -335,118 +495,391 @@ mod tests {
     fn units_need_their_resources() {
         let tech = knowing(&[Tech::IronWorking, Tech::BronzeWorking]);
         let view = city();
-        let at_war = CivView { at_war: true, military: 0, ..civ(&tech) };
+        let at_war = CivView {
+            at_war: true,
+            military: 0,
+            ..civ(&tech)
+        };
         let without = best_attacker(&view, &at_war, &Supplies::default());
-        assert!(!without.required_resources().contains(&Good::Iron), "{without:?}");
-        assert_eq!(best_attacker(&view, &at_war, &supplies_with(&[Good::Iron])), UnitType::Immortal);
+        assert!(
+            !without.required_resources().contains(&Good::Iron),
+            "{without:?}"
+        );
+        assert_eq!(
+            best_attacker(&view, &at_war, &supplies_with(&[Good::Iron])),
+            UnitType::Immortal
+        );
     }
 
     #[test]
     fn a_city_with_a_drug_trade_builds_a_police_station() {
         let tech = knowing(&[Tech::Pottery, Tech::Sanitation]);
-        let troubled = CityView { narcotics: 1, population: 9, ..city() };
-        assert_eq!(choose(&troubled, &civ(&tech), &Supplies::default(), &mut rand::thread_rng()), ProductionItem::Building(Building::PoliceStation));
+        let troubled = CityView {
+            narcotics: 1,
+            population: 9,
+            ..city()
+        };
+        assert_eq!(
+            choose(
+                &troubled,
+                &civ(&tech),
+                &Supplies::default(),
+                &mut rand::thread_rng()
+            ),
+            ProductionItem::Building(Building::PoliceStation)
+        );
     }
 
     #[test]
     fn a_young_empire_with_room_expands_first() {
         let tech = knowing(&[Tech::Pottery]);
-        let young = CivView { settlers: 0, ..civ(&tech) };
-        assert_eq!(choose(&city(), &young, &Supplies::default(), &mut rand::thread_rng()), ProductionItem::Unit(UnitType::Settler));
+        let young = CivView {
+            settlers: 0,
+            ..civ(&tech)
+        };
+        assert_eq!(
+            choose(
+                &city(),
+                &young,
+                &Supplies::default(),
+                &mut rand::thread_rng()
+            ),
+            ProductionItem::Unit(UnitType::Settler)
+        );
         // Not with an enemy close, nor once the land is full.
-        let threatened = CityView { threatened: true, ..city() };
-        assert_ne!(choose(&threatened, &young, &Supplies::default(), &mut rand::thread_rng()), ProductionItem::Unit(UnitType::Settler));
-        let full = CivView { room_to_expand: false, ..young };
-        assert_ne!(choose(&city(), &full, &Supplies::default(), &mut rand::thread_rng()), ProductionItem::Unit(UnitType::Settler));
+        let threatened = CityView {
+            threatened: true,
+            ..city()
+        };
+        assert_ne!(
+            choose(
+                &threatened,
+                &young,
+                &Supplies::default(),
+                &mut rand::thread_rng()
+            ),
+            ProductionItem::Unit(UnitType::Settler)
+        );
+        let full = CivView {
+            room_to_expand: false,
+            ..young
+        };
+        assert_ne!(
+            choose(
+                &city(),
+                &full,
+                &Supplies::default(),
+                &mut rand::thread_rng()
+            ),
+            ProductionItem::Unit(UnitType::Settler)
+        );
     }
 
     #[test]
     fn a_cut_off_coastal_city_builds_a_harbour() {
         let tech = knowing(&[Tech::Seafaring, Tech::Pottery]);
-        let view = CityView { coastal: true, linked: false, ..city() };
-        assert_eq!(choose(&view, &civ(&tech), &Supplies::default(), &mut rand::thread_rng()), ProductionItem::Building(Building::Harbor));
+        let view = CityView {
+            coastal: true,
+            linked: false,
+            ..city()
+        };
+        assert_eq!(
+            choose(
+                &view,
+                &civ(&tech),
+                &Supplies::default(),
+                &mut rand::thread_rng()
+            ),
+            ProductionItem::Building(Building::Harbor)
+        );
         // The mainland builds one too while part of the empire is cut off.
-        let mainland = CityView { coastal: true, linked: true, ..city() };
-        let split = CivView { cut_off: 1, ..civ(&tech) };
-        assert_eq!(choose(&mainland, &split, &Supplies::default(), &mut rand::thread_rng()), ProductionItem::Building(Building::Harbor));
-        let inland = CityView { coastal: false, linked: false, ..city() };
-        assert_ne!(choose(&inland, &civ(&tech), &Supplies::default(), &mut rand::thread_rng()), ProductionItem::Building(Building::Harbor));
+        let mainland = CityView {
+            coastal: true,
+            linked: true,
+            ..city()
+        };
+        let split = CivView {
+            cut_off: 1,
+            ..civ(&tech)
+        };
+        assert_eq!(
+            choose(
+                &mainland,
+                &split,
+                &Supplies::default(),
+                &mut rand::thread_rng()
+            ),
+            ProductionItem::Building(Building::Harbor)
+        );
+        let inland = CityView {
+            coastal: false,
+            linked: false,
+            ..city()
+        };
+        assert_ne!(
+            choose(
+                &inland,
+                &civ(&tech),
+                &Supplies::default(),
+                &mut rand::thread_rng()
+            ),
+            ProductionItem::Building(Building::Harbor)
+        );
     }
 
     #[test]
     fn a_settled_peaceful_city_develops() {
         let tech = knowing(&[Tech::Pottery, Tech::Writing]);
         let view = city();
-        assert_eq!(choose(&view, &civ(&tech), &Supplies::default(), &mut rand::thread_rng()), ProductionItem::Building(Building::Granary));
-        let grown = CityView { built: vec![Building::Granary], ..city() };
-        assert_eq!(choose(&grown, &civ(&tech), &Supplies::default(), &mut rand::thread_rng()), ProductionItem::Building(Building::Library));
+        assert_eq!(
+            choose(
+                &view,
+                &civ(&tech),
+                &Supplies::default(),
+                &mut rand::thread_rng()
+            ),
+            ProductionItem::Building(Building::Granary)
+        );
+        let grown = CityView {
+            built: vec![Building::Granary],
+            ..city()
+        };
+        assert_eq!(
+            choose(
+                &grown,
+                &civ(&tech),
+                &Supplies::default(),
+                &mut rand::thread_rng()
+            ),
+            ProductionItem::Building(Building::Library)
+        );
     }
 
     #[test]
     fn buildings_go_where_they_pay_their_upkeep() {
-        let tech = knowing(&[Tech::Pottery, Tech::Writing, Tech::Construction, Tech::CodeOfLaws, Tech::Currency]);
+        let tech = knowing(&[
+            Tech::Pottery,
+            Tech::Writing,
+            Tech::Construction,
+            Tech::CodeOfLaws,
+            Tech::Currency,
+        ]);
         let settled = vec![Building::Granary];
         // A city about to outgrow its water builds an aqueduct; one by a river has no need.
-        let thirsty = CityView { population: 5, built: settled.clone(), ..city() };
-        assert_eq!(choose(&thirsty, &civ(&tech), &Supplies::default(), &mut rand::thread_rng()), ProductionItem::Building(Building::Aqueduct));
-        let riverside = CityView { population: 5, built: settled.clone(), water_limit: 12, ..city() };
-        assert_ne!(choose(&riverside, &civ(&tech), &Supplies::default(), &mut rand::thread_rng()), ProductionItem::Building(Building::Aqueduct));
+        let thirsty = CityView {
+            population: 5,
+            built: settled.clone(),
+            ..city()
+        };
+        assert_eq!(
+            choose(
+                &thirsty,
+                &civ(&tech),
+                &Supplies::default(),
+                &mut rand::thread_rng()
+            ),
+            ProductionItem::Building(Building::Aqueduct)
+        );
+        let riverside = CityView {
+            population: 5,
+            built: settled.clone(),
+            water_limit: 12,
+            ..city()
+        };
+        assert_ne!(
+            choose(
+                &riverside,
+                &civ(&tech),
+                &Supplies::default(),
+                &mut rand::thread_rng()
+            ),
+            ProductionItem::Building(Building::Aqueduct)
+        );
         // A corrupt city with trade builds a courthouse; a poor village not even a library.
-        let corrupt = CityView { corruption: 40, built: settled.clone(), ..city() };
-        assert_eq!(choose(&corrupt, &civ(&tech), &Supplies::default(), &mut rand::thread_rng()), ProductionItem::Building(Building::Courthouse));
-        let poor = CityView { trade: 2, built: settled, ..city() };
-        let pick = choose(&poor, &civ(&tech), &Supplies::default(), &mut rand::thread_rng());
-        assert!(!matches!(pick, ProductionItem::Building(Building::Library | Building::Marketplace | Building::Courthouse)), "{pick:?}");
+        let corrupt = CityView {
+            corruption: 40,
+            built: settled.clone(),
+            ..city()
+        };
+        assert_eq!(
+            choose(
+                &corrupt,
+                &civ(&tech),
+                &Supplies::default(),
+                &mut rand::thread_rng()
+            ),
+            ProductionItem::Building(Building::Courthouse)
+        );
+        let poor = CityView {
+            trade: 2,
+            built: settled,
+            ..city()
+        };
+        let pick = choose(
+            &poor,
+            &civ(&tech),
+            &Supplies::default(),
+            &mut rand::thread_rng(),
+        );
+        assert!(
+            !matches!(
+                pick,
+                ProductionItem::Building(
+                    Building::Library | Building::Marketplace | Building::Courthouse
+                )
+            ),
+            "{pick:?}"
+        );
     }
 
     #[test]
     fn a_strained_treasury_builds_only_what_pays() {
-        let tech = knowing(&[Tech::Pottery, Tech::Writing, Tech::Philosophy, Tech::Alphabet]);
-        let city = CityView { trade: 12, built: vec![Building::Granary, Building::Library], ..city() };
-        assert_eq!(choose(&city, &civ(&tech), &Supplies::default(), &mut rand::thread_rng()), ProductionItem::Building(Building::University));
-        let strained = CivView { thrifty: true, ..civ(&tech) };
-        assert_ne!(choose(&city, &strained, &Supplies::default(), &mut rand::thread_rng()), ProductionItem::Building(Building::University));
+        let tech = knowing(&[
+            Tech::Pottery,
+            Tech::Writing,
+            Tech::Philosophy,
+            Tech::Alphabet,
+        ]);
+        let city = CityView {
+            trade: 12,
+            built: vec![Building::Granary, Building::Library],
+            ..city()
+        };
+        assert_eq!(
+            choose(
+                &city,
+                &civ(&tech),
+                &Supplies::default(),
+                &mut rand::thread_rng()
+            ),
+            ProductionItem::Building(Building::University)
+        );
+        let strained = CivView {
+            thrifty: true,
+            ..civ(&tech)
+        };
+        assert_ne!(
+            choose(
+                &city,
+                &strained,
+                &Supplies::default(),
+                &mut rand::thread_rng()
+            ),
+            ProductionItem::Building(Building::University)
+        );
     }
 
     #[test]
     fn caravans_go_to_help_a_wonder_elsewhere() {
         let tech = knowing(&[Tech::Pottery, Tech::Writing]);
-        let view = CityView { population: 5, ..city() };
-        let helping = CivView { caravans: 0, wonder_elsewhere: true, ..civ(&tech) };
-        assert_eq!(choose(&view, &helping, &Supplies::default(), &mut rand::thread_rng()), ProductionItem::Unit(UnitType::Caravan));
+        let view = CityView {
+            population: 5,
+            ..city()
+        };
+        let helping = CivView {
+            caravans: 0,
+            wonder_elsewhere: true,
+            ..civ(&tech)
+        };
+        assert_eq!(
+            choose(
+                &view,
+                &helping,
+                &Supplies::default(),
+                &mut rand::thread_rng()
+            ),
+            ProductionItem::Unit(UnitType::Caravan)
+        );
         // A small city does not spare one.
-        let small = CityView { population: 2, ..city() };
-        assert_ne!(choose(&small, &helping, &Supplies::default(), &mut rand::thread_rng()), ProductionItem::Unit(UnitType::Caravan));
+        let small = CityView {
+            population: 2,
+            ..city()
+        };
+        assert_ne!(
+            choose(
+                &small,
+                &helping,
+                &Supplies::default(),
+                &mut rand::thread_rng()
+            ),
+            ProductionItem::Unit(UnitType::Caravan)
+        );
     }
 
     #[test]
     fn war_calls_for_a_bigger_army() {
         let tech = knowing(&[Tech::Pottery]);
         let view = city();
-        let at_war = CivView { at_war: true, ..civ(&tech) };
-        assert!(matches!(choose(&view, &at_war, &Supplies::default(), &mut rand::thread_rng()), ProductionItem::Unit(u) if u.is_military()));
+        let at_war = CivView {
+            at_war: true,
+            ..civ(&tech)
+        };
+        assert!(
+            matches!(choose(&view, &at_war, &Supplies::default(), &mut rand::thread_rng()), ProductionItem::Unit(u) if u.is_military())
+        );
     }
 
     #[test]
     fn a_coastal_city_builds_a_ferry_for_troops_waiting_in_port() {
         let tech = knowing(&[Tech::Pottery, Tech::Seafaring]);
-        let at_war = |coastal: bool| (CityView { coastal, ..city() }, CivView { at_war: true, military: 6, ferry_wanted: 3, ..civ(&tech) });
+        let at_war = |coastal: bool| {
+            (
+                CityView { coastal, ..city() },
+                CivView {
+                    at_war: true,
+                    military: 6,
+                    ferry_wanted: 3,
+                    ..civ(&tech)
+                },
+            )
+        };
         let (port, state) = at_war(true);
-        assert_eq!(choose(&port, &state, &Supplies::default(), &mut rand::thread_rng()), ProductionItem::Unit(UnitType::Galley));
+        assert_eq!(
+            choose(&port, &state, &Supplies::default(), &mut rand::thread_rng()),
+            ProductionItem::Unit(UnitType::Galley)
+        );
         // A Galley is a ferry, not a warship: none is built while nobody waits for one.
-        let idle = CivView { ferry_wanted: 0, ..civ(&tech) };
-        let idle = CivView { at_war: true, military: 6, ..idle };
-        assert!(!matches!(choose(&port, &idle, &Supplies::default(), &mut rand::thread_rng()), ProductionItem::Unit(UnitType::Galley)));
+        let idle = CivView {
+            ferry_wanted: 0,
+            ..civ(&tech)
+        };
+        let idle = CivView {
+            at_war: true,
+            military: 6,
+            ..idle
+        };
+        assert!(!matches!(
+            choose(&port, &idle, &Supplies::default(), &mut rand::thread_rng()),
+            ProductionItem::Unit(UnitType::Galley)
+        ));
         let (inland, state) = at_war(false);
-        assert!(!matches!(choose(&inland, &state, &Supplies::default(), &mut rand::thread_rng()), ProductionItem::Unit(u) if u.domain() == Domain::Sea));
+        assert!(
+            !matches!(choose(&inland, &state, &Supplies::default(), &mut rand::thread_rng()), ProductionItem::Unit(u) if u.domain() == Domain::Sea)
+        );
     }
 
     #[test]
     fn a_city_with_nothing_to_build_does_not_pile_up_workers() {
         let tech = knowing(&[Tech::Pottery]);
-        let done = CivView { military: army_cap(2), workers: 4, room_to_expand: false, ..civ(&tech) };
-        let pick = choose(&CityView { built: Building::ALL.to_vec(), ..city() }, &done, &Supplies::default(), &mut rand::thread_rng());
-        assert!(matches!(pick, ProductionItem::Unit(u) if u.is_army()), "{pick:?}");
+        let done = CivView {
+            military: army_cap(2),
+            workers: 4,
+            room_to_expand: false,
+            ..civ(&tech)
+        };
+        let pick = choose(
+            &CityView {
+                built: Building::ALL.to_vec(),
+                ..city()
+            },
+            &done,
+            &Supplies::default(),
+            &mut rand::thread_rng(),
+        );
+        assert!(
+            matches!(pick, ProductionItem::Unit(u) if u.is_army()),
+            "{pick:?}"
+        );
     }
 
     #[test]
@@ -459,7 +892,13 @@ mod tests {
     fn workers_come_before_buildings_when_roads_are_needed() {
         let tech = knowing(&[Tech::Pottery]);
         let view = city();
-        let short = CivView { workers: 0, ..civ(&tech) };
-        assert_eq!(choose(&view, &short, &Supplies::default(), &mut rand::thread_rng()), ProductionItem::Unit(UnitType::Worker));
+        let short = CivView {
+            workers: 0,
+            ..civ(&tech)
+        };
+        assert_eq!(
+            choose(&view, &short, &Supplies::default(), &mut rand::thread_rng()),
+            ProductionItem::Unit(UnitType::Worker)
+        );
     }
 }

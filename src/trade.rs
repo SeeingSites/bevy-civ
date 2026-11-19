@@ -38,7 +38,12 @@ impl TradeRoute {
 }
 
 /// What a route pays its owner each turn: (gold, science).
-pub fn route_yield(distance: i32, population_from: u32, population_to: u32, foreign: bool) -> (u32, u32) {
+pub fn route_yield(
+    distance: i32,
+    population_from: u32,
+    population_to: u32,
+    foreign: bool,
+) -> (u32, u32) {
     let base = 1 + distance.max(0) as u32 / 4 + (population_from + population_to) / 6;
     let gold = if foreign { base * 3 / 2 } else { base };
     (gold.max(1), (gold / 2).max(1))
@@ -47,34 +52,63 @@ pub fn route_yield(distance: i32, population_from: u32, population_to: u32, fore
 impl TradeRoutes {
     /// Routes touching a city.
     pub fn at(&self, city: Hex) -> usize {
-        self.routes.iter().filter(|r| r.from == city || r.to == city).count()
+        self.routes
+            .iter()
+            .filter(|r| r.from == city || r.to == city)
+            .count()
     }
 
     /// Why a route from `from` (owned by `owner`) to `to` (owned by `partner`) cannot be opened, if it cannot.
     pub fn refusal(&self, from: Hex, to: Hex, owner: u32, partner: u32) -> Option<&'static str> {
         if from == to {
-            return Some("A caravan must reach a different city from its home to open a trade route.");
+            return Some(
+                "A caravan must reach a different city from its home to open a trade route.",
+            );
         }
         if owner == partner && from.distance_to(to) < MIN_DOMESTIC_DISTANCE {
-            return Some("Your own cities must be at least 6 tiles apart to trade with each other.");
+            return Some(
+                "Your own cities must be at least 6 tiles apart to trade with each other.",
+            );
         }
-        if self.routes.iter().any(|r| (r.from == from && r.to == to) || (r.from == to && r.to == from)) {
+        if self
+            .routes
+            .iter()
+            .any(|r| (r.from == from && r.to == to) || (r.from == to && r.to == from))
+        {
             return Some("These two cities already trade with each other.");
         }
         if self.at(from) >= MAX_ROUTES_PER_CITY || self.at(to) >= MAX_ROUTES_PER_CITY {
-            return Some("One of these cities already has as many trade routes as it can handle (3).");
+            return Some(
+                "One of these cities already has as many trade routes as it can handle (3).",
+            );
         }
         None
     }
 
     /// Opens a route. Returns it, or why it cannot be opened.
-    pub fn establish(&mut self, from: (Hex, u32, u32), to: (Hex, u32, u32)) -> Result<TradeRoute, &'static str> {
+    pub fn establish(
+        &mut self,
+        from: (Hex, u32, u32),
+        to: (Hex, u32, u32),
+    ) -> Result<TradeRoute, &'static str> {
         let ((from_hex, owner, from_pop), (to_hex, partner, to_pop)) = (from, to);
         if let Some(reason) = self.refusal(from_hex, to_hex, owner, partner) {
             return Err(reason);
         }
-        let (gold, science) = route_yield(from_hex.distance_to(to_hex), from_pop, to_pop, owner != partner);
-        let route = TradeRoute { from: from_hex, to: to_hex, owner, partner, gold_per_turn: gold, science_per_turn: science };
+        let (gold, science) = route_yield(
+            from_hex.distance_to(to_hex),
+            from_pop,
+            to_pop,
+            owner != partner,
+        );
+        let route = TradeRoute {
+            from: from_hex,
+            to: to_hex,
+            owner,
+            partner,
+            gold_per_turn: gold,
+            science_per_turn: science,
+        };
         self.routes.push(route.clone());
         Ok(route)
     }
@@ -103,10 +137,17 @@ impl TradeRoutes {
     }
 
     /// Closes routes whose cities changed hands or whose two owners went to war. Returns them.
-    pub fn prune(&mut self, owner_of: impl Fn(Hex) -> Option<u32>, at_war: impl Fn(u32, u32) -> bool) -> Vec<TradeRoute> {
-        let (keep, closed): (Vec<_>, Vec<_>) = std::mem::take(&mut self.routes)
-            .into_iter()
-            .partition(|r| owner_of(r.from) == Some(r.owner) && owner_of(r.to) == Some(r.partner) && !(r.is_foreign() && at_war(r.owner, r.partner)));
+    pub fn prune(
+        &mut self,
+        owner_of: impl Fn(Hex) -> Option<u32>,
+        at_war: impl Fn(u32, u32) -> bool,
+    ) -> Vec<TradeRoute> {
+        let (keep, closed): (Vec<_>, Vec<_>) =
+            std::mem::take(&mut self.routes).into_iter().partition(|r| {
+                owner_of(r.from) == Some(r.owner)
+                    && owner_of(r.to) == Some(r.partner)
+                    && !(r.is_foreign() && at_war(r.owner, r.partner))
+            });
         self.routes = keep;
         closed
     }
@@ -129,19 +170,48 @@ mod tests {
     fn routes_need_distance_and_room_and_are_not_repeated() {
         let mut trade = TradeRoutes::default();
         let home = Hex::ZERO;
-        assert!(trade.establish((home, 0, 3), (Hex::new(3, 0), 0, 3)).is_err(), "own cities too close");
-        assert!(trade.establish((home, 0, 3), (Hex::new(3, 0), 1, 3)).is_ok(), "foreign cities may be close");
-        assert!(trade.establish((Hex::new(3, 0), 0, 3), (home, 1, 3)).is_err(), "same pair again");
-        assert!(trade.establish((home, 0, 3), (Hex::new(8, 0), 0, 3)).is_ok());
-        assert!(trade.establish((home, 0, 3), (Hex::new(0, 8), 0, 3)).is_ok());
-        assert!(trade.establish((home, 0, 3), (Hex::new(-8, 0), 0, 3)).is_err(), "home already has three");
+        assert!(
+            trade
+                .establish((home, 0, 3), (Hex::new(3, 0), 0, 3))
+                .is_err(),
+            "own cities too close"
+        );
+        assert!(
+            trade
+                .establish((home, 0, 3), (Hex::new(3, 0), 1, 3))
+                .is_ok(),
+            "foreign cities may be close"
+        );
+        assert!(
+            trade
+                .establish((Hex::new(3, 0), 0, 3), (home, 1, 3))
+                .is_err(),
+            "same pair again"
+        );
+        assert!(trade
+            .establish((home, 0, 3), (Hex::new(8, 0), 0, 3))
+            .is_ok());
+        assert!(trade
+            .establish((home, 0, 3), (Hex::new(0, 8), 0, 3))
+            .is_ok());
+        assert!(
+            trade
+                .establish((home, 0, 3), (Hex::new(-8, 0), 0, 3))
+                .is_err(),
+            "home already has three"
+        );
     }
 
     #[test]
     fn partners_share_the_gold_and_war_closes_foreign_routes() {
         let mut trade = TradeRoutes::default();
-        let route = trade.establish((Hex::ZERO, 0, 6), (Hex::new(9, 0), 1, 6)).unwrap();
-        assert_eq!(trade.income(0), (route.gold_per_turn, route.science_per_turn));
+        let route = trade
+            .establish((Hex::ZERO, 0, 6), (Hex::new(9, 0), 1, 6))
+            .unwrap();
+        assert_eq!(
+            trade.income(0),
+            (route.gold_per_turn, route.science_per_turn)
+        );
         assert_eq!(trade.income(1), (route.gold_per_turn / 2, 0));
         let owners = |h: Hex| Some(if h == Hex::ZERO { 0 } else { 1 });
         assert!(trade.prune(owners, |_, _| false).is_empty());

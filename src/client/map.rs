@@ -63,28 +63,66 @@ fn terrain_row(terrain: Terrain) -> usize {
 
 pub fn setup_map_view(mut commands: Commands, art: Res<Art>) {
     commands.spawn(Camera2d);
-    commands.insert_resource(WaterClock(Timer::from_seconds(0.16, TimerMode::Repeating), 0));
+    commands.insert_resource(WaterClock(
+        Timer::from_seconds(0.16, TimerMode::Repeating),
+        0,
+    ));
     let overlay_sprite = |index: usize| Sprite {
         image: art.overlays.clone(),
         texture_atlas: Some(art.atlas(&art.overlays_layout, index)),
         custom_size: Some(HEX_SPRITE),
         ..default()
     };
-    commands.spawn((HoverMarker, overlay_sprite(overlay::HOVER), Transform::from_xyz(0.0, 0.0, 4.0), Visibility::Hidden));
-    commands.spawn((SelectMarker, overlay_sprite(overlay::SELECT), Transform::from_xyz(0.0, 0.0, 5.5), Visibility::Hidden));
-    let arrow = |color: Color| (Text2d::new("▼"), TextFont { font: art.font_bold.clone(), font_size: 80.0, ..default() }, TextColor(color));
+    commands.spawn((
+        HoverMarker,
+        overlay_sprite(overlay::HOVER),
+        Transform::from_xyz(0.0, 0.0, 4.0),
+        Visibility::Hidden,
+    ));
+    commands.spawn((
+        SelectMarker,
+        overlay_sprite(overlay::SELECT),
+        Transform::from_xyz(0.0, 0.0, 5.5),
+        Visibility::Hidden,
+    ));
+    let arrow = |color: Color| {
+        (
+            Text2d::new("▼"),
+            TextFont {
+                font: art.font_bold.clone(),
+                font_size: 80.0,
+                ..default()
+            },
+            TextColor(color),
+        )
+    };
     commands
-        .spawn((SelectArrow, arrow(Color::srgb(1.0, 0.86, 0.3)), Transform::from_xyz(0.0, 0.0, 9.5), Visibility::Hidden))
+        .spawn((
+            SelectArrow,
+            arrow(Color::srgb(1.0, 0.86, 0.3)),
+            Transform::from_xyz(0.0, 0.0, 9.5),
+            Visibility::Hidden,
+        ))
         .with_children(|parent| {
             // A dark copy just behind it keeps the arrow readable on any terrain.
-            parent.spawn((arrow(Color::srgba(0.1, 0.06, 0.02, 0.85)), Transform::from_xyz(2.0, -3.0, -0.05).with_scale(Vec3::splat(1.15))));
+            parent.spawn((
+                arrow(Color::srgba(0.1, 0.06, 0.02, 0.85)),
+                Transform::from_xyz(2.0, -3.0, -0.05).with_scale(Vec3::splat(1.15)),
+            ));
         });
 }
 
-pub fn attach_tile_views(mut commands: Commands, map: Res<MapData>, tiles: Query<(Entity, &HexTile), Added<HexTile>>) {
+pub fn attach_tile_views(
+    mut commands: Commands,
+    map: Res<MapData>,
+    tiles: Query<(Entity, &HexTile), Added<HexTile>>,
+) {
     for (entity, tile) in &tiles {
         let pos = map.layout.hex_to_world_pos(tile.coord);
-        commands.entity(entity).insert((Sprite::default(), Transform::from_xyz(pos.x, pos.y, tile_z(pos.y))));
+        commands.entity(entity).insert((
+            Sprite::default(),
+            Transform::from_xyz(pos.x, pos.y, tile_z(pos.y)),
+        ));
     }
 }
 
@@ -110,8 +148,15 @@ pub fn refresh_map(
         commands.entity(entity).despawn();
     }
 
-    let info: HashMap<Hex, (Terrain, bool)> = tiles.iter().map(|(t, _)| (t.coord, (t.terrain, t.has_road()))).collect();
-    let rails: HashSet<Hex> = tiles.iter().filter(|(t, _)| t.has_railroad()).map(|(t, _)| t.coord).collect();
+    let info: HashMap<Hex, (Terrain, bool)> = tiles
+        .iter()
+        .map(|(t, _)| (t.coord, (t.terrain, t.has_road())))
+        .collect();
+    let rails: HashSet<Hex> = tiles
+        .iter()
+        .filter(|(t, _)| t.has_railroad())
+        .map(|(t, _)| t.coord)
+        .collect();
     let city_at: HashMap<Hex, u32> = cities.iter().map(|c| (c.position, c.owner)).collect();
     // Borders as the supply network worked them out (each city's reach grows with its culture).
     let territory: HashMap<Hex, (u32, Hex)> = supplies.territory.clone();
@@ -128,11 +173,21 @@ pub fn refresh_map(
             };
             continue;
         }
-        let tint = if fog.visible.contains(&hex) { Color::WHITE } else { DIM };
-        let column = if tile.terrain == Terrain::Water { (clock.1 + variant(hex)) % 8 } else { variant(hex) % 4 };
+        let tint = if fog.visible.contains(&hex) {
+            Color::WHITE
+        } else {
+            DIM
+        };
+        let column = if tile.terrain == Terrain::Water {
+            (clock.1 + variant(hex)) % 8
+        } else {
+            variant(hex) % 4
+        };
         *sprite = Sprite {
             image: art.terrain.clone(),
-            texture_atlas: Some(art.atlas(&art.terrain_layout, terrain_row(tile.terrain) * 8 + column)),
+            texture_atlas: Some(
+                art.atlas(&art.terrain_layout, terrain_row(tile.terrain) * 8 + column),
+            ),
             custom_size: Some(TILE_SPRITE),
             anchor: TILE_ANCHOR,
             color: tint,
@@ -177,22 +232,45 @@ pub fn refresh_map(
             for n in neighbors {
                 if info.get(&n).is_some_and(|(_, road)| *road) || city_at.contains_key(&n) {
                     let linked = rail && (rails.contains(&n) || city_at.contains_key(&n));
-                    overlay_at(overlay::ROAD, Some(n), if linked { iron } else { tint }, 0.008);
+                    overlay_at(
+                        overlay::ROAD,
+                        Some(n),
+                        if linked { iron } else { tint },
+                        0.008,
+                    );
                 }
             }
-            overlay_at(overlay::ROAD_HUB, None, if rail { iron } else { tint }, 0.009);
+            overlay_at(
+                overlay::ROAD_HUB,
+                None,
+                if rail { iron } else { tint },
+                0.009,
+            );
         }
         // Rivers: a blue channel towards the next and previous tiles of each river.
         if rivers.tiles.contains(&hex) {
             for path in rivers.paths.iter().filter(|p| p.contains(&hex)) {
                 let i = path.iter().position(|h| *h == hex).unwrap_or(0);
-                for n in [i.checked_sub(1).and_then(|j| path.get(j)), path.get(i + 1)].into_iter().flatten() {
-                    overlay_at(overlay::ROAD, Some(*n), Color::srgb(0.32, 0.6, 0.95).mix(&tint, 0.15), 0.007);
+                for n in [i.checked_sub(1).and_then(|j| path.get(j)), path.get(i + 1)]
+                    .into_iter()
+                    .flatten()
+                {
+                    overlay_at(
+                        overlay::ROAD,
+                        Some(*n),
+                        Color::srgb(0.32, 0.6, 0.95).mix(&tint, 0.15),
+                        0.007,
+                    );
                 }
             }
         }
         if tile.is_polluted() {
-            overlay_at(overlay::BASE, None, Color::srgba(0.25, 0.2, 0.12, 0.7), 0.012);
+            overlay_at(
+                overlay::BASE,
+                None,
+                Color::srgba(0.25, 0.2, 0.12, 0.7),
+                0.012,
+            );
         }
         if tile.improvements.contains(&Improvement::Mine) {
             overlay_at(overlay::MINE, None, tint, 0.01);
@@ -203,15 +281,26 @@ pub fn refresh_map(
         if let Some((owner, _)) = territory.get(&hex) {
             for n in neighbors {
                 if territory.get(&n).map(|(o, _)| o) != Some(owner) {
-                    overlay_at(overlay::BORDER, Some(n), owner_color(*owner).with_alpha(0.9), 0.012);
+                    overlay_at(
+                        overlay::BORDER,
+                        Some(n),
+                        owner_color(*owner).with_alpha(0.9),
+                        0.012,
+                    );
                 }
             }
         }
         // Strategic resources stay hidden until the technology to use them is known.
-        let revealed = tile.resource.filter(|r| r.reveal_tech().is_none_or(|t| tech.researched.contains(&t)));
+        let revealed = tile
+            .resource
+            .filter(|r| r.reveal_tech().is_none_or(|t| tech.researched.contains(&t)));
         if let Some(resource) = revealed {
             // A source inside our borders that no road reaches yet is shown washed out.
-            let tint = if supplies.unconnected.get(&hex) == Some(&PLAYER) { tint.with_alpha(0.55) } else { tint };
+            let tint = if supplies.unconnected.get(&hex) == Some(&PLAYER) {
+                tint.with_alpha(0.55)
+            } else {
+                tint
+            };
             commands.spawn((
                 Decor,
                 Sprite {
@@ -257,7 +346,11 @@ pub struct AreaMark;
 #[allow(clippy::too_many_arguments)]
 pub fn show_city_area(
     selection: Res<Selection>,
-    cities: Query<(&City, &bevy_civ::building::CityBuildings, Option<&bevy_civ::diplomacy::Happiness>)>,
+    cities: Query<(
+        &City,
+        &bevy_civ::building::CityBuildings,
+        Option<&bevy_civ::diplomacy::Happiness>,
+    )>,
     changed: Query<(), Changed<City>>,
     supplies: Res<crate::supply::Supplies>,
     tiles: Query<&HexTile>,
@@ -275,13 +368,33 @@ pub fn show_city_area(
     for entity in &marks {
         commands.entity(entity).despawn_recursive();
     }
-    let Some((city, buildings, happiness)) = selection.city.and_then(|e| cities.get(e).ok()).filter(|(c, _, _)| c.owner == PLAYER) else { return };
-    let festive = happiness.is_some_and(|h| bevy_civ::economy::celebrating(city.population, h.happy, h.unhappy));
+    let Some((city, buildings, happiness)) = selection
+        .city
+        .and_then(|e| cities.get(e).ok())
+        .filter(|(c, _, _)| c.owner == PLAYER)
+    else {
+        return;
+    };
+    let festive = happiness
+        .is_some_and(|h| bevy_civ::economy::celebrating(city.population, h.happy, h.unhappy));
     let harbor = buildings.has(bevy_civ::building::Building::Harbor);
-    for (hex, _) in supplies.territory.iter().filter(|(_, (o, home))| *o == PLAYER && *home == city.position) {
-        let Some(tile) = tiles.iter().find(|t| t.coord == *hex) else { continue };
-        let resource = tile.resource.filter(|r| r.reveal_tech().is_none_or(|t| tech.researched.contains(&t)));
-        let mut y = bevy_civ::tiles::tile_yield(tile.terrain, &tile.improvements, resource, rivers.tiles.contains(hex));
+    for (hex, _) in supplies
+        .territory
+        .iter()
+        .filter(|(_, (o, home))| *o == PLAYER && *home == city.position)
+    {
+        let Some(tile) = tiles.iter().find(|t| t.coord == *hex) else {
+            continue;
+        };
+        let resource = tile
+            .resource
+            .filter(|r| r.reveal_tech().is_none_or(|t| tech.researched.contains(&t)));
+        let mut y = bevy_civ::tiles::tile_yield(
+            tile.terrain,
+            &tile.improvements,
+            resource,
+            rivers.tiles.contains(hex),
+        );
         if harbor && tile.terrain == Terrain::Water {
             y.0 += 1;
         }
@@ -290,7 +403,12 @@ pub fn show_city_area(
             y = bevy_civ::tiles::centre_yield(y);
         }
         // What the government (and a golden age) makes of it.
-        y = bevy_civ::economy::tile_rule(y, state.government, golden.active(crate::PLAYER), festive);
+        y = bevy_civ::economy::tile_rule(
+            y,
+            state.government,
+            golden.active(crate::PLAYER),
+            festive,
+        );
         let worked = centre || city.worked.contains(hex);
         let pos = map.layout.hex_to_world_pos(*hex);
         let z = 6.5;
@@ -301,7 +419,11 @@ pub fn show_city_area(
                 image: art.overlays.clone(),
                 texture_atlas: Some(art.atlas(&art.overlays_layout, overlay::SELECT)),
                 custom_size: Some(HEX_SPRITE),
-                color: if worked { Color::srgba(0.55, 1.0, 0.5, 0.95) } else { Color::srgba(1.0, 1.0, 1.0, 0.25) },
+                color: if worked {
+                    Color::srgba(0.55, 1.0, 0.5, 0.95)
+                } else {
+                    Color::srgba(1.0, 1.0, 1.0, 0.25)
+                },
                 ..default()
             },
             Transform::from_xyz(pos.x, pos.y, z),
@@ -316,7 +438,11 @@ pub fn show_city_area(
         if !icons.is_empty() {
             commands.spawn((
                 AreaMark,
-                Sprite { color: Color::srgba(0.08, 0.06, 0.04, if worked { 0.75 } else { 0.5 }), custom_size: Some(Vec2::new(width + 6.0, size + 4.0)), ..default() },
+                Sprite {
+                    color: Color::srgba(0.08, 0.06, 0.04, if worked { 0.75 } else { 0.5 }),
+                    custom_size: Some(Vec2::new(width + 6.0, size + 4.0)),
+                    ..default()
+                },
                 Transform::from_xyz(pos.x, pos.y - 22.0, z + 0.05),
             ));
         }
@@ -327,10 +453,18 @@ pub fn show_city_area(
                     image: art.icons.clone(),
                     texture_atlas: Some(art.atlas(&art.icons_layout, *icon)),
                     custom_size: Some(Vec2::splat(size)),
-                    color: if worked { Color::WHITE } else { Color::srgba(1.0, 1.0, 1.0, 0.6) },
+                    color: if worked {
+                        Color::WHITE
+                    } else {
+                        Color::srgba(1.0, 1.0, 1.0, 0.6)
+                    },
                     ..default()
                 },
-                Transform::from_xyz(pos.x - width / 2.0 + size * (i as f32 + 0.5), pos.y - 22.0, z + 0.1),
+                Transform::from_xyz(
+                    pos.x - width / 2.0 + size * (i as f32 + 0.5),
+                    pos.y - 22.0,
+                    z + 0.1,
+                ),
             ));
         }
     }
@@ -357,12 +491,20 @@ pub fn update_villages(
             commands.entity(entity).despawn_recursive();
         }
     }
-    for at in villages.sites.iter().filter(|h| fog.explored.contains(*h) && !shown.contains(*h)) {
+    for at in villages
+        .sites
+        .iter()
+        .filter(|h| fog.explored.contains(*h) && !shown.contains(*h))
+    {
         let pos = map.layout.hex_to_world_pos(*at);
         commands.spawn((
             VillageMark(*at),
             Decor,
-            Sprite { image: art.village.clone(), custom_size: Some(Vec2::splat(84.0)), ..default() },
+            Sprite {
+                image: art.village.clone(),
+                custom_size: Some(Vec2::splat(84.0)),
+                ..default()
+            },
             Transform::from_xyz(pos.x, pos.y + 6.0, 4.0),
         ));
     }
@@ -376,19 +518,38 @@ pub fn update_markers(
     units: Query<(&Unit, &Transform), (Without<HoverMarker>, Without<SelectMarker>)>,
     cities: Query<&City>,
     mut hover: Query<(&mut Transform, &mut Visibility), (With<HoverMarker>, Without<SelectMarker>)>,
-    mut select: Query<(&mut Transform, &mut Visibility, &mut Sprite), (With<SelectMarker>, Without<HoverMarker>)>,
-    mut arrow: Query<(&mut Transform, &mut Visibility, &mut TextColor), (With<SelectArrow>, Without<SelectMarker>, Without<HoverMarker>, Without<Unit>)>,
+    mut select: Query<
+        (&mut Transform, &mut Visibility, &mut Sprite),
+        (With<SelectMarker>, Without<HoverMarker>),
+    >,
+    mut arrow: Query<
+        (&mut Transform, &mut Visibility, &mut TextColor),
+        (
+            With<SelectArrow>,
+            Without<SelectMarker>,
+            Without<HoverMarker>,
+            Without<Unit>,
+        ),
+    >,
 ) {
     // A bouncing arrow over the selected unit (or city), on top of everything, so it is always found.
     if let Ok((mut transform, mut visibility, mut color)) = arrow.get_single_mut() {
         let bounce = 7.0 * (time.elapsed_secs() * 4.5).sin().abs();
-        let over = if let Some((unit, unit_transform)) = selection.unit.and_then(|e| units.get(e).ok()) {
-            color.0 = if unit.owner == PLAYER { Color::srgb(1.0, 0.86, 0.3) } else { Color::srgb(1.0, 0.45, 0.35) };
-            Some(unit_transform.translation.truncate() + Vec2::new(0.0, 74.0))
-        } else {
-            color.0 = Color::srgb(1.0, 0.86, 0.3);
-            selection.city.and_then(|e| cities.get(e).ok()).map(|c| map.layout.hex_to_world_pos(c.position) + Vec2::new(0.0, 88.0))
-        };
+        let over =
+            if let Some((unit, unit_transform)) = selection.unit.and_then(|e| units.get(e).ok()) {
+                color.0 = if unit.owner == PLAYER {
+                    Color::srgb(1.0, 0.86, 0.3)
+                } else {
+                    Color::srgb(1.0, 0.45, 0.35)
+                };
+                Some(unit_transform.translation.truncate() + Vec2::new(0.0, 74.0))
+            } else {
+                color.0 = Color::srgb(1.0, 0.86, 0.3);
+                selection
+                    .city
+                    .and_then(|e| cities.get(e).ok())
+                    .map(|c| map.layout.hex_to_world_pos(c.position) + Vec2::new(0.0, 88.0))
+            };
         match over {
             Some(pos) => {
                 transform.translation = (pos + Vec2::new(0.0, bounce)).extend(9.5);
@@ -409,14 +570,27 @@ pub fn update_markers(
     }
     if let Ok((mut transform, mut visibility, mut sprite)) = select.get_single_mut() {
         let pulse = 0.5 + 0.5 * (time.elapsed_secs() * 5.0).sin();
-        let target = if let Some((unit, unit_transform)) = selection.unit.and_then(|e| units.get(e).ok()) {
-            let color = if unit.owner == PLAYER { Color::srgb(1.0, 0.9, 0.35) } else { Color::srgb(1.0, 0.4, 0.3) };
-            Some((unit_transform.translation.truncate() + Vec2::new(0.0, -2.0), 0.8, color))
-        } else if let Some(city) = selection.city.and_then(|e| cities.get(e).ok()) {
-            Some((map.layout.hex_to_world_pos(city.position) + Vec2::new(0.0, -6.0), 1.25, Color::srgb(1.0, 0.9, 0.35)))
-        } else {
-            None
-        };
+        let target =
+            if let Some((unit, unit_transform)) = selection.unit.and_then(|e| units.get(e).ok()) {
+                let color = if unit.owner == PLAYER {
+                    Color::srgb(1.0, 0.9, 0.35)
+                } else {
+                    Color::srgb(1.0, 0.4, 0.3)
+                };
+                Some((
+                    unit_transform.translation.truncate() + Vec2::new(0.0, -2.0),
+                    0.8,
+                    color,
+                ))
+            } else if let Some(city) = selection.city.and_then(|e| cities.get(e).ok()) {
+                Some((
+                    map.layout.hex_to_world_pos(city.position) + Vec2::new(0.0, -6.0),
+                    1.25,
+                    Color::srgb(1.0, 0.9, 0.35),
+                ))
+            } else {
+                None
+            };
         match target {
             Some((pos, scale, color)) => {
                 transform.translation = pos.extend(5.5);
@@ -466,21 +640,37 @@ pub fn update_path_dots(
         // Small dots in between tiles trace the road itself.
         for t in [0.33, 0.66] {
             let between = from.lerp(pos, t);
-            commands.spawn((PathDot, dot(color.with_alpha(color.alpha() * 0.7), 0.45), Transform::from_xyz(between.x, between.y, 4.5)));
+            commands.spawn((
+                PathDot,
+                dot(color.with_alpha(color.alpha() * 0.7), 0.45),
+                Transform::from_xyz(between.x, between.y, 4.5),
+            ));
         }
         from = pos;
         let turn_ends = path.steps.get(i + 1).is_none_or(|(_, next)| next != turn);
         let marker = multi_turn && turn_ends;
-        commands.spawn((PathDot, dot(color, if last { 1.3 } else { 0.9 }), Transform::from_xyz(pos.x, pos.y, 4.5)));
+        commands.spawn((
+            PathDot,
+            dot(color, if last { 1.3 } else { 0.9 }),
+            Transform::from_xyz(pos.x, pos.y, 4.5),
+        ));
         // Where each turn's march ends, a badge with the number of turns it takes to get there, drawn
         // above units and cities (and beside them) so it is never hidden.
         if marker {
             commands
-                .spawn((PathDot, dot(color.with_alpha(1.0), 1.7), Transform::from_xyz(pos.x + 24.0, pos.y - 20.0, 8.6)))
+                .spawn((
+                    PathDot,
+                    dot(color.with_alpha(1.0), 1.7),
+                    Transform::from_xyz(pos.x + 24.0, pos.y - 20.0, 8.6),
+                ))
                 .with_children(|parent| {
                     parent.spawn((
                         Text2d::new((turn + 1).to_string()),
-                        TextFont { font: art.font_bold.clone(), font_size: 19.0, ..default() },
+                        TextFont {
+                            font: art.font_bold.clone(),
+                            font_size: 19.0,
+                            ..default()
+                        },
                         TextColor(Color::srgb(0.12, 0.08, 0.05)),
                         Transform::from_xyz(0.0, 1.0, 0.1),
                     ));

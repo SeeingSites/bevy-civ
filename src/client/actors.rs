@@ -60,10 +60,16 @@ const HEALTH_Y: f32 = 6.0;
 pub struct StackBadge;
 
 /// Units sharing a tile, front first: the selected unit, then the player's, then the rest.
-fn stacks<'a>(units: impl Iterator<Item = (Entity, &'a Unit)>, selected: Option<Entity>) -> HashMap<Hex, Vec<Entity>> {
+fn stacks<'a>(
+    units: impl Iterator<Item = (Entity, &'a Unit)>,
+    selected: Option<Entity>,
+) -> HashMap<Hex, Vec<Entity>> {
     let mut by_tile: HashMap<Hex, Vec<(Entity, u32)>> = HashMap::new();
     for (entity, unit) in units {
-        by_tile.entry(unit.position).or_default().push((entity, unit.owner));
+        by_tile
+            .entry(unit.position)
+            .or_default()
+            .push((entity, unit.owner));
     }
     by_tile
         .into_iter()
@@ -87,15 +93,27 @@ fn stack_offset(slot: usize) -> Vec2 {
 /// Row of a unit type in the atlas (an unused boat row, from before ships carried troops, sits
 /// between the land units and the rest).
 pub fn unit_row(unit_type: UnitType) -> usize {
-    let index = UnitType::ALL.iter().position(|u| *u == unit_type).unwrap_or(0);
-    if index >= BOAT_ROW { index + 1 } else { index }
+    let index = UnitType::ALL
+        .iter()
+        .position(|u| *u == unit_type)
+        .unwrap_or(0);
+    if index >= BOAT_ROW {
+        index + 1
+    } else {
+        index
+    }
 }
 
 fn unit_z(y: f32) -> f32 {
     7.0 - y * 0.0005
 }
 
-pub fn attach_unit_views(mut commands: Commands, art: Res<Art>, map: Res<MapData>, units: Query<(Entity, &Unit), Added<Unit>>) {
+pub fn attach_unit_views(
+    mut commands: Commands,
+    art: Res<Art>,
+    map: Res<MapData>,
+    units: Query<(Entity, &Unit), Added<Unit>>,
+) {
     for (entity, unit) in &units {
         let pos = map.layout.hex_to_world_pos(unit.position) + UNIT_OFFSET;
         commands
@@ -109,7 +127,13 @@ pub fn attach_unit_views(mut commands: Commands, art: Res<Art>, map: Res<MapData
                     ..default()
                 },
                 Transform::from_xyz(pos.x, pos.y, unit_z(pos.y)),
-                UnitView { facing_left: unit.owner != PLAYER, phase: (entity.index() % 7) as f32 * 0.6, at: unit.position, shown: unit.position, waypoints: VecDeque::new() },
+                UnitView {
+                    facing_left: unit.owner != PLAYER,
+                    phase: (entity.index() % 7) as f32 * 0.6,
+                    at: unit.position,
+                    shown: unit.position,
+                    waypoints: VecDeque::new(),
+                },
             ))
             .with_children(|parent| {
                 // Team-coloured disc under the figure.
@@ -125,16 +149,30 @@ pub fn attach_unit_views(mut commands: Commands, art: Res<Art>, map: Res<MapData
                     Transform::from_xyz(0.0, 5.0, -0.02),
                 ));
                 // Health gauge beside the figure (military units only).
-                let shown = if unit.unit_type.is_military() { Visibility::Inherited } else { Visibility::Hidden };
+                let shown = if unit.unit_type.is_military() {
+                    Visibility::Inherited
+                } else {
+                    Visibility::Hidden
+                };
                 parent.spawn((
                     HealthFrame,
-                    Sprite { color: Color::srgb(0.1, 0.08, 0.06), custom_size: Some(Vec2::new(8.0, HEALTH_HEIGHT + 2.0)), anchor: Anchor::BottomCenter, ..default() },
+                    Sprite {
+                        color: Color::srgb(0.1, 0.08, 0.06),
+                        custom_size: Some(Vec2::new(8.0, HEALTH_HEIGHT + 2.0)),
+                        anchor: Anchor::BottomCenter,
+                        ..default()
+                    },
                     Transform::from_xyz(HEALTH_X, HEALTH_Y - 1.0, 0.03),
                     shown,
                 ));
                 parent.spawn((
                     HealthFill,
-                    Sprite { color: Color::srgb(0.3, 0.85, 0.3), custom_size: Some(Vec2::new(5.0, HEALTH_HEIGHT)), anchor: Anchor::BottomCenter, ..default() },
+                    Sprite {
+                        color: Color::srgb(0.3, 0.85, 0.3),
+                        custom_size: Some(Vec2::new(5.0, HEALTH_HEIGHT)),
+                        anchor: Anchor::BottomCenter,
+                        ..default()
+                    },
                     Transform::from_xyz(HEALTH_X, HEALTH_Y, 0.04),
                     shown,
                 ));
@@ -147,32 +185,71 @@ pub fn animate_units(
     map: Res<MapData>,
     fog: Res<FogOfWar>,
     selection: Res<Selection>,
-    mut units: Query<(Entity, &Unit, &mut Transform, &mut Sprite, &mut UnitView, &mut Visibility, &Children, Option<&mut Trail>, Option<&mut super::battles::Lunge>)>,
+    mut units: Query<(
+        Entity,
+        &Unit,
+        &mut Transform,
+        &mut Sprite,
+        &mut UnitView,
+        &mut Visibility,
+        &Children,
+        Option<&mut Trail>,
+        Option<&mut super::battles::Lunge>,
+    )>,
     mut bases: Query<&mut Sprite, (With<UnitBase>, Without<UnitView>)>,
     mut commands: Commands,
 ) {
     let place = |hex: Hex| map.layout.hex_to_world_pos(hex) + UNIT_OFFSET;
     // Units carried at sea are hidden inside their ship (unless selected).
-    let stowed = |entity: Entity, unit: &Unit| unit.carrier.is_some() && map.water.contains(&unit.position) && selection.unit != Some(entity);
-    let stacked = stacks(units.iter().map(|(e, u, ..)| (e, u)).filter(|(e, u)| !stowed(*e, u)), selection.unit);
-    for (entity, unit, mut transform, mut sprite, mut view, mut visibility, children, trail, mut lunge) in &mut units {
+    let stowed = |entity: Entity, unit: &Unit| {
+        unit.carrier.is_some()
+            && map.water.contains(&unit.position)
+            && selection.unit != Some(entity)
+    };
+    let stacked = stacks(
+        units
+            .iter()
+            .map(|(e, u, ..)| (e, u))
+            .filter(|(e, u)| !stowed(*e, u)),
+        selection.unit,
+    );
+    for (
+        entity,
+        unit,
+        mut transform,
+        mut sprite,
+        mut view,
+        mut visibility,
+        children,
+        trail,
+        mut lunge,
+    ) in &mut units
+    {
         // Take off last frame's lunge before the figure's own movement.
         if let Some(lunge) = lunge.as_mut() {
             transform.translation -= lunge.applied.extend(0.0);
             lunge.applied = Vec2::ZERO;
         }
-        let slot = stacked.get(&unit.position).and_then(|s| s.iter().position(|e| *e == entity)).unwrap_or(0);
+        let slot = stacked
+            .get(&unit.position)
+            .and_then(|s| s.iter().position(|e| *e == entity))
+            .unwrap_or(0);
         let target = place(unit.position) + stack_offset(slot);
         // The unit moved: walk the figure through every tile on the way, following the route it took
         // when that is known (the player's orders) and a straight line of tiles otherwise.
         if unit.position != view.at {
             let steps: Vec<Hex> = match trail {
-                Some(mut trail) if trail.0.last() == Some(&unit.position) => std::mem::take(&mut trail.0),
+                Some(mut trail) if trail.0.last() == Some(&unit.position) => {
+                    std::mem::take(&mut trail.0)
+                }
                 _ => view.at.line_to(unit.position).skip(1).collect(),
             };
-            let watched = unit.owner == PLAYER || fog.visible.contains(&unit.position) || fog.visible.contains(&view.at);
+            let watched = unit.owner == PLAYER
+                || fog.visible.contains(&unit.position)
+                || fog.visible.contains(&view.at);
             if watched && steps.len() <= 16 {
-                view.waypoints.extend(steps.into_iter().map(|hex| (hex, place(hex))));
+                view.waypoints
+                    .extend(steps.into_iter().map(|hex| (hex, place(hex))));
             } else {
                 view.waypoints.clear();
                 view.shown = unit.position;
@@ -180,7 +257,11 @@ pub fn animate_units(
             }
             view.at = unit.position;
         }
-        let (goal_hex, goal) = view.waypoints.front().copied().unwrap_or((unit.position, target));
+        let (goal_hex, goal) = view
+            .waypoints
+            .front()
+            .copied()
+            .unwrap_or((unit.position, target));
         let here = transform.translation.truncate();
         let delta = goal - here;
         let distance = delta.length();
@@ -215,13 +296,24 @@ pub fn animate_units(
             }
         }
         sprite.flip_x = view.facing_left;
-        let speed = if moving { 11.0 } else if unit.build_turns_left.is_some() { 7.0 } else { 3.5 };
+        let speed = if moving {
+            11.0
+        } else if unit.build_turns_left.is_some() {
+            7.0
+        } else {
+            3.5
+        };
         let frame = (time.elapsed_secs() * speed + view.phase) as usize % 4;
         if let Some(atlas) = sprite.texture_atlas.as_mut() {
             atlas.index = unit_row(unit.unit_type) * 4 + frame;
         }
-        let shown = (unit.owner == PLAYER || fog.visible.contains(&unit.position)) && !stowed(entity, unit);
-        *visibility = if shown { Visibility::Inherited } else { Visibility::Hidden };
+        let shown =
+            (unit.owner == PLAYER || fog.visible.contains(&unit.position)) && !stowed(entity, unit);
+        *visibility = if shown {
+            Visibility::Inherited
+        } else {
+            Visibility::Hidden
+        };
         // Units that have spent their moves get a faded disc.
         let spent = unit.owner == PLAYER && !unit.can_move();
         for child in children.iter() {
@@ -243,8 +335,15 @@ pub fn update_health_bars(
         let share = unit.hp.min(unit.max_hp()) as f32 / unit.max_hp().max(1) as f32;
         for child in children.iter() {
             if let Ok(mut frame) = frames.get_mut(*child) {
-                frame.color = if unit.is_army_group() { Color::srgb(0.95, 0.78, 0.3) } else { Color::srgb(0.1, 0.08, 0.06) };
-                frame.custom_size = Some(Vec2::new(if unit.is_army_group() { 10.0 } else { 8.0 }, HEALTH_HEIGHT + 2.0));
+                frame.color = if unit.is_army_group() {
+                    Color::srgb(0.95, 0.78, 0.3)
+                } else {
+                    Color::srgb(0.1, 0.08, 0.06)
+                };
+                frame.custom_size = Some(Vec2::new(
+                    if unit.is_army_group() { 10.0 } else { 8.0 },
+                    HEALTH_HEIGHT + 2.0,
+                ));
             }
             if let Ok(mut fill) = fills.get_mut(*child) {
                 fill.color = if share > 0.67 {
@@ -269,7 +368,12 @@ fn city_frame(population: u32) -> usize {
     }
 }
 
-pub fn attach_city_views(mut commands: Commands, art: Res<Art>, map: Res<MapData>, cities: Query<(Entity, &City), Added<City>>) {
+pub fn attach_city_views(
+    mut commands: Commands,
+    art: Res<Art>,
+    map: Res<MapData>,
+    cities: Query<(Entity, &City), Added<City>>,
+) {
     for (entity, city) in &cities {
         let pos = map.layout.hex_to_world_pos(city.position) + CITY_OFFSET;
         commands
@@ -297,13 +401,21 @@ pub fn attach_city_views(mut commands: Commands, art: Res<Art>, map: Res<MapData
                 ));
                 parent.spawn((
                     CityLabelBack,
-                    Sprite { color: Color::srgba(0.05, 0.06, 0.08, 0.82), custom_size: Some(Vec2::new(80.0, 19.0)), ..default() },
+                    Sprite {
+                        color: Color::srgba(0.05, 0.06, 0.08, 0.82),
+                        custom_size: Some(Vec2::new(80.0, 19.0)),
+                        ..default()
+                    },
                     Transform::from_xyz(0.0, -24.0, 3.0),
                 ));
                 parent.spawn((
                     CityLabel,
                     Text2d::new(""),
-                    TextFont { font: art.font_bold.clone(), font_size: 15.0, ..default() },
+                    TextFont {
+                        font: art.font_bold.clone(),
+                        font_size: 15.0,
+                        ..default()
+                    },
                     TextColor(Color::WHITE),
                     Transform::from_xyz(0.0, -24.0, 3.1),
                 ));
@@ -319,7 +431,11 @@ pub fn update_city_views(
     mut labels: Query<(&mut Text2d, &mut TextColor), With<CityLabel>>,
 ) {
     for (city, mut sprite, mut visibility, children) in &mut cities {
-        *visibility = if fog.explored.contains(&city.position) { Visibility::Inherited } else { Visibility::Hidden };
+        *visibility = if fog.explored.contains(&city.position) {
+            Visibility::Inherited
+        } else {
+            Visibility::Hidden
+        };
         if let Some(atlas) = sprite.texture_atlas.as_mut() {
             atlas.index = city_frame(city.population);
         }
@@ -370,7 +486,10 @@ pub fn update_stack_badges(
         commands.entity(badge).despawn_recursive();
     }
     let mut counts: HashMap<Hex, (usize, u32)> = HashMap::new();
-    for unit in units.iter().filter(|u| u.owner == PLAYER || fog.visible.contains(&u.position)) {
+    for unit in units
+        .iter()
+        .filter(|u| u.owner == PLAYER || fog.visible.contains(&u.position))
+    {
         let entry = counts.entry(unit.position).or_insert((0, unit.owner));
         entry.0 += 1;
     }
@@ -391,7 +510,11 @@ pub fn update_stack_badges(
             .with_children(|parent| {
                 parent.spawn((
                     Text2d::new(format!("×{count}")),
-                    TextFont { font: art.font_bold.clone(), font_size: 16.0, ..default() },
+                    TextFont {
+                        font: art.font_bold.clone(),
+                        font_size: 16.0,
+                        ..default()
+                    },
                     TextColor(Color::srgb(1.0, 0.95, 0.8)),
                     Transform::from_xyz(0.0, 1.0, 0.1),
                 ));
@@ -425,12 +548,18 @@ pub fn spawn_bursts(
     }
 }
 
-pub fn animate_bursts(time: Res<Time>, mut commands: Commands, mut bursts: Query<(Entity, &mut BurstFx, &mut Sprite)>) {
+pub fn animate_bursts(
+    time: Res<Time>,
+    mut commands: Commands,
+    mut bursts: Query<(Entity, &mut BurstFx, &mut Sprite)>,
+) {
     for (entity, mut fx, mut sprite) in &mut bursts {
         if !fx.0.tick(time.delta()).just_finished() {
             continue;
         }
-        let Some(atlas) = sprite.texture_atlas.as_mut() else { continue };
+        let Some(atlas) = sprite.texture_atlas.as_mut() else {
+            continue;
+        };
         if atlas.index >= 5 {
             commands.entity(entity).despawn();
         } else {

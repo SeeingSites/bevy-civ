@@ -49,7 +49,10 @@ pub struct Rates {
 
 impl Default for Rates {
     fn default() -> Self {
-        Rates { science: 60, luxury: 0 }
+        Rates {
+            science: 60,
+            luxury: 0,
+        }
     }
 }
 
@@ -61,7 +64,11 @@ impl Rates {
     /// Whether every share is within what the government allows.
     pub fn allowed(&self, gov: Government) -> bool {
         let cap = gov.rate_cap();
-        gov == Government::Anarchy || (self.science + self.luxury <= 100 && self.science <= cap && self.luxury <= cap && self.tax() <= cap)
+        gov == Government::Anarchy
+            || (self.science + self.luxury <= 100
+                && self.science <= cap
+                && self.luxury <= cap
+                && self.tax() <= cap)
     }
 
     /// The nearest split the government allows: a share over the limit gives the rest to the
@@ -106,7 +113,8 @@ pub fn tile_rule(tile: Yield, gov: Government, golden_age: bool, celebrating: bo
     let (mut food, mut shields, mut trade) = tile;
     let had_shields = shields >= 1;
     let had_trade = trade >= 1;
-    let extra_trade = gov.commerce_bonus() || (celebrating && matches!(gov, Government::Monarchy | Government::Communism));
+    let extra_trade = gov.commerce_bonus()
+        || (celebrating && matches!(gov, Government::Monarchy | Government::Communism));
     if extra_trade && had_trade {
         trade += 1;
     }
@@ -144,7 +152,15 @@ pub fn standings(cities: &[(Hex, u32, bool)]) -> HashMap<Hex, Standing> {
     }
     let distance: HashMap<Hex, u32> = cities
         .iter()
-        .map(|(at, owner, _)| (*at, seats.get(owner).and_then(|s| s.iter().map(|p| p.distance_to(*at) as u32).min()).unwrap_or(FAR)))
+        .map(|(at, owner, _)| {
+            (
+                *at,
+                seats
+                    .get(owner)
+                    .and_then(|s| s.iter().map(|p| p.distance_to(*at) as u32).min())
+                    .unwrap_or(FAR),
+            )
+        })
         .collect();
     let mut by_owner: HashMap<u32, Vec<u32>> = HashMap::new();
     for (at, owner, _) in cities {
@@ -176,7 +192,14 @@ pub fn optimal_cities(land_tiles: usize, peoples: usize) -> u32 {
 /// Police Station each halve the distance part and let the city count a quarter more cities as
 /// optimal; a road or harbour link to the capital takes 15% off the distance part. The government
 /// sets the scale; a palace city has none.
-pub fn corruption(gov: Government, standing: Standing, optimal: u32, buildings: &[Building], palace: bool, connected: bool) -> f32 {
+pub fn corruption(
+    gov: Government,
+    standing: Standing,
+    optimal: u32,
+    buildings: &[Building],
+    palace: bool,
+    connected: bool,
+) -> f32 {
     if palace {
         return 0.0;
     }
@@ -191,11 +214,20 @@ pub fn corruption(gov: Government, standing: Standing, optimal: u32, buildings: 
     if connected {
         distance_factor *= 0.85;
     }
-    let distance = if gov.communal() { 0.5 } else { (standing.distance as f32 / FAR as f32).min(1.0) };
+    let distance = if gov.communal() {
+        0.5
+    } else {
+        (standing.distance as f32 / FAR as f32).min(1.0)
+    };
     let optimal = optimal.max(1) as f32 * reach;
     let rank = standing.rank as f32;
-    let rank_part = if rank <= optimal { rank / optimal } else { 1.0 + 2.0 * (rank - optimal) / optimal };
-    (gov.corruption_level() * (distance * distance_factor + rank_part) / 2.0).clamp(0.0, MOST_CORRUPTION)
+    let rank_part = if rank <= optimal {
+        rank / optimal
+    } else {
+        1.0 + 2.0 * (rank - optimal) / optimal
+    };
+    (gov.corruption_level() * (distance * distance_factor + rank_part) / 2.0)
+        .clamp(0.0, MOST_CORRUPTION)
 }
 
 /// The share of a city's shields lost to waste, given its corruption.
@@ -219,7 +251,16 @@ pub fn science_bonus(buildings: &[Building]) -> u32 {
 
 /// Percent a city's Factory and Power Plant add to its shields (after waste).
 pub fn production_bonus(buildings: &[Building]) -> u32 {
-    buildings.iter().map(|b| if matches!(b, Building::Factory | Building::PowerPlant) { 25 } else { 0 }).sum()
+    buildings
+        .iter()
+        .map(|b| {
+            if matches!(b, Building::Factory | Building::PowerPlant) {
+                25
+            } else {
+                0
+            }
+        })
+        .sum()
 }
 
 /// Percent a city's buildings add to its taxes and to its luxury.
@@ -305,9 +346,18 @@ pub fn ledger(city: &CityTrade) -> Ledger {
     let corruption = ((city.trade as f32 * city.corruption).round() as u32).min(city.trade);
     let (science, luxury, taxes) = city.rates.split(city.trade - corruption, gov);
     let anarchy = gov == Government::Anarchy;
-    let science = if anarchy { 0 } else { science + SCIENTIST * city.scientists };
-    let taxes = if anarchy { 0 } else { taxes + TAX_COLLECTOR * city.tax_collectors };
-    let science = (boosted(science, science_bonus(city.buildings)) as f32 * gov.science_modifier()).round() as u32;
+    let science = if anarchy {
+        0
+    } else {
+        science + SCIENTIST * city.scientists
+    };
+    let taxes = if anarchy {
+        0
+    } else {
+        taxes + TAX_COLLECTOR * city.tax_collectors
+    };
+    let science = (boosted(science, science_bonus(city.buildings)) as f32 * gov.science_modifier())
+        .round() as u32;
     let lift = tax_bonus(city.buildings);
     Ledger {
         trade: city.trade,
@@ -323,7 +373,14 @@ pub fn ledger(city: &CityTrade) -> Ledger {
 /// can afford. `full_taxes` is the gold its cities would raise at a 100% tax rate; `income` the
 /// rest of what it earns each turn and `costs` what it owes (upkeep and the like). It keeps a
 /// small surplus while its treasury is low, and spends a large one down.
-pub fn computer_rates(gov: Government, luxury: u32, full_taxes: u32, income: i32, costs: i32, treasury: i32) -> Rates {
+pub fn computer_rates(
+    gov: Government,
+    luxury: u32,
+    full_taxes: u32,
+    income: i32,
+    costs: i32,
+    treasury: i32,
+) -> Rates {
     let cap = gov.rate_cap();
     if cap == 0 {
         // Anarchy ignores the rates: keep the usual ones for the government to come.
@@ -343,7 +400,11 @@ pub fn computer_rates(gov: Government, luxury: u32, full_taxes: u32, income: i32
         .step_by(RATE_STEP as usize)
         .find(|tax| (full_taxes * tax / 100) as i32 + income - costs >= target)
         .unwrap_or(cap.min(100 - luxury));
-    Rates { science: 100 - luxury - tax, luxury }.fit(gov)
+    Rates {
+        science: 100 - luxury - tax,
+        luxury,
+    }
+    .fit(gov)
 }
 
 /// The luxury rate a computer player sets next: up while many of its cities are in disorder, back
@@ -364,19 +425,50 @@ mod tests {
 
     #[test]
     fn every_share_stays_within_the_government_limit() {
-        let rates = Rates { science: 90, luxury: 0 };
+        let rates = Rates {
+            science: 90,
+            luxury: 0,
+        };
         assert!(!rates.allowed(Government::Despotism));
-        assert_eq!(rates.fit(Government::Despotism), Rates { science: 60, luxury: 0 });
+        assert_eq!(
+            rates.fit(Government::Despotism),
+            Rates {
+                science: 60,
+                luxury: 0
+            }
+        );
         assert!(rates.allowed(Government::Democracy));
         // Taxes are limited too: a despot cannot tax 70%.
-        let low = Rates { science: 30, luxury: 0 };
+        let low = Rates {
+            science: 30,
+            luxury: 0,
+        };
         assert!(!low.allowed(Government::Despotism));
-        assert_eq!(low.fit(Government::Despotism), Rates { science: 40, luxury: 0 });
-        assert_eq!(Rates { science: 60, luxury: 60 }.fit(Government::Despotism), Rates { science: 60, luxury: 40 });
+        assert_eq!(
+            low.fit(Government::Despotism),
+            Rates {
+                science: 40,
+                luxury: 0
+            }
+        );
+        assert_eq!(
+            Rates {
+                science: 60,
+                luxury: 60
+            }
+            .fit(Government::Despotism),
+            Rates {
+                science: 60,
+                luxury: 40
+            }
+        );
         for gov in Government::CHOICES {
             for science in (0..=100).step_by(10) {
                 for luxury in (0..=100 - science).step_by(10) {
-                    assert!(Rates { science, luxury }.fit(gov).allowed(gov), "{gov:?} {science} {luxury}");
+                    assert!(
+                        Rates { science, luxury }.fit(gov).allowed(gov),
+                        "{gov:?} {science} {luxury}"
+                    );
                 }
             }
         }
@@ -384,31 +476,71 @@ mod tests {
 
     #[test]
     fn trade_splits_by_the_rates_and_anarchy_gives_it_all_to_luxury() {
-        let rates = Rates { science: 50, luxury: 20 };
+        let rates = Rates {
+            science: 50,
+            luxury: 20,
+        };
         assert_eq!(rates.split(10, Government::Monarchy), (5, 2, 3));
         assert_eq!(rates.split(0, Government::Monarchy), (0, 0, 0));
         assert_eq!(rates.split(10, Government::Anarchy), (0, 10, 0));
-        let (s, l, t) = Rates { science: 70, luxury: 30 }.split(7, Government::Democracy);
+        let (s, l, t) = Rates {
+            science: 70,
+            luxury: 30,
+        }
+        .split(7, Government::Democracy);
         assert_eq!(s + l + t, 7);
     }
 
     #[test]
     fn governments_and_golden_ages_change_the_land() {
         // Despotism: 3 or more of anything gives one less.
-        assert_eq!(tile_rule((3, 1, 2), Government::Despotism, false, false), (2, 1, 2));
-        assert_eq!(tile_rule((4, 3, 3), Government::Anarchy, false, false), (3, 2, 2));
+        assert_eq!(
+            tile_rule((3, 1, 2), Government::Despotism, false, false),
+            (2, 1, 2)
+        );
+        assert_eq!(
+            tile_rule((4, 3, 3), Government::Anarchy, false, false),
+            (3, 2, 2)
+        );
         // A Republic adds a trade to tiles that have some.
-        assert_eq!(tile_rule((1, 0, 2), Government::Republic, false, false), (1, 0, 3));
-        assert_eq!(tile_rule((2, 0, 0), Government::Democracy, false, false), (2, 0, 0));
-        assert_eq!(tile_rule((3, 1, 2), Government::Monarchy, false, false), (3, 1, 2));
+        assert_eq!(
+            tile_rule((1, 0, 2), Government::Republic, false, false),
+            (1, 0, 3)
+        );
+        assert_eq!(
+            tile_rule((2, 0, 0), Government::Democracy, false, false),
+            (2, 0, 0)
+        );
+        assert_eq!(
+            tile_rule((3, 1, 2), Government::Monarchy, false, false),
+            (3, 1, 2)
+        );
         // A golden age adds a shield and a trade where there are some; a despot's penalty eats it.
-        assert_eq!(tile_rule((1, 2, 1), Government::Monarchy, true, false), (1, 3, 2));
-        assert_eq!(tile_rule((1, 2, 0), Government::Despotism, true, false), (1, 2, 0));
-        assert_eq!(tile_rule((1, 1, 2), Government::Republic, true, false), (1, 2, 4));
+        assert_eq!(
+            tile_rule((1, 2, 1), Government::Monarchy, true, false),
+            (1, 3, 2)
+        );
+        assert_eq!(
+            tile_rule((1, 2, 0), Government::Despotism, true, false),
+            (1, 2, 0)
+        );
+        assert_eq!(
+            tile_rule((1, 1, 2), Government::Republic, true, false),
+            (1, 2, 4)
+        );
         // A celebrating city escapes the despot's penalty; a monarch's earns a republic's trade.
-        assert_eq!(tile_rule((3, 1, 2), Government::Despotism, false, true), (3, 1, 2));
-        assert_eq!(tile_rule((1, 0, 2), Government::Monarchy, false, true), (1, 0, 3));
-        assert_eq!(tile_rule((1, 0, 2), Government::Republic, false, true), (1, 0, 3));
+        assert_eq!(
+            tile_rule((3, 1, 2), Government::Despotism, false, true),
+            (3, 1, 2)
+        );
+        assert_eq!(
+            tile_rule((1, 0, 2), Government::Monarchy, false, true),
+            (1, 0, 3)
+        );
+        assert_eq!(
+            tile_rule((1, 0, 2), Government::Republic, false, true),
+            (1, 0, 3)
+        );
         assert!(celebrating(6, 3, 0));
         assert!(!celebrating(6, 3, 1), "nobody unhappy");
         assert!(!celebrating(6, 2, 0), "half happy");
@@ -421,18 +553,60 @@ mod tests {
         let near = Hex::new(3, 0);
         let far = Hex::new(12, 0);
         let fp = Hex::new(14, 0);
-        let places = standings(&[(a, 0, true), (near, 0, false), (far, 0, false), (Hex::new(5, 5), 1, false)]);
-        assert_eq!(places[&a], Standing { distance: 0, rank: 0 });
-        assert_eq!(places[&near], Standing { distance: 3, rank: 1 });
-        assert_eq!(places[&far], Standing { distance: 12, rank: 2 });
-        assert_eq!(places[&Hex::new(5, 5)].distance, FAR, "no palace, as if far away");
+        let places = standings(&[
+            (a, 0, true),
+            (near, 0, false),
+            (far, 0, false),
+            (Hex::new(5, 5), 1, false),
+        ]);
+        assert_eq!(
+            places[&a],
+            Standing {
+                distance: 0,
+                rank: 0
+            }
+        );
+        assert_eq!(
+            places[&near],
+            Standing {
+                distance: 3,
+                rank: 1
+            }
+        );
+        assert_eq!(
+            places[&far],
+            Standing {
+                distance: 12,
+                rank: 2
+            }
+        );
+        assert_eq!(
+            places[&Hex::new(5, 5)].distance,
+            FAR,
+            "no palace, as if far away"
+        );
         // A Forbidden Palace brings the far city close.
-        let places = standings(&[(a, 0, true), (near, 0, false), (far, 0, false), (fp, 0, true)]);
-        assert_eq!(places[&far], Standing { distance: 2, rank: 2 });
+        let places = standings(&[
+            (a, 0, true),
+            (near, 0, false),
+            (far, 0, false),
+            (fp, 0, true),
+        ]);
+        assert_eq!(
+            places[&far],
+            Standing {
+                distance: 2,
+                rank: 2
+            }
+        );
 
         let at = |distance, rank| Standing { distance, rank };
         let c = |gov, s| corruption(gov, s, 12, &[], false, false);
-        assert_eq!(corruption(Government::Despotism, at(10, 5), 12, &[], true, false), 0.0, "none in a palace city");
+        assert_eq!(
+            corruption(Government::Despotism, at(10, 5), 12, &[], true, false),
+            0.0,
+            "none in a palace city"
+        );
         assert!(c(Government::Monarchy, at(3, 1)) < c(Government::Monarchy, at(12, 8)));
         assert!(c(Government::Democracy, at(12, 8)) < c(Government::Republic, at(12, 8)));
         assert!(c(Government::Republic, at(12, 8)) < c(Government::Monarchy, at(12, 8)));
@@ -442,11 +616,28 @@ mod tests {
         let step_after = c(Government::Monarchy, at(6, 15)) - c(Government::Monarchy, at(6, 14));
         assert!(step_after > step_before * 1.9, "{step_before} {step_after}");
         // Communism does not mind distance.
-        assert_eq!(c(Government::Communism, at(2, 6)), c(Government::Communism, at(20, 6)));
+        assert_eq!(
+            c(Government::Communism, at(2, 6)),
+            c(Government::Communism, at(20, 6))
+        );
         // A Courthouse cuts it, a Police Station more, a link to the capital a little.
         let plain = c(Government::Monarchy, at(15, 14));
-        let court = corruption(Government::Monarchy, at(15, 14), 12, &[Building::Courthouse], false, false);
-        let both = corruption(Government::Monarchy, at(15, 14), 12, &[Building::Courthouse, Building::PoliceStation], false, false);
+        let court = corruption(
+            Government::Monarchy,
+            at(15, 14),
+            12,
+            &[Building::Courthouse],
+            false,
+            false,
+        );
+        let both = corruption(
+            Government::Monarchy,
+            at(15, 14),
+            12,
+            &[Building::Courthouse, Building::PoliceStation],
+            false,
+            false,
+        );
         let linked = corruption(Government::Monarchy, at(15, 14), 12, &[], false, true);
         assert!(both < court && court < plain && linked < plain);
         assert!(c(Government::Anarchy, at(40, 60)) <= MOST_CORRUPTION);
@@ -466,7 +657,10 @@ mod tests {
         let city = CityTrade {
             trade: 20,
             corruption: 0.1,
-            rates: Rates { science: 50, luxury: 10 },
+            rates: Rates {
+                science: 50,
+                luxury: 10,
+            },
             government: Government::Monarchy,
             buildings: &built,
             scientists: 0,
@@ -476,14 +670,49 @@ mod tests {
         };
         // 20 trade, 2 lost: 9 science, 2 luxury, 7 taxes; the library adds half to science, the
         // market half to luxury and taxes.
-        assert_eq!(ledger(&city), Ledger { trade: 20, corruption: 2, science: 14, luxury: 3, gold: 11, upkeep: 3 });
+        assert_eq!(
+            ledger(&city),
+            Ledger {
+                trade: 20,
+                corruption: 2,
+                science: 14,
+                luxury: 3,
+                gold: 11,
+                upkeep: 3
+            }
+        );
         // Specialists add before the buildings multiply; extras after.
-        let staffed = CityTrade { scientists: 1, tax_collectors: 1, extra_gold: 3, ..city };
+        let staffed = CityTrade {
+            scientists: 1,
+            tax_collectors: 1,
+            extra_gold: 3,
+            ..city
+        };
         let books = ledger(&staffed);
-        assert_eq!((books.science, books.gold), (boosted(9 + SCIENTIST, 50), boosted(7 + TAX_COLLECTOR, 50) + 3));
+        assert_eq!(
+            (books.science, books.gold),
+            (
+                boosted(9 + SCIENTIST, 50),
+                boosted(7 + TAX_COLLECTOR, 50) + 3
+            )
+        );
         // Fundamentalism halves science; anarchy has none and no taxes either.
-        assert_eq!(ledger(&CityTrade { government: Government::Fundamentalism, rates: Rates { science: 50, luxury: 10 }, ..city }).science, 7);
-        let lawless = ledger(&CityTrade { government: Government::Anarchy, ..staffed });
+        assert_eq!(
+            ledger(&CityTrade {
+                government: Government::Fundamentalism,
+                rates: Rates {
+                    science: 50,
+                    luxury: 10
+                },
+                ..city
+            })
+            .science,
+            7
+        );
+        let lawless = ledger(&CityTrade {
+            government: Government::Anarchy,
+            ..staffed
+        });
         assert_eq!((lawless.science, lawless.gold), (0, 3));
         assert!(lawless.luxury > 0);
         assert_eq!(upkeep(Building::Pyramids), 0);
@@ -494,16 +723,43 @@ mod tests {
     #[test]
     fn computer_players_tax_what_they_need_and_research_the_rest() {
         // Plenty of trade and nothing to pay: as much science as allowed.
-        assert_eq!(computer_rates(Government::Republic, 0, 100, 0, 0, 200), Rates { science: 80, luxury: 0 });
+        assert_eq!(
+            computer_rates(Government::Republic, 0, 100, 0, 0, 200),
+            Rates {
+                science: 80,
+                luxury: 0
+            }
+        );
         // Bills of 30 a turn on 100 gold of full taxes: 30% taxes.
-        assert_eq!(computer_rates(Government::Republic, 0, 100, 0, 30, 200), Rates { science: 70, luxury: 0 });
+        assert_eq!(
+            computer_rates(Government::Republic, 0, 100, 0, 30, 200),
+            Rates {
+                science: 70,
+                luxury: 0
+            }
+        );
         // Short of money it keeps a surplus.
-        assert_eq!(computer_rates(Government::Republic, 0, 100, 0, 30, 20), Rates { science: 60, luxury: 0 });
+        assert_eq!(
+            computer_rates(Government::Republic, 0, 100, 0, 30, 20),
+            Rates {
+                science: 60,
+                luxury: 0
+            }
+        );
         // A full treasury is spent down on science.
-        assert_eq!(computer_rates(Government::Republic, 0, 100, 0, 30, 1000), Rates { science: 80, luxury: 0 });
+        assert_eq!(
+            computer_rates(Government::Republic, 0, 100, 0, 30, 1000),
+            Rates {
+                science: 80,
+                luxury: 0
+            }
+        );
         // Luxury first; never more than the government allows in any share.
         let rates = computer_rates(Government::Despotism, 20, 100, 0, 90, 200);
-        assert!(rates.allowed(Government::Despotism) && rates.luxury == 20, "{rates:?}");
+        assert!(
+            rates.allowed(Government::Despotism) && rates.luxury == 20,
+            "{rates:?}"
+        );
         assert_eq!(luxury_for(0, 3, 8), 10);
         assert_eq!(luxury_for(10, 0, 8), 0);
         assert_eq!(luxury_for(40, 5, 8), 40);

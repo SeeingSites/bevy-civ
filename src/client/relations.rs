@@ -27,7 +27,14 @@ pub fn setup_web(mut commands: Commands, mut images: ResMut<Assets<Image>>) {
 /// The peoples on the web, in order: us, then everyone we know.
 pub fn web_ids(civs: &Civilizations, foreign: &Foreign) -> Vec<u32> {
     std::iter::once(PLAYER)
-        .chain(civs.players.iter().filter(|c| !c.is_human && !foreign.gone.contains(&c.id) && foreign.met.contains(&c.id)).map(|c| c.id))
+        .chain(
+            civs.players
+                .iter()
+                .filter(|c| {
+                    !c.is_human && !foreign.gone.contains(&c.id) && foreign.met.contains(&c.id)
+                })
+                .map(|c| c.id),
+        )
         .collect()
 }
 
@@ -37,7 +44,8 @@ pub fn positions(n: usize) -> Vec<Vec2> {
     let radius = WEB as f32 / 2.0 - 40.0;
     (0..n)
         .map(|i| {
-            let angle = -std::f32::consts::FRAC_PI_2 + i as f32 * std::f32::consts::TAU / n.max(1) as f32;
+            let angle =
+                -std::f32::consts::FRAC_PI_2 + i as f32 * std::f32::consts::TAU / n.max(1) as f32;
             centre + Vec2::new(angle.cos(), angle.sin()) * radius
         })
         .collect()
@@ -81,11 +89,14 @@ pub fn draw_web(
     if *drawn == links {
         return;
     }
-    let Some(image) = images.get_mut(&web.0) else { return };
+    let Some(image) = images.get_mut(&web.0) else {
+        return;
+    };
     image.data.fill(0);
     let at = positions(ids.len());
     // Peace first, so war and alliance lines lie on top.
-    let mut order: Vec<&(usize, usize, Treaty)> = links.iter().filter(|(i, _, _)| *i < ids.len()).collect();
+    let mut order: Vec<&(usize, usize, Treaty)> =
+        links.iter().filter(|(i, _, _)| *i < ids.len()).collect();
     order.sort_by_key(|(_, _, t)| matches!(t, Treaty::War | Treaty::Alliance));
     for (i, j, treaty) in order {
         if let Some((colour, width)) = stroke(*treaty) {
@@ -104,7 +115,14 @@ mod tests {
         let at = positions(4);
         assert!(at[0].y < at[2].y && (at[0].x - WEB as f32 / 2.0).abs() < 0.01);
         let mut data = vec![0u8; (WEB * WEB * 4) as usize];
-        super::super::paint::line(&mut data, WEB, Vec2::new(10.0, 10.0), Vec2::new(100.0, 10.0), 3.0, [255, 0, 0, 255]);
+        super::super::paint::line(
+            &mut data,
+            WEB,
+            Vec2::new(10.0, 10.0),
+            Vec2::new(100.0, 10.0),
+            3.0,
+            [255, 0, 0, 255],
+        );
         let pixel = |x: u32, y: u32| data[((y * WEB + x) * 4) as usize];
         assert_eq!(pixel(50, 10), 255);
         assert_eq!(pixel(50, 40), 0);

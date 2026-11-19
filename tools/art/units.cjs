@@ -619,8 +619,8 @@ const crest = (colour) =>
       `<path d="M108,6 v34" stroke-width="2.5"/><path d="M108,8 l14,5 l-14,5 Z" fill="${colour}"/>`,
   );
 // Rows of the base units' figures (the boat drawn at row 19 shifts later rows by one).
-const UNIQUE_BASES = [6, 9, 5, 5, 7, 8, 11, 6, 11, 38, 11, 11, 2, 3, 11, 5, 11, 21, 33, 14, 14];
-const UNIQUE_COLOURS = ['#c8281c', '#2a6fb0', '#d9a441', '#7a3a8f', '#e0c060', '#5a3a8f', '#8a8f98', '#2f9a5a', '#b07a4e', '#c83a3a', '#33363f', '#6b4a2a', '#3a8a5a', '#e08a2a', '#d9a441', '#5b3a1c', '#b3261e', '#22305a', '#2a2f5a', '#8f1f2f', '#4f7a3a'];
+const UNIQUE_BASES = [6, 9, 5, 5, 7, 8, 11, 6, 11, 38, 11, 11, 2, 3, 11, 5, 11, 21, 33, 14, 14, 34, 15, 13, 33, 14, 14, 14, 34];
+const UNIQUE_COLOURS = ['#c8281c', '#2a6fb0', '#d9a441', '#7a3a8f', '#e0c060', '#5a3a8f', '#8a8f98', '#2f9a5a', '#b07a4e', '#c83a3a', '#33363f', '#6b4a2a', '#3a8a5a', '#e08a2a', '#d9a441', '#5b3a1c', '#b3261e', '#22305a', '#2a2f5a', '#8f1f2f', '#4f7a3a', '#1f3f7a', '#4a4a4a', '#a01c1c', '#2e8b3a', '#c9a227', '#c41e2e', '#1a7a4a', '#5a6b3a'];
 UNIQUE_BASES.forEach((base, i) => {
   const draw = UNITS[base];
   UNITS.push((f) => draw(f) + crest(UNIQUE_COLOURS[i]));

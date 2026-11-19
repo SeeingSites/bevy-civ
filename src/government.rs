@@ -1,6 +1,8 @@
 use bevy::prelude::*;
 
-#[derive(Resource, Clone, Copy, PartialEq, Eq, Hash, Debug, serde::Serialize, serde::Deserialize)]
+#[derive(
+    Resource, Clone, Copy, PartialEq, Eq, Hash, Debug, serde::Serialize, serde::Deserialize,
+)]
 pub enum Government {
     /// The turns of upheaval between two governments: little gets done.
     Anarchy,
@@ -121,8 +123,14 @@ impl Government {
 
 impl Government {
     /// Every government a civilization can choose (not Anarchy).
-    pub const CHOICES: [Government; 6] =
-        [Government::Despotism, Government::Monarchy, Government::Republic, Government::Democracy, Government::Communism, Government::Fundamentalism];
+    pub const CHOICES: [Government; 6] = [
+        Government::Despotism,
+        Government::Monarchy,
+        Government::Republic,
+        Government::Democracy,
+        Government::Communism,
+        Government::Fundamentalism,
+    ];
 
     /// Turns of anarchy a revolution costs.
     pub const REVOLUTION_TURNS: u32 = 2;
@@ -141,7 +149,10 @@ impl Government {
     }
 
     pub fn available(&self, tech: &crate::tech::TechState) -> bool {
-        *self != Government::Anarchy && self.required_tech().is_none_or(|t| tech.researched.contains(&t))
+        *self != Government::Anarchy
+            && self
+                .required_tech()
+                .is_none_or(|t| tech.researched.contains(&t))
     }
 
     /// Military units in a city that each keep one unhappy citizen in line.
@@ -156,7 +167,13 @@ impl Government {
     /// Despotism and Communism let a city rush its project by working citizens to death.
     /// Citizens can be drafted into the army (once Gunpowder is known).
     pub fn allows_draft(&self) -> bool {
-        matches!(self, Government::Monarchy | Government::Communism | Government::Fundamentalism | Government::Republic)
+        matches!(
+            self,
+            Government::Monarchy
+                | Government::Communism
+                | Government::Fundamentalism
+                | Government::Republic
+        )
     }
 
     pub fn allows_forced_labour(&self) -> bool {
@@ -187,11 +204,27 @@ impl Government {
     /// The government a computer player prefers among those it knows.
     pub fn preferred(tech: &crate::tech::TechState, aggression: f32) -> Government {
         let order: &[Government] = if aggression > 0.6 {
-            &[Government::Fundamentalism, Government::Communism, Government::Monarchy, Government::Republic, Government::Despotism]
+            &[
+                Government::Fundamentalism,
+                Government::Communism,
+                Government::Monarchy,
+                Government::Republic,
+                Government::Despotism,
+            ]
         } else {
-            &[Government::Democracy, Government::Republic, Government::Communism, Government::Monarchy, Government::Despotism]
+            &[
+                Government::Democracy,
+                Government::Republic,
+                Government::Communism,
+                Government::Monarchy,
+                Government::Despotism,
+            ]
         };
-        order.iter().copied().find(|g| g.available(tech)).unwrap_or(Government::Despotism)
+        order
+            .iter()
+            .copied()
+            .find(|g| g.available(tech))
+            .unwrap_or(Government::Despotism)
     }
 }
 

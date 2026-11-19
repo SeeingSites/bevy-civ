@@ -38,14 +38,21 @@ pub fn un_votes_needed(members: usize) -> usize {
 /// itself, every other voter for the candidate it likes better - if it is friendly with that one
 /// (otherwise, or with no preference, it abstains).
 /// Returns each candidate's votes and the winner, if one has a majority of all the voters.
-pub fn un_vote(voters: &[u32], candidates: [u32; 2], attitude: impl Fn(u32, u32) -> i32) -> ([usize; 2], Option<u32>) {
+pub fn un_vote(
+    voters: &[u32],
+    candidates: [u32; 2],
+    attitude: impl Fn(u32, u32) -> i32,
+) -> ([usize; 2], Option<u32>) {
     let mut tally = [0usize; 2];
     for voter in voters {
         if let Some(i) = candidates.iter().position(|c| c == voter) {
             tally[i] += 1;
             continue;
         }
-        let (a, b) = (attitude(*voter, candidates[0]), attitude(*voter, candidates[1]));
+        let (a, b) = (
+            attitude(*voter, candidates[0]),
+            attitude(*voter, candidates[1]),
+        );
         // A voter backs only a candidate it is friendly with (and likes better than the other);
         // otherwise it abstains.
         if a.max(b) < UN_GOODWILL || a == b {
@@ -79,7 +86,10 @@ impl Diplomacy {
     }
 
     pub fn get_treaty(&self, a: u32, b: u32) -> Treaty {
-        *self.treaties.get(&(a.min(b), a.max(b))).unwrap_or(&Treaty::None)
+        *self
+            .treaties
+            .get(&(a.min(b), a.max(b)))
+            .unwrap_or(&Treaty::None)
     }
 
     /// Whether `a` and `b` let each other's units pass (a right of passage, or an alliance).
@@ -118,7 +128,11 @@ pub const BASE_CONTENT: u32 = 5;
 
 impl Happiness {
     pub fn new(population: u32) -> Self {
-        let mut happiness = Self { happy: 0, content: 0, unhappy: 0 };
+        let mut happiness = Self {
+            happy: 0,
+            content: 0,
+            unhappy: 0,
+        };
         happiness.update(population, 0, 0);
         happiness
     }
@@ -184,7 +198,15 @@ mod un_tests {
     #[test]
     fn two_thirds_of_the_world_elects_a_secretary_general() {
         let voters = [0, 1, 2, 3, 4, 5];
-        let fond_of_zero = |v: u32, c: u32| if v == 5 { -40 } else if c == 0 { 30 } else { 0 };
+        let fond_of_zero = |v: u32, c: u32| {
+            if v == 5 {
+                -40
+            } else if c == 0 {
+                30
+            } else {
+                0
+            }
+        };
         let (tally, winner) = un_vote(&voters, [0, 1], fond_of_zero);
         assert_eq!(tally, [4, 1]);
         assert_eq!(winner, Some(0));

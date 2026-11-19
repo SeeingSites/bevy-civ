@@ -36,7 +36,14 @@ impl Sfx {
     }
 
     #[cfg(feature = "audio")]
-    const ALL: [Sfx; 6] = [Sfx::Click, Sfx::Select, Sfx::March, Sfx::Sail, Sfx::Fly, Sfx::Battle];
+    const ALL: [Sfx; 6] = [
+        Sfx::Click,
+        Sfx::Select,
+        Sfx::March,
+        Sfx::Sail,
+        Sfx::Fly,
+        Sfx::Battle,
+    ];
 
     #[cfg(feature = "audio")]
     fn file(self) -> &'static str {
@@ -70,13 +77,19 @@ fn music_default() -> bool {
 
 impl Default for SoundSettings {
     fn default() -> Self {
-        Self { enabled: true, volume: 0.6, music: true }
+        Self {
+            enabled: true,
+            volume: 0.6,
+            music: true,
+        }
     }
 }
 
 impl SoundSettings {
     fn load() -> Self {
-        read_setting(SETTINGS_KEY).and_then(|json| serde_json::from_str(&json).ok()).unwrap_or_default()
+        read_setting(SETTINGS_KEY)
+            .and_then(|json| serde_json::from_str(&json).ok())
+            .unwrap_or_default()
     }
 
     pub fn toggle(&mut self) {
@@ -103,9 +116,11 @@ pub struct SfxPlugin;
 
 impl Plugin for SfxPlugin {
     fn build(&self, app: &mut App) {
-        app.add_event::<Sfx>().insert_resource(SoundSettings::load());
+        app.add_event::<Sfx>()
+            .insert_resource(SoundSettings::load());
         #[cfg(feature = "audio")]
-        app.add_systems(Startup, load_sounds).add_systems(Last, (play_sounds, play_music));
+        app.add_systems(Startup, load_sounds)
+            .add_systems(Last, (play_sounds, play_music));
     }
 }
 
@@ -124,7 +139,12 @@ struct MusicPlayer;
 
 #[cfg(feature = "audio")]
 fn load_sounds(mut commands: Commands, assets: Res<AssetServer>) {
-    commands.insert_resource(Sounds(Sfx::ALL.into_iter().map(|sfx| (sfx, assets.load(sfx.file()))).collect()));
+    commands.insert_resource(Sounds(
+        Sfx::ALL
+            .into_iter()
+            .map(|sfx| (sfx, assets.load(sfx.file())))
+            .collect(),
+    ));
     commands.insert_resource(MusicTrack(assets.load("sounds/music.wav")));
 }
 
@@ -137,14 +157,18 @@ fn play_music(
     players: Query<Entity, With<MusicPlayer>>,
     mut commands: Commands,
 ) {
-    let wanted = settings.enabled && settings.music && settings.volume > 0.0 && *state.get() == crate::AppState::Playing;
+    let wanted = settings.enabled
+        && settings.music
+        && settings.volume > 0.0
+        && *state.get() == crate::AppState::Playing;
     match (wanted, players.is_empty()) {
         (true, true) => {
             if let Some(track) = track {
                 commands.spawn((
                     MusicPlayer,
                     AudioPlayer(track.0.clone()),
-                    PlaybackSettings::LOOP.with_volume(bevy::audio::Volume::new(settings.volume * 0.35)),
+                    PlaybackSettings::LOOP
+                        .with_volume(bevy::audio::Volume::new(settings.volume * 0.35)),
                 ));
             }
         }
@@ -159,7 +183,12 @@ fn play_music(
 
 /// Plays each requested sound once per frame, however many times it was asked for.
 #[cfg(feature = "audio")]
-fn play_sounds(mut events: EventReader<Sfx>, settings: Res<SoundSettings>, sounds: Option<Res<Sounds>>, mut commands: Commands) {
+fn play_sounds(
+    mut events: EventReader<Sfx>,
+    settings: Res<SoundSettings>,
+    sounds: Option<Res<Sounds>>,
+    mut commands: Commands,
+) {
     let Some(sounds) = sounds.filter(|_| settings.enabled && settings.volume > 0.0) else {
         events.clear();
         return;

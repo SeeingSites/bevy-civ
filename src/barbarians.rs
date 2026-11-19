@@ -53,7 +53,15 @@ pub struct Grievance {
 
 impl Grievance {
     pub fn count(&self) -> u32 {
-        [self.disorder, self.occupied, self.foreign_faith, self.war_weary].iter().filter(|g| **g).count() as u32
+        [
+            self.disorder,
+            self.occupied,
+            self.foreign_faith,
+            self.war_weary,
+        ]
+        .iter()
+        .filter(|g| **g)
+        .count() as u32
     }
 
     /// The worst of them, for the news.
@@ -72,12 +80,20 @@ impl Grievance {
 
 /// The chance this turn that cartel gunmen form near a city with this level of drug trade.
 pub fn cartel_chance(narcotics: u32, police: bool) -> f64 {
-    if police || narcotics == 0 { 0.0 } else { 0.02 * narcotics as f64 - 0.01 }
+    if police || narcotics == 0 {
+        0.0
+    } else {
+        0.02 * narcotics as f64 - 0.01
+    }
 }
 
 /// The chance this turn that a terror cell forms in a city with these grievances.
 pub fn terror_chance(grievance: &Grievance, police: bool) -> f64 {
-    if police { 0.0 } else { 0.01 * grievance.count() as f64 }
+    if police {
+        0.0
+    } else {
+        0.01 * grievance.count() as f64
+    }
 }
 
 /// Gold cartel gunmen extort from an undefended city's people.
@@ -123,7 +139,9 @@ pub fn process_barbarians(
     let mut rng = rand::thread_rng();
     let wild: Vec<Hex> = tiles
         .iter()
-        .filter(|t| t.terrain != crate::terrain::Terrain::Water && !territory.contains_key(&t.coord))
+        .filter(|t| {
+            t.terrain != crate::terrain::Terrain::Water && !territory.contains_key(&t.coord)
+        })
         .map(|t| t.coord)
         .filter(|at| unit_positions.iter().all(|p| p.distance_to(*at) >= 4))
         .collect();
@@ -132,7 +150,13 @@ pub fn process_barbarians(
     }
     let camp = wild[rng.gen_range(0..wild.len())];
     // The band gathers on the camp and the wild land beside it.
-    let spots: Vec<Hex> = std::iter::once(camp).chain(camp.all_neighbors().into_iter().filter(|h| wild.contains(h))).collect();
+    let spots: Vec<Hex> = std::iter::once(camp)
+        .chain(
+            camp.all_neighbors()
+                .into_iter()
+                .filter(|h| wild.contains(h)),
+        )
+        .collect();
     for (i, kind) in band(world_techs).into_iter().enumerate() {
         spawn_unit(commands, spots[i % spots.len()], kind, BARBARIANS);
     }
@@ -155,7 +179,11 @@ mod tests {
         assert!(cartel_chance(1, false) > 0.0);
         assert!(cartel_chance(3, false) > cartel_chance(2, false));
         assert_eq!(cartel_chance(3, true), 0.0);
-        let angry = Grievance { disorder: true, occupied: true, ..Default::default() };
+        let angry = Grievance {
+            disorder: true,
+            occupied: true,
+            ..Default::default()
+        };
         assert_eq!(angry.count(), 2);
         assert!(terror_chance(&angry, false) > 0.0);
         assert_eq!(terror_chance(&angry, true), 0.0);
@@ -163,6 +191,10 @@ mod tests {
         assert_eq!(angry.reason(), "resentment of its occupiers");
         assert_eq!(extortion(5, 1000), 30);
         assert_eq!(extortion(5, 12), 12);
-        assert!(UnitType::Cartel.is_raider() && !UnitType::Cartel.is_trainable() && UnitType::Insurgent.is_army());
+        assert!(
+            UnitType::Cartel.is_raider()
+                && !UnitType::Cartel.is_trainable()
+                && UnitType::Insurgent.is_army()
+        );
     }
 }

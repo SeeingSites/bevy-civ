@@ -26,7 +26,10 @@ use bevy_civ::trade::TradeRoutes;
 use bevy_civ::unit::{spawn_unit, Unit};
 
 use crate::foreign::Foreign;
-use crate::{Automated, Cycle, Dirty, Exploring, GameLog, GameState, GoTo, GoldenAges, History, HomeCity, MapData, Rivers, PLAYER};
+use crate::{
+    Automated, Cycle, Dirty, Exploring, GameLog, GameState, GoTo, GoldenAges, History, HomeCity,
+    MapData, Rivers, PLAYER,
+};
 
 /// Bumped whenever the format changes in a way older files cannot be read.
 pub const VERSION: u32 = 1;
@@ -87,7 +90,8 @@ pub struct SaveGame {
 impl SaveGame {
     /// Reads a saved game, explaining what is wrong with a file that is not one.
     pub fn parse(json: &str) -> Result<SaveGame, String> {
-        let game: SaveGame = serde_json::from_str(json).map_err(|e| format!("That file is not a Bevy Civ save ({e})."))?;
+        let game: SaveGame = serde_json::from_str(json)
+            .map_err(|e| format!("That file is not a Bevy Civ save ({e})."))?;
         if game.version != VERSION {
             return Err(format!("That save comes from another version of the game (format {}, this game reads {VERSION}).", game.version));
         }
@@ -139,9 +143,17 @@ pub fn write_save(
     mut log: ResMut<GameLog>,
     tiles: Query<&HexTile>,
     cities: Query<(&City, &CityBuildings, &Happiness)>,
-    units: Query<(&Unit, Option<&HomeCity>, Option<&GoTo>, Has<Automated>, Has<Exploring>)>,
+    units: Query<(
+        &Unit,
+        Option<&HomeCity>,
+        Option<&GoTo>,
+        Has<Automated>,
+        Has<Exploring>,
+    )>,
 ) {
-    let download = requests.read().fold(None, |any: Option<bool>, r| Some(any.unwrap_or(false) || r.download));
+    let download = requests.read().fold(None, |any: Option<bool>, r| {
+        Some(any.unwrap_or(false) || r.download)
+    });
     let Some(download) = download else { return };
     let game = SaveGame {
         version: VERSION,
@@ -165,10 +177,23 @@ pub fn write_save(
         villages: villages.clone(),
         log: log.lines.clone(),
         tiles: tiles.iter().cloned().collect(),
-        cities: cities.iter().map(|(c, b, h)| SavedCity { city: c.clone(), buildings: b.buildings.clone(), mood: Some([h.happy, h.content, h.unhappy]) }).collect(),
+        cities: cities
+            .iter()
+            .map(|(c, b, h)| SavedCity {
+                city: c.clone(),
+                buildings: b.buildings.clone(),
+                mood: Some([h.happy, h.content, h.unhappy]),
+            })
+            .collect(),
         units: units
             .iter()
-            .map(|(u, home, goto, automated, exploring)| SavedUnit { unit: u.clone(), home: home.map(|h| h.0), goto: goto.map(|g| g.0), automated, exploring })
+            .map(|(u, home, goto, automated, exploring)| SavedUnit {
+                unit: u.clone(),
+                home: home.map(|h| h.0),
+                goto: goto.map(|g| g.0),
+                automated,
+                exploring,
+            })
             .collect(),
     };
     let json = match serde_json::to_string(&game) {
@@ -180,9 +205,15 @@ pub fn write_save(
     };
     let stored = write_setting(AUTOSAVE, &json);
     if download {
-        let name = format!("bevy-civ-{}-turn-{}.json", state.title.to_lowercase().replace(' ', "-"), state.turn);
+        let name = format!(
+            "bevy-civ-{}-turn-{}.json",
+            state.title.to_lowercase().replace(' ', "-"),
+            state.turn
+        );
         log.push(match platform::download(&name, &json) {
-            Some(place) => format!("Game saved: {place}. Anyone can load it from the start menu (Load a saved game)."),
+            Some(place) => format!(
+                "Game saved: {place}. Anyone can load it from the start menu (Load a saved game)."
+            ),
             None => "The game could not be saved as a file.".into(),
         });
     } else if !stored {
@@ -230,12 +261,31 @@ pub fn restore_world(
     }
     for saved in &game.cities {
         let c = &saved.city;
-        let entity = spawn_city(&mut commands, c.position, c.name.clone(), c.population, c.owner, c.is_capital);
+        let entity = spawn_city(
+            &mut commands,
+            c.position,
+            c.name.clone(),
+            c.population,
+            c.owner,
+            c.is_capital,
+        );
         let mut mood = Happiness::new(c.population);
-        if let Some([happy, content, unhappy]) = saved.mood.filter(|m| m.iter().sum::<u32>() == c.population) {
-            mood = Happiness { happy, content, unhappy };
+        if let Some([happy, content, unhappy]) =
+            saved.mood.filter(|m| m.iter().sum::<u32>() == c.population)
+        {
+            mood = Happiness {
+                happy,
+                content,
+                unhappy,
+            };
         }
-        commands.entity(entity).insert((c.clone(), CityBuildings { buildings: saved.buildings.clone() }, mood));
+        commands.entity(entity).insert((
+            c.clone(),
+            CityBuildings {
+                buildings: saved.buildings.clone(),
+            },
+            mood,
+        ));
     }
     for saved in &game.units {
         let u = &saved.unit;
@@ -258,15 +308,26 @@ pub fn restore_world(
     // Saves from before troops needed ships can have troops crossing the sea by themselves: give
     // them a Galley (or a Transport for a large party), so they are not lost.
     for (at, owner, troops) in stranded(&game.units, &map.water) {
-        let kind = if troops > bevy_civ::unit::UnitType::Galley.capacity() as usize { bevy_civ::unit::UnitType::Transport } else { bevy_civ::unit::UnitType::Galley };
+        let kind = if troops > bevy_civ::unit::UnitType::Galley.capacity() as usize {
+            bevy_civ::unit::UnitType::Transport
+        } else {
+            bevy_civ::unit::UnitType::Galley
+        };
         for _ in 0..troops.div_ceil(kind.capacity() as usize) {
             spawn_unit(&mut commands, at, kind, owner);
         }
     }
     if let Ok((mut transform, mut projection)) = camera.get_single_mut() {
-        let capital = game.cities.iter().find(|c| c.city.owner == PLAYER && c.city.is_capital).or(game.cities.iter().find(|c| c.city.owner == PLAYER));
+        let capital = game
+            .cities
+            .iter()
+            .find(|c| c.city.owner == PLAYER && c.city.is_capital)
+            .or(game.cities.iter().find(|c| c.city.owner == PLAYER));
         if let Some(home) = capital {
-            transform.translation = map.layout.hex_to_world_pos(home.city.position).extend(transform.translation.z);
+            transform.translation = map
+                .layout
+                .hex_to_world_pos(home.city.position)
+                .extend(transform.translation.z);
         }
         projection.scale = 1.0;
     }
@@ -292,13 +353,23 @@ pub fn restore_world(
     let mut log = GameLog {
         lines: game.log.clone(),
         written: game.log.len(),
-        history: game.log.iter().map(|l| (game.state.turn, l.clone())).collect(),
+        history: game
+            .log
+            .iter()
+            .map(|l| (game.state.turn, l.clone()))
+            .collect(),
         turn: game.state.turn,
     };
     log.push(format!("Game loaded: turn {}.", game.state.turn));
     commands.insert_resource(log);
-    commands.insert_resource(Dirty { map: true, ui: true });
-    commands.insert_resource(Cycle { advance: true, force: false });
+    commands.insert_resource(Dirty {
+        map: true,
+        ui: true,
+    });
+    commands.insert_resource(Cycle {
+        advance: true,
+        force: false,
+    });
     commands.remove_resource::<PendingLoad>();
 }
 
@@ -311,7 +382,9 @@ mod platform {
     static IMPORT: Mutex<Option<String>> = Mutex::new(None);
 
     pub fn download(_name: &str, json: &str) -> Option<String> {
-        std::fs::write(SAVE_FILE, json).ok().map(|_| format!("written to {SAVE_FILE}"))
+        std::fs::write(SAVE_FILE, json)
+            .ok()
+            .map(|_| format!("written to {SAVE_FILE}"))
     }
 
     pub fn pick_file() {
@@ -356,15 +429,31 @@ mod platform {
 
 /// Tiles at sea where a people's troops have no ship to carry them, and how many troops are there.
 fn stranded(units: &[SavedUnit], water: &std::collections::HashSet<Hex>) -> Vec<(Hex, u32, usize)> {
-    let mut need: std::collections::BTreeMap<(i32, i32, u32), usize> = std::collections::BTreeMap::new();
-    for saved in units.iter().filter(|s| s.unit.unit_type.domain() == bevy_civ::unit::Domain::Land && water.contains(&s.unit.position)) {
+    let mut need: std::collections::BTreeMap<(i32, i32, u32), usize> =
+        std::collections::BTreeMap::new();
+    for saved in units.iter().filter(|s| {
+        s.unit.unit_type.domain() == bevy_civ::unit::Domain::Land
+            && water.contains(&s.unit.position)
+    }) {
         let u = &saved.unit;
-        let room: u32 = units.iter().filter(|s| s.unit.owner == u.owner && s.unit.position == u.position && s.unit.unit_type.carries(u.unit_type)).map(|s| s.unit.unit_type.capacity()).sum();
+        let room: u32 = units
+            .iter()
+            .filter(|s| {
+                s.unit.owner == u.owner
+                    && s.unit.position == u.position
+                    && s.unit.unit_type.carries(u.unit_type)
+            })
+            .map(|s| s.unit.unit_type.capacity())
+            .sum();
         if room == 0 {
-            *need.entry((u.position.x, u.position.y, u.owner)).or_default() += 1;
+            *need
+                .entry((u.position.x, u.position.y, u.owner))
+                .or_default() += 1;
         }
     }
-    need.into_iter().map(|((x, y, owner), n)| (Hex::new(x, y), owner, n)).collect()
+    need.into_iter()
+        .map(|((x, y, owner), n)| (Hex::new(x, y), owner, n))
+        .collect()
 }
 
 #[cfg(test)]
@@ -374,11 +463,38 @@ mod tests {
     fn troops_left_at_sea_by_an_old_save_are_given_a_ship() {
         use bevy_civ::unit::UnitType;
         let at = |kind: UnitType, x: i32, owner: u32| {
-            let unit = Unit { unit_type: kind, movement_left: 1, owner, position: Hex::new(x, 0), build_turns_left: None, current_build: None, fortified: false, road_credit: 0, hp: 3, level: 0, troops: Vec::new(), fatigue: 0, carrier: None };
-            SavedUnit { unit, home: None, goto: None, automated: false, exploring: false }
+            let unit = Unit {
+                unit_type: kind,
+                movement_left: 1,
+                owner,
+                position: Hex::new(x, 0),
+                build_turns_left: None,
+                current_build: None,
+                fortified: false,
+                road_credit: 0,
+                hp: 3,
+                level: 0,
+                troops: Vec::new(),
+                fatigue: 0,
+                carrier: None,
+            };
+            SavedUnit {
+                unit,
+                home: None,
+                goto: None,
+                automated: false,
+                exploring: false,
+            }
         };
         let water: HashSet<Hex> = [Hex::new(1, 0), Hex::new(2, 0)].into();
-        let units = vec![at(UnitType::Rifleman, 1, 2), at(UnitType::Rifleman, 1, 2), at(UnitType::Rifleman, 1, 2), at(UnitType::Rifleman, 2, 2), at(UnitType::Galleon, 2, 2), at(UnitType::Rifleman, 0, 2)];
+        let units = vec![
+            at(UnitType::Rifleman, 1, 2),
+            at(UnitType::Rifleman, 1, 2),
+            at(UnitType::Rifleman, 1, 2),
+            at(UnitType::Rifleman, 2, 2),
+            at(UnitType::Galleon, 2, 2),
+            at(UnitType::Rifleman, 0, 2),
+        ];
         assert_eq!(stranded(&units, &water), vec![(Hex::new(1, 0), 2, 3)]);
     }
     use super::*;
@@ -413,10 +529,27 @@ mod tests {
             scandal: 0,
             auto_build: false,
         };
-        let unit = Unit { unit_type: UnitType::Legion, movement_left: 1, owner: PLAYER, position: Hex::new(2, 2), build_turns_left: None, current_build: None, fortified: true, road_credit: 0, hp: 2, level: 1, troops: Vec::new(), fatigue: 0, carrier: None };
+        let unit = Unit {
+            unit_type: UnitType::Legion,
+            movement_left: 1,
+            owner: PLAYER,
+            position: Hex::new(2, 2),
+            build_turns_left: None,
+            current_build: None,
+            fortified: true,
+            road_credit: 0,
+            hp: 2,
+            level: 1,
+            troops: Vec::new(),
+            fatigue: 0,
+            carrier: None,
+        };
         SaveGame {
             version: VERSION,
-            state: GameState { turn: 42, ..Default::default() },
+            state: GameState {
+                turn: 42,
+                ..Default::default()
+            },
             tech: TechState::default(),
             civs: Civilizations::default(),
             fog: FogOfWar::default(),
@@ -435,9 +568,24 @@ mod tests {
             religions: Default::default(),
             villages: Default::default(),
             log: vec!["hello".into()],
-            tiles: vec![HexTile { coord: Hex::new(1, 2), terrain: Terrain::Hills, improvements: vec![], resource: None }],
-            cities: vec![SavedCity { city, buildings: vec![Building::Temple, Building::Oracle], mood: Some([0, 5, 1]) }],
-            units: vec![SavedUnit { unit, home: Some(Hex::new(1, 2)), goto: Some(Hex::new(5, 5)), automated: false, exploring: false }],
+            tiles: vec![HexTile {
+                coord: Hex::new(1, 2),
+                terrain: Terrain::Hills,
+                improvements: vec![],
+                resource: None,
+            }],
+            cities: vec![SavedCity {
+                city,
+                buildings: vec![Building::Temple, Building::Oracle],
+                mood: Some([0, 5, 1]),
+            }],
+            units: vec![SavedUnit {
+                unit,
+                home: Some(Hex::new(1, 2)),
+                goto: Some(Hex::new(5, 5)),
+                automated: false,
+                exploring: false,
+            }],
         }
     }
 
@@ -449,19 +597,40 @@ mod tests {
         assert_eq!(game.diplomacy.get_treaty(0, 2), Treaty::War);
         assert_eq!(game.great.city[&Hex::new(1, 2)], [1, 2, 3, 4]);
         assert_eq!(game.culture.of(Hex::new(1, 2)), 77);
-        assert_eq!((game.culture.of_people(0), game.culture.held_by(Hex::new(1, 2), 0)), (77, 77));
-        assert_eq!(game.cities[0].buildings, vec![Building::Temple, Building::Oracle]);
+        assert_eq!(
+            (
+                game.culture.of_people(0),
+                game.culture.held_by(Hex::new(1, 2), 0)
+            ),
+            (77, 77)
+        );
+        assert_eq!(
+            game.cities[0].buildings,
+            vec![Building::Temple, Building::Oracle]
+        );
         assert_eq!(game.cities[0].mood, Some([0, 5, 1]));
-        assert_eq!(game.cities[0].city.production_queue, Some(ProductionItem::Building(Building::Temple)));
+        assert_eq!(
+            game.cities[0].city.production_queue,
+            Some(ProductionItem::Building(Building::Temple))
+        );
         let unit = &game.units[0];
-        assert_eq!((unit.unit.hp, unit.unit.level, unit.goto), (2, 1, Some(Hex::new(5, 5))));
+        assert_eq!(
+            (unit.unit.hp, unit.unit.level, unit.goto),
+            (2, 1, Some(Hex::new(5, 5)))
+        );
     }
 
     #[test]
     fn other_files_are_refused_with_a_reason() {
-        assert!(SaveGame::parse("{\"hello\": 1}").err().unwrap().contains("not a Bevy Civ save"));
+        assert!(SaveGame::parse("{\"hello\": 1}")
+            .err()
+            .unwrap()
+            .contains("not a Bevy Civ save"));
         let mut old = sample();
         old.version = VERSION + 1;
-        assert!(SaveGame::parse(&serde_json::to_string(&old).unwrap()).err().unwrap().contains("another version"));
+        assert!(SaveGame::parse(&serde_json::to_string(&old).unwrap())
+            .err()
+            .unwrap()
+            .contains("another version"));
     }
 }

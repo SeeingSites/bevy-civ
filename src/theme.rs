@@ -24,7 +24,10 @@ pub struct Calendar {
 
 impl Default for Calendar {
     fn default() -> Self {
-        Self { before: "{year} BC".into(), after: "{year} AD".into() }
+        Self {
+            before: "{year} BC".into(),
+            after: "{year} AD".into(),
+        }
     }
 }
 
@@ -36,7 +39,7 @@ pub struct Theme {
     pub name: String,
     /// A theme whose scenarios this one also plays (e.g. a reskin of Earth's maps).
     pub base: Option<String>,
-    /// Whether peoples have unique units (an ancient game's Hoplites make no sense in 2025).
+    /// Whether peoples have unique units (a theme may switch them off).
     #[serde(default = "yes")]
     pub unique_units: bool,
     /// The folder the sprite sheets are loaded from, under `assets/` (default `sprites`).
@@ -69,7 +72,6 @@ pub fn unique_units() -> bool {
 pub const BUILT_IN: &[(&str, &str)] = &[
     ("earth", include_str!("../assets/themes/earth.json")),
     ("example", include_str!("../assets/themes/example.json")),
-    ("modern", include_str!("../assets/themes/modern.json")),
 ];
 
 /// The theme in force: leaked once per change so names can be handed out as `&'static str`.
@@ -104,7 +106,9 @@ impl Theme {
         if year < 0 {
             self.calendar.before.replace("{year}", &(-year).to_string())
         } else {
-            self.calendar.after.replace("{year}", &year.max(1).to_string())
+            self.calendar
+                .after
+                .replace("{year}", &year.max(1).to_string())
         }
     }
 }
@@ -132,7 +136,11 @@ pub fn activate(theme: Theme) {
 
 /// Activates a built-in theme by id; returns false (leaving the current one) if there is none.
 pub fn activate_built_in(id: &str) -> bool {
-    match BUILT_IN.iter().find(|(name, _)| *name == id).map(|(_, json)| Theme::parse(json)) {
+    match BUILT_IN
+        .iter()
+        .find(|(name, _)| *name == id)
+        .map(|(_, json)| Theme::parse(json))
+    {
         Some(Ok(theme)) => {
             activate(theme);
             true
@@ -153,21 +161,31 @@ pub fn plays(theme: &str) -> bool {
 
 /// The id of the theme in force ("earth" by default).
 pub fn id() -> &'static str {
-    active().map(|t| t.id.as_str()).filter(|id| !id.is_empty()).unwrap_or("earth")
+    active()
+        .map(|t| t.id.as_str())
+        .filter(|id| !id.is_empty())
+        .unwrap_or("earth")
 }
 
 /// The name of `value` under the theme in force, or `default` (its Earth name).
 pub fn rename<T: std::fmt::Debug>(kind: Kind, value: &T, default: &'static str) -> &'static str {
-    let Some(theme) = active() else { return default };
+    let Some(theme) = active() else {
+        return default;
+    };
     if theme.table(kind).is_empty() {
         return default;
     }
-    theme.rename_in(kind, &format!("{value:?}")).unwrap_or(default)
+    theme
+        .rename_in(kind, &format!("{value:?}"))
+        .unwrap_or(default)
 }
 
 /// A proper noun or set word under the theme in force, or `default`.
 pub fn term(key: &str, default: &'static str) -> &'static str {
-    active().and_then(|t| t.terms.get(key)).map(String::as_str).unwrap_or(default)
+    active()
+        .and_then(|t| t.terms.get(key))
+        .map(String::as_str)
+        .unwrap_or(default)
 }
 
 /// A year as the theme in force writes it.
@@ -180,7 +198,9 @@ pub fn year(year: i32) -> String {
 
 /// The folder under `assets/` that sprite sheets come from.
 pub fn sprites() -> &'static str {
-    active().and_then(|t| t.sprites.as_deref()).unwrap_or("sprites")
+    active()
+        .and_then(|t| t.sprites.as_deref())
+        .unwrap_or("sprites")
 }
 
 #[cfg(test)]
@@ -194,7 +214,10 @@ mod tests {
                  "terms": { "destination": "Home" } }"#,
         )
         .unwrap();
-        assert_eq!(theme.rename_in(Kind::Unit, "Musketman"), Some("Plasma Trooper"));
+        assert_eq!(
+            theme.rename_in(Kind::Unit, "Musketman"),
+            Some("Plasma Trooper")
+        );
         assert_eq!(theme.rename_in(Kind::Unit, "Warrior"), None);
         assert_eq!(theme.rename_in(Kind::Tech, "Musketman"), None);
         assert_eq!(theme.year(-300), "300 BL");

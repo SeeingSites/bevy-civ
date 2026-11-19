@@ -119,7 +119,8 @@ impl Game {
         }
 
         // Tech
-        self.science_progress += ((total_science as f32) * self.government.science_modifier()) as u32;
+        self.science_progress +=
+            ((total_science as f32) * self.government.science_modifier()) as u32;
         if self.science_progress >= 40 {
             self.science_progress = 0;
             self.techs += 1;
@@ -158,16 +159,23 @@ struct SimResult {
 
 fn main() {
     let args: Vec<String> = env::args().collect();
-    let num_games = args.iter().position(|a| a == "--games")
+    let num_games = args
+        .iter()
+        .position(|a| a == "--games")
         .and_then(|i| args.get(i + 1))
         .and_then(|s| s.parse().ok())
         .unwrap_or(50);
-    let max_turns = args.iter().position(|a| a == "--max-turns")
+    let max_turns = args
+        .iter()
+        .position(|a| a == "--max-turns")
         .and_then(|i| args.get(i + 1))
         .and_then(|s| s.parse().ok())
         .unwrap_or(100);
 
-    println!("Running {} games (max {} turns each)...", num_games, max_turns);
+    println!(
+        "Running {} games (max {} turns each)...",
+        num_games, max_turns
+    );
 
     let mut results = Vec::new();
     let mut rng = rand::thread_rng();
@@ -184,7 +192,12 @@ fn main() {
             game.process_turn(&mut rng);
         }
 
-        let pop: u32 = game.cities.iter().filter(|c| c.owner == 0).map(|c| c.population).sum();
+        let pop: u32 = game
+            .cities
+            .iter()
+            .filter(|c| c.owner == 0)
+            .map(|c| c.population)
+            .sum();
         let cities = game.cities.iter().filter(|c| c.owner == 0).count() as u32;
         let score = pop * 2 + game.techs * 10 + cities * 5;
 

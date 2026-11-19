@@ -98,8 +98,23 @@ impl Terrain {
         }
     }
 
-    pub fn food(&self) -> u32 { match self { Terrain::Grassland => 2, Terrain::Plains => 1, Terrain::Forest => 1, _ => 0 } }
-    pub fn production(&self) -> u32 { match self { Terrain::Hills => 2, Terrain::Mountain => 1, Terrain::Forest => 1, Terrain::Plains => 1, _ => 0 } }
+    pub fn food(&self) -> u32 {
+        match self {
+            Terrain::Grassland => 2,
+            Terrain::Plains => 1,
+            Terrain::Forest => 1,
+            _ => 0,
+        }
+    }
+    pub fn production(&self) -> u32 {
+        match self {
+            Terrain::Hills => 2,
+            Terrain::Mountain => 1,
+            Terrain::Forest => 1,
+            Terrain::Plains => 1,
+            _ => 0,
+        }
+    }
 
     pub fn can_transform_to(&self) -> Option<Terrain> {
         match self {
@@ -113,7 +128,15 @@ impl Terrain {
 
 /// What a pillager wrecks first: the railroad, then a fortress, mine or farm, and the road last.
 pub fn pillage_target(improvements: &[Improvement]) -> Option<Improvement> {
-    [Improvement::Railroad, Improvement::Fortress, Improvement::Mine, Improvement::Farm, Improvement::Road].into_iter().find(|i| improvements.contains(i))
+    [
+        Improvement::Railroad,
+        Improvement::Fortress,
+        Improvement::Mine,
+        Improvement::Farm,
+        Improvement::Road,
+    ]
+    .into_iter()
+    .find(|i| improvements.contains(i))
 }
 
 pub fn improvement_name(improvement: Improvement) -> &'static str {
@@ -153,9 +176,24 @@ impl Improvement {
 impl Resource {
     /// Every resource, in declaration order (also the frame order of the icon atlas).
     pub const ALL: [Resource; 18] = [
-        Resource::Horses, Resource::Iron, Resource::Wine, Resource::Spices, Resource::Silk, Resource::Saltpeter,
-        Resource::Coal, Resource::Oil, Resource::Rubber, Resource::Furs, Resource::Dyes, Resource::Incense,
-        Resource::Ivory, Resource::Gems, Resource::Wheat, Resource::Cattle, Resource::Fish, Resource::Gold,
+        Resource::Horses,
+        Resource::Iron,
+        Resource::Wine,
+        Resource::Spices,
+        Resource::Silk,
+        Resource::Saltpeter,
+        Resource::Coal,
+        Resource::Oil,
+        Resource::Rubber,
+        Resource::Furs,
+        Resource::Dyes,
+        Resource::Incense,
+        Resource::Ivory,
+        Resource::Gems,
+        Resource::Wheat,
+        Resource::Cattle,
+        Resource::Fish,
+        Resource::Gold,
     ];
 
     pub fn name(&self) -> &'static str {
@@ -192,8 +230,15 @@ impl Resource {
 
     pub fn kind(&self) -> ResourceKind {
         match self {
-            Resource::Horses | Resource::Iron | Resource::Saltpeter | Resource::Coal | Resource::Oil | Resource::Rubber => ResourceKind::Strategic,
-            Resource::Wheat | Resource::Cattle | Resource::Fish | Resource::Gold => ResourceKind::Bonus,
+            Resource::Horses
+            | Resource::Iron
+            | Resource::Saltpeter
+            | Resource::Coal
+            | Resource::Oil
+            | Resource::Rubber => ResourceKind::Strategic,
+            Resource::Wheat | Resource::Cattle | Resource::Fish | Resource::Gold => {
+                ResourceKind::Bonus
+            }
             _ => ResourceKind::Luxury,
         }
     }
@@ -207,7 +252,11 @@ impl Resource {
     }
 
     pub fn happiness_bonus(&self) -> u32 {
-        if self.is_luxury() { 1 } else { 0 }
+        if self.is_luxury() {
+            1
+        } else {
+            0
+        }
     }
 
     /// Technology needed before the resource can be seen on the map and used.
@@ -238,11 +287,21 @@ impl Resource {
 
 impl HexTile {
     pub fn total_food(&self) -> u32 {
-        self.terrain.food() + self.improvements.iter().map(|i| i.food_bonus()).sum::<u32>()
+        self.terrain.food()
+            + self
+                .improvements
+                .iter()
+                .map(|i| i.food_bonus())
+                .sum::<u32>()
     }
 
     pub fn total_production(&self) -> u32 {
-        self.terrain.production() + self.improvements.iter().map(|i| i.production_bonus()).sum::<u32>()
+        self.terrain.production()
+            + self
+                .improvements
+                .iter()
+                .map(|i| i.production_bonus())
+                .sum::<u32>()
     }
 
     /// A road or a railroad (a railroad is built over a road and works as one too).
@@ -295,7 +354,10 @@ pub fn random_resource(rng: &mut impl Rng, terrain: Terrain) -> Option<Resource>
         Terrain::Plains => (13, &[Horses, Wheat, Ivory, Oil, Cattle, Wheat, Wine]),
         Terrain::Desert => (13, &[Saltpeter, Oil, Incense, Saltpeter, Oil, Gold]),
         Terrain::Forest => (14, &[Rubber, Furs, Silk, Spices, Dyes, Coal, Furs, Spices]),
-        Terrain::Hills => (17, &[Iron, Coal, Saltpeter, Wine, Incense, Gems, Gold, Iron, Coal]),
+        Terrain::Hills => (
+            17,
+            &[Iron, Coal, Saltpeter, Wine, Incense, Gems, Gold, Iron, Coal],
+        ),
         Terrain::Mountain => (17, &[Iron, Gold, Gems, Coal, Iron]),
     };
     (rng.gen_range(0..100) < chance).then(|| options[rng.gen_range(0..options.len())])
@@ -307,9 +369,18 @@ mod pillage_tests {
 
     #[test]
     fn pillagers_wreck_rails_and_works_before_roads() {
-        assert_eq!(pillage_target(&[Improvement::Road, Improvement::Farm]), Some(Improvement::Farm));
-        assert_eq!(pillage_target(&[Improvement::Road, Improvement::Railroad, Improvement::Mine]), Some(Improvement::Railroad));
-        assert_eq!(pillage_target(&[Improvement::Road]), Some(Improvement::Road));
+        assert_eq!(
+            pillage_target(&[Improvement::Road, Improvement::Farm]),
+            Some(Improvement::Farm)
+        );
+        assert_eq!(
+            pillage_target(&[Improvement::Road, Improvement::Railroad, Improvement::Mine]),
+            Some(Improvement::Railroad)
+        );
+        assert_eq!(
+            pillage_target(&[Improvement::Road]),
+            Some(Improvement::Road)
+        );
         assert_eq!(pillage_target(&[Improvement::Pollution]), None);
     }
 }

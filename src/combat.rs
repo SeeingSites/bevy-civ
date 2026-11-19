@@ -75,7 +75,15 @@ pub struct Ground {
 impl Ground {
     /// Open ground of this terrain: no city, river or works.
     pub fn open(terrain: Terrain) -> Ground {
-        Ground { terrain, fortified: false, walls: false, river: false, coast_fort: false, city: None, fortress: false }
+        Ground {
+            terrain,
+            fortified: false,
+            walls: false,
+            river: false,
+            coast_fort: false,
+            city: None,
+            fortress: false,
+        }
     }
 }
 
@@ -129,7 +137,11 @@ pub fn city_bonus(population: u32, walls: bool, attacker: Domain) -> f32 {
     } else {
         0.0
     };
-    if walls && attacker == Domain::Land { natural.max(WALLS_BONUS) } else { natural }
+    if walls && attacker == Domain::Land {
+        natural.max(WALLS_BONUS)
+    } else {
+        natural
+    }
 }
 
 /// Every bonus the defender has on this ground against an attacker of that domain, added up
@@ -155,7 +167,11 @@ pub fn defence_bonus(ground: &Ground, attacker: Domain) -> f32 {
 }
 
 fn led(l: bool) -> f32 {
-    if l { GENERAL_BONUS } else { 1.0 }
+    if l {
+        GENERAL_BONUS
+    } else {
+        1.0
+    }
 }
 
 fn army(members: u32) -> f32 {
@@ -167,7 +183,10 @@ pub const ABILITY_BONUS: f32 = 1.5;
 
 /// A unique unit's ability in attack: a charge over open ground, or storming a city.
 fn ability_attack(kind: UnitType, ground: &Ground) -> f32 {
-    let open = matches!(ground.terrain, Terrain::Grassland | Terrain::Plains | Terrain::Desert);
+    let open = matches!(
+        ground.terrain,
+        Terrain::Grassland | Terrain::Plains | Terrain::Desert
+    );
     match kind.ability() {
         Some(Ability::Charge) if open && ground.city.is_none() => ABILITY_BONUS,
         Some(Ability::Storm) if ground.city.is_some() => ABILITY_BONUS,
@@ -185,13 +204,21 @@ pub fn defence_against(attacker: UnitType, defender: &Side, ground: &Ground) -> 
     if defender.kind.ability() == Some(Ability::Bastion) && ground.city.is_some() {
         base *= ABILITY_BONUS;
     }
-    base * (1.0 + defence_bonus(ground, attacker.domain())) * led(defender.led) * army(defender.members)
+    base * (1.0 + defence_bonus(ground, attacker.domain()))
+        * led(defender.led)
+        * army(defender.members)
 }
 
 /// Attack and defence strength of each side.
 pub fn strengths(attacker: &Side, defender: &Side, ground: &Ground) -> (f32, f32) {
-    let attack = attacker.kind.stats().0 as f32 * led(attacker.led) * army(attacker.members) * ability_attack(attacker.kind, ground);
-    (attack.max(0.0), defence_against(attacker.kind, defender, ground))
+    let attack = attacker.kind.stats().0 as f32
+        * led(attacker.led)
+        * army(attacker.members)
+        * ability_attack(attacker.kind, ground);
+    (
+        attack.max(0.0),
+        defence_against(attacker.kind, defender, ground),
+    )
 }
 
 /// Whether this attacker may pull back from a losing fight against that defender: a fast unit on
@@ -202,7 +229,11 @@ pub fn may_retreat(attacker: UnitType, defender: UnitType) -> bool {
 
 /// The chance that `attacker` pulls back when it is about to fall (0 when it cannot).
 fn retreat_chance(attacker: &Side, defender: &Side) -> f64 {
-    if may_retreat(attacker.kind, defender.kind) { RETREAT_CHANCE[(attacker.level as usize).min(2)] } else { 0.0 }
+    if may_retreat(attacker.kind, defender.kind) {
+        RETREAT_CHANCE[(attacker.level as usize).min(2)]
+    } else {
+        0.0
+    }
 }
 
 /// A battle fought in rounds: each round the attacker lands a blow with chance
@@ -212,7 +243,9 @@ fn retreat_chance(attacker: &Side, defender: &Side) -> f64 {
 pub fn fight(attacker: Side, defender: Side, ground: Ground, rng: &mut impl rand::Rng) -> Outcome {
     let (attack, defence) = strengths(&attacker, &defender, &ground);
     if attack <= 0.0 {
-        return Outcome::Lost { defender_hp: defender.hp };
+        return Outcome::Lost {
+            defender_hp: defender.hp,
+        };
     }
     let p = attack / (attack + defence);
     let retreat = retreat_chance(&attacker, &defender);
@@ -247,7 +280,11 @@ pub struct Odds {
 pub fn odds(attacker: &Side, defender: &Side, ground: &Ground) -> Odds {
     let (attack, defence) = strengths(attacker, defender, ground);
     if attack <= 0.0 {
-        return Odds { win: 0.0, retreat: 0.0, loss: 1.0 };
+        return Odds {
+            win: 0.0,
+            retreat: 0.0,
+            loss: 1.0,
+        };
     }
     let p = (attack / (attack + defence)) as f64;
     let retreat = retreat_chance(attacker, defender);
@@ -255,11 +292,17 @@ pub fn odds(attacker: &Side, defender: &Side, ground: &Ground) -> Odds {
     // reach[a][d]: the chance the fight reaches a round with these hit points left.
     let mut reach = vec![vec![0.0f64; hd + 1]; ha + 1];
     reach[ha][hd] = 1.0;
-    let mut result = Odds { win: 0.0, retreat: 0.0, loss: 0.0 };
+    let mut result = Odds {
+        win: 0.0,
+        retreat: 0.0,
+        loss: 0.0,
+    };
     // Every round takes a hit point from one side, so states are visited in falling order of a + d.
     for total in (2..=ha + hd).rev() {
         for a in 1..=ha {
-            let Some(d) = total.checked_sub(a).filter(|d| (1..=hd).contains(d)) else { continue };
+            let Some(d) = total.checked_sub(a).filter(|d| (1..=hd).contains(d)) else {
+                continue;
+            };
             let q = reach[a][d];
             if q == 0.0 {
                 continue;
@@ -297,7 +340,9 @@ pub fn promotion_chance(level: u8, militaristic: bool, against_barbarians: bool)
 
 /// The chance that one round of `gun`'s bombardment lands on this defender.
 pub fn bombard_odds(gun: UnitType, defender: &Side, ground: &Ground) -> f32 {
-    let Some((strength, _, _)) = gun.bombard() else { return 0.0 };
+    let Some((strength, _, _)) = gun.bombard() else {
+        return 0.0;
+    };
     let strength = strength as f32;
     strength / (strength + defence_against(gun, defender, ground)).max(0.01)
 }
@@ -307,7 +352,9 @@ pub fn bombard_odds(gun: UnitType, defender: &Side, ground: &Ground) -> f32 {
 /// taking a hit point; but it never takes the last one, and the gun comes to no harm. Returns the
 /// defender's hit points afterwards.
 pub fn bombard(gun: UnitType, defender: Side, ground: Ground, rng: &mut impl rand::Rng) -> u32 {
-    let Some((_, _, rate)) = gun.bombard() else { return defender.hp };
+    let Some((_, _, rate)) = gun.bombard() else {
+        return defender.hp;
+    };
     let p = bombard_odds(gun, &defender, &ground);
     let mut hp = defender.hp;
     for _ in 0..rate {
@@ -324,7 +371,13 @@ mod fight_tests {
     use rand::SeedableRng;
 
     fn side(kind: UnitType) -> Side {
-        Side { kind, hp: 3, level: 0, led: false, members: 1 }
+        Side {
+            kind,
+            hp: 3,
+            level: 0,
+            led: false,
+            members: 1,
+        }
     }
 
     fn open() -> Ground {
@@ -333,27 +386,53 @@ mod fight_tests {
 
     fn wins(attacker: Side, defender: Side, ground: Ground) -> u32 {
         let mut rng = rand::rngs::StdRng::seed_from_u64(3);
-        (0..1000).filter(|_| matches!(fight(attacker, defender, ground, &mut rng), Outcome::Won { .. })).count() as u32
+        (0..1000)
+            .filter(|_| {
+                matches!(
+                    fight(attacker, defender, ground, &mut rng),
+                    Outcome::Won { .. }
+                )
+            })
+            .count() as u32
     }
 
     /// The textbook chance of winning a fight to the death with p a round: the defender's last
     /// hit point falls after k of the attacker's, for any k below the attacker's hit points.
     fn closed_form(p: f64, ha: u32, hd: u32) -> f64 {
-        let choose = |n: u32, k: u32| (0..k).fold(1.0, |acc, i| acc * (n - i) as f64 / (i + 1) as f64);
-        (0..ha).map(|k| choose(hd - 1 + k, k) * p.powi(hd as i32) * (1.0 - p).powi(k as i32)).sum()
+        let choose =
+            |n: u32, k: u32| (0..k).fold(1.0, |acc, i| acc * (n - i) as f64 / (i + 1) as f64);
+        (0..ha)
+            .map(|k| choose(hd - 1 + k, k) * p.powi(hd as i32) * (1.0 - p).powi(k as i32))
+            .sum()
     }
 
     #[test]
     fn odds_follow_the_civ3_round_formula() {
         // Swordsmen (Legion, attack 3) against a fortified Spearman (defence 2) on open ground:
         // 2 x (1 + 0.1 + 0.25) = 2.7, so each round goes to the attacker with p = 3 / 5.7.
-        let ground = Ground { fortified: true, ..open() };
+        let ground = Ground {
+            fortified: true,
+            ..open()
+        };
         let (a, d) = strengths(&side(UnitType::Legion), &side(UnitType::Spearman), &ground);
         assert!((a - 3.0).abs() < 1e-6 && (d - 2.7).abs() < 1e-5, "{a} {d}");
         let p = 3.0 / 5.7;
         for (ha, hd) in [(3, 3), (4, 3), (3, 5), (5, 4), (1, 1)] {
-            let o = odds(&Side { hp: ha, ..side(UnitType::Legion) }, &Side { hp: hd, ..side(UnitType::Spearman) }, &ground);
-            assert!((o.win - closed_form(p, ha, hd)).abs() < 1e-5, "{ha} {hd}: {o:?}");
+            let o = odds(
+                &Side {
+                    hp: ha,
+                    ..side(UnitType::Legion)
+                },
+                &Side {
+                    hp: hd,
+                    ..side(UnitType::Spearman)
+                },
+                &ground,
+            );
+            assert!(
+                (o.win - closed_form(p, ha, hd)).abs() < 1e-5,
+                "{ha} {hd}: {o:?}"
+            );
             assert_eq!(o.retreat, 0.0, "slow units never pull back");
             assert!((o.win + o.loss - 1.0).abs() < 1e-9);
         }
@@ -363,9 +442,36 @@ mod fight_tests {
     fn exact_odds_match_fought_battles() {
         let mut rng = rand::rngs::StdRng::seed_from_u64(11);
         let cases = [
-            (Side { level: 1, hp: 4, ..side(UnitType::Knight) }, side(UnitType::Musketman), Ground { fortified: true, ..Ground::open(Terrain::Hills) }),
-            (side(UnitType::Cavalry), Side { level: 2, hp: 5, ..side(UnitType::Rifleman) }, open()),
-            (side(UnitType::Tank), side(UnitType::Infantry), Ground { city: Some(12), walls: true, ..open() }),
+            (
+                Side {
+                    level: 1,
+                    hp: 4,
+                    ..side(UnitType::Knight)
+                },
+                side(UnitType::Musketman),
+                Ground {
+                    fortified: true,
+                    ..Ground::open(Terrain::Hills)
+                },
+            ),
+            (
+                side(UnitType::Cavalry),
+                Side {
+                    level: 2,
+                    hp: 5,
+                    ..side(UnitType::Rifleman)
+                },
+                open(),
+            ),
+            (
+                side(UnitType::Tank),
+                side(UnitType::Infantry),
+                Ground {
+                    city: Some(12),
+                    walls: true,
+                    ..open()
+                },
+            ),
         ];
         for (attacker, defender, ground) in cases {
             let o = odds(&attacker, &defender, &ground);
@@ -379,24 +485,55 @@ mod fight_tests {
                     Outcome::Lost { .. } => {}
                 }
             }
-            assert!((won as f64 / n as f64 - o.win).abs() < 0.015, "{attacker:?}: {o:?} vs {won}");
-            assert!((fled as f64 / n as f64 - o.retreat).abs() < 0.015, "{attacker:?}: {o:?} vs {fled}");
+            assert!(
+                (won as f64 / n as f64 - o.win).abs() < 0.015,
+                "{attacker:?}: {o:?} vs {won}"
+            );
+            assert!(
+                (fled as f64 / n as f64 - o.retreat).abs() < 0.015,
+                "{attacker:?}: {o:?} vs {fled}"
+            );
         }
     }
 
     #[test]
     fn defence_bonuses_add_up() {
         // A fortified Spearman in a walled town on a hill by a river: 2 x (1 + 0.5 + 0.25 + 0.25 + 1).
-        let ground = Ground { terrain: Terrain::Hills, fortified: true, walls: true, river: true, city: Some(4), ..open() };
+        let ground = Ground {
+            terrain: Terrain::Hills,
+            fortified: true,
+            walls: true,
+            river: true,
+            city: Some(4),
+            ..open()
+        };
         let (_, d) = strengths(&side(UnitType::Warrior), &side(UnitType::Spearman), &ground);
         assert!((d - 6.0).abs() < 1e-5, "{d}");
         // Walls do not stop ships; a Coastal Fortress does.
-        let (_, d) = strengths(&side(UnitType::Frigate), &side(UnitType::Spearman), &Ground { coast_fort: true, ..ground });
-        assert!((d - 2.0 * (1.0 + 0.5 + 0.25 + 0.25 + 1.0)).abs() < 1e-5, "{d}");
+        let (_, d) = strengths(
+            &side(UnitType::Frigate),
+            &side(UnitType::Spearman),
+            &Ground {
+                coast_fort: true,
+                ..ground
+            },
+        );
+        assert!(
+            (d - 2.0 * (1.0 + 0.5 + 0.25 + 0.25 + 1.0)).abs() < 1e-5,
+            "{d}"
+        );
         let (_, d) = strengths(&side(UnitType::Frigate), &side(UnitType::Spearman), &ground);
         assert!((d - 2.0 * 2.0).abs() < 1e-5, "{d}");
         // A fortress: +50%, on top of fortifying.
-        let (_, d) = strengths(&side(UnitType::Warrior), &side(UnitType::Spearman), &Ground { fortress: true, fortified: true, ..Ground::open(Terrain::Grassland) });
+        let (_, d) = strengths(
+            &side(UnitType::Warrior),
+            &side(UnitType::Spearman),
+            &Ground {
+                fortress: true,
+                fortified: true,
+                ..Ground::open(Terrain::Grassland)
+            },
+        );
         assert!((d - 2.0 * 1.85).abs() < 1e-5, "{d}");
         // Mountains double, forest a quarter more.
         assert_eq!(terrain_bonus(Terrain::Mountain), 1.0);
@@ -412,30 +549,61 @@ mod fight_tests {
         assert_eq!(city_bonus(city + 1, false, Domain::Land), METROPOLIS_BONUS);
         assert_eq!(city_bonus(town, true, Domain::Land), WALLS_BONUS);
         assert_eq!(city_bonus(town + 1, true, Domain::Land), WALLS_BONUS);
-        assert_eq!(city_bonus(town, true, Domain::Sea), 0.0, "walls only stop land attacks");
+        assert_eq!(
+            city_bonus(town, true, Domain::Sea),
+            0.0,
+            "walls only stop land attacks"
+        );
         assert_eq!(city_bonus(city + 1, false, Domain::Air), METROPOLIS_BONUS);
     }
 
     #[test]
     fn pikemen_stand_firm_against_horses_and_experience_is_hit_points() {
-        let (_, against_knight) = strengths(&side(UnitType::Knight), &side(UnitType::Pikeman), &open());
-        let (_, against_legion) = strengths(&side(UnitType::Legion), &side(UnitType::Pikeman), &open());
+        let (_, against_knight) =
+            strengths(&side(UnitType::Knight), &side(UnitType::Pikeman), &open());
+        let (_, against_legion) =
+            strengths(&side(UnitType::Legion), &side(UnitType::Pikeman), &open());
         assert!((against_knight - 2.0 * against_legion).abs() < 1e-5);
         // A veteran fights no harder, but lasts longer.
-        let veteran = Side { level: 1, hp: 4, ..side(UnitType::Spearman) };
-        assert_eq!(strengths(&side(UnitType::Legion), &veteran, &open()), strengths(&side(UnitType::Legion), &side(UnitType::Spearman), &open()));
-        assert!(wins(side(UnitType::Legion), veteran, open()) < wins(side(UnitType::Legion), side(UnitType::Spearman), open()));
+        let veteran = Side {
+            level: 1,
+            hp: 4,
+            ..side(UnitType::Spearman)
+        };
+        assert_eq!(
+            strengths(&side(UnitType::Legion), &veteran, &open()),
+            strengths(&side(UnitType::Legion), &side(UnitType::Spearman), &open())
+        );
+        assert!(
+            wins(side(UnitType::Legion), veteran, open())
+                < wins(side(UnitType::Legion), side(UnitType::Spearman), open())
+        );
     }
 
     #[test]
     fn stronger_units_win_more_and_walls_matter() {
-        let even = wins(side(UnitType::Warrior), side(UnitType::Warrior), Ground::open(Terrain::Water));
+        let even = wins(
+            side(UnitType::Warrior),
+            side(UnitType::Warrior),
+            Ground::open(Terrain::Water),
+        );
         assert!((350..650).contains(&even), "{even}");
         assert!(wins(side(UnitType::Tank), side(UnitType::Warrior), open()) > 990);
-        let walled = Ground { walls: true, city: Some(3), ..open() };
-        assert!(wins(side(UnitType::Legion), side(UnitType::Spearman), walled) < wins(side(UnitType::Legion), side(UnitType::Spearman), open()));
+        let walled = Ground {
+            walls: true,
+            city: Some(3),
+            ..open()
+        };
+        assert!(
+            wins(side(UnitType::Legion), side(UnitType::Spearman), walled)
+                < wins(side(UnitType::Legion), side(UnitType::Spearman), open())
+        );
         // An army of four pools its hit points and fights 30% harder than one unit.
-        let army = Side { hp: 12, members: 4, ..side(UnitType::Legion) };
+        let army = Side {
+            hp: 12,
+            members: 4,
+            ..side(UnitType::Legion)
+        };
         assert!(wins(army, side(UnitType::Legion), open()) > 950);
         let (lone, _) = strengths(&side(UnitType::Legion), &side(UnitType::Legion), &open());
         let (strong, _) = strengths(&army, &side(UnitType::Legion), &open());
@@ -445,19 +613,51 @@ mod fight_tests {
     #[test]
     fn fast_attackers_sometimes_pull_back_from_slow_defenders_only() {
         let mut rng = rand::rngs::StdRng::seed_from_u64(9);
-        let outcomes: Vec<Outcome> = (0..400).map(|_| fight(side(UnitType::Horseman), side(UnitType::Phalanx), open(), &mut rng)).collect();
-        let fled = outcomes.iter().filter(|o| matches!(o, Outcome::Retreated { .. })).count();
-        let lost = outcomes.iter().filter(|o| matches!(o, Outcome::Lost { .. })).count();
-        assert!(fled > 50 && lost > 50, "about half of the doomed get away: {fled} fled, {lost} lost");
+        let outcomes: Vec<Outcome> = (0..400)
+            .map(|_| {
+                fight(
+                    side(UnitType::Horseman),
+                    side(UnitType::Phalanx),
+                    open(),
+                    &mut rng,
+                )
+            })
+            .collect();
+        let fled = outcomes
+            .iter()
+            .filter(|o| matches!(o, Outcome::Retreated { .. }))
+            .count();
+        let lost = outcomes
+            .iter()
+            .filter(|o| matches!(o, Outcome::Lost { .. }))
+            .count();
+        assert!(
+            fled > 50 && lost > 50,
+            "about half of the doomed get away: {fled} fled, {lost} lost"
+        );
         // Fast against fast: no way out.
         let o = odds(&side(UnitType::Cavalry), &side(UnitType::Knight), &open());
         assert_eq!(o.retreat, 0.0);
         // Elites get away more often.
         let regular = odds(&side(UnitType::Knight), &side(UnitType::Pikeman), &open());
-        let elite = odds(&Side { level: 2, ..side(UnitType::Knight) }, &side(UnitType::Pikeman), &open());
+        let elite = odds(
+            &Side {
+                level: 2,
+                ..side(UnitType::Knight)
+            },
+            &side(UnitType::Pikeman),
+            &open(),
+        );
         assert!(elite.retreat > regular.retreat);
         // Never from a defender on its last hit point.
-        let o = odds(&side(UnitType::Horseman), &Side { hp: 1, ..side(UnitType::Phalanx) }, &open());
+        let o = odds(
+            &side(UnitType::Horseman),
+            &Side {
+                hp: 1,
+                ..side(UnitType::Phalanx)
+            },
+            &open(),
+        );
         assert_eq!(o.retreat, 0.0);
     }
 
@@ -468,19 +668,60 @@ mod fight_tests {
         let o = odds(&side(UnitType::Cannon), &side(UnitType::Warrior), &open());
         assert_eq!(o.loss, 1.0, "a gun that attacks is lost");
         // A cannon takes at most one hit point a turn, radar artillery up to three.
-        let wounded: Vec<u32> = (0..200).map(|_| bombard(UnitType::Cannon, side(UnitType::Warrior), open(), &mut rng)).collect();
+        let wounded: Vec<u32> = (0..200)
+            .map(|_| bombard(UnitType::Cannon, side(UnitType::Warrior), open(), &mut rng))
+            .collect();
         assert!(wounded.iter().all(|hp| *hp >= 2) && wounded.contains(&2));
-        let shelled: Vec<u32> = (0..200).map(|_| bombard(UnitType::RadarArtillery, Side { hp: 5, ..side(UnitType::Rifleman) }, open(), &mut rng)).collect();
+        let shelled: Vec<u32> = (0..200)
+            .map(|_| {
+                bombard(
+                    UnitType::RadarArtillery,
+                    Side {
+                        hp: 5,
+                        ..side(UnitType::Rifleman)
+                    },
+                    open(),
+                    &mut rng,
+                )
+            })
+            .collect();
         assert!(shelled.iter().all(|hp| *hp >= 2) && shelled.contains(&2));
         for _ in 0..100 {
-            assert!(bombard(UnitType::RadarArtillery, Side { hp: 2, ..side(UnitType::Warrior) }, open(), &mut rng) >= 1);
+            assert!(
+                bombard(
+                    UnitType::RadarArtillery,
+                    Side {
+                        hp: 2,
+                        ..side(UnitType::Warrior)
+                    },
+                    open(),
+                    &mut rng
+                ) >= 1
+            );
         }
         // Walls blunt land guns, not warships; Artillery (12) against a fortified Infantryman (10)
         // in a walled city on a hill: 10 x (1 + 0.5 + 0.25 + 1) = 27.5.
-        let walled = Ground { terrain: Terrain::Hills, fortified: true, walls: true, city: Some(5), ..open() };
-        assert!((bombard_odds(UnitType::Artillery, &side(UnitType::Infantry), &walled) - 12.0 / 39.5).abs() < 1e-5);
-        assert!(bombard_odds(UnitType::Battleship, &side(UnitType::Infantry), &walled) > bombard_odds(UnitType::Artillery, &side(UnitType::Infantry), &walled));
-        assert_eq!(bombard(UnitType::Warrior, side(UnitType::Warrior), open(), &mut rng), 3, "only guns bombard");
+        let walled = Ground {
+            terrain: Terrain::Hills,
+            fortified: true,
+            walls: true,
+            city: Some(5),
+            ..open()
+        };
+        assert!(
+            (bombard_odds(UnitType::Artillery, &side(UnitType::Infantry), &walled) - 12.0 / 39.5)
+                .abs()
+                < 1e-5
+        );
+        assert!(
+            bombard_odds(UnitType::Battleship, &side(UnitType::Infantry), &walled)
+                > bombard_odds(UnitType::Artillery, &side(UnitType::Infantry), &walled)
+        );
+        assert_eq!(
+            bombard(UnitType::Warrior, side(UnitType::Warrior), open(), &mut rng),
+            3,
+            "only guns bombard"
+        );
     }
 
     #[test]
@@ -497,20 +738,42 @@ mod fight_tests {
         let mut in_city = open();
         in_city.city = Some(5);
         // Storm: the Praetorian strikes cities harder than the Legion, but not the open field.
-        let (praetorian, _) = strengths(&side(UnitType::Praetorian), &side(UnitType::Spearman), &in_city);
+        let (praetorian, _) = strengths(
+            &side(UnitType::Praetorian),
+            &side(UnitType::Spearman),
+            &in_city,
+        );
         let (legion, _) = strengths(&side(UnitType::Legion), &side(UnitType::Spearman), &in_city);
         assert!(praetorian > legion * 1.5 - 0.01);
-        let (praetorian_open, _) = strengths(&side(UnitType::Praetorian), &side(UnitType::Spearman), &open());
+        let (praetorian_open, _) = strengths(
+            &side(UnitType::Praetorian),
+            &side(UnitType::Spearman),
+            &open(),
+        );
         assert_eq!(praetorian_open, UnitType::Praetorian.stats().0 as f32);
         // Bastion: a Musketeer holds a city half again as well; Shield wall: a Hoplite doubles against riders.
-        let (_, musketeer) = strengths(&side(UnitType::Knight), &side(UnitType::Musketeer), &in_city);
-        let (_, musketeer_open) = strengths(&side(UnitType::Knight), &side(UnitType::Musketeer), &open());
+        let (_, musketeer) = strengths(
+            &side(UnitType::Knight),
+            &side(UnitType::Musketeer),
+            &in_city,
+        );
+        let (_, musketeer_open) =
+            strengths(&side(UnitType::Knight), &side(UnitType::Musketeer), &open());
         assert!(musketeer > musketeer_open);
         let (_, hoplite) = strengths(&side(UnitType::Knight), &side(UnitType::Hoplite), &open());
-        assert_eq!(hoplite, 2.0 * UnitType::Hoplite.stats().1 as f32 * (1.0 + defence_bonus(&open(), Domain::Land)));
+        assert_eq!(
+            hoplite,
+            2.0 * UnitType::Hoplite.stats().1 as f32 * (1.0 + defence_bonus(&open(), Domain::Land))
+        );
         // Self-sufficient: the War Elephant needs no Horses.
-        assert!(UnitType::WarElephant.required_resources().is_empty() && !UnitType::Knight.required_resources().is_empty());
+        assert!(
+            UnitType::WarElephant.required_resources().is_empty()
+                && !UnitType::Knight.required_resources().is_empty()
+        );
         // Unique units are built in place of their base unit, never by name.
-        assert!(!UnitType::Hoplite.is_trainable() && UnitType::Hoplite.cost() == UnitType::Phalanx.cost());
+        assert!(
+            !UnitType::Hoplite.is_trainable()
+                && UnitType::Hoplite.cost() == UnitType::Phalanx.cost()
+        );
     }
 }

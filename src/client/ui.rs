@@ -1,24 +1,24 @@
 //! The interface: status bar, unit and city panels, advisors, minimap and message log.
 
+use bevy::image::ImageSampler;
 use bevy::prelude::*;
 use bevy::render::render_asset::RenderAssetUsages;
 use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
-use bevy::image::ImageSampler;
 use bevy::sprite::{BorderRect, SliceScaleMode, TextureSlicer};
 use bevy::ui::widget::NodeImageMode;
 use bevy::ui::{FocusPolicy, RelativeCursorPosition};
 
 use bevy_civ::ai::Civilizations;
 use bevy_civ::building::{Building, CityBuildings, WorldWonders};
-use bevy_civ::great::{self, GreatPeople};
-use bevy_civ::espionage::{self, Espionage, Mission};
-use bevy_civ::trade::TradeRoutes;
-use bevy_civ::government::Government;
 use bevy_civ::city::{City, ProductionItem};
 use bevy_civ::diplomacy::{Diplomacy, Happiness, Treaty};
+use bevy_civ::espionage::{self, Espionage, Mission};
 use bevy_civ::fog::FogOfWar;
+use bevy_civ::government::Government;
+use bevy_civ::great::{self, GreatPeople};
 use bevy_civ::tech::{Tech, TechState};
 use bevy_civ::terrain::{HexTile, Improvement, Terrain};
+use bevy_civ::trade::TradeRoutes;
 use bevy_civ::unit::{Unit, UnitType};
 
 use super::actors::unit_row;
@@ -26,10 +26,10 @@ use super::map::Hovered;
 use super::sfx::{Sfx, SoundSettings};
 use super::{icon, owner_color, owner_name, Art};
 use crate::foreign::{self, DiploAct, Foreign, OfferKind, TradeAsk};
-use crate::supply::Supplies;
-use bevy_civ::terrain::{Resource as Good, ResourceKind};
 use crate::scenario::{self, NewGame, Scenario};
+use crate::supply::Supplies;
 use crate::{Action, AppState, Dirty, GameLog, GameState, MapData, Selection, BARBARIANS, PLAYER};
+use bevy_civ::terrain::{Resource as Good, ResourceKind};
 
 const CREAM: Color = Color::srgb(0.94, 0.9, 0.81);
 const GOLD: Color = Color::srgb(0.95, 0.83, 0.52);
@@ -74,7 +74,13 @@ pub enum EmpireTab {
 }
 
 impl EmpireTab {
-    const ALL: [EmpireTab; 5] = [EmpireTab::Government, EmpireTab::Cities, EmpireTab::Military, EmpireTab::Score, EmpireTab::Space];
+    const ALL: [EmpireTab; 5] = [
+        EmpireTab::Government,
+        EmpireTab::Cities,
+        EmpireTab::Military,
+        EmpireTab::Score,
+        EmpireTab::Space,
+    ];
 
     fn name(self) -> &'static str {
         match self {
@@ -323,7 +329,11 @@ pub enum DiploPage {
 }
 
 impl DiploPage {
-    const ALL: [DiploPage; 3] = [DiploPage::Talk, DiploPage::Relations, DiploPage::Intelligence];
+    const ALL: [DiploPage; 3] = [
+        DiploPage::Talk,
+        DiploPage::Relations,
+        DiploPage::Intelligence,
+    ];
 
     fn name(self) -> &'static str {
         match self {
@@ -345,7 +355,12 @@ pub enum CityTab {
 }
 
 impl CityTab {
-    const ALL: [CityTab; 4] = [CityTab::Units, CityTab::Buildings, CityTab::Wonders, CityTab::Overview];
+    const ALL: [CityTab; 4] = [
+        CityTab::Units,
+        CityTab::Buildings,
+        CityTab::Wonders,
+        CityTab::Overview,
+    ];
 
     fn name(self) -> &'static str {
         match self {
@@ -396,6 +411,8 @@ pub enum Command {
     CloseModal,
     SelectCiv(u32),
     PickScenario(usize),
+    /// Switches the Modern Nations expansion on or off.
+    ToggleExpansion,
     PickCiv(usize),
     BackToScenarios,
     QuitToMenu,
@@ -505,11 +522,25 @@ fn sliced(border: f32) -> NodeImageMode {
 
 /// A framed panel that also stops clicks from reaching the map.
 fn panel(image: &Handle<Image>, node: Node) -> impl Bundle {
-    (node, ImageNode { image: image.clone(), image_mode: sliced(22.0), ..default() }, Interaction::None, FocusPolicy::Block)
+    (
+        node,
+        ImageNode {
+            image: image.clone(),
+            image_mode: sliced(22.0),
+            ..default()
+        },
+        Interaction::None,
+        FocusPolicy::Block,
+    )
 }
 
 /// A line of text (for other client modules).
-pub fn label_bundle(font: &Handle<Font>, text: impl Into<String>, size: f32, color: Color) -> impl Bundle {
+pub fn label_bundle(
+    font: &Handle<Font>,
+    text: impl Into<String>,
+    size: f32,
+    color: Color,
+) -> impl Bundle {
     label(font, text, size, color)
 }
 
@@ -522,22 +553,49 @@ pub fn tip_buttons(parent: &mut ChildBuilder, art: &Art) {
 }
 
 fn label(font: &Handle<Font>, text: impl Into<String>, size: f32, color: Color) -> impl Bundle {
-    (Text::new(text), TextFont { font: font.clone(), font_size: size, ..default() }, TextColor(color))
+    (
+        Text::new(text),
+        TextFont {
+            font: font.clone(),
+            font_size: size,
+            ..default()
+        },
+        TextColor(color),
+    )
 }
 
 fn icon_node(art: &Art, index: usize, size: f32) -> impl Bundle {
     (
-        Node { width: Val::Px(size), height: Val::Px(size), ..default() },
-        ImageNode { image: art.icons.clone(), texture_atlas: Some(art.atlas(&art.icons_layout, index)), ..default() },
+        Node {
+            width: Val::Px(size),
+            height: Val::Px(size),
+            ..default()
+        },
+        ImageNode {
+            image: art.icons.clone(),
+            texture_atlas: Some(art.atlas(&art.icons_layout, index)),
+            ..default()
+        },
     )
 }
 
 fn row(gap: f32) -> Node {
-    Node { flex_direction: FlexDirection::Row, align_items: AlignItems::Center, column_gap: Val::Px(gap), row_gap: Val::Px(gap), flex_wrap: FlexWrap::Wrap, ..default() }
+    Node {
+        flex_direction: FlexDirection::Row,
+        align_items: AlignItems::Center,
+        column_gap: Val::Px(gap),
+        row_gap: Val::Px(gap),
+        flex_wrap: FlexWrap::Wrap,
+        ..default()
+    }
 }
 
 fn column(gap: f32) -> Node {
-    Node { flex_direction: FlexDirection::Column, row_gap: Val::Px(gap), ..default() }
+    Node {
+        flex_direction: FlexDirection::Column,
+        row_gap: Val::Px(gap),
+        ..default()
+    }
 }
 
 /// A button's full text, kept so that a compact screen can drop its keyboard hint (see
@@ -548,7 +606,9 @@ pub struct KeyHint(String);
 /// Whether `inner` (what stands in brackets) names a keyboard shortcut: "H", "F1", "Enter", "Ctrl+Z".
 fn is_key_name(inner: &str) -> bool {
     let single = inner.len() == 1 && inner.chars().all(|c| c.is_ascii_uppercase());
-    let function = inner.len() >= 2 && inner.starts_with('F') && inner[1..].chars().all(|c| c.is_ascii_digit());
+    let function = inner.len() >= 2
+        && inner.starts_with('F')
+        && inner[1..].chars().all(|c| c.is_ascii_digit());
     single || function || matches!(inner, "Enter" | "Space" | "Tab" | "Ctrl+Z" | "Shift+Tab")
 }
 
@@ -576,19 +636,34 @@ pub fn without_key_hints(text: &str) -> String {
 
 /// Gives static buttons on a compact screen the short form of their text (and back, when the
 /// screen is no longer compact).
-pub fn apply_key_hints(screen: Res<super::layout::Screen>, mut labels: Query<(&KeyHint, &mut Text)>, added: Query<(), Added<KeyHint>>) {
+pub fn apply_key_hints(
+    screen: Res<super::layout::Screen>,
+    mut labels: Query<(&KeyHint, &mut Text)>,
+    added: Query<(), Added<KeyHint>>,
+) {
     if !screen.is_changed() && added.is_empty() {
         return;
     }
     for (hint, mut text) in &mut labels {
-        let wanted = if screen.compact { without_key_hints(&hint.0) } else { hint.0.clone() };
+        let wanted = if screen.compact {
+            without_key_hints(&hint.0)
+        } else {
+            hint.0.clone()
+        };
         if text.0 != wanted {
             text.0 = wanted;
         }
     }
 }
 
-fn button(parent: &mut ChildBuilder, art: &Art, text: impl Into<String>, command: Command, tint: Color, size: f32) {
+fn button(
+    parent: &mut ChildBuilder,
+    art: &Art,
+    text: impl Into<String>,
+    command: Command,
+    tint: Color,
+    size: f32,
+) {
     let text: String = text.into();
     let hint = (without_key_hints(&text) != text).then(|| KeyHint(text.clone()));
     parent
@@ -600,7 +675,12 @@ fn button(parent: &mut ChildBuilder, art: &Art, text: impl Into<String>, command
                 align_items: AlignItems::Center,
                 ..default()
             },
-            ImageNode { image: art.button.clone(), image_mode: sliced(14.0), color: tint, ..default() },
+            ImageNode {
+                image: art.button.clone(),
+                image_mode: sliced(14.0),
+                color: tint,
+                ..default()
+            },
             ButtonTint(tint),
             ButtonCommand(command),
         ))
@@ -614,7 +694,13 @@ fn button(parent: &mut ChildBuilder, art: &Art, text: impl Into<String>, command
 
 /// An advisor window: a header banner with the title and a close button (x) at the top right that
 /// stay in place, over a body that scrolls (wheel or finger) when it does not fit the screen.
-fn framed_window(p: &mut ChildBuilder, art: &Art, width: f32, title: impl Into<String>, body: impl FnOnce(&mut ChildBuilder)) {
+fn framed_window(
+    p: &mut ChildBuilder,
+    art: &Art,
+    width: f32,
+    title: impl Into<String>,
+    body: impl FnOnce(&mut ChildBuilder),
+) {
     p.spawn(panel(
         &art.parchment,
         Node {
@@ -629,7 +715,14 @@ fn framed_window(p: &mut ChildBuilder, art: &Art, width: f32, title: impl Into<S
     ))
     .with_children(|frame| {
         frame
-            .spawn(Node { justify_content: JustifyContent::SpaceBetween, align_items: AlignItems::Center, column_gap: Val::Px(10.0), padding: UiRect::bottom(Val::Px(6.0)), flex_shrink: 0.0, ..default() })
+            .spawn(Node {
+                justify_content: JustifyContent::SpaceBetween,
+                align_items: AlignItems::Center,
+                column_gap: Val::Px(10.0),
+                padding: UiRect::bottom(Val::Px(6.0)),
+                flex_shrink: 0.0,
+                ..default()
+            })
             .with_children(|head| {
                 head.spawn(label(&art.font_title, title, 26.0, INK));
                 close_button(head, art);
@@ -639,7 +732,15 @@ fn framed_window(p: &mut ChildBuilder, art: &Art, width: f32, title: impl Into<S
                 super::layout::Scrollable,
                 RelativeCursorPosition::default(),
                 ScrollPosition::default(),
-                Node { flex_direction: FlexDirection::Column, row_gap: Val::Px(10.0), overflow: Overflow::scroll_y(), flex_shrink: 1.0, min_height: Val::Px(0.0), padding: UiRect::right(Val::Px(8.0)), ..default() },
+                Node {
+                    flex_direction: FlexDirection::Column,
+                    row_gap: Val::Px(10.0),
+                    overflow: Overflow::scroll_y(),
+                    flex_shrink: 1.0,
+                    min_height: Val::Px(0.0),
+                    padding: UiRect::right(Val::Px(8.0)),
+                    ..default()
+                },
             ))
             .with_children(body);
     });
@@ -650,8 +751,20 @@ fn close_button(parent: &mut ChildBuilder, art: &Art) {
     parent
         .spawn((
             Button,
-            Node { width: Val::Px(40.0), height: Val::Px(40.0), justify_content: JustifyContent::Center, align_items: AlignItems::Center, flex_shrink: 0.0, ..default() },
-            ImageNode { image: art.button.clone(), image_mode: sliced(14.0), color: BRONZE, ..default() },
+            Node {
+                width: Val::Px(40.0),
+                height: Val::Px(40.0),
+                justify_content: JustifyContent::Center,
+                align_items: AlignItems::Center,
+                flex_shrink: 0.0,
+                ..default()
+            },
+            ImageNode {
+                image: art.button.clone(),
+                image_mode: sliced(14.0),
+                color: BRONZE,
+                ..default()
+            },
             ButtonTint(BRONZE),
             ButtonCommand(Command::CloseModal),
         ))
@@ -661,21 +774,55 @@ fn close_button(parent: &mut ChildBuilder, art: &Art) {
 }
 
 /// A small card for a unit in a stack: its figure, name and a line of status.
-fn unit_card(parent: &mut ChildBuilder, art: &Art, unit: &Unit, name: String, status: String, command: Command, tint: Color) {
+fn unit_card(
+    parent: &mut ChildBuilder,
+    art: &Art,
+    unit: &Unit,
+    name: String,
+    status: String,
+    command: Command,
+    tint: Color,
+) {
     parent
         .spawn((
             Button,
-            Node { padding: UiRect::new(Val::Px(4.0), Val::Px(9.0), Val::Px(3.0), Val::Px(3.0)), align_items: AlignItems::Center, column_gap: Val::Px(5.0), width: Val::Px(156.0), ..default() },
-            ImageNode { image: art.button.clone(), image_mode: sliced(14.0), color: tint, ..default() },
+            Node {
+                padding: UiRect::new(Val::Px(4.0), Val::Px(9.0), Val::Px(3.0), Val::Px(3.0)),
+                align_items: AlignItems::Center,
+                column_gap: Val::Px(5.0),
+                width: Val::Px(156.0),
+                ..default()
+            },
+            ImageNode {
+                image: art.button.clone(),
+                image_mode: sliced(14.0),
+                color: tint,
+                ..default()
+            },
             ButtonTint(tint),
             ButtonCommand(command),
         ))
         .with_children(|card| {
             card.spawn((
-                Node { width: Val::Px(34.0), height: Val::Px(34.0), ..default() },
-                ImageNode { image: art.units.clone(), texture_atlas: Some(art.atlas(&art.units_layout, super::actors::unit_row(unit.unit_type) * 4)), ..default() },
+                Node {
+                    width: Val::Px(34.0),
+                    height: Val::Px(34.0),
+                    ..default()
+                },
+                ImageNode {
+                    image: art.units.clone(),
+                    texture_atlas: Some(art.atlas(
+                        &art.units_layout,
+                        super::actors::unit_row(unit.unit_type) * 4,
+                    )),
+                    ..default()
+                },
             ));
-            card.spawn(Node { flex_direction: FlexDirection::Column, ..default() }).with_children(|text| {
+            card.spawn(Node {
+                flex_direction: FlexDirection::Column,
+                ..default()
+            })
+            .with_children(|text| {
                 text.spawn(label(&art.font_bold, name, 12.0, INK));
                 text.spawn(label(&art.font_body, status, 11.0, INK));
             });
@@ -686,7 +833,11 @@ fn unit_card(parent: &mut ChildBuilder, art: &Art, unit: &Unit, name: String, st
 /// A button's text with its keyboard shortcut in brackets, e.g. "Fortify (H)". A phone has no
 /// keyboard, so on a compact screen the shortcut is left off (shorter buttons, a shorter panel).
 fn keyed(screen: &super::layout::Screen, text: &str) -> String {
-    if screen.compact { without_key_hints(text) } else { text.to_string() }
+    if screen.compact {
+        without_key_hints(text)
+    } else {
+        text.to_string()
+    }
 }
 
 fn moves_left(unit: &Unit) -> String {
@@ -706,7 +857,11 @@ fn moves_left(unit: &Unit) -> String {
 pub struct SoundLabel;
 
 fn sound_label(on: bool) -> &'static str {
-    if on { "Sound: On (V)" } else { "Sound: Off (V)" }
+    if on {
+        "Sound: On (V)"
+    } else {
+        "Sound: Off (V)"
+    }
 }
 
 fn sound_button(parent: &mut ChildBuilder, art: &Art) {
@@ -719,17 +874,29 @@ fn sound_button(parent: &mut ChildBuilder, art: &Art) {
                 align_items: AlignItems::Center,
                 ..default()
             },
-            ImageNode { image: art.button.clone(), image_mode: sliced(14.0), color: BRONZE, ..default() },
+            ImageNode {
+                image: art.button.clone(),
+                image_mode: sliced(14.0),
+                color: BRONZE,
+                ..default()
+            },
             ButtonTint(BRONZE),
             ButtonCommand(Command::ToggleSound),
         ))
         .with_children(|b| {
-            b.spawn((label(&art.font_bold, sound_label(true), 14.0, INK), SoundLabel));
+            b.spawn((
+                label(&art.font_bold, sound_label(true), 14.0, INK),
+                SoundLabel,
+            ));
         });
 }
 
 /// Keeps the sound switch's label in step with the setting (it can also change from the keyboard).
-pub fn update_sound_button(settings: Res<SoundSettings>, mut labels: Query<&mut Text, With<SoundLabel>>, added: Query<(), Added<SoundLabel>>) {
+pub fn update_sound_button(
+    settings: Res<SoundSettings>,
+    mut labels: Query<&mut Text, With<SoundLabel>>,
+    added: Query<(), Added<SoundLabel>>,
+) {
     if !settings.is_changed() && added.is_empty() {
         return;
     }
@@ -756,8 +923,14 @@ pub fn character_line(name: &str, adjective: &str) -> String {
         );
     };
     let (a, d, m) = unique.stats();
-    let base = unique.unique_base().map(|b| format!(" in place of the {}", b.name())).unwrap_or_default();
-    let ability = unique.ability().map(|x| format!("; {}: {}", x.name(), x.describe())).unwrap_or_default();
+    let base = unique
+        .unique_base()
+        .map(|b| format!(" in place of the {}", b.name()))
+        .unwrap_or_default();
+    let ability = unique
+        .ability()
+        .map(|x| format!("; {}: {}", x.name(), x.describe()))
+        .unwrap_or_default();
     format!(
         "{} ({}) and {} ({}). Unique unit: {}{base} ({a}/{d}/{m}{ability}). Golden age: with the first {} or {} wonder, or the {}'s first victory over another people.",
         c.traits[0].name(),
@@ -771,7 +944,12 @@ pub fn character_line(name: &str, adjective: &str) -> String {
     )
 }
 
-fn wonders_of_the_world(p: &mut ChildBuilder, art: &Art, wonders: &WorldWonders, civs: &Civilizations) {
+fn wonders_of_the_world(
+    p: &mut ChildBuilder,
+    art: &Art,
+    wonders: &WorldWonders,
+    civs: &Civilizations,
+) {
     if wonders.built.is_empty() {
         return;
     }
@@ -779,12 +957,30 @@ fn wonders_of_the_world(p: &mut ChildBuilder, art: &Art, wonders: &WorldWonders,
     built.sort_by_key(|(w, _)| w.name());
     p.spawn(label(&art.font_title, "Wonders of the world", 14.0, GOLD));
     for (wonder, (owner, city)) in built {
-        p.spawn(label(&art.font_body, format!("{}: {} ({}) - {}", wonder.name(), city, owner_name(*owner, civs), wonder.wonder_effect()), 13.0, owner_color(*owner).mix(&Color::WHITE, 0.55)));
+        p.spawn(label(
+            &art.font_body,
+            format!(
+                "{}: {} ({}) - {}",
+                wonder.name(),
+                city,
+                owner_name(*owner, civs),
+                wonder.wonder_effect()
+            ),
+            13.0,
+            owner_color(*owner).mix(&Color::WHITE, 0.55),
+        ));
     }
 }
 
 /// A third-width button in the city panel: the name, and under it the details and build time.
-fn production_button(parent: &mut ChildBuilder, art: &Art, name: &str, detail: String, command: Command, tint: Color) {
+fn production_button(
+    parent: &mut ChildBuilder,
+    art: &Art,
+    name: &str,
+    detail: String,
+    command: Command,
+    tint: Color,
+) {
     parent
         .spawn((
             Button,
@@ -808,14 +1004,23 @@ fn production_button(parent: &mut ChildBuilder, art: &Art, name: &str, detail: S
 fn bar(parent: &mut ChildBuilder, fraction: f32, color: Color) {
     parent
         .spawn((
-            Node { width: Val::Percent(100.0), height: Val::Px(12.0), border: UiRect::all(Val::Px(1.0)), ..default() },
+            Node {
+                width: Val::Percent(100.0),
+                height: Val::Px(12.0),
+                border: UiRect::all(Val::Px(1.0)),
+                ..default()
+            },
             BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.45)),
             BorderColor(Color::srgba(0.0, 0.0, 0.0, 0.7)),
             BorderRadius::all(Val::Px(4.0)),
         ))
         .with_children(|b| {
             b.spawn((
-                Node { width: Val::Percent(fraction.clamp(0.0, 1.0) * 100.0), height: Val::Percent(100.0), ..default() },
+                Node {
+                    width: Val::Percent(fraction.clamp(0.0, 1.0) * 100.0),
+                    height: Val::Percent(100.0),
+                    ..default()
+                },
                 BackgroundColor(color),
                 BorderRadius::all(Val::Px(3.0)),
             ));
@@ -823,10 +1028,16 @@ fn bar(parent: &mut ChildBuilder, fraction: f32, color: Color) {
 }
 
 fn stat(parent: &mut ChildBuilder, art: &Art, index: usize, text: impl Into<String>, color: Color) {
-    parent.spawn(Node { align_items: AlignItems::Center, column_gap: Val::Px(4.0), ..default() }).with_children(|s| {
-        s.spawn(icon_node(art, index, 20.0));
-        s.spawn(label(&art.font_bold, text, 16.0, color));
-    });
+    parent
+        .spawn(Node {
+            align_items: AlignItems::Center,
+            column_gap: Val::Px(4.0),
+            ..default()
+        })
+        .with_children(|s| {
+            s.spawn(icon_node(art, index, 20.0));
+            s.spawn(label(&art.font_bold, text, 16.0, color));
+        });
 }
 
 pub fn year_label(state: &GameState) -> String {
@@ -836,8 +1047,17 @@ pub fn year_label(state: &GameState) -> String {
 
 fn good_icon(art: &Art, good: Good, size: f32) -> impl Bundle {
     (
-        Node { width: Val::Px(size), height: Val::Px(size), flex_shrink: 0.0, ..default() },
-        ImageNode { image: art.resources.clone(), texture_atlas: Some(art.atlas(&art.resources_layout, good.index())), ..default() },
+        Node {
+            width: Val::Px(size),
+            height: Val::Px(size),
+            flex_shrink: 0.0,
+            ..default()
+        },
+        ImageNode {
+            image: art.resources.clone(),
+            texture_atlas: Some(art.atlas(&art.resources_layout, good.index())),
+            ..default()
+        },
     )
 }
 
@@ -845,8 +1065,17 @@ const GRAY: Color = Color::srgb(0.62, 0.6, 0.57);
 
 fn portrait(art: &Art, index: usize, size: f32) -> impl Bundle {
     (
-        Node { width: Val::Px(size), height: Val::Px(size), flex_shrink: 0.0, ..default() },
-        ImageNode { image: art.leaders.clone(), texture_atlas: Some(art.atlas(&art.leaders_layout, index.min(21))), ..default() },
+        Node {
+            width: Val::Px(size),
+            height: Val::Px(size),
+            flex_shrink: 0.0,
+            ..default()
+        },
+        ImageNode {
+            image: art.leaders.clone(),
+            texture_atlas: Some(art.atlas(&art.leaders_layout, index.min(21))),
+            ..default()
+        },
     )
 }
 
@@ -888,31 +1117,96 @@ pub fn setup_ui(mut commands: Commands, art: Res<Art>, mut images: ResMut<Assets
         .with_children(|top| {
             top.spawn((
                 StatusFigures,
-                Node { align_items: AlignItems::Center, column_gap: Val::Px(11.0), row_gap: Val::Px(4.0), flex_wrap: FlexWrap::Wrap, flex_shrink: 1.0, flex_grow: 1.0, min_width: Val::Px(0.0), overflow: Overflow::clip_x(), ..default() },
+                Node {
+                    align_items: AlignItems::Center,
+                    column_gap: Val::Px(11.0),
+                    row_gap: Val::Px(4.0),
+                    flex_wrap: FlexWrap::Wrap,
+                    flex_shrink: 1.0,
+                    flex_grow: 1.0,
+                    min_width: Val::Px(0.0),
+                    overflow: Overflow::clip_x(),
+                    ..default()
+                },
             ))
             .with_children(|bar| {
-            bar.spawn((label(&art.font_title, "", 20.0, GOLD), StatText::Title));
-            for (index, kind) in [
-                (icon::TURN, StatText::Turn),
-                (icon::GOLD, StatText::Gold),
-                (icon::SCIENCE, StatText::Science),
-                (icon::POPULATION, StatText::Population),
-                (icon::CULTURE, StatText::Score),
-            ] {
-                bar.spawn(Node { align_items: AlignItems::Center, column_gap: Val::Px(6.0), ..default() }).with_children(|item| {
-                    item.spawn(icon_node(&art, index, 24.0));
-                    item.spawn((label(&art.font_bold, "", 17.0, CREAM), kind));
-                });
-            }
-            bar.spawn((label(&art.font_body, "", 16.0, MUTED), StatText::Government));
+                bar.spawn((label(&art.font_title, "", 20.0, GOLD), StatText::Title));
+                for (index, kind) in [
+                    (icon::TURN, StatText::Turn),
+                    (icon::GOLD, StatText::Gold),
+                    (icon::SCIENCE, StatText::Science),
+                    (icon::POPULATION, StatText::Population),
+                    (icon::CULTURE, StatText::Score),
+                ] {
+                    bar.spawn(Node {
+                        align_items: AlignItems::Center,
+                        column_gap: Val::Px(6.0),
+                        ..default()
+                    })
+                    .with_children(|item| {
+                        item.spawn(icon_node(&art, index, 24.0));
+                        item.spawn((label(&art.font_bold, "", 17.0, CREAM), kind));
+                    });
+                }
+                bar.spawn((label(&art.font_body, "", 16.0, MUTED), StatText::Government));
             });
-            top.spawn(Node { column_gap: Val::Px(6.0), row_gap: Val::Px(4.0), flex_wrap: FlexWrap::Wrap, flex_shrink: 0.0, max_width: Val::Percent(100.0), ..default() }).with_children(|bar| {
-                button(bar, &art, "Science (Q)", Command::Toggle(Modal::Science), BRONZE, 14.0);
-                button(bar, &art, "Diplomacy (E)", Command::Toggle(Modal::Diplomacy), BRONZE, 14.0);
-                button(bar, &art, "Trade (G)", Command::Toggle(Modal::Trade), BRONZE, 14.0);
-                button(bar, &art, "Empire (Y)", Command::Toggle(Modal::Empire), BRONZE, 14.0);
-                button(bar, &art, "Help (F1)", Command::Toggle(Modal::Help), BRONZE, 14.0);
-                button(bar, &art, "Game", Command::Toggle(Modal::Game), BRONZE, 14.0);
+            top.spawn(Node {
+                column_gap: Val::Px(6.0),
+                row_gap: Val::Px(4.0),
+                flex_wrap: FlexWrap::Wrap,
+                flex_shrink: 0.0,
+                max_width: Val::Percent(100.0),
+                ..default()
+            })
+            .with_children(|bar| {
+                button(
+                    bar,
+                    &art,
+                    "Science (Q)",
+                    Command::Toggle(Modal::Science),
+                    BRONZE,
+                    14.0,
+                );
+                button(
+                    bar,
+                    &art,
+                    "Diplomacy (E)",
+                    Command::Toggle(Modal::Diplomacy),
+                    BRONZE,
+                    14.0,
+                );
+                button(
+                    bar,
+                    &art,
+                    "Trade (G)",
+                    Command::Toggle(Modal::Trade),
+                    BRONZE,
+                    14.0,
+                );
+                button(
+                    bar,
+                    &art,
+                    "Empire (Y)",
+                    Command::Toggle(Modal::Empire),
+                    BRONZE,
+                    14.0,
+                );
+                button(
+                    bar,
+                    &art,
+                    "Help (F1)",
+                    Command::Toggle(Modal::Help),
+                    BRONZE,
+                    14.0,
+                );
+                button(
+                    bar,
+                    &art,
+                    "Game",
+                    Command::Toggle(Modal::Game),
+                    BRONZE,
+                    14.0,
+                );
             });
         });
 
@@ -937,7 +1231,10 @@ pub fn setup_ui(mut commands: Commands, art: Res<Art>, mut images: ResMut<Assets
         .with_children(|left| {
             left.spawn((
                 LogBox,
-                Node { padding: UiRect::axes(Val::Px(14.0), Val::Px(8.0)), ..default() },
+                Node {
+                    padding: UiRect::axes(Val::Px(14.0), Val::Px(8.0)),
+                    ..default()
+                },
                 BackgroundColor(Color::srgba(0.04, 0.05, 0.07, 0.72)),
                 BorderRadius::all(Val::Px(8.0)),
             ))
@@ -967,7 +1264,11 @@ pub fn setup_ui(mut commands: Commands, art: Res<Art>, mut images: ResMut<Assets
 
     // Minimap + end turn (bottom right)
     let mut image = Image::new_fill(
-        Extent3d { width: MM, height: MM, depth_or_array_layers: 1 },
+        Extent3d {
+            width: MM,
+            height: MM,
+            depth_or_array_layers: 1,
+        },
         TextureDimension::D2,
         &[10, 9, 8, 255],
         TextureFormat::Rgba8UnormSrgb,
@@ -977,36 +1278,73 @@ pub fn setup_ui(mut commands: Commands, art: Res<Art>, mut images: ResMut<Assets
     let minimap = images.add(image);
     commands.insert_resource(MinimapImage(minimap.clone()));
     commands
-        .spawn((TurnPanel, super::layout::Dock::BottomRight, super::layout::DockSize { width: 212.0 }, panel(
-            &art.panel,
-            Node {
-                position_type: PositionType::Absolute,
-                right: Val::Px(10.0),
-                bottom: Val::Px(10.0),
-                width: Val::Px(212.0),
-                padding: UiRect::all(Val::Px(16.0)),
-                flex_direction: FlexDirection::Column,
-                align_items: AlignItems::Stretch,
-                row_gap: Val::Px(8.0),
-                ..default()
-            },
-        )))
+        .spawn((
+            TurnPanel,
+            super::layout::Dock::BottomRight,
+            super::layout::DockSize { width: 212.0 },
+            panel(
+                &art.panel,
+                Node {
+                    position_type: PositionType::Absolute,
+                    right: Val::Px(10.0),
+                    bottom: Val::Px(10.0),
+                    width: Val::Px(212.0),
+                    padding: UiRect::all(Val::Px(16.0)),
+                    flex_direction: FlexDirection::Column,
+                    align_items: AlignItems::Stretch,
+                    row_gap: Val::Px(8.0),
+                    ..default()
+                },
+            ),
+        ))
         .with_children(|p| {
-            p.spawn((MinimapFrame, Node { padding: UiRect::all(Val::Px(2.0)), ..default() }, BackgroundColor(Color::srgb(0.42, 0.29, 0.11)))).with_children(|frame| {
+            p.spawn((
+                MinimapFrame,
+                Node {
+                    padding: UiRect::all(Val::Px(2.0)),
+                    ..default()
+                },
+                BackgroundColor(Color::srgb(0.42, 0.29, 0.11)),
+            ))
+            .with_children(|frame| {
                 frame.spawn((
                     MinimapNode,
-                    Node { width: Val::Px(176.0), height: Val::Px(176.0), ..default() },
-                    ImageNode { image: minimap, image_mode: NodeImageMode::Stretch, ..default() },
+                    Node {
+                        width: Val::Px(176.0),
+                        height: Val::Px(176.0),
+                        ..default()
+                    },
+                    ImageNode {
+                        image: minimap,
+                        image_mode: NodeImageMode::Stretch,
+                        ..default()
+                    },
                     Interaction::None,
                     RelativeCursorPosition::default(),
                 ));
             });
-            p.spawn((label(&art.font_body, "", 14.0, CREAM), TileInfoText, Node { height: Val::Px(38.0), ..default() }));
+            p.spawn((
+                label(&art.font_body, "", 14.0, CREAM),
+                TileInfoText,
+                Node {
+                    height: Val::Px(38.0),
+                    ..default()
+                },
+            ));
             // Cycle through the units that still need orders, then end the turn.
             p.spawn((
                 Button,
-                Node { padding: UiRect::axes(Val::Px(10.0), Val::Px(7.0)), justify_content: JustifyContent::Center, ..default() },
-                ImageNode { image: art.button.clone(), image_mode: sliced(14.0), color: BRONZE, ..default() },
+                Node {
+                    padding: UiRect::axes(Val::Px(10.0), Val::Px(7.0)),
+                    justify_content: JustifyContent::Center,
+                    ..default()
+                },
+                ImageNode {
+                    image: art.button.clone(),
+                    image_mode: sliced(14.0),
+                    color: BRONZE,
+                    ..default()
+                },
                 ButtonTint(BRONZE),
                 ButtonCommand(Command::Game(Action::NextUnit)),
             ))
@@ -1016,8 +1354,17 @@ pub fn setup_ui(mut commands: Commands, art: Res<Art>, mut images: ResMut<Assets
             p.spawn((
                 Button,
                 EndTurnButton,
-                Node { padding: UiRect::axes(Val::Px(10.0), Val::Px(8.0)), justify_content: JustifyContent::Center, ..default() },
-                ImageNode { image: art.button.clone(), image_mode: sliced(14.0), color: BRONZE, ..default() },
+                Node {
+                    padding: UiRect::axes(Val::Px(10.0), Val::Px(8.0)),
+                    justify_content: JustifyContent::Center,
+                    ..default()
+                },
+                ImageNode {
+                    image: art.button.clone(),
+                    image_mode: sliced(14.0),
+                    color: BRONZE,
+                    ..default()
+                },
                 ButtonTint(BRONZE),
                 ButtonCommand(Command::Game(Action::EndTurn)),
             ))
@@ -1096,7 +1443,15 @@ pub fn rebuild_panels(
     mut dirty: ResMut<Dirty>,
     selection: Res<Selection>,
     mut ui: ResMut<UiState>,
-    (foreign, supplies, map, religions, last_move, log, sound_on): (Res<Foreign>, Res<Supplies>, Res<MapData>, Res<bevy_civ::religion::Religions>, Res<crate::LastMove>, Res<crate::GameLog>, Res<SoundSettings>),
+    (foreign, supplies, map, religions, last_move, log, sound_on): (
+        Res<Foreign>,
+        Res<Supplies>,
+        Res<MapData>,
+        Res<bevy_civ::religion::Religions>,
+        Res<crate::LastMove>,
+        Res<crate::GameLog>,
+        Res<SoundSettings>,
+    ),
     art: Res<Art>,
     state: Res<GameState>,
     tech: Res<TechState>,
@@ -1112,7 +1467,18 @@ pub fn rebuild_panels(
         Res<TradeRoutes>,
     ),
     cities: Query<(&City, &CityBuildings, &Happiness)>,
-    (city_list, space, history, culture, taken, tips_on, rivers, web, (tree_layout, tree_image, replay_images), screen): (
+    (
+        city_list,
+        space,
+        history,
+        culture,
+        taken,
+        tips_on,
+        rivers,
+        web,
+        (tree_layout, tree_image, replay_images),
+        screen,
+    ): (
         Query<(Entity, &City)>,
         Res<bevy_civ::space::SpaceRace>,
         Res<crate::History>,
@@ -1121,7 +1487,11 @@ pub fn rebuild_panels(
         Res<super::tips::Tips>,
         Res<crate::Rivers>,
         Res<super::relations::RelationsWeb>,
-        (Res<super::techtree::TreeLayout>, Res<super::techtree::TreeImage>, Res<super::replay::ReplayImages>),
+        (
+            Res<super::techtree::TreeLayout>,
+            Res<super::techtree::TreeImage>,
+            Res<super::replay::ReplayImages>,
+        ),
         Res<super::layout::Screen>,
     ),
     unit_panel: Query<Entity, With<UnitPanel>>,
@@ -1129,7 +1499,15 @@ pub fn rebuild_panels(
     mut modal_root: Query<(Entity, &mut Node), (With<ModalRoot>, Without<CityPanel>)>,
     mut commands: Commands,
 ) {
-    if !(dirty.ui || selection.is_changed() || ui.is_changed() || foreign.is_changed() || supplies.is_changed() || tips_on.is_changed() || sound_on.is_changed() || screen.is_changed()) {
+    if !(dirty.ui
+        || selection.is_changed()
+        || ui.is_changed()
+        || foreign.is_changed()
+        || supplies.is_changed()
+        || tips_on.is_changed()
+        || sound_on.is_changed()
+        || screen.is_changed())
+    {
         return;
     }
     dirty.ui = false;
@@ -1436,10 +1814,16 @@ pub fn rebuild_panels(
     // --- city panel ---
     if let Ok((root, mut node)) = city_panel.get_single_mut() {
         let city = selection.city.and_then(|e| cities.get(e).ok());
-        node.display = if city.is_some() { Display::Flex } else { Display::None };
+        node.display = if city.is_some() {
+            Display::Flex
+        } else {
+            Display::None
+        };
         // Folded to the title bar (see `UiState::city_peek`), the sheet is no taller than that.
         node.max_height = if peek { Val::Px(64.0) } else { Val::Auto };
-        let has_forbidden_palace = cities.iter().any(|(c, b, _)| c.owner == PLAYER && b.has(Building::ForbiddenPalace));
+        let has_forbidden_palace = cities
+            .iter()
+            .any(|(c, b, _)| c.owner == PLAYER && b.has(Building::ForbiddenPalace));
         commands.entity(root).despawn_descendants().with_children(|p| {
             let Some((city, buildings, happiness)) = city else { return };
             let mine = city.owner == PLAYER;
@@ -1864,9 +2248,21 @@ pub fn rebuild_panels(
     }
 
     // --- advisors and messages from other leaders ---
-    let rivals: Vec<&bevy_civ::ai::Civ> = civs.players.iter().filter(|c| !c.is_human && !foreign.gone.contains(&c.id)).collect();
-    let known: Vec<&bevy_civ::ai::Civ> = rivals.iter().copied().filter(|c| foreign.met.contains(&c.id)).collect();
-    if ui.modal == Some(Modal::Diplomacy) && !ui.diplo_target.is_some_and(|t| known.iter().any(|c| c.id == t)) {
+    let rivals: Vec<&bevy_civ::ai::Civ> = civs
+        .players
+        .iter()
+        .filter(|c| !c.is_human && !foreign.gone.contains(&c.id))
+        .collect();
+    let known: Vec<&bevy_civ::ai::Civ> = rivals
+        .iter()
+        .copied()
+        .filter(|c| foreign.met.contains(&c.id))
+        .collect();
+    if ui.modal == Some(Modal::Diplomacy)
+        && !ui
+            .diplo_target
+            .is_some_and(|t| known.iter().any(|c| c.id == t))
+    {
         let first = known.first().map(|c| c.id);
         if ui.diplo_target != first {
             ui.diplo_target = first;
@@ -1874,7 +2270,14 @@ pub fn rebuild_panels(
     }
     if let Ok((root, mut node)) = modal_root.get_single_mut() {
         let ended = state.victory.is_some() && !ui.end_dismissed;
-        node.display = if ended || ui.modal.is_some() || (foreign.offer.is_some() && state.victory.is_none()) { Display::Flex } else { Display::None };
+        node.display = if ended
+            || ui.modal.is_some()
+            || (foreign.offer.is_some() && state.victory.is_none())
+        {
+            Display::Flex
+        } else {
+            Display::None
+        };
         commands.entity(root).despawn_descendants().with_children(|p| {
             // A window no taller than the screen: the mouse wheel scrolls what does not fit.
             let window = |width: f32| {
@@ -2835,67 +3238,182 @@ struct Intel {
 
 fn short_name(name: &str) -> String {
     let name = name.trim_start_matches("the ");
-    if name.chars().count() > 9 { format!("{}.", name.chars().take(8).collect::<String>()) } else { name.to_string() }
+    if name.chars().count() > 9 {
+        format!("{}.", name.chars().take(8).collect::<String>())
+    } else {
+        name.to_string()
+    }
 }
 
 /// The relations page: a ring of every people we know (and us), joined by a line for each treaty
 /// - painted by `relations::draw_web` - beside how each of them feels about us; then the wars and
 /// alliances in words.
 #[allow(clippy::too_many_arguments)]
-fn relations_page(w: &mut ChildBuilder, art: &Art, all: &[bevy_civ::ai::Civ], known: &[&bevy_civ::ai::Civ], web: &Handle<Image>, diplomacy: &Diplomacy, foreign: &Foreign, turn: u32) {
-    let ids: Vec<u32> = std::iter::once(PLAYER).chain(known.iter().map(|c| c.id)).collect();
+fn relations_page(
+    w: &mut ChildBuilder,
+    art: &Art,
+    all: &[bevy_civ::ai::Civ],
+    known: &[&bevy_civ::ai::Civ],
+    web: &Handle<Image>,
+    diplomacy: &Diplomacy,
+    foreign: &Foreign,
+    turn: u32,
+) {
+    let ids: Vec<u32> = std::iter::once(PLAYER)
+        .chain(known.iter().map(|c| c.id))
+        .collect();
     let civ_of = |id: u32| all.iter().find(|c| c.id == id);
-    let name = |id: u32| if id == PLAYER { "Us".to_string() } else { civ_of(id).map(|c| short_name(&c.name)).unwrap_or_default() };
+    let name = |id: u32| {
+        if id == PLAYER {
+            "Us".to_string()
+        } else {
+            civ_of(id).map(|c| short_name(&c.name)).unwrap_or_default()
+        }
+    };
     let at = super::relations::positions(ids.len());
     let size = super::relations::WEB as f32;
-    w.spawn(Node { column_gap: Val::Px(18.0), align_items: AlignItems::Start, flex_wrap: FlexWrap::Wrap, ..default() }).with_children(|r| {
+    w.spawn(Node {
+        column_gap: Val::Px(18.0),
+        align_items: AlignItems::Start,
+        flex_wrap: FlexWrap::Wrap,
+        ..default()
+    })
+    .with_children(|r| {
         // The web: lines underneath, portraits on top.
-        r.spawn((Node { width: Val::Px(size), height: Val::Px(size), flex_shrink: 0.0, ..default() }, ImageNode::new(web.clone()))).with_children(|ring| {
+        r.spawn((
+            Node {
+                width: Val::Px(size),
+                height: Val::Px(size),
+                flex_shrink: 0.0,
+                ..default()
+            },
+            ImageNode::new(web.clone()),
+        ))
+        .with_children(|ring| {
             for (i, id) in ids.iter().enumerate() {
                 let p = at[i];
                 let tint = owner_color(*id);
                 ring.spawn((
-                    Node { position_type: PositionType::Absolute, left: Val::Px(p.x - 23.0), top: Val::Px(p.y - 23.0), padding: UiRect::all(Val::Px(2.0)), ..default() },
+                    Node {
+                        position_type: PositionType::Absolute,
+                        left: Val::Px(p.x - 23.0),
+                        top: Val::Px(p.y - 23.0),
+                        padding: UiRect::all(Val::Px(2.0)),
+                        ..default()
+                    },
                     BackgroundColor(tint),
                     BorderRadius::all(Val::Px(6.0)),
                 ))
                 .with_children(|frame| {
                     frame.spawn(portrait(art, civ_of(*id).map_or(0, |c| c.portrait), 42.0));
                 });
-                ring.spawn((
-                    Node { position_type: PositionType::Absolute, left: Val::Px(p.x - 45.0), top: Val::Px(p.y + 23.0), width: Val::Px(90.0), justify_content: JustifyContent::Center, ..default() },
-                ))
-                .with_children(|tag| {
-                    tag.spawn(label(&art.font_bold, name(*id), 12.0, INK));
-                });
+                ring.spawn((Node {
+                    position_type: PositionType::Absolute,
+                    left: Val::Px(p.x - 45.0),
+                    top: Val::Px(p.y + 23.0),
+                    width: Val::Px(90.0),
+                    justify_content: JustifyContent::Center,
+                    ..default()
+                },))
+                    .with_children(|tag| {
+                        tag.spawn(label(&art.font_bold, name(*id), 12.0, INK));
+                    });
             }
         });
         // Beside it: the legend, and how each people feels about us.
-        r.spawn(Node { flex_direction: FlexDirection::Column, row_gap: Val::Px(6.0), flex_grow: 1.0, min_width: Val::Px(300.0), ..default() }).with_children(|side| {
+        r.spawn(Node {
+            flex_direction: FlexDirection::Column,
+            row_gap: Val::Px(6.0),
+            flex_grow: 1.0,
+            min_width: Val::Px(300.0),
+            ..default()
+        })
+        .with_children(|side| {
             side.spawn(row(10.0)).with_children(|legend| {
-                for (text, colour, thick) in [("War", Color::srgb(0.78, 0.18, 0.14), 5.0), ("Alliance", Color::srgb(0.22, 0.59, 0.22), 5.0), ("Peace", Color::srgb(0.49, 0.41, 0.29), 2.0)] {
-                    legend.spawn(Node { align_items: AlignItems::Center, column_gap: Val::Px(4.0), ..default() }).with_children(|item| {
-                        item.spawn((Node { width: Val::Px(22.0), height: Val::Px(thick), ..default() }, BackgroundColor(colour)));
-                        item.spawn(label(&art.font_body, text, 13.0, INK));
-                    });
+                for (text, colour, thick) in [
+                    ("War", Color::srgb(0.78, 0.18, 0.14), 5.0),
+                    ("Alliance", Color::srgb(0.22, 0.59, 0.22), 5.0),
+                    ("Peace", Color::srgb(0.49, 0.41, 0.29), 2.0),
+                ] {
+                    legend
+                        .spawn(Node {
+                            align_items: AlignItems::Center,
+                            column_gap: Val::Px(4.0),
+                            ..default()
+                        })
+                        .with_children(|item| {
+                            item.spawn((
+                                Node {
+                                    width: Val::Px(22.0),
+                                    height: Val::Px(thick),
+                                    ..default()
+                                },
+                                BackgroundColor(colour),
+                            ));
+                            item.spawn(label(&art.font_body, text, 13.0, INK));
+                        });
                 }
             });
             side.spawn(label(&art.font_bold, "How they feel about us", 15.0, INK));
             for civ in known {
                 let attitude = diplomacy.get_attitude(PLAYER, civ.id);
-                side.spawn(Node { align_items: AlignItems::Center, column_gap: Val::Px(6.0), ..default() }).with_children(|line| {
+                side.spawn(Node {
+                    align_items: AlignItems::Center,
+                    column_gap: Val::Px(6.0),
+                    ..default()
+                })
+                .with_children(|line| {
                     line.spawn(portrait(art, civ.portrait, 24.0));
-                    line.spawn(Node { width: Val::Px(78.0), ..default() }).with_children(|n| {
+                    line.spawn(Node {
+                        width: Val::Px(78.0),
+                        ..default()
+                    })
+                    .with_children(|n| {
                         n.spawn(label(&art.font_bold, short_name(&civ.name), 12.0, INK));
                     });
                     // A bar from -100 to +100, the middle marked.
                     let share = ((attitude + 100) as f32 / 200.0).clamp(0.0, 1.0);
-                    let colour = if attitude < -14 { Color::srgb(0.8, 0.25, 0.2) } else if attitude < 15 { Color::srgb(0.85, 0.7, 0.25) } else { Color::srgb(0.35, 0.7, 0.3) };
-                    line.spawn((Node { width: Val::Px(120.0), height: Val::Px(10.0), ..default() }, BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.18)))).with_children(|track| {
-                        track.spawn((Node { width: Val::Percent(share * 100.0), height: Val::Percent(100.0), ..default() }, BackgroundColor(colour)));
-                        track.spawn((Node { position_type: PositionType::Absolute, left: Val::Percent(50.0), width: Val::Px(1.0), height: Val::Percent(100.0), ..default() }, BackgroundColor(INK)));
+                    let colour = if attitude < -14 {
+                        Color::srgb(0.8, 0.25, 0.2)
+                    } else if attitude < 15 {
+                        Color::srgb(0.85, 0.7, 0.25)
+                    } else {
+                        Color::srgb(0.35, 0.7, 0.3)
+                    };
+                    line.spawn((
+                        Node {
+                            width: Val::Px(120.0),
+                            height: Val::Px(10.0),
+                            ..default()
+                        },
+                        BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.18)),
+                    ))
+                    .with_children(|track| {
+                        track.spawn((
+                            Node {
+                                width: Val::Percent(share * 100.0),
+                                height: Val::Percent(100.0),
+                                ..default()
+                            },
+                            BackgroundColor(colour),
+                        ));
+                        track.spawn((
+                            Node {
+                                position_type: PositionType::Absolute,
+                                left: Val::Percent(50.0),
+                                width: Val::Px(1.0),
+                                height: Val::Percent(100.0),
+                                ..default()
+                            },
+                            BackgroundColor(INK),
+                        ));
                     });
-                    line.spawn(label(&art.font_body, format!("{} {attitude:+}", foreign::mood(attitude)), 12.0, INK_SOFT));
+                    line.spawn(label(
+                        &art.font_body,
+                        format!("{} {attitude:+}", foreign::mood(attitude)),
+                        12.0,
+                        INK_SOFT,
+                    ));
                 });
             }
         });
@@ -2906,7 +3424,17 @@ fn relations_page(w: &mut ChildBuilder, art: &Art, all: &[bevy_civ::ai::Civ], kn
     for (i, a) in ids.iter().enumerate() {
         for b in ids.iter().skip(i + 1) {
             let age = foreign.treaty_age(*a, *b, turn);
-            let pair = |x: u32, y: u32| format!("{} and {}", if x == PLAYER { "we".to_string() } else { name(x) }, name(y));
+            let pair = |x: u32, y: u32| {
+                format!(
+                    "{} and {}",
+                    if x == PLAYER {
+                        "we".to_string()
+                    } else {
+                        name(x)
+                    },
+                    name(y)
+                )
+            };
             match diplomacy.get_treaty(*a, *b) {
                 Treaty::War => wars.push(format!("{} ({age} turns)", pair(*a, *b))),
                 Treaty::Alliance => alliances.push(pair(*a, *b)),
@@ -2914,23 +3442,73 @@ fn relations_page(w: &mut ChildBuilder, art: &Art, all: &[bevy_civ::ai::Civ], kn
             }
         }
     }
-    let line = |items: &[String], none: &str| if items.is_empty() { none.to_string() } else { items.join("; ") };
-    w.spawn(label(&art.font_bold, format!("At war: {}.", line(&wars, "nobody")), 14.0, INK));
-    w.spawn(label(&art.font_bold, format!("Allied: {}.", line(&alliances, "nobody")), 14.0, INK));
+    let line = |items: &[String], none: &str| {
+        if items.is_empty() {
+            none.to_string()
+        } else {
+            items.join("; ")
+        }
+    };
+    w.spawn(label(
+        &art.font_bold,
+        format!("At war: {}.", line(&wars, "nobody")),
+        14.0,
+        INK,
+    ));
+    w.spawn(label(
+        &art.font_bold,
+        format!("Allied: {}.", line(&alliances, "nobody")),
+        14.0,
+        INK,
+    ));
 }
 
 /// One measure on an intelligence card: an icon, a bar against the largest among the peoples we
 /// know, and the figure (a grey "?" bar when we cannot know it).
-fn measure(parent: &mut ChildBuilder, art: &Art, icon_index: usize, share: Option<f32>, text: String, colour: Color) {
-    parent.spawn(Node { align_items: AlignItems::Center, column_gap: Val::Px(5.0), width: Val::Px(205.0), ..default() }).with_children(|m| {
-        m.spawn(icon_node(art, icon_index, 18.0));
-        m.spawn((Node { width: Val::Px(90.0), height: Val::Px(9.0), ..default() }, BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.18)))).with_children(|track| {
-            if let Some(share) = share {
-                track.spawn((Node { width: Val::Percent(share.clamp(0.0, 1.0) * 100.0), height: Val::Percent(100.0), ..default() }, BackgroundColor(colour)));
-            }
+fn measure(
+    parent: &mut ChildBuilder,
+    art: &Art,
+    icon_index: usize,
+    share: Option<f32>,
+    text: String,
+    colour: Color,
+) {
+    parent
+        .spawn(Node {
+            align_items: AlignItems::Center,
+            column_gap: Val::Px(5.0),
+            width: Val::Px(205.0),
+            ..default()
+        })
+        .with_children(|m| {
+            m.spawn(icon_node(art, icon_index, 18.0));
+            m.spawn((
+                Node {
+                    width: Val::Px(90.0),
+                    height: Val::Px(9.0),
+                    ..default()
+                },
+                BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.18)),
+            ))
+            .with_children(|track| {
+                if let Some(share) = share {
+                    track.spawn((
+                        Node {
+                            width: Val::Percent(share.clamp(0.0, 1.0) * 100.0),
+                            height: Val::Percent(100.0),
+                            ..default()
+                        },
+                        BackgroundColor(colour),
+                    ));
+                }
+            });
+            m.spawn(label(
+                &art.font_body,
+                text,
+                12.0,
+                if share.is_some() { INK } else { INK_SOFT },
+            ));
         });
-        m.spawn(label(&art.font_body, text, 12.0, if share.is_some() { INK } else { INK_SOFT }));
-    });
 }
 
 /// What the intelligence page shows of one people (us included, for comparison).
@@ -2951,9 +3529,25 @@ struct Dossier {
 /// The intelligence page: a card for each people - us first - with bars for score, people, army,
 /// knowledge and treasury against the largest among them. Research and treasury need an embassy.
 #[allow(clippy::too_many_arguments)]
-fn intelligence_page(w: &mut ChildBuilder, art: &Art, all: &[bevy_civ::ai::Civ], known: &[&bevy_civ::ai::Civ], report: &[Intel], ours: (u32, usize, u32, i32), diplomacy: &Diplomacy, spies: &Espionage, foreign: &Foreign, tech: &TechState) {
+fn intelligence_page(
+    w: &mut ChildBuilder,
+    art: &Art,
+    all: &[bevy_civ::ai::Civ],
+    known: &[&bevy_civ::ai::Civ],
+    report: &[Intel],
+    ours: (u32, usize, u32, i32),
+    diplomacy: &Diplomacy,
+    spies: &Espionage,
+    foreign: &Foreign,
+    tech: &TechState,
+) {
     if known.is_empty() {
-        w.spawn(label(&art.font_bold, "We have not met any other people yet.", 15.0, INK));
+        w.spawn(label(
+            &art.font_bold,
+            "We have not met any other people yet.",
+            15.0,
+            INK,
+        ));
         return;
     }
     let strength = |id: u32| foreign.strength.get(&id).copied().unwrap_or(1.0).max(1.0);
@@ -2972,10 +3566,20 @@ fn intelligence_page(w: &mut ChildBuilder, art: &Art, all: &[bevy_civ::ai::Civ],
         note: String::new(),
     }];
     for civ in known {
-        let Some(intel) = report.iter().find(|r| r.id == civ.id) else { continue };
+        let Some(intel) = report.iter().find(|r| r.id == civ.id) else {
+            continue;
+        };
         let embassy = spies.has_embassy(PLAYER, civ.id);
-        let at_war: Vec<String> = known.iter().filter(|o| o.id != civ.id && diplomacy.get_treaty(civ.id, o.id) == Treaty::War).map(|o| short_name(&o.name)).collect();
-        let allies: Vec<String> = known.iter().filter(|o| o.id != civ.id && diplomacy.get_treaty(civ.id, o.id) == Treaty::Alliance).map(|o| short_name(&o.name)).collect();
+        let at_war: Vec<String> = known
+            .iter()
+            .filter(|o| o.id != civ.id && diplomacy.get_treaty(civ.id, o.id) == Treaty::War)
+            .map(|o| short_name(&o.name))
+            .collect();
+        let allies: Vec<String> = known
+            .iter()
+            .filter(|o| o.id != civ.id && diplomacy.get_treaty(civ.id, o.id) == Treaty::Alliance)
+            .map(|o| short_name(&o.name))
+            .collect();
         let mut ties = Vec::new();
         if !at_war.is_empty() {
             ties.push(format!("at war with {}", at_war.join(", ")));
@@ -2983,7 +3587,11 @@ fn intelligence_page(w: &mut ChildBuilder, art: &Art, all: &[bevy_civ::ai::Civ],
         if !allies.is_empty() {
             ties.push(format!("allied with {}", allies.join(", ")));
         }
-        let wonders = if intel.wonders.is_empty() { "no wonders".to_string() } else { intel.wonders.join(", ") };
+        let wonders = if intel.wonders.is_empty() {
+            "no wonders".to_string()
+        } else {
+            intel.wonders.join(", ")
+        };
         dossiers.push(Dossier {
             id: civ.id,
             portrait: civ.portrait,
@@ -3004,26 +3612,91 @@ fn intelligence_page(w: &mut ChildBuilder, art: &Art, all: &[bevy_civ::ai::Civ],
         });
     }
     let most = |f: &dyn Fn(&Dossier) -> f32| dossiers.iter().map(f).fold(1.0f32, f32::max);
-    let (top_score, top_people, top_army) = (most(&|d| d.score as f32), most(&|d| d.citizens as f32), most(&|d| d.army));
+    let (top_score, top_people, top_army) = (
+        most(&|d| d.score as f32),
+        most(&|d| d.citizens as f32),
+        most(&|d| d.army),
+    );
     let top_techs = most(&|d| d.techs.unwrap_or(0) as f32);
     let top_gold = most(&|d| d.gold.unwrap_or(0).max(0) as f32);
     for d in &dossiers {
         let colour = owner_color(d.id);
-        w.spawn(Node { column_gap: Val::Px(10.0), align_items: AlignItems::Center, ..default() }).with_children(|card| {
-            card.spawn((Node { padding: UiRect::all(Val::Px(2.0)), ..default() }, BackgroundColor(colour), BorderRadius::all(Val::Px(6.0)))).with_children(|frame| {
+        w.spawn(Node {
+            column_gap: Val::Px(10.0),
+            align_items: AlignItems::Center,
+            ..default()
+        })
+        .with_children(|card| {
+            card.spawn((
+                Node {
+                    padding: UiRect::all(Val::Px(2.0)),
+                    ..default()
+                },
+                BackgroundColor(colour),
+                BorderRadius::all(Val::Px(6.0)),
+            ))
+            .with_children(|frame| {
                 frame.spawn(portrait(art, d.portrait, 46.0));
             });
-            card.spawn(Node { flex_direction: FlexDirection::Column, row_gap: Val::Px(3.0), flex_shrink: 1.0, ..default() }).with_children(|c| {
+            card.spawn(Node {
+                flex_direction: FlexDirection::Column,
+                row_gap: Val::Px(3.0),
+                flex_shrink: 1.0,
+                ..default()
+            })
+            .with_children(|c| {
                 c.spawn(label(&art.font_bold, d.title.clone(), 14.0, INK));
                 if !d.line.is_empty() {
                     c.spawn(label(&art.font_body, d.line.clone(), 12.0, INK_SOFT));
                 }
-                c.spawn(Node { flex_wrap: FlexWrap::Wrap, column_gap: Val::Px(6.0), row_gap: Val::Px(2.0), ..default() }).with_children(|bars| {
-                    measure(bars, art, icon::CULTURE, Some(d.score as f32 / top_score), format!("score {}", d.score), colour);
-                    measure(bars, art, icon::POPULATION, Some(d.citizens as f32 / top_people), format!("{} in {} cities", d.citizens, d.cities), colour);
-                    measure(bars, art, icon::ATTACK, Some(d.army / top_army), format!("army {:.0}", d.army), colour);
-                    measure(bars, art, icon::SCIENCE, d.techs.map(|t| t as f32 / top_techs), d.techs.map_or("techs ?".to_string(), |t| format!("{t} techs")), colour);
-                    measure(bars, art, icon::GOLD, d.gold.map(|g| g.max(0) as f32 / top_gold), d.gold.map_or("gold ?".to_string(), |g| format!("{g} gold")), colour);
+                c.spawn(Node {
+                    flex_wrap: FlexWrap::Wrap,
+                    column_gap: Val::Px(6.0),
+                    row_gap: Val::Px(2.0),
+                    ..default()
+                })
+                .with_children(|bars| {
+                    measure(
+                        bars,
+                        art,
+                        icon::CULTURE,
+                        Some(d.score as f32 / top_score),
+                        format!("score {}", d.score),
+                        colour,
+                    );
+                    measure(
+                        bars,
+                        art,
+                        icon::POPULATION,
+                        Some(d.citizens as f32 / top_people),
+                        format!("{} in {} cities", d.citizens, d.cities),
+                        colour,
+                    );
+                    measure(
+                        bars,
+                        art,
+                        icon::ATTACK,
+                        Some(d.army / top_army),
+                        format!("army {:.0}", d.army),
+                        colour,
+                    );
+                    measure(
+                        bars,
+                        art,
+                        icon::SCIENCE,
+                        d.techs.map(|t| t as f32 / top_techs),
+                        d.techs
+                            .map_or("techs ?".to_string(), |t| format!("{t} techs")),
+                        colour,
+                    );
+                    measure(
+                        bars,
+                        art,
+                        icon::GOLD,
+                        d.gold.map(|g| g.max(0) as f32 / top_gold),
+                        d.gold.map_or("gold ?".to_string(), |g| format!("{g} gold")),
+                        colour,
+                    );
                 });
                 if !d.note.is_empty() {
                     c.spawn(label(&art.font_body, d.note.clone(), 12.0, INK_SOFT));
@@ -3042,7 +3715,11 @@ pub fn update_top_bar(
     mut stats: Query<(&StatText, &mut Text), Without<VictoryText>>,
     mut victory: Query<&mut Text, With<VictoryText>>,
 ) {
-    let population: u32 = cities.iter().filter(|c| c.owner == PLAYER).map(|c| c.population).sum();
+    let population: u32 = cities
+        .iter()
+        .filter(|c| c.owner == PLAYER)
+        .map(|c| c.population)
+        .sum();
     for (kind, mut text) in &mut stats {
         let value = match kind {
             StatText::Title => state.title.to_uppercase(),
@@ -3054,7 +3731,11 @@ pub fn update_top_bar(
             },
             StatText::Population => population.to_string(),
             StatText::Government => {
-                let golden = golden.turns_left.get(&PLAYER).map(|t| format!(" - golden age ({t})")).unwrap_or_default();
+                let golden = golden
+                    .turns_left
+                    .get(&PLAYER)
+                    .map(|t| format!(" - golden age ({t})"))
+                    .unwrap_or_default();
                 format!("{}{golden}", state.government.name())
             }
             StatText::Score => state.score.total.to_string(),
@@ -3066,7 +3747,11 @@ pub fn update_top_bar(
     if let Ok(mut text) = victory.get_single_mut() {
         // The outcome stays across the map once the end-of-game window is put away.
         // Shown over the map once the game-over window is put away, but not behind another window.
-        let value = state.victory.clone().filter(|_| ui.end_dismissed && ui.modal.is_none()).unwrap_or_default();
+        let value = state
+            .victory
+            .clone()
+            .filter(|_| ui.end_dismissed && ui.modal.is_none())
+            .unwrap_or_default();
         if text.0 != value {
             text.0 = value;
         }
@@ -3081,27 +3766,50 @@ pub fn update_tile_info(
     (state, golden): (Res<GameState>, Res<crate::GoldenAges>),
     mut info: Query<&mut Text, With<TileInfoText>>,
 ) {
-    let Ok(mut text) = info.get_single_mut() else { return };
-    let value = match hovered.0.and_then(|hex| tiles.iter().find(|t| t.coord == hex)) {
+    let Ok(mut text) = info.get_single_mut() else {
+        return;
+    };
+    let value = match hovered
+        .0
+        .and_then(|hex| tiles.iter().find(|t| t.coord == hex))
+    {
         Some(tile) if fog.explored.contains(&tile.coord) => {
             let mut extras: Vec<String> = tile
                 .resource
                 .iter()
                 .filter(|r| r.reveal_tech().is_none_or(|t| tech.researched.contains(&t)))
-                .map(|r| if supplies.unconnected.get(&tile.coord) == Some(&PLAYER) { format!("{} (needs a road)", r.name()) } else { r.name().to_string() })
+                .map(|r| {
+                    if supplies.unconnected.get(&tile.coord) == Some(&PLAYER) {
+                        format!("{} (needs a road)", r.name())
+                    } else {
+                        r.name().to_string()
+                    }
+                })
                 .collect();
             extras.extend(tile.improvements.iter().map(|i| format!("{:?}", i)));
-            let seen = tile.resource.filter(|r| r.reveal_tech().is_none_or(|t| tech.researched.contains(&t)));
+            let seen = tile
+                .resource
+                .filter(|r| r.reveal_tech().is_none_or(|t| tech.researched.contains(&t)));
             // As our government (and a golden age) makes it.
-            let raw = bevy_civ::tiles::tile_yield(tile.terrain, &tile.improvements, seen, rivers.tiles.contains(&tile.coord));
-            let (f, s, g) = bevy_civ::economy::tile_rule(raw, state.government, golden.active(PLAYER), false);
+            let raw = bevy_civ::tiles::tile_yield(
+                tile.terrain,
+                &tile.improvements,
+                seen,
+                rivers.tiles.contains(&tile.coord),
+            );
+            let (f, s, g) =
+                bevy_civ::economy::tile_rule(raw, state.government, golden.active(PLAYER), false);
             let moves = match bevy_civ::pathfinding::terrain_cost(tile.terrain) {
                 _ if tile.has_road() => "road".to_string(),
                 Some(1) => "1 move".to_string(),
                 Some(n) => format!("{n} moves"),
                 None => "by sea".to_string(),
             };
-            format!("{}  -  {f} food, {s} shields, {g} trade  ({moves})\n{}", tile.terrain.name(), extras.join(", "))
+            format!(
+                "{}  -  {f} food, {s} shields, {g} trade  ({moves})\n{}",
+                tile.terrain.name(),
+                extras.join(", ")
+            )
         }
         Some(_) => "Unexplored".to_string(),
         None => String::new(),
@@ -3111,7 +3819,11 @@ pub fn update_tile_info(
     }
 }
 
-pub fn update_log(log: Res<GameLog>, screen: Res<super::layout::Screen>, mut text: Query<&mut Text, With<LogText>>) {
+pub fn update_log(
+    log: Res<GameLog>,
+    screen: Res<super::layout::Screen>,
+    mut text: Query<&mut Text, With<LogText>>,
+) {
     if !log.is_changed() && !screen.is_changed() {
         return;
     }
@@ -3124,7 +3836,11 @@ pub fn update_log(log: Res<GameLog>, screen: Res<super::layout::Screen>, mut tex
 }
 
 /// A newly opened city's panel starts at the top (scrolling itself is `layout::scroll_panels`).
-pub fn scroll_panels(selection: Res<Selection>, mut panels: Query<&mut ScrollPosition, With<CityPanel>>, mut shown: Local<Option<Entity>>) {
+pub fn scroll_panels(
+    selection: Res<Selection>,
+    mut panels: Query<&mut ScrollPosition, With<CityPanel>>,
+    mut shown: Local<Option<Entity>>,
+) {
     if *shown == selection.city {
         return;
     }
@@ -3141,23 +3857,42 @@ pub fn fit_ui_scale(
     screen: Res<super::layout::Screen>,
     mut minimap: Query<&mut Node, With<MinimapFrame>>,
     mut bar: Query<&mut Node, (With<StatusBar>, Without<MinimapFrame>)>,
-    mut tile_info: Query<&mut Node, (With<TileInfoText>, Without<StatusBar>, Without<MinimapFrame>)>,
+    mut tile_info: Query<
+        &mut Node,
+        (
+            With<TileInfoText>,
+            Without<StatusBar>,
+            Without<MinimapFrame>,
+        ),
+    >,
     selection: Res<Selection>,
 ) {
     // A touch screen has no hovering, so the tile readout under the minimap only takes room there.
-    let info_display = if screen.compact { Display::None } else { Display::Flex };
+    let info_display = if screen.compact {
+        Display::None
+    } else {
+        Display::Flex
+    };
     for mut node in &mut tile_info {
         if node.display != info_display {
             node.display = info_display;
         }
     }
-    let wrap = if screen.width < 1000.0 { FlexWrap::Wrap } else { FlexWrap::NoWrap };
+    let wrap = if screen.width < 1000.0 {
+        FlexWrap::Wrap
+    } else {
+        FlexWrap::NoWrap
+    };
     for mut node in &mut bar {
         if node.flex_wrap != wrap {
             node.flex_wrap = wrap;
         }
     }
-    let minimap_display = if screen.compact || selection.city.is_some() { Display::None } else { Display::Flex };
+    let minimap_display = if screen.compact || selection.city.is_some() {
+        Display::None
+    } else {
+        Display::Flex
+    };
     for mut node in &mut minimap {
         if node.display != minimap_display {
             node.display = minimap_display;
@@ -3175,11 +3910,20 @@ pub fn button_actions(
     mut menu: ResMut<MenuState>,
     mut next: ResMut<NextState<AppState>>,
     mut commands: Commands,
-    (mut sounds, mut sound, mut tips): (EventWriter<Sfx>, ResMut<SoundSettings>, ResMut<super::tips::Tips>),
-    (mut replay, history): (ResMut<super::replay::ReplayView>, Option<Res<crate::History>>),
+    (mut sounds, mut sound, mut tips): (
+        EventWriter<Sfx>,
+        ResMut<SoundSettings>,
+        ResMut<super::tips::Tips>,
+    ),
+    (mut replay, history): (
+        ResMut<super::replay::ReplayView>,
+        Option<Res<crate::History>>,
+    ),
 ) {
     for super::layout::Activated(entity) in activated.read() {
-        let Ok(command) = buttons.get(*entity) else { continue };
+        let Ok(command) = buttons.get(*entity) else {
+            continue;
+        };
         sounds.send(Sfx::Click);
         match &command.0 {
             Command::ToggleSound => sound.toggle(),
@@ -3192,7 +3936,9 @@ pub fn button_actions(
             Command::ToggleStackList => ui.stack_open = !ui.stack_open,
             Command::ToggleQueueMode => ui.queue_mode = !ui.queue_mode,
             Command::ToggleMusic => sound.toggle_music(),
-            Command::MessagesPage(delta) => ui.messages_page = (ui.messages_page as i32 + delta).max(0) as usize,
+            Command::MessagesPage(delta) => {
+                ui.messages_page = (ui.messages_page as i32 + delta).max(0) as usize
+            }
             Command::ToggleHighlights => {
                 ui.highlights_only = !ui.highlights_only;
                 ui.messages_page = 0;
@@ -3251,10 +3997,20 @@ pub fn button_actions(
                 }
                 actions.send(action.clone());
             }
-            Command::Toggle(modal) => ui.modal = if ui.modal == Some(*modal) { None } else { Some(*modal) },
+            Command::Toggle(modal) => {
+                ui.modal = if ui.modal == Some(*modal) {
+                    None
+                } else {
+                    Some(*modal)
+                }
+            }
             Command::CloseModal => ui.modal = None,
             Command::SelectCiv(civ) => ui.diplo_target = Some(*civ),
             Command::PickScenario(index) => menu.scenario = Some(*index),
+            Command::ToggleExpansion => {
+                scenario::set_modern_expansion(!scenario::modern_expansion());
+                menu.catalog = scenario::catalog();
+            }
             Command::BackToScenarios => {
                 menu.scenario = None;
                 menu.civ = None;
@@ -3265,8 +4021,14 @@ pub fn button_actions(
             Command::PickMapSize(size) => menu.map_size = Some(*size),
             Command::PickPeoples(n) => menu.peoples = Some(*n),
             Command::StartGame => {
-                if let (Some(scenario), Some(civ)) = (menu.scenario.and_then(|i| menu.catalog.get(i)), menu.civ) {
-                    let last_turn = if menu.last_turn == 0 { crate::LAST_TURN } else { menu.last_turn };
+                if let (Some(scenario), Some(civ)) =
+                    (menu.scenario.and_then(|i| menu.catalog.get(i)), menu.civ)
+                {
+                    let last_turn = if menu.last_turn == 0 {
+                        crate::LAST_TURN
+                    } else {
+                        menu.last_turn
+                    };
                     commands.insert_resource(NewGame {
                         scenario: scenario.clone(),
                         civ,
@@ -3279,7 +4041,9 @@ pub fn button_actions(
                     next.set(AppState::Playing);
                 }
             }
-            Command::Continue => match crate::savegame::autosave().map(|json| crate::savegame::SaveGame::parse(&json)) {
+            Command::Continue => match crate::savegame::autosave()
+                .map(|json| crate::savegame::SaveGame::parse(&json))
+            {
                 Some(Ok(game)) => {
                     commands.insert_resource(crate::savegame::PendingLoad(game));
                     next.set(AppState::Playing);
@@ -3289,7 +4053,8 @@ pub fn button_actions(
             },
             Command::LoadFile => {
                 crate::savegame::pick_file();
-                menu.notice = Some("Choose a saved game file (a .json file saved from Bevy Civ)...".into());
+                menu.notice =
+                    Some("Choose a saved game file (a .json file saved from Bevy Civ)...".into());
             }
             // The people chosen; the options page comes next.
             Command::PickCiv(civ) => menu.civ = Some(*civ),
@@ -3309,8 +4074,14 @@ pub fn button_actions(
 // ---- start menu --------------------------------------------------------------------------------
 
 /// Picks up a saved game file the player chose and starts it.
-pub fn poll_import(mut menu: ResMut<MenuState>, mut next: ResMut<NextState<AppState>>, mut commands: Commands) {
-    let Some(json) = crate::savegame::take_import() else { return };
+pub fn poll_import(
+    mut menu: ResMut<MenuState>,
+    mut next: ResMut<NextState<AppState>>,
+    mut commands: Commands,
+) {
+    let Some(json) = crate::savegame::take_import() else {
+        return;
+    };
     match crate::savegame::SaveGame::parse(&json) {
         Ok(game) => {
             menu.notice = None;
@@ -3353,8 +4124,14 @@ pub fn rebuild_menu(
     if !(menu.is_changed() || state.is_changed() || screen.is_changed()) {
         return;
     }
-    let Ok((root, mut node)) = root.get_single_mut() else { return };
-    node.display = if *state.get() == AppState::Menu { Display::Flex } else { Display::None };
+    let Ok((root, mut node)) = root.get_single_mut() else {
+        return;
+    };
+    node.display = if *state.get() == AppState::Menu {
+        Display::Flex
+    } else {
+        Display::None
+    };
     let art = &*art;
     commands.entity(root).despawn_descendants().with_children(|p| {
         if *state.get() != AppState::Menu {
@@ -3415,6 +4192,18 @@ pub fn rebuild_menu(
                             b.spawn(label(&art.font_body, scenario.blurb.clone(), 15.0, INK));
                         });
                     }
+                    // The Modern Nations expansion: today's great powers as peoples, and their own scenario.
+                    let on = scenario::modern_expansion();
+                    w.spawn(row(8.0)).with_children(|r| {
+                        let (text, tint) = if on { ("Modern Nations expansion: On", GREEN) } else { ("Modern Nations expansion: Off", BRONZE) };
+                        button(r, art, text, Command::ToggleExpansion, tint, 15.0);
+                    });
+                    w.spawn(label(
+                        &art.font_body,
+                        "Adds eight of today's nations (the United States, Canada, Mexico, Brazil, the United Kingdom, Germany, Russia, Australia), each with its own unique unit, as peoples you can lead in a New World, and The Modern World, a game that starts in 2025.",
+                        14.0,
+                        INK_SOFT,
+                    ));
                 }
                 Some(scenario) if menu.civ.is_some() => {
                     // The game's options: difficulty and length.
@@ -3503,7 +4292,17 @@ pub fn rebuild_menu(
     });
 }
 
-pub fn button_visuals(mut buttons: Query<(&Interaction, &ButtonTint, Option<&mut ImageNode>, Option<&mut BackgroundColor>), Changed<Interaction>>) {
+pub fn button_visuals(
+    mut buttons: Query<
+        (
+            &Interaction,
+            &ButtonTint,
+            Option<&mut ImageNode>,
+            Option<&mut BackgroundColor>,
+        ),
+        Changed<Interaction>,
+    >,
+) {
     for (interaction, tint, image, background) in &mut buttons {
         let color = match interaction {
             Interaction::Pressed => tint.0.mix(&Color::BLACK, 0.25),
@@ -3524,7 +4323,10 @@ pub fn button_visuals(mut buttons: Query<(&Interaction, &ButtonTint, Option<&mut
 /// World-to-minimap scale and the world point shown at the minimap's centre.
 fn minimap_view(map: &MapData) -> (f32, Vec2) {
     let span = (map.max - map.min + Vec2::splat(120.0)).max(Vec2::splat(1.0));
-    ((MM as f32 / span.x).min(MM as f32 / span.y), (map.min + map.max) / 2.0)
+    (
+        (MM as f32 / span.x).min(MM as f32 / span.y),
+        (map.min + map.max) / 2.0,
+    )
 }
 
 fn minimap_color(terrain: Terrain) -> [u8; 3] {
@@ -3558,15 +4360,25 @@ pub fn update_minimap(
         return;
     }
     *cooldown = 0.25;
-    let Some(image) = images.get_mut(&minimap.0) else { return };
+    let Some(image) = images.get_mut(&minimap.0) else {
+        return;
+    };
     let size = MM as i32;
     let mut data = vec![0u8; (MM * MM * 4) as usize];
     for px in data.chunks_exact_mut(4) {
         px.copy_from_slice(&[14, 12, 10, 255]);
     }
     let (scale, centre) = minimap_view(&map);
-    let to_px = |world: Vec2| ((size as f32 / 2.0 + (world.x - centre.x) * scale) as i32, (size as f32 / 2.0 - (world.y - centre.y) * scale) as i32);
-    let (tile_w, tile_h) = (((72.0 * scale) / 2.0).ceil() as i32, ((83.0 * scale) / 2.0).ceil() as i32);
+    let to_px = |world: Vec2| {
+        (
+            (size as f32 / 2.0 + (world.x - centre.x) * scale) as i32,
+            (size as f32 / 2.0 - (world.y - centre.y) * scale) as i32,
+        )
+    };
+    let (tile_w, tile_h) = (
+        ((72.0 * scale) / 2.0).ceil() as i32,
+        ((83.0 * scale) / 2.0).ceil() as i32,
+    );
     let mut fill = |cx: i32, cy: i32, half_w: i32, half_h: i32, color: [u8; 3]| {
         for y in (cy - half_h).max(0)..=(cy + half_h).min(size - 1) {
             for x in (cx - half_w).max(0)..=(cx + half_w).min(size - 1) {
@@ -3577,7 +4389,11 @@ pub fn update_minimap(
     };
     for tile in &tiles {
         let (x, y) = to_px(map.layout.hex_to_world_pos(tile.coord));
-        let mut color = if fog.explored.contains(&tile.coord) { minimap_color(tile.terrain) } else { [40, 35, 27] };
+        let mut color = if fog.explored.contains(&tile.coord) {
+            minimap_color(tile.terrain)
+        } else {
+            [40, 35, 27]
+        };
         if fog.explored.contains(&tile.coord) && !fog.visible.contains(&tile.coord) {
             color = color.map(|c| (c as f32 * 0.6) as u8);
         }
@@ -3585,11 +4401,28 @@ pub fn update_minimap(
     }
     let rgb = |owner: u32| {
         let c = owner_color(owner).to_srgba();
-        [(c.red * 255.0) as u8, (c.green * 255.0) as u8, (c.blue * 255.0) as u8]
+        [
+            (c.red * 255.0) as u8,
+            (c.green * 255.0) as u8,
+            (c.blue * 255.0) as u8,
+        ]
     };
-    for unit in units.iter().filter(|u| u.owner == PLAYER || fog.visible.contains(&u.position)) {
+    for unit in units
+        .iter()
+        .filter(|u| u.owner == PLAYER || fog.visible.contains(&u.position))
+    {
         let (x, y) = to_px(map.layout.hex_to_world_pos(unit.position));
-        fill(x, y, 1, 1, if unit.owner == BARBARIANS { [20, 20, 20] } else { rgb(unit.owner) });
+        fill(
+            x,
+            y,
+            1,
+            1,
+            if unit.owner == BARBARIANS {
+                [20, 20, 20]
+            } else {
+                rgb(unit.owner)
+            },
+        );
     }
     for city in cities.iter().filter(|c| fog.explored.contains(&c.position)) {
         let (x, y) = to_px(map.layout.hex_to_world_pos(city.position));
@@ -3601,7 +4434,12 @@ pub fn update_minimap(
         let half = Vec2::new(window.width(), window.height()) * projection.scale / 2.0;
         let (x0, y0) = to_px(transform.translation.truncate() + Vec2::new(-half.x, half.y));
         let (x1, y1) = to_px(transform.translation.truncate() + Vec2::new(half.x, -half.y));
-        let (x0, y0, x1, y1) = (x0.clamp(0, size - 1), y0.clamp(0, size - 1), x1.clamp(0, size - 1), y1.clamp(0, size - 1));
+        let (x0, y0, x1, y1) = (
+            x0.clamp(0, size - 1),
+            y0.clamp(0, size - 1),
+            x1.clamp(0, size - 1),
+            y1.clamp(0, size - 1),
+        );
         fill((x0 + x1) / 2, y0, (x1 - x0) / 2, 0, [255, 255, 255]);
         fill((x0 + x1) / 2, y1, (x1 - x0) / 2, 0, [255, 255, 255]);
         fill(x0, (y0 + y1) / 2, 0, (y1 - y0) / 2, [255, 255, 255]);
@@ -3616,7 +4454,11 @@ pub fn minimap_click(
     map: Res<MapData>,
     mut camera: Query<&mut Transform, With<Camera2d>>,
 ) {
-    let (Ok((interaction, cursor)), Ok(mut transform)) = (minimap.get_single(), camera.get_single_mut()) else { return };
+    let (Ok((interaction, cursor)), Ok(mut transform)) =
+        (minimap.get_single(), camera.get_single_mut())
+    else {
+        return;
+    };
     if *interaction != Interaction::Pressed {
         return;
     }
@@ -3636,13 +4478,21 @@ pub fn update_turn_buttons(
 ) {
     let waiting = units.iter().filter(|u| crate::needs_orders(u)).count();
     if let Ok(mut text) = label.get_single_mut() {
-        let value = if waiting == 0 { "All units have orders".to_string() } else { format!("Next Unit ({waiting} waiting)") };
+        let value = if waiting == 0 {
+            "All units have orders".to_string()
+        } else {
+            format!("Next Unit ({waiting} waiting)")
+        };
         if text.0 != value {
             text.0 = value;
         }
     }
     if let Ok((interaction, mut tint, mut image)) = end.get_single_mut() {
-        let color = if waiting == 0 { Color::srgb(0.62, 0.86, 0.45) } else { BRONZE };
+        let color = if waiting == 0 {
+            Color::srgb(0.62, 0.86, 0.45)
+        } else {
+            BRONZE
+        };
         if tint.0 != color {
             tint.0 = color;
             if *interaction == Interaction::None {
@@ -3666,9 +4516,18 @@ mod tests {
         assert_eq!(without_key_hints("Fortify (H)"), "Fortify");
         assert_eq!(without_key_hints("Help (F1)"), "Help");
         assert_eq!(without_key_hints("Undo move (Ctrl+Z)"), "Undo move");
-        assert_eq!(without_key_hints("End Turn (Enter) passes play. Open Science (Q) at the top."), "End Turn passes play. Open Science at the top.");
-        assert_eq!(without_key_hints("Upgrade to Musketman (40 gold)"), "Upgrade to Musketman (40 gold)");
-        assert_eq!(without_key_hints("Road (R - roads triple movement)"), "Road (R - roads triple movement)");
+        assert_eq!(
+            without_key_hints("End Turn (Enter) passes play. Open Science (Q) at the top."),
+            "End Turn passes play. Open Science at the top."
+        );
+        assert_eq!(
+            without_key_hints("Upgrade to Musketman (40 gold)"),
+            "Upgrade to Musketman (40 gold)"
+        );
+        assert_eq!(
+            without_key_hints("Road (R - roads triple movement)"),
+            "Road (R - roads triple movement)"
+        );
         assert_eq!(without_key_hints("Sound: On (V)"), "Sound: On");
         assert_eq!(without_key_hints("Plain"), "Plain");
     }
