@@ -138,6 +138,7 @@ pub fn run(which: &str, turns: u32) -> bool {
             println!("Game over on turn {turn}: {outcome}");
             println!("Cities that changed hands: {changes} ({between} between civilizations).");
             println!("Technologies traded between computer players: {}.", world.resource::<crate::foreign::Foreign>().tech_trades);
+            dominance(world);
             snapshot(world, turn);
             armies(world);
             troubles(world);
@@ -150,6 +151,33 @@ pub fn run(which: &str, turns: u32) -> bool {
     }
     println!("Took {:.1}s ({:.0} ms a turn).", started.elapsed().as_secs_f32(), started.elapsed().as_millis() as f32 / state.turn.max(1) as f32);
     true
+}
+
+/// How much of the world the strongest peoples hold at the end: cities, land within their borders
+/// and citizens, each as a share of the world's (for weighing domination rules).
+fn dominance(world: &mut World) {
+    let map = world.resource::<crate::MapData>();
+    let land = map.cells.len().saturating_sub(map.water.len()).max(1);
+    let water = map.water.clone();
+    let territory = world.resource::<crate::supply::Supplies>().territory.clone();
+    let mut q = world.query::<&City>();
+    let cities: Vec<(u32, u32)> = q.iter(world).filter(|c| c.owner != bevy_civ::barbarians::BARBARIANS).map(|c| (c.owner, c.population)).collect();
+    let (all_cities, all_people) = (cities.len().max(1), cities.iter().map(|c| c.1).sum::<u32>().max(1));
+    let mut owners: Vec<u32> = cities.iter().map(|c| c.0).collect();
+    owners.sort_unstable();
+    owners.dedup();
+    let mut rows: Vec<(f32, f32, f32, u32)> = owners
+        .into_iter()
+        .map(|o| {
+            let held = cities.iter().filter(|c| c.0 == o).count() as f32 / all_cities as f32;
+            let tiles = territory.iter().filter(|(at, (owner, _))| *owner == o && !water.contains(at)).count() as f32 / land as f32;
+            let people = cities.iter().filter(|c| c.0 == o).map(|c| c.1).sum::<u32>() as f32 / all_people as f32;
+            (held, tiles, people, o)
+        })
+        .collect();
+    rows.sort_by(|a, b| b.0.total_cmp(&a.0));
+    let text: Vec<String> = rows.iter().take(3).map(|(c, l, p, o)| format!("#{o}: cities {:.0}%, land {:.0}%, people {:.0}%", c * 100.0, l * 100.0, p * 100.0)).collect();
+    println!("--- dominance: {}", text.join("; "));
 }
 
 /// Era of a technology, by its cost (as the science advisor groups them).

@@ -236,7 +236,8 @@ Computer players follow the same rules as you and are run by three pieces of cod
   studies Seafaring first; a technology that gives a better form of government is studied early.
   Like the player, they trade knowledge: neighbours not at war swap a technology each (5% a turn
   for each pair, when on good terms), and one with nothing to teach buys a lesson for gold (three
-  gold a beaker of its base cost).
+  gold a beaker of its base cost). Trading builds goodwill between them (+3 a swap, +1 a sale),
+  which counts when they vote at the United Nations.
   Troop ships wait in port for a load of four (or eight turns) rather than carry a lone soldier
   to its death; settlers sail at once. A computer player keeps at most three great generals.
 - **Cities** (`src/governor.rs`): each city picks its next project in order of need - a defender if

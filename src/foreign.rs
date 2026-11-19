@@ -768,6 +768,9 @@ pub const AI_TECH_TRADE: f64 = 0.05;
 pub const AI_TECH_GOODWILL: i32 = 5;
 /// Gold a technology sells for, per beaker of its base cost.
 pub const TECH_PRICE: i32 = 3;
+/// Goodwill a trade of knowledge builds between two computer players: a swap, and a sale.
+pub const SWAP_GOODWILL: i32 = 3;
+pub const SALE_GOODWILL: i32 = 1;
 
 /// The most valuable technology `from` knows that `to` may study.
 fn best_lesson(from: &TechState, to: &TechState) -> Option<Tech> {
@@ -1087,18 +1090,21 @@ pub fn turn(ctx: &mut Ctx, fog: &FogOfWar, supplies: &Supplies, units: &[(Hex, u
                     ctx.civs.players[ib].tech.learn(x);
                     ctx.civs.players[ia].tech.learn(y);
                     ctx.foreign.tech_trades += 2;
+                    ctx.diplomacy.change_attitude(a.0, b.0, SWAP_GOODWILL);
                 }
                 (Some(x), None) if ctx.civs.players[ib].gold >= price(x) + 100 => {
                     ctx.civs.players[ib].tech.learn(x);
                     ctx.civs.players[ib].gold -= price(x);
                     ctx.civs.players[ia].gold += price(x);
                     ctx.foreign.tech_trades += 1;
+                    ctx.diplomacy.change_attitude(a.0, b.0, SALE_GOODWILL);
                 }
                 (None, Some(y)) if ctx.civs.players[ia].gold >= price(y) + 100 => {
                     ctx.civs.players[ia].tech.learn(y);
                     ctx.civs.players[ia].gold -= price(y);
                     ctx.civs.players[ib].gold += price(y);
                     ctx.foreign.tech_trades += 1;
+                    ctx.diplomacy.change_attitude(a.0, b.0, SALE_GOODWILL);
                 }
                 _ => {}
             }
@@ -1255,11 +1261,14 @@ mod tests {
         table.civs.players[1].tech.learn(Tech::Pottery);
         table.civs.players[2].tech.learn(Tech::Alphabet);
         table.diplomacy.change_attitude(1, 2, 20);
+        table.diplomacy.set_treaty(1, 2, Treaty::Peace);
         let cities = [(Hex::ZERO, PLAYER), (Hex::new(6, 0), 1), (Hex::new(12, 0), 2)];
         let fog = FogOfWar::default();
         for turn in 1..400 {
             table.state.turn = turn;
             table.foreign.offer = None;
+            // (A fresh peace: they do not fall out on their own meanwhile.)
+            table.foreign.since.insert((1, 2), turn);
             foreign_turn(&mut table, &fog, &Supplies::default(), &cities);
             if table.foreign.tech_trades > 0 {
                 break;
@@ -1267,6 +1276,7 @@ mod tests {
         }
         let knows = |t: &Table, id: usize, tech: Tech| t.civs.players[id].tech.researched.contains(&tech);
         assert!(knows(&table, 1, Tech::Alphabet) && knows(&table, 2, Tech::Pottery), "a swap, one each");
+        assert_eq!(table.diplomacy.get_attitude(1, 2), 30 + SWAP_GOODWILL, "trade builds goodwill");
         // At war, nothing changes hands.
         let mut table = Table::new(2);
         table.civs.players[1].tech.learn(Tech::Pottery);
