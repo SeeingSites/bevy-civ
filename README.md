@@ -44,7 +44,7 @@ Turn-based, Civilization-style empire building on a hex map, playable in the bro
 - Caravans (trade routes, help with wonders) and diplomats (embassies and espionage)
 - Diplomacy: treaties, attitude and reputation, tribute, tech exchange, resource deals
 - Computer players that research, expand, build, trade, spy, race for wonders and the stars
-- Victory by conquest, domination, diplomacy (United Nations), culture (20,000 points and 1.6 times any rival, scaled to the game's length), space race, or score at the last turn
+- Victory by conquest, domination, diplomacy (United Nations), culture (as in Civ III: 100,000 points with twice any rival's, or 20,000 in a single city, scaled to the game's length), space race, or score at the last turn
 - Multi-turn orders, route preview, worker automation, stack moves, raze or keep captured cities
 - Advisors (science, foreign, trade, empire: government, cities, military, score) and an encyclopedia
 - Saved games: automatic every turn, and as files that anyone can load
@@ -127,7 +127,7 @@ else's work on it stops (their shields go to the next project) and the news is a
 | Pyramids | Masonry | a Granary in every city of its owner (+2 food where there is none) |
 | Great Library | Writing | its owner learns every technology known to two or more of the peoples it has met (until it learns Theory of Gravity) |
 | Hanging Gardens | Monarchy | +2 food in its city, +1 content in every city |
-| Colossus | Bronze Working | +3 gold in its city (needs Iron) |
+| Colossus | Bronze Working | +1 gold on every ocean tile its city works (needs Iron) |
 | Oracle | Mysticism | +2 content in every city |
 | Great Lighthouse | Masonry | +1 move for ships and troops at sea |
 | Statue of Zeus | Bronze Working | one more unit per city supported free |
@@ -152,7 +152,8 @@ else's work on it stops (their shields go to the next project) and the news is a
 | Apollo Program | Space Flight | the whole world revealed to its owner; no people can build spaceship parts until it stands |
 | Cure for Cancer | Superconductors | +2 content in every city |
 
-A captured city's wonders change hands with it.
+A captured city's wonders change hands with it. The Colossus, the Great Lighthouse and Magellan's
+Expedition can only be built in a coastal city.
 
 Every wonder speaks to one or two of the six traits (Pyramids: Agricultural and Industrious; Great
 Library: Scientific; Colossus: Commercial; Oracle: Religious; Great Wall: Militaristic and
@@ -427,12 +428,18 @@ working directory.
   colosseums and cathedrals (+3), wonders, masterpieces, entertainers or martial law (troops in the
   city under Despotism, Monarchy and Communism). Each luxury the city can reach makes one citizen
   happy. Disorder (more unhappy than happy) stops the city.
-- **Culture**: temples, libraries, colosseums, cathedrals, universities, wonders and the palace earn
-  culture. Borders reach 2 tiles, 3 from 100 culture, 4 from 1,000 and 5 from 5,000. Where borders
+- **Culture**: as in Civ III, each turn a Temple or Colosseum earns 2 culture, a Library or
+  Cathedral 3, a University 4, a Research Lab or Forbidden Palace 2, every wonder 4 and the palace 1,
+  and a building or wonder that has stood a quarter of the game (100 turns of 400) earns double.
+  Borders reach 2 tiles, 3 from 100 culture, 4 from 1,000 and 5 from 10,000. Where borders
   meet, each tile goes to the city pressing hardest on it: (culture + 50) / distance², so a great
   culture pushes its neighbours back (every city keeps its own ring). Land lost this way takes its
-  resources and river gold with it. A city in disorder within 5
-  tiles of a civilization with twice its owner's culture may defect.
+  resources and river gold with it. A city in disorder within 5 tiles of a civilization with twice
+  its owner's culture may defect: 20% a turn, more the further it lies from its own capital
+  (+10% of that for every tile) and the more of its land the tempter's borders hold (+1/6 for each
+  tile), divided by one plus the troops in it (at most 60%).
+- **Cultural victory**: 100,000 culture points with twice as much as any other people, or 20,000 in
+  a single city (Civ III's numbers, for a 400-turn game; scaled to shorter games).
 - **Golden age**: once a game, begun by a people's first wonder that matches one of its traits or by
   its unique unit's first victory over another people: 20 turns of one more shield on every worked
   tile that yields shields, and one more gold on every one that yields gold.

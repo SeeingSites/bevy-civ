@@ -120,6 +120,17 @@ pub fn run(which: &str, turns: u32) -> bool {
             }
             alive = holding;
         }
+        // For tuning the cultural victory: the leading peoples' culture every five turns.
+        if turn % 5 == 0 && std::env::var_os("BEVY_CIV_CULTURE_TRACE").is_some() {
+            let ledger = world.resource::<CultureLedger>().clone();
+            let mut q = world.query::<&City>();
+            let totals = ledger.totals(q.iter(world).filter(|c| c.owner != bevy_civ::barbarians::BARBARIANS).map(|c| (c.position, c.owner)));
+            let mut top: Vec<u32> = totals.values().copied().collect();
+            top.sort_unstable_by(|a, b| b.cmp(a));
+            top.resize(3.max(top.len()), 0);
+            let best_city = q.iter(world).map(|c| ledger.of(c.position)).max().unwrap_or(0);
+            println!("culture-trace {turn} {} city {best_city}", top.iter().take(3).map(|c| c.to_string()).collect::<Vec<_>>().join(" "));
+        }
         if turn % 25 == 0 {
             snapshot(world, turn);
         }

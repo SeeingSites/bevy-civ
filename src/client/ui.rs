@@ -212,7 +212,7 @@ fn help_lines(topic: HelpTopic) -> Vec<String> {
             "Modern troubles: once a people knows Sanitation, big unhappy cities may fall into a drug trade (up to 3 levels, each +1 unhappy and -1 gold), spread by smugglers from foreign cities nearby - a Police Station roots it out, and you can demand that a neighbour cracks down. With Industrialization, adulterated food may spoil half a granary and anger a city for 6 turns (likelier where corruption is high) unless it has a Food Safety Agency. GM Farms (Genetic Engineering) add a food on every farmed tile, but people distrust the food (+1 unhappy) without a Food Safety Agency.",
             "Migration: every 5 turns, citizens leave unhappy, hungry or troubled cities for clearly better ones within 10 tiles - at home, or abroad in peoples that know Industrialization and welcome them. Set your policy in the Empire window (Government): welcome migrants and grow (their rulers resent it), or turn them away. Communist and fundamentalist peoples admit none.",
             "Each city's governor works the land for a focus, always feeding the city first: Growth (the most food), Production (shields), Trade (gold-rich tiles, for science and taxes) or Balanced. With Governor builds on, the governor also puts citizens to entertaining when the city would fall into disorder, and back to work once it is calm without them; and Workers it trains start on automatic. On Auto, the default, it picks one from the city's situation - production for a wonder or for troops in wartime, growth for a small city, trade for a big one with a library or market - and the city panel says why.",
-            "Culture from temples, cathedrals, colosseums, libraries, universities and wonders widens a city's borders over time (2 tiles, 3 at 100, 4 at 1,000, 5 at 5,000). Where borders meet, the land goes to the city with the stronger culture for its distance, so a great culture pushes its neighbours' borders back. A city in disorder next to a much greater culture may defect to it.",
+            "Culture: each turn a Temple or Colosseum earns 2, a Library or Cathedral 3, a University 4, a Research Lab or Forbidden Palace 2, a wonder 4 and the palace 1; a building or wonder that has stood a quarter of the game (100 turns of 400) earns double. Culture widens a city's borders over time (2 tiles, 3 at 100, 4 at 1,000, 5 at 10,000). Where borders meet, the land goes to the city with the stronger culture for its distance, so a great culture pushes its neighbours' borders back. A city in disorder near a people of twice its owner's culture may defect - likelier far from its capital and where their borders hold its land; troops inside hold it back.",
             "Corruption grows with distance from the capital and is halved by a Courthouse. A city keeps training the same unit until told otherwise; a finished building or wonder leaves it waiting for its next project - unless its build queue holds more (switch the city panel to Add to queue and pick up to six projects).",
             "Pollution and nuclear fallout foul the land; past 15 fouled tiles in the world, global warming now and then turns land drier. Clean it up with workers; Mass Transit and Recycling Centers prevent it.",
             "Projects other than wonders can be bought with gold, or rushed under Despotism and Communism by putting citizens to forced labour. Luxury (Empire advisor) makes one citizen happy for every 2 points.",
@@ -225,7 +225,7 @@ fn help_lines(topic: HelpTopic) -> Vec<String> {
             "Governments: a revolution brings a few turns of anarchy. Each government limits how much of your commerce can go to science or luxury (Empire advisor, Government tab); taxes take the rest, and savings earn 5% interest, up to 2 gold per Bank and 3 per Stock Exchange.".to_string(),
             "Faith: the first to learn Mysticism, Philosophy, Theology and Printing Press founds the Old Gods, the Way of Reason, the One Faith and the Reformed Faith. Faiths spread to nearby cities; Missionaries carry your state religion (your capital's faith) further. Cities of your state religion get +1 content (+2 with a Temple); a holy city's owner earns gold from the faith's followers; shared faith warms relations, different faiths cool them.".to_string(),
             "Diplomacy (E): peace, alliances, gifts, tribute, trade agreements, technology and resource deals. A right of passage lets your units share tiles with theirs; an alliance includes it, and war ends it. Units cannot walk into the units or cities of a people at peace with you: declare war first.".to_string(),
-            "Culture from temples, libraries, colosseums, cathedrals, universities and wonders widens borders (2 tiles, 3 at 100 culture, 4 at 1,000, 5 at 5,000) and pushes neighbours' borders back. A city in disorder next to a much greater culture may defect.".to_string(),
+            "Culture from temples, libraries, colosseums, cathedrals, universities and wonders (double from those that have stood a quarter of the game) widens borders (2 tiles, 3 at 100 culture, 4 at 1,000, 5 at 10,000) and pushes neighbours' borders back. A city in disorder near a much greater culture may defect.".to_string(),
             "Great people come from great-person points: Merchants trade abroad or settle as trading houses, Scientists complete research, Artists make masterpieces, Engineers finish projects; Generals come from victories.".to_string(),
         ],
         HelpTopic::Science => vec![
@@ -251,7 +251,13 @@ fn help_lines(topic: HelpTopic) -> Vec<String> {
             "Conquest: take every rival city. Domination: hold two in five of the cities in the world (at least five).".to_string(),
             "Diplomacy: once the United Nations (Computers) stands, every 10 turns the world votes for Secretary-General between its owner and the highest-scoring other people. Each candidate votes for itself; every other people backs the candidate it likes better, but only one it is friendly with (peace treaties, alliances, gifts, trade and a shared faith build goodwill) - otherwise it abstains. A majority of all the members wins.".to_string(),
             "Space: the race to Alpha Centauri, the nearest star. Research Space Flight, Plastics and Superconductors; once anyone has built the Apollo Program, cities with a Factory build 4 Space Structures, 2 to 4 Components (engines) and 2 Modules. Launch from the Empire advisor's Space page: the voyage takes 18 turns, 2 fewer for each extra engine. The first ship to arrive wins - unless its capital falls first, and every rival will try to make it fall.".to_string(),
-            format!("Culture: reach {} culture points (in a game of {} turns; scaled to the game's length) and {} times as much as any rival.", bevy_civ::culture::VICTORY_CULTURE, 400, bevy_civ::culture::VICTORY_LEAD_TENTHS as f32 / 10.0),
+            format!(
+                "Culture: gather {} culture points with {} times as much as any rival, or {} in a single city (in a game of {} turns; scaled to the game's length).",
+                bevy_civ::culture::VICTORY_CULTURE,
+                bevy_civ::culture::VICTORY_LEAD_TENTHS as f32 / 10.0,
+                bevy_civ::culture::CITY_VICTORY_CULTURE,
+                400
+            ),
             "Score: if nobody has won by the last turn (chosen when the game begins), the highest score wins. Score counts 2 points a citizen, 10 a technology and 50 a wonder, for everyone alike. A rival who holds two in five of the cities wins by domination.".to_string(),
         ],
     }
@@ -1636,7 +1642,8 @@ pub fn rebuild_panels(
                 // Culture and the reach of the city's borders.
                 let points = culture.of(city.position);
                 let next = bevy_civ::culture::next_border_step(points).map(|step| format!(" (borders widen at {step})")).unwrap_or_default();
-                p.spawn(label(&art.font_body, format!("Culture: {points}, +{} a turn{next}", bevy_civ::culture::per_turn(&buildings.buildings, city.is_capital)), 14.0, CREAM));
+                let earned = culture.earned(city.position, &buildings.buildings, city.is_capital, state.turn, state.last_turn);
+                p.spawn(label(&art.font_body, format!("Culture: {points}, +{earned} a turn{next}"), 14.0, CREAM));
                 // Citizens: workers on the land, and specialists who eat without farming.
                 use bevy_civ::city::Specialist;
                 let count = |kind: &Specialist| city.specialists.iter().filter(|s| *s == kind).count();

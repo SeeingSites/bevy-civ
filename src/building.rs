@@ -415,7 +415,6 @@ impl Building {
             Building::Marketplace => 2,
             Building::Bank => 4,
             Building::StockExchange => 3,
-            Building::Colossus => 3,
             _ => 0,
         }
     }
@@ -427,9 +426,9 @@ impl Building {
         *self == Building::ForbiddenPalace
     }
 
-    /// Only a city on the coast can build it.
+    /// Only a city on the coast can build it (the seafaring wonders too, as in Civ III).
     pub fn needs_coast(&self) -> bool {
-        matches!(self, Building::Harbor | Building::CoastalFortress)
+        matches!(self, Building::Harbor | Building::CoastalFortress | Building::Colossus | Building::GreatLighthouse | Building::Magellan)
     }
 
     /// A building the city must already have before it can build this one.
@@ -459,7 +458,7 @@ impl Building {
             Building::Pyramids => "a Granary in every city of its owner (+2 food where there is none)",
             Building::GreatLibrary => "teaches its owner every technology known to two or more of the peoples it has met (until it learns Theory of Gravity)",
             Building::HangingGardens => "+2 food here, +1 content in every city",
-            Building::Colossus => "+3 gold here",
+            Building::Colossus => "+1 gold on every ocean tile its city works",
             Building::Oracle => "+2 content in every city",
             Building::GreatLighthouse => "+1 move for ships and troops at sea",
             Building::GreatWall => "every city of its owner counts as walled",

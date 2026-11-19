@@ -3728,10 +3728,10 @@ fn process_turn(
                         if character.is_some_and(|c| c.admires(b)) && golden.begin(city.owner) && (mine || foreign.met.contains(&city.owner)) {
                             let spirit = bevy_civ::traits::wonder_traits(b);
                             log.push(if mine {
-                                format!("The {} speaks to our {spirit} people: a golden age begins! For {GOLDEN_AGE_TURNS} turns every worked tile that yields a shield or gold yields one more.", b.name())
+                                format!("Our {spirit} people take pride in the {}: a golden age begins! For {GOLDEN_AGE_TURNS} turns every worked tile that yields a shield or gold yields one more.", b.name())
                             } else {
                                 let who = civs.players.iter().find(|c| c.id == city.owner).map(|c| c.adjective.clone()).unwrap_or_default();
-                                format!("The {} begins a golden age for the {who} people.", b.name())
+                                format!("A golden age begins for the {who} people, inspired by the {}.", b.name())
                             });
                         }
                         let builder = civs.players.iter().find(|c| c.id == city.owner).map(|c| c.name.clone()).unwrap_or_else(|| "A people".into());
@@ -3741,6 +3741,7 @@ fn process_turn(
                             format!("Wonder of the world: {} completed the {} in {}.", builder, b.name(), city.name)
                         });
                         buildings.buildings.push(b);
+                        culture.record(city.position, b, state.turn);
                     } else {
                         // Beaten to it this very turn: the shields are kept.
                         city.production_progress += b.cost();
@@ -3755,6 +3756,7 @@ fn process_turn(
                         log.push(format!("{} completes the {}. {}", city.name, b.name(), next_hint(&city)));
                     }
                     buildings.buildings.push(b);
+                    culture.record(city.position, b, state.turn);
                 }
             }
         }
@@ -3801,7 +3803,8 @@ fn process_turn(
         }
 
         // Culture accrues whatever the city's mood.
-        culture.add(city.position, culture_rules::per_turn(&buildings.buildings, city.is_capital) + if wonders.owns(owner, Building::Eiffel) { 2 } else { 0 });
+        let earned = culture.earned(city.position, &buildings.buildings, city.is_capital, state.turn, state.last_turn);
+        culture.add(city.position, earned + if wonders.owns(owner, Building::Eiffel) { 2 } else { 0 });
 
         // Great-person points; a birth appears in the city. Computer players put theirs to work at once.
         if owner != BARBARIANS {
@@ -4185,7 +4188,9 @@ fn process_turn(
         }
     }
 
-    // A city in disorder near a far greater culture may defect to it, its garrison sent home.
+    // A city in disorder near a far greater culture may defect to it, its garrison sent home - more
+    // readily far from its own capital and where the tempter's borders hold its land, less so with
+    // troops inside.
     {
         let owners: Vec<(Hex, u32)> = cities.iter().map(|(c, _, _)| (c.position, c.owner)).collect();
         let totals = culture.totals(owners.iter().copied());
@@ -4206,7 +4211,11 @@ fn process_turn(
                 })
                 .min_by_key(|(at, _)| at.distance_to(city.position))
                 .map(|(_, owner)| *owner);
-            if let Some(new_owner) = tempter.filter(|_| rng.gen_bool(culture_rules::DEFECTION_CHANCE)) {
+            let Some(new_owner) = tempter else { continue };
+            let far = capitals.get(&city.owner).map_or(0, |cp| cp.distance_to(city.position).max(0) as u32);
+            let held = supplies.territory.iter().filter(|(at, (o, _))| *o == new_owner && at.distance_to(city.position) <= CITY_RADIUS).count() as u32;
+            let garrison = armies.iter().filter(|(p, o)| *p == city.position && *o == city.owner).count() as u32;
+            if rng.gen_bool(culture_rules::defection_chance(far, held, garrison)) {
                 defections.push((city.position, city.owner, new_owner));
             }
         }
@@ -5001,7 +5010,7 @@ fn process_turn(
             *held.entry(city.owner).or_default() += 1;
         }
         let leader = held.iter().max_by_key(|(_, n)| **n).map(|(o, n)| (*o, *n));
-        let culture_winner = culture_rules::cultural_winner(&culture.totals(cities.iter().map(|(c, _, _)| (c.position, c.owner))), culture_rules::victory_culture(state.last_turn));
+        let culture_winner = culture.winner(&cities.iter().filter(|(c, _, _)| c.owner != BARBARIANS).map(|(c, _, _)| (c.position, c.owner)).collect::<Vec<_>>(), state.last_turn);
         state.victory = if held.len() == 1 {
             leader.map(|(o, _)| format!("Conquest victory for {}.", civ_named(o)))
         } else if let Some((o, n)) = leader.filter(|(_, n)| dominates(*n, total_cities)) {
@@ -5031,7 +5040,7 @@ fn process_turn(
         state.victory = Some("Conquest Victory!".into());
     } else if dominates(player_cities, total_cities) {
         state.victory = Some("Domination Victory!".into());
-    } else if let Some(winner) = culture_rules::cultural_winner(&culture.totals(cities.iter().map(|(c, _, _)| (c.position, c.owner))), culture_rules::victory_culture(state.last_turn)) {
+    } else if let Some(winner) = culture.winner(&cities.iter().filter(|(c, _, _)| c.owner != BARBARIANS).map(|(c, _, _)| (c.position, c.owner)).collect::<Vec<_>>(), state.last_turn) {
         state.victory = Some(if winner == PLAYER {
             "Cultural Victory! Our civilization is the envy of the world.".to_string()
         } else {
@@ -5427,16 +5436,17 @@ pub fn work_tiles(
     for (mut city, buildings, happiness) in &mut cities {
         let owner = city.owner;
         let focus = effective_focus(&city, &city_situation(&city, buildings, happiness, at_war.contains(&owner), &rivers));
-        // A Harbor makes every worked ocean tile one food richer.
+        // A Harbor makes every worked ocean tile one food richer, and the Colossus one gold.
         let harbor = buildings.has(Building::Harbor);
+        let colossus = buildings.has(Building::Colossus);
         // GM Farms make every farmed tile one food richer.
         let engineered = buildings.has(Building::GmFarms);
         let base_yield = |owner: u32, hex: Hex| {
             yield_for(owner, hex).map(|y| {
                 let tile = tile_at.get(&hex);
-                let sea = harbor && tile.is_some_and(|t| t.terrain == Terrain::Water);
+                let water = tile.is_some_and(|t| t.terrain == Terrain::Water);
                 let farmed = engineered && tile.is_some_and(|t| t.improvements.contains(&Improvement::Farm));
-                (y.0 + u32::from(sea) + u32::from(farmed), y.1, y.2)
+                (y.0 + u32::from(harbor && water) + u32::from(farmed), y.1, y.2 + u32::from(colossus && water))
             })
         };
         // A golden age makes every tile that yields a shield or gold yield one more.
