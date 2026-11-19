@@ -1369,9 +1369,6 @@ pub fn rebuild_panels(
         node.display = if city.is_some() { Display::Flex } else { Display::None };
         // Folded to the title bar (see `UiState::city_peek`), the sheet is no taller than that.
         node.max_height = if peek { Val::Px(64.0) } else { Val::Auto };
-        let capital = cities.iter().find(|(c, _, _)| c.is_capital && c.owner == PLAYER).map(|(c, _, _)| c.position);
-        // Seats of government (capital and Forbidden Palace): corruption counts from the nearer.
-        let seats: Vec<hexx::Hex> = cities.iter().filter(|(c, b, _)| c.owner == PLAYER && (c.is_capital || b.has(Building::ForbiddenPalace))).map(|(c, _, _)| c.position).collect();
         let has_forbidden_palace = cities.iter().any(|(c, b, _)| c.owner == PLAYER && b.has(Building::ForbiddenPalace));
         commands.entity(root).despawn_descendants().with_children(|p| {
             let Some((city, buildings, happiness)) = city else { return };
@@ -1422,23 +1419,42 @@ pub fn rebuild_panels(
             if routes > 0 {
                 p.spawn(label(&art.font_body, format!("Trade routes: {routes} of {}", bevy_civ::trade::MAX_ROUTES_PER_CITY), 14.0, CREAM));
             }
-            let dist = seats.iter().map(|s| city.position.distance_to(*s) as u32).min().or(capital.map(|c| city.position.distance_to(c) as u32)).unwrap_or(0);
             let gov = state.government;
-            let (extra_food, extra_shields, extra_gold) = supplies.yields.get(&city.position).copied().unwrap_or_default();
-            let food = city.food_per_turn(buildings, gov, dist) + extra_food;
-            let production = city.production_per_turn(buildings, gov, dist) + extra_shields;
+            // Corruption (by distance to a palace and the cities nearer it) and the city's accounts.
+            let rule_of = |owner: u32| if owner == PLAYER { gov } else { civs.players.iter().find(|c| c.id == owner).map_or(Government::Despotism, |c| c.government) };
+            let land_tiles = map.cells.len().saturating_sub(map.water.len());
+            let corruption = crate::corruption_rates(cities.iter().map(|(c, b, _)| (c, b)), rule_of, &supplies.linked, land_tiles).get(&city.position).copied().unwrap_or(0.0);
+            let character = civs.players.iter().find(|c| c.id == city.owner).map(|c| bevy_civ::traits::of(&c.name));
+            let (books, _) = crate::city_books(city, buildings, gov, state.rates(), corruption, &wonders, &great, character, &supplies);
+            let (extra_food, extra_shields, _) = supplies.yields.get(&city.position).copied().unwrap_or_default();
+            let food = city.food_per_turn(buildings) + extra_food;
+            let production = city.production_per_turn(buildings, bevy_civ::economy::waste(corruption)) + extra_shields;
+            let wasted = city.production_per_turn(buildings, 0.0).saturating_sub(city.production_per_turn(buildings, bevy_civ::economy::waste(corruption)));
             p.spawn(row(14.0)).with_children(|r| {
                 stat(r, art, icon::FOOD, format!("+{food}"), CREAM);
                 stat(r, art, icon::PRODUCTION, format!("+{production}"), CREAM);
-                let commerce = city.science_per_turn(buildings, gov, dist) + city.gold_per_turn(buildings) + 1;
-                let (science, luxury, gold) = state.split_commerce(commerce);
-                stat(r, art, icon::SCIENCE, format!("+{science}"), CREAM);
-                stat(r, art, icon::GOLD, format!("+{}", gold as i32 + extra_gold as i32 + great.merchant_gold(city.position)), CREAM);
-                if luxury > 0 {
-                    r.spawn(label(&art.font_body, format!("lux {luxury}"), 14.0, CREAM));
+                stat(r, art, icon::SCIENCE, format!("+{}", books.science), CREAM);
+                stat(r, art, icon::GOLD, format!("+{}", books.gold), CREAM);
+                if books.luxury > 0 {
+                    r.spawn(label(&art.font_body, format!("lux {}", books.luxury), 14.0, CREAM));
                 }
                 stat(r, art, icon::HAPPY, format!("{} / {}", happiness.happy + happiness.content, happiness.unhappy), if happiness.in_disorder() { Color::srgb(1.0, 0.45, 0.4) } else { CREAM });
             });
+            // Where the trade goes: corruption, waste and the upkeep of the city's buildings.
+            if mine {
+                p.spawn(label(
+                    &art.font_body,
+                    format!(
+                        "Trade {}: {} lost to corruption ({}%), {wasted} shields to waste. Buildings cost {} gold a turn.",
+                        books.trade,
+                        books.corruption,
+                        (corruption * 100.0).round(),
+                        books.upkeep
+                    ),
+                    13.0,
+                    if corruption >= 0.35 { Color::srgb(1.0, 0.6, 0.5) } else { MUTED },
+                ));
+            }
             // The mood, spelled out: a city in disorder produces nothing whatever the figures above say.
             if happiness.in_disorder() {
                 p.spawn(label(
@@ -1578,7 +1594,8 @@ pub fn rebuild_panels(
                         .filter(|b| b.required_building().is_none_or(|r| buildings.has(r)))
                         .filter(|b| !(b.one_per_people() && has_forbidden_palace))
                         .map(|b| {
-                            let effect = b.effect().to_string();
+                            let upkeep = bevy_civ::economy::upkeep(b);
+                            let effect = if upkeep > 0 { format!("{}; upkeep {upkeep} gold", b.effect()) } else { b.effect().to_string() };
                             (ProductionItem::Building(b), effect)
                         })
                         .collect()
@@ -1613,7 +1630,7 @@ pub fn rebuild_panels(
                 let count = |kind: &Specialist| city.specialists.iter().filter(|s| *s == kind).count();
                 p.spawn(label(&art.font_body, format!("Citizens: {} working the land, {} specialists. Food {:+} a turn.", city.workers(), city.specialists.len(), city.food_balance(buildings)), 14.0, CREAM));
                 p.spawn(Node { flex_wrap: FlexWrap::Wrap, column_gap: Val::Px(5.0), row_gap: Val::Px(5.0), ..default() }).with_children(|grid| {
-                    for (kind, what) in [(Specialist::Entertainer, "+2 content"), (Specialist::TaxCollector, "+3 gold"), (Specialist::Scientist, "+3 science")] {
+                    for (kind, what) in [(Specialist::Entertainer, "+2 content"), (Specialist::TaxCollector, "+2 gold"), (Specialist::Scientist, "+3 science")] {
                         let name = match kind {
                             Specialist::Entertainer => "Entertainers",
                             Specialist::TaxCollector => "Tax collectors",
@@ -1894,14 +1911,30 @@ pub fn rebuild_panels(
                                     ));
                                 }
                                 w.spawn(label(&art.font_body, format!("A revolution costs {} turns of anarchy: no science, poor production.", Government::REVOLUTION_TURNS), 14.0, INK_SOFT));
-                                // Rates: how the empire's commerce is split between science, luxury and taxes.
-                                let cap = state.government.science_cap();
-                                w.spawn(label(&art.font_bold, format!("Rates (a {} allows at most {cap}% in one)", state.government.name()), 15.0, INK));
-                                let (sci, lux) = (state.science_rate, state.luxury_rate);
+                                // Rates: how the empire's trade is split between science, luxury and taxes. The
+                                // government limits every share, taxes included.
+                                let gov = state.government;
+                                let cap = gov.rate_cap();
+                                let heading = if gov == Government::Anarchy {
+                                    "Rates: in anarchy no taxes are collected and nothing is learned - all trade goes to luxury".to_string()
+                                } else {
+                                    format!("Rates (a {} allows at most {cap}% in any one)", gov.name())
+                                };
+                                w.spawn(label(&art.font_bold, heading, 15.0, INK));
+                                let now = state.rates();
+                                let (sci, lux) = (now.science, now.luxury);
+                                let step = bevy_civ::economy::RATE_STEP;
+                                let try_rates = |science: Option<u32>, luxury: Option<u32>| {
+                                    let rates = bevy_civ::economy::Rates { science: science?, luxury: luxury? };
+                                    (gov != Government::Anarchy && rates.allowed(gov)).then_some((rates.science, rates.luxury))
+                                };
+                                // Taxes go up by taking from science (or luxury), down by giving to it.
+                                let tax_up = try_rates(sci.checked_sub(step), Some(lux)).or_else(|| try_rates(Some(sci), lux.checked_sub(step)));
+                                let tax_down = try_rates(Some(sci + step), Some(lux)).or_else(|| try_rates(Some(sci), Some(lux + step)));
                                 let rows: [(&str, u32, Option<(u32, u32)>, Option<(u32, u32)>); 3] = [
-                                    ("Science", sci, (sci >= 10).then(|| (sci - 10, lux)), (sci + 10 <= cap && sci + lux + 10 <= 100).then(|| (sci + 10, lux))),
-                                    ("Luxury", lux, (lux >= 10).then(|| (sci, lux - 10)), (lux + 10 <= cap && sci + lux + 10 <= 100).then(|| (sci, lux + 10))),
-                                    ("Taxes", state.tax_rate(), None, None),
+                                    ("Science", sci, try_rates(sci.checked_sub(step), Some(lux)), try_rates(Some(sci + step), Some(lux))),
+                                    ("Luxury", lux, try_rates(Some(sci), lux.checked_sub(step)), try_rates(Some(sci), Some(lux + step))),
+                                    ("Taxes", now.tax(), tax_down, tax_up),
                                 ];
                                 for (name, value, less, more) in rows {
                                     w.spawn(Node { align_items: AlignItems::Center, column_gap: Val::Px(10.0), ..default() }).with_children(|r| {
@@ -1910,25 +1943,32 @@ pub fn rebuild_panels(
                                         });
                                         for (text, change) in [("-10%", less), ("+10%", more)] {
                                             r.spawn(Node { width: Val::Px(64.0), ..default() }).with_children(|slot| {
-                                                // Taxes take the rest, so they have no buttons; elsewhere a step that is
-                                                // not allowed shows greyed, keeping the buttons in place.
-                                                if name == "Taxes" {
-                                                    return;
-                                                }
+                                                // A step that is not allowed shows greyed, keeping the buttons in place.
                                                 match change {
                                                     Some((s, l)) => button(slot, art, text, Command::Game(Action::SetRates(s, l)), BRONZE, 13.0),
                                                     None => button(slot, art, text, Command::Game(Action::SetRates(sci, lux)), SPENT, 13.0),
                                                 }
                                             });
                                         }
-                                        if name == "Taxes" {
-                                            r.spawn(label(&art.font_body, "the rest; every 2 luxury make a citizen happy", 13.0, INK_SOFT));
+                                        if name == "Luxury" {
+                                            r.spawn(label(&art.font_body, "every 2 luxury make a citizen happy", 13.0, INK_SOFT));
                                         }
                                     });
                                 }
+                                // Last turn's accounts.
+                                let books = state.accounts.get(&PLAYER).copied().unwrap_or_default();
                                 w.spawn(label(
                                     &art.font_body,
-                                    format!("Interest on the treasury: +{} gold a turn (5% of savings, up to 2 for each Bank and 3 for each Stock Exchange).", state.interest),
+                                    format!(
+                                        "Last turn: trade {}, of which {} lost to corruption; science {}, luxury {}, taxes {}. Buildings' upkeep -{}, units -{}, interest +{}: {:+} gold a turn.",
+                                        books.trade, books.corruption, books.science, books.luxury, books.gold, books.upkeep, state.unit_support, state.interest, state.gold_per_turn
+                                    ),
+                                    14.0,
+                                    if state.gold_per_turn < 0 { RED } else { INK_SOFT },
+                                ));
+                                w.spawn(label(
+                                    &art.font_body,
+                                    "Interest on the treasury: 5% of savings, up to 2 gold for each Bank and 3 for each Stock Exchange. A treasury that cannot pay its bills sells buildings.".to_string(),
                                     14.0,
                                     INK_SOFT,
                                 ));
@@ -2808,6 +2848,7 @@ pub fn update_tile_info(
     fog: Res<FogOfWar>,
     tiles: Query<&HexTile>,
     (tech, supplies, rivers): (Res<TechState>, Res<Supplies>, Res<crate::Rivers>),
+    (state, golden): (Res<GameState>, Res<crate::GoldenAges>),
     mut info: Query<&mut Text, With<TileInfoText>>,
 ) {
     let Ok(mut text) = info.get_single_mut() else { return };
@@ -2821,7 +2862,9 @@ pub fn update_tile_info(
                 .collect();
             extras.extend(tile.improvements.iter().map(|i| format!("{:?}", i)));
             let seen = tile.resource.filter(|r| r.reveal_tech().is_none_or(|t| tech.researched.contains(&t)));
-            let (f, s, g) = bevy_civ::tiles::tile_yield(tile.terrain, &tile.improvements, seen, rivers.tiles.contains(&tile.coord));
+            // As our government (and a golden age) makes it.
+            let raw = bevy_civ::tiles::tile_yield(tile.terrain, &tile.improvements, seen, rivers.tiles.contains(&tile.coord));
+            let (f, s, g) = bevy_civ::economy::tile_rule(raw, state.government, golden.active(PLAYER));
             let moves = match bevy_civ::pathfinding::terrain_cost(tile.terrain) {
                 _ if tile.has_road() => "road".to_string(),
                 Some(1) => "1 move".to_string(),

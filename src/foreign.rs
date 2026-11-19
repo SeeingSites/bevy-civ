@@ -1081,6 +1081,7 @@ mod tests {
             anarchy: 0,
             pending_government: None,
             eliminated: false,
+            rates: Default::default(),
         }
     }
 

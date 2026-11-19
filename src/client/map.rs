@@ -266,6 +266,7 @@ pub fn show_city_area(
     art: Res<Art>,
     map: Res<MapData>,
     marks: Query<Entity, With<AreaMark>>,
+    (state, golden): (Res<crate::GameState>, Res<crate::GoldenAges>),
     mut commands: Commands,
 ) {
     if !(selection.is_changed() || supplies.is_changed() || !changed.is_empty()) {
@@ -287,6 +288,8 @@ pub fn show_city_area(
         if centre {
             y = bevy_civ::tiles::centre_yield(y);
         }
+        // What the government (and a golden age) makes of it.
+        y = bevy_civ::economy::tile_rule(y, state.government, golden.active(crate::PLAYER));
         let worked = centre || city.worked.contains(hex);
         let pos = map.layout.hex_to_world_pos(*hex);
         let z = 6.5;

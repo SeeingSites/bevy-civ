@@ -207,6 +207,7 @@ fn snapshot(world: &mut World, turn: u32) {
     let space = world.resource::<SpaceRace>().clone();
     let culture = world.resource::<CultureLedger>().clone();
     let wonders = world.resource::<WorldWonders>().clone();
+    let accounts = world.resource::<GameState>().accounts.clone();
     let mut cities = world.query::<(&City, &CityBuildings)>();
     let city_list: Vec<(u32, u32, bool, bevy_civ::city::City)> = cities.iter(world).map(|(c, b)| (c.owner, c.population, b.buildings.len() > 3, c.clone())).collect();
     let mut units = world.query::<&Unit>();
@@ -225,8 +226,14 @@ fn snapshot(world: &mut World, turn: u32) {
         let points: u32 = owned.iter().map(|c| culture.of(c.3.position)).sum();
         let held = wonders.built.values().filter(|(o, _)| *o == civ.id).count();
         let ship = space.ships.get(&civ.id).map(|s| format!(", ship needs {}", if s.arrives.is_some() { "nothing (launched)".into() } else { s.missing() })).unwrap_or_default();
+        // The economy: trade from the land worked, the share lost to corruption, the upkeep of
+        // buildings, the rates (science/luxury) and the science it all comes to.
+        let trade: u32 = owned.iter().map(|c| c.3.land.2).sum();
+        let books = accounts.get(&civ.id).copied().unwrap_or_default();
+        let corrupt = books.corruption * 100 / books.trade.max(1);
+        let economy = format!("corr {corrupt:>2}% upk {:>3} rates {}/{}", books.upkeep, civ.rates.science, civ.rates.luxury);
         println!(
-            "  {:<14} {:>2} cities {:>3} people {:>2} techs {:>3} army{grouped} {:>5} gold  {:<14} culture {:>5}  wonders {}{ship}",
+            "  {:<14} {:>2} cities {:>3} people {:>2} techs {:>3} army{grouped} {:>5} gold  {:<14} culture {:>5}  wonders {}  trade {:>4} sci {:>4} {economy}{ship}",
             civ.name.trim_start_matches("the "),
             owned.len(),
             people,
@@ -235,7 +242,9 @@ fn snapshot(world: &mut World, turn: u32) {
             civ.gold,
             civ.government.name(),
             points,
-            held
+            held,
+            trade,
+            civ.tech.science_per_turn
         );
     }
 }

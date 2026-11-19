@@ -27,6 +27,12 @@ pub struct CityView {
     pub near_capital: bool,
     /// Level of its drug trade.
     pub narcotics: u32,
+    /// Trade from the land it works.
+    pub trade: u32,
+    /// Percent of its trade lost to corruption.
+    pub corruption: u32,
+    /// The size its water supply lets it reach (see `Building::size_limit`).
+    pub water_limit: u32,
 }
 
 /// The state of the civilization as a whole, including what its other cities have already queued.
@@ -64,6 +70,9 @@ pub struct CivView<'a> {
     pub ferries: usize,
     /// Its units waiting in port for a ship.
     pub ferry_wanted: usize,
+    /// Its treasury is strained (upkeep leaves little for science, or it runs at a loss): only
+    /// buildings that pay for themselves or are needed.
+    pub thrifty: bool,
 }
 
 /// Largest army a computer player keeps.
@@ -193,35 +202,43 @@ pub fn choose(city: &CityView, civ: &CivView, supplies: &Supplies, rng: &mut imp
     if city.narcotics > 0 && can_build(&Building::PoliceStation, city, civ, supplies) {
         return ProductionItem::Building(Building::PoliceStation);
     }
+    // Buildings cost upkeep, so each is wanted where it pays: water where the city is about to
+    // outgrow its supply, a courthouse where corruption bites, libraries and markets where there is
+    // trade to multiply.
+    let near_limit = city.population + 1 >= city.water_limit;
+    let first_limit = bevy_civ::building::AQUEDUCT_LIMIT;
+    // A strained treasury builds only what pays for itself or is needed.
+    let spare = !civ.thrifty;
+    let industrial = city.built.contains(&Building::Factory);
     let wish = [
         (Building::Walls, city.threatened || civ.at_war),
         (Building::Temple, city.population >= bevy_civ::diplomacy::BASE_CONTENT),
-        (Building::Aqueduct, city.population >= 7),
-        (Building::Granary, city.population < 8),
-        (Building::Barracks, (civ.at_war || civ.aggression > 0.6) && city.population >= 6),
-        (Building::Library, true),
-        (Building::Marketplace, true),
+        (Building::Aqueduct, near_limit && city.water_limit <= first_limit),
+        (Building::Granary, city.population < 8 && spare),
+        (Building::Barracks, civ.at_war && city.population >= 6 && spare),
+        (Building::Courthouse, city.corruption >= 20 && city.trade >= 4),
+        (Building::Marketplace, city.trade >= 6),
+        (Building::Library, city.trade >= 4),
         (Building::Harbor, true),
-        (Building::Courthouse, civ.cities >= 4),
         (Building::ForbiddenPalace, civ.cities >= 8 && !city.near_capital),
         (Building::Colosseum, city.population >= 8),
         (Building::Cathedral, city.population >= 10),
-        (Building::SewerSystem, city.population >= 15),
-        (Building::University, true),
-        (Building::Bank, true),
-        (Building::StockExchange, city.population >= 8),
-        (Building::Factory, true),
-        (Building::Observatory, true),
-        (Building::Supermarket, city.population >= 12),
+        (Building::SewerSystem, near_limit && city.water_limit == 2 * first_limit),
+        (Building::Bank, city.trade >= 10),
+        (Building::University, city.trade >= 10 && spare),
+        (Building::StockExchange, city.trade >= 16),
+        (Building::Factory, (city.population >= 8 && spare) || !civ.space_parts.is_empty()),
+        (Building::Observatory, city.trade >= 12 && spare),
+        (Building::Supermarket, city.population >= 12 && spare),
         (Building::PoliceStation, city.population >= 12 || city.narcotics > 0),
-        (Building::CoastalFortress, civ.at_war),
-        (Building::PowerPlant, true),
-        (Building::ResearchLab, true),
-        (Building::FoodSafety, city.population >= 9),
-        (Building::GmFarms, city.population >= 10 && city.built.contains(&Building::FoodSafety)),
-        (Building::MassTransit, city.population >= 10),
-        (Building::RecyclingCenter, city.population >= 10),
-        (Building::Airport, civ.at_war),
+        (Building::CoastalFortress, civ.at_war && civ.navy > 0),
+        (Building::PowerPlant, city.population >= 10 && spare),
+        (Building::ResearchLab, city.trade >= 14 && spare),
+        (Building::FoodSafety, city.population >= 10 && spare),
+        (Building::GmFarms, city.population >= 10 && city.built.contains(&Building::FoodSafety) && spare),
+        (Building::MassTransit, city.population >= 10 && industrial),
+        (Building::RecyclingCenter, city.population >= 10 && industrial && spare),
+        (Building::Airport, civ.at_war && civ.air > 0 && spare),
     ];
     if let Some((building, _)) = wish.into_iter().find(|(b, wanted)| *wanted && can_build(b, city, civ, supplies)) {
         return ProductionItem::Building(building);
@@ -261,11 +278,11 @@ mod tests {
     use std::collections::HashSet;
 
     fn city() -> CityView {
-        CityView { position: Hex::ZERO, population: 4, built: vec![], coastal: false, linked: true, defended: true, threatened: false, near_capital: true, narcotics: 0 }
+        CityView { position: Hex::ZERO, population: 4, built: vec![], coastal: false, linked: true, defended: true, threatened: false, near_capital: true, narcotics: 0, trade: 8, corruption: 10, water_limit: 6 }
     }
 
     fn civ(tech: &TechState) -> CivView<'_> {
-        CivView { tech, aggression: 0.4, cities: 2, workers: 1, settlers: 2, military: 3, navy: 0, air: 0, road_work: 0, cut_off: 0, at_war: false, wonders_taken: &NO_WONDERS, caravans: 2, diplomats: 1, missionaries: 0, faith_to_spread: false, wonder_elsewhere: false, space_parts: &[], room_to_expand: true, forbidden_palace: false, ferries: 0, ferry_wanted: 0 }
+        CivView { tech, aggression: 0.4, cities: 2, workers: 1, settlers: 2, military: 3, navy: 0, air: 0, road_work: 0, cut_off: 0, at_war: false, wonders_taken: &NO_WONDERS, caravans: 2, diplomats: 1, missionaries: 0, faith_to_spread: false, wonder_elsewhere: false, space_parts: &[], room_to_expand: true, forbidden_palace: false, ferries: 0, ferry_wanted: 0, thrifty: false }
     }
 
     fn knowing(techs: &[Tech]) -> TechState {
@@ -336,6 +353,32 @@ mod tests {
         assert_eq!(choose(&view, &civ(&tech), &Supplies::default(), &mut rand::thread_rng()), ProductionItem::Building(Building::Granary));
         let grown = CityView { built: vec![Building::Granary], ..city() };
         assert_eq!(choose(&grown, &civ(&tech), &Supplies::default(), &mut rand::thread_rng()), ProductionItem::Building(Building::Library));
+    }
+
+    #[test]
+    fn buildings_go_where_they_pay_their_upkeep() {
+        let tech = knowing(&[Tech::Pottery, Tech::Writing, Tech::Construction, Tech::CodeOfLaws, Tech::Currency]);
+        let settled = vec![Building::Granary];
+        // A city about to outgrow its water builds an aqueduct; one by a river has no need.
+        let thirsty = CityView { population: 5, built: settled.clone(), ..city() };
+        assert_eq!(choose(&thirsty, &civ(&tech), &Supplies::default(), &mut rand::thread_rng()), ProductionItem::Building(Building::Aqueduct));
+        let riverside = CityView { population: 5, built: settled.clone(), water_limit: 12, ..city() };
+        assert_ne!(choose(&riverside, &civ(&tech), &Supplies::default(), &mut rand::thread_rng()), ProductionItem::Building(Building::Aqueduct));
+        // A corrupt city with trade builds a courthouse; a poor village not even a library.
+        let corrupt = CityView { corruption: 40, built: settled.clone(), ..city() };
+        assert_eq!(choose(&corrupt, &civ(&tech), &Supplies::default(), &mut rand::thread_rng()), ProductionItem::Building(Building::Courthouse));
+        let poor = CityView { trade: 2, built: settled, ..city() };
+        let pick = choose(&poor, &civ(&tech), &Supplies::default(), &mut rand::thread_rng());
+        assert!(!matches!(pick, ProductionItem::Building(Building::Library | Building::Marketplace | Building::Courthouse)), "{pick:?}");
+    }
+
+    #[test]
+    fn a_strained_treasury_builds_only_what_pays() {
+        let tech = knowing(&[Tech::Pottery, Tech::Writing, Tech::Philosophy, Tech::Alphabet]);
+        let city = CityView { trade: 12, built: vec![Building::Granary, Building::Library], ..city() };
+        assert_eq!(choose(&city, &civ(&tech), &Supplies::default(), &mut rand::thread_rng()), ProductionItem::Building(Building::University));
+        let strained = CivView { thrifty: true, ..civ(&tech) };
+        assert_ne!(choose(&city, &strained, &Supplies::default(), &mut rand::thread_rng()), ProductionItem::Building(Building::University));
     }
 
     #[test]
