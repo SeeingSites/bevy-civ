@@ -182,7 +182,7 @@ impl Ability {
 }
 
 /// Gold a unit with [`Ability::Plunder`] brings back from each victory.
-pub const PLUNDER_GOLD: i32 = 10;
+pub const PLUNDER_GOLD: i32 = 15;
 
 /// Where a unit can go: over land (crossing the sea aboard ships), on the sea, or through the air.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -421,7 +421,8 @@ impl UnitType {
         }
         use crate::tech::Tech;
         match self {
-            UnitType::Praetorian | UnitType::Hoplite | UnitType::Companion | UnitType::Numidian | UnitType::RoyalChariot | UnitType::ImmortalGuard | UnitType::Cataphract | UnitType::GallicSwordsman | UnitType::WarElephant | UnitType::ChuKoNu | UnitType::Samurai | UnitType::Keshik | UnitType::JaguarWarrior | UnitType::Chasqui | UnitType::Mandekalu | UnitType::AskiaRider | UnitType::Conquistador | UnitType::ManOWar | UnitType::Musketeer | UnitType::Sipahi | UnitType::Cossack | UnitType::Marine | UnitType::Panzer | UnitType::GuardsRifleman | UnitType::Bandeirante | UnitType::LightHorse | UnitType::Mountie | UnitType::Charro | UnitType::Commando | UnitType::BlackHussar | UnitType::Grenzer | UnitType::Bersaglieri => self.unique_base().and_then(|b| b.required_tech()),
+            UnitType::JaguarWarrior => Some(Tech::BronzeWorking),
+            UnitType::Praetorian | UnitType::Hoplite | UnitType::Companion | UnitType::Numidian | UnitType::RoyalChariot | UnitType::ImmortalGuard | UnitType::Cataphract | UnitType::GallicSwordsman | UnitType::WarElephant | UnitType::ChuKoNu | UnitType::Samurai | UnitType::Keshik | UnitType::Chasqui | UnitType::Mandekalu | UnitType::AskiaRider | UnitType::Conquistador | UnitType::ManOWar | UnitType::Musketeer | UnitType::Sipahi | UnitType::Cossack | UnitType::Marine | UnitType::Panzer | UnitType::GuardsRifleman | UnitType::Bandeirante | UnitType::LightHorse | UnitType::Mountie | UnitType::Charro | UnitType::Commando | UnitType::BlackHussar | UnitType::Grenzer | UnitType::Bersaglieri => self.unique_base().and_then(|b| b.required_tech()),
             UnitType::Settler | UnitType::Worker | UnitType::Warrior | UnitType::Scout => None,
             UnitType::Longbowman => Some(Tech::Monarchy),
             UnitType::Galleon => Some(Tech::Navigation),
@@ -467,7 +468,7 @@ impl UnitType {
         match self {
             UnitType::Praetorian => (4, 2, 1),
             UnitType::Hoplite => (1, 4, 1),
-            UnitType::Companion => (3, 2, 2),
+            UnitType::Companion => (3, 1, 2),
             UnitType::Numidian => (2, 2, 3),
             UnitType::RoyalChariot => (3, 1, 2),
             UnitType::ImmortalGuard => (4, 3, 1),
@@ -476,27 +477,27 @@ impl UnitType {
             UnitType::WarElephant => (4, 4, 1),
             UnitType::ChuKoNu => (4, 2, 1),
             UnitType::Samurai => (4, 4, 2),
-            UnitType::Keshik => (4, 2, 2),
+            UnitType::Keshik => (4, 3, 3),
             UnitType::JaguarWarrior => (2, 1, 2),
             UnitType::Chasqui => (1, 2, 2),
             UnitType::Mandekalu => (4, 4, 2),
             UnitType::AskiaRider => (3, 1, 2),
-            UnitType::Conquistador => (3, 2, 2),
+            UnitType::Conquistador => (4, 3, 2),
             UnitType::ManOWar => (4, 3, 4),
             UnitType::Musketeer => (2, 5, 1),
             UnitType::Sipahi => (8, 3, 3),
             UnitType::Cossack => (6, 3, 4),
-            UnitType::Marine => (8, 10, 1),
-            UnitType::Panzer => (18, 8, 3),
-            UnitType::GuardsRifleman => (4, 8, 1),
+            UnitType::Marine => (7, 10, 1),
+            UnitType::Panzer => (17, 8, 2),
+            UnitType::GuardsRifleman => (4, 7, 1),
             UnitType::Bandeirante => (3, 4, 2),
             UnitType::LightHorse => (7, 3, 3),
-            UnitType::Mountie => (6, 4, 3),
-            UnitType::Charro => (6, 3, 3),
-            UnitType::Commando => (7, 9, 2),
-            UnitType::BlackHussar => (7, 3, 3),
-            UnitType::Grenzer => (3, 4, 1),
-            UnitType::Bersaglieri => (7, 9, 2),
+            UnitType::Mountie => (7, 4, 3),
+            UnitType::Charro => (7, 3, 3),
+            UnitType::Commando => (8, 9, 2),
+            UnitType::BlackHussar => (8, 2, 3),
+            UnitType::Grenzer => (3, 5, 1),
+            UnitType::Bersaglieri => (6, 10, 2),
             UnitType::Settler => (0, 0, 1),
             UnitType::Worker => (0, 0, 1),
             UnitType::Warrior => (1, 1, 1),
@@ -552,7 +553,8 @@ impl UnitType {
             return base.cost();
         }
         match self {
-            UnitType::Praetorian | UnitType::Hoplite | UnitType::Companion | UnitType::Numidian | UnitType::RoyalChariot | UnitType::ImmortalGuard | UnitType::Cataphract | UnitType::GallicSwordsman | UnitType::WarElephant | UnitType::ChuKoNu | UnitType::Samurai | UnitType::Keshik | UnitType::JaguarWarrior | UnitType::Chasqui | UnitType::Mandekalu | UnitType::AskiaRider | UnitType::Conquistador | UnitType::ManOWar | UnitType::Musketeer | UnitType::Sipahi | UnitType::Cossack | UnitType::Marine | UnitType::Panzer | UnitType::GuardsRifleman | UnitType::Bandeirante | UnitType::LightHorse | UnitType::Mountie | UnitType::Charro | UnitType::Commando | UnitType::BlackHussar | UnitType::Grenzer | UnitType::Bersaglieri => self.unique_base().map_or(0, |b| b.cost()),
+            UnitType::JaguarWarrior => 15,
+            UnitType::Praetorian | UnitType::Hoplite | UnitType::Companion | UnitType::Numidian | UnitType::RoyalChariot | UnitType::ImmortalGuard | UnitType::Cataphract | UnitType::GallicSwordsman | UnitType::WarElephant | UnitType::ChuKoNu | UnitType::Samurai | UnitType::Keshik | UnitType::Chasqui | UnitType::Mandekalu | UnitType::AskiaRider | UnitType::Conquistador | UnitType::ManOWar | UnitType::Musketeer | UnitType::Sipahi | UnitType::Cossack | UnitType::Marine | UnitType::Panzer | UnitType::GuardsRifleman | UnitType::Bandeirante | UnitType::LightHorse | UnitType::Mountie | UnitType::Charro | UnitType::Commando | UnitType::BlackHussar | UnitType::Grenzer | UnitType::Bersaglieri => self.unique_base().map_or(0, |b| b.cost()),
             UnitType::Settler => 30,
             UnitType::Worker => 10,
             UnitType::Warrior => 10,

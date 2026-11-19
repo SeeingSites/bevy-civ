@@ -232,6 +232,9 @@ pub struct GameState {
     pub gold_per_turn: i32,
     pub government: Government,
     pub victory: Option<String>,
+    /// The people holding a dominating share of the cities, and for how many turns in a row.
+    #[serde(default)]
+    pub dominance: (u32, u32),
     pub score: Score,
     pub start_year: i32,
     pub years_per_turn: i32,
@@ -322,6 +325,7 @@ impl Default for GameState {
             gold_per_turn: 0,
             government: Government::Despotism,
             victory: None,
+            dominance: (0, 0),
             score: Score::default(),
             start_year: -4000,
             years_per_turn: 40,
@@ -1493,10 +1497,11 @@ fn handle_map_click(
                 let coast_fort = city_here.is_some_and(|(e, _)| walls_of.get(e).is_ok_and(|b| b.has(Building::CoastalFortress)));
                 let population = city_here.and_then(|(e, _)| cities.get(e).ok().map(|(_, c)| c.population));
                 let fortress = tiles.iter().any(|t| t.coord == hex && t.improvements.contains(&Improvement::Fortress));
+                let last_stand = enemy_owner != BARBARIANS && cities.iter().filter(|(_, c)| c.owner == enemy_owner).count() <= combat::LAST_STAND_CITIES;
                 let outcome = combat::fight(
                     Side { kind: unit.unit_type, hp: unit.hp, level: unit.level, led: led(unit.position, PLAYER), members: unit.members() },
                     Side { kind: enemy_type, hp: d_hp, level: d_level, led: led(hex, enemy_owner), members: members_of.get(&enemy_entity).copied().unwrap_or(1) },
-                    Ground { terrain, fortified: dug_in, walls, river: rivers.tiles.contains(&hex), coast_fort, city: population, fortress },
+                    Ground { terrain, fortified: dug_in, walls, river: rivers.tiles.contains(&hex), coast_fort, city: population, fortress, last_stand },
                     &mut rand::thread_rng(),
                 );
                 // The defender's wounds (it is another entity, so the change is queued).
@@ -3457,7 +3462,9 @@ fn process_turn(
             }
         } else {
             let preferred = Government::preferred(&civ.tech, civ.aggression);
-            if preferred != civ.government {
+            // A people a scenario starts under a government of its period keeps it for a while.
+            let settled = civ.government != Government::Despotism && state.turn <= SCENARIO_GOVERNMENT_TURNS;
+            if preferred != civ.government && !settled {
                 if wonders.owns(civ.id, Building::Liberty) {
                     civ.government = preferred;
                 } else {
@@ -3914,7 +3921,10 @@ fn process_turn(
                     // A people's unique unit takes the place of the ordinary one it stands in for.
                     let ut = character.map(|c| c.unique).filter(|u| u.unique_base() == Some(ordered)).unwrap_or(ordered);
                     // Keep computer players from flooding the map.
-                    let at_cap = !mine && ut.is_army() && army_sizes.get(&city.owner).copied().unwrap_or(0) >= governor::army_cap(city_counts.get(&city.owner).copied().unwrap_or(1));
+                    let owned = city_counts.get(&city.owner).copied().unwrap_or(1);
+                    // A militaristic people supports one more unit a city (see `Trait::Militaristic`).
+                    let cap = governor::army_cap(owned) + if character.is_some_and(|c| c.has(bevy_civ::traits::Trait::Militaristic)) { owned } else { 0 };
+                    let at_cap = !mine && ut.is_army() && army_sizes.get(&city.owner).copied().unwrap_or(0) >= cap;
                     if !at_cap {
                         let trained = spawn_unit(&mut commands, city.position, ut, city.owner);
                         commands.entity(trained).try_insert(HomeCity(city.position));
@@ -4319,7 +4329,10 @@ fn process_turn(
     }
     total_science += trade_science;
 
-    let free_support = gov.free_unit_support() * player_cities.max(1) + if wonders.owns(PLAYER, Building::StatueOfZeus) { player_cities } else { 0 };
+    let militaristic = civs.players.iter().find(|c| c.id == PLAYER).is_some_and(|c| bevy_civ::traits::of(&c.name).has(bevy_civ::traits::Trait::Militaristic));
+    let free_support = gov.free_unit_support() * player_cities.max(1)
+        + if wonders.owns(PLAYER, Building::StatueOfZeus) { player_cities } else { 0 }
+        + if militaristic { player_cities } else { 0 };
     let military = units.iter().filter(|(_, u)| u.owner == PLAYER && u.unit_type.is_military()).count() as u32;
     state.unit_support = if military > free_support { (military - free_support) as i32 * gov.unit_upkeep_food() as i32 } else { 0 };
     total_gold -= state.unit_support;
@@ -4609,6 +4622,11 @@ fn process_turn(
     let forts: HashSet<Hex> = cities.iter().filter(|(_, b, _)| b.has(Building::CoastalFortress)).map(|(c, _, _)| c.position).collect();
     let fortresses: HashSet<Hex> = tiles.iter().filter(|t| t.improvements.contains(&Improvement::Fortress)).map(|t| t.coord).collect();
     let populations: HashMap<Hex, u32> = cities.iter().map(|(c, _, _)| (c.position, c.population)).collect();
+    let last_stands: HashSet<Hex> = cities
+        .iter()
+        .filter(|(c, _, _)| c.owner != BARBARIANS && city_counts.get(&c.owner).is_some_and(|n| *n <= combat::LAST_STAND_CITIES))
+        .map(|(c, _, _)| c.position)
+        .collect();
     let terrain_of: HashMap<Hex, Terrain> = tiles.iter().map(|t| (t.coord, t.terrain)).collect();
     let ground_at = |at: Hex| Ground {
         terrain: terrain_of.get(&at).copied().unwrap_or(Terrain::Plains),
@@ -4618,6 +4636,7 @@ fn process_turn(
         coast_fort: forts.contains(&at),
         city: populations.get(&at).copied(),
         fortress: fortresses.contains(&at),
+        last_stand: last_stands.contains(&at),
     };
     let attacks = process_ai_turn(&mut civs, &mut units, &city_owners, &tiles, &hostile, &mut road_jobs, &owns, &mut ferries, &mut commands, &must_fall, &ground_at);
     let names: HashMap<u32, String> = civs.players.iter().map(|c| (c.id, c.adjective.clone())).collect();
@@ -4774,6 +4793,8 @@ fn process_turn(
                 if d_owner == PLAYER {
                     log.push(format!("Our {} drove off a {} {}.", d_type.name(), civ_name(a_owner), a_type.name()));
                 }
+                // Holding the line counts as a victory for a defensive unique unit.
+                unique_victory(&mut golden, &civs, &foreign.met, &mut log, d_owner, d_type, a_owner);
                 continue;
             }
             Outcome::Lost { defender_hp } => {
@@ -5360,6 +5381,30 @@ fn process_turn(
     let total_cities = cities.iter().count();
     let rivals_remain = cities.iter().any(|(c, _, _)| c.owner != PLAYER && c.owner != BARBARIANS);
     let civ_named = |id: u32| civs.players.iter().find(|c| c.id == id).map(|c| c.name.clone()).unwrap_or_default();
+    // Domination is won by holding the share for a while, not by touching it.
+    {
+        let mut held: HashMap<u32, usize> = HashMap::new();
+        for (city, _, _) in cities.iter().filter(|(c, _, _)| c.owner != BARBARIANS) {
+            *held.entry(city.owner).or_default() += 1;
+        }
+        let top = held.into_iter().filter(|(_, n)| dominates(*n, total_cities)).max_by_key(|(_, n)| *n).map(|(o, _)| o);
+        match top {
+            Some(o) if state.dominance.0 == o && state.dominance.1 > 0 => state.dominance.1 += 1,
+            Some(o) => {
+                state.dominance = (o, 1);
+                if observer.is_none() {
+                    log.push(if o == PLAYER {
+                        format!("We hold two in five of the world's cities. Keep them {DOMINATION_HOLD} turns (from turn {DOMINATION_EARLIEST}) for a domination victory.")
+                    } else {
+                        format!("{} now hold two in five of the world's cities! If they keep them {DOMINATION_HOLD} turns, they dominate the world.", capitalised(&civ_named(o)))
+                    });
+                }
+            }
+            None => state.dominance = (0, 0),
+        }
+    }
+    let (dominance, turn_now) = (state.dominance, state.turn);
+    let dominant = |o: u32| dominance.0 == o && dominance.1 >= DOMINATION_HOLD && turn_now >= DOMINATION_EARLIEST;
     if observer.is_some() {
         // Nobody plays: any civilization can win by conquest or domination too.
         let mut held: HashMap<u32, usize> = HashMap::new();
@@ -5370,7 +5415,7 @@ fn process_turn(
         let culture_winner = culture.winner(&cities.iter().filter(|(c, _, _)| c.owner != BARBARIANS).map(|(c, _, _)| (c.position, c.owner)).collect::<Vec<_>>(), state.last_turn);
         state.victory = if held.len() == 1 {
             leader.map(|(o, _)| format!("Conquest victory for {}.", civ_named(o)))
-        } else if let Some((o, n)) = leader.filter(|(_, n)| dominates(*n, total_cities)) {
+        } else if let Some((o, n)) = leader.filter(|(o, _)| dominant(*o)) {
             Some(format!("Domination victory for {} ({n} of {total_cities} cities).", civ_named(o)))
         } else if let Some(o) = culture_winner {
             Some(format!("Cultural victory for {}.", civ_named(o)))
@@ -5390,12 +5435,12 @@ fn process_turn(
         for (city, _, _) in cities.iter().filter(|(c, _, _)| c.owner != PLAYER && c.owner != BARBARIANS) {
             *held.entry(city.owner).or_default() += 1;
         }
-        held.into_iter().filter(|(_, n)| dominates(*n, total_cities)).max_by_key(|(_, n)| *n).map(|(o, n)| (civ_named(o), n))
+        held.into_iter().filter(|(o, _)| dominant(*o)).max_by_key(|(_, n)| *n).map(|(o, n)| (civ_named(o), n))
     } {
         state.victory = Some(format!("Defeat: {name} dominate the world, holding {held} of its {total_cities} cities."));
     } else if !rivals_remain {
         state.victory = Some("Conquest Victory!".into());
-    } else if dominates(player_cities, total_cities) {
+    } else if dominant(PLAYER) {
         state.victory = Some("Domination Victory!".into());
     } else if let Some(winner) = culture.winner(&cities.iter().filter(|(c, _, _)| c.owner != BARBARIANS).map(|(c, _, _)| (c.position, c.owner)).collect::<Vec<_>>(), state.last_turn) {
         state.victory = Some(if winner == PLAYER {
@@ -5422,17 +5467,19 @@ fn process_turn(
     }
 
     // The United Nations: every 10 turns once it stands, a vote for Secretary-General between its
-    // owner and the highest-scoring other people. Two thirds of all the votes win the game.
+    // owner and the highest-scoring other people. A majority of the voters - and of all the peoples the
+    // world began with - wins the game.
     if state.victory.is_none() && state.turn % 10 == 0 {
         if let Some(&(un_owner, _)) = wonders.built.get(&Building::UnitedNations) {
             let holding: HashSet<u32> = cities.iter().map(|(c, _, _)| c.owner).filter(|o| *o != BARBARIANS).collect();
             let voters: Vec<u32> = holding.iter().copied().filter(|o| observer.is_none() || *o != PLAYER).collect();
+            let peoples = civs.players.iter().filter(|c| observer.is_none() || c.id != PLAYER).count();
             let score_of = |id: u32| if id == PLAYER { state.score.total } else { civs.players.iter().find(|c| c.id == id).map(|c| rival_score(c, &cities)).unwrap_or(0) };
             let rival = voters.iter().copied().filter(|o| *o != un_owner).max_by_key(|o| score_of(*o));
             if let (Some(rival), true) = (rival, holding.contains(&un_owner)) {
-                let (tally, winner) = bevy_civ::diplomacy::un_vote(&voters, [un_owner, rival], |a, b| diplomacy.get_attitude(a, b));
+                let (tally, winner) = bevy_civ::diplomacy::un_vote(&voters, peoples, [un_owner, rival], |a, b| diplomacy.get_attitude(a, b));
                 let name = |id: u32| if id == PLAYER { "we".to_string() } else { civ_named(id) };
-                let needed = bevy_civ::diplomacy::un_votes_needed(voters.len());
+                let needed = bevy_civ::diplomacy::un_votes_needed(voters.len(), peoples);
                 log.push(format!(
                     "The {} votes for Secretary-General: {} {}, {} {} ({needed} of {} needed).",
                     Building::UnitedNations.name(),
@@ -5729,6 +5776,13 @@ pub const DOMINATION_FIFTHS: usize = 2;
 /// Whether holding `held` of the world's `total` cities is a domination victory.
 /// Great generals a computer player keeps at a time.
 pub const GENERALS_KEPT: usize = 3;
+
+/// Turns a dominating share must be held, and the earliest turn it can win.
+/// Turns a people keeps the government a scenario starts it under.
+pub const SCENARIO_GOVERNMENT_TURNS: u32 = 50;
+
+pub const DOMINATION_HOLD: u32 = 10;
+pub const DOMINATION_EARLIEST: u32 = 150;
 
 pub fn dominates(held: usize, total: usize) -> bool {
     held >= 5 && held * 5 >= total * DOMINATION_FIFTHS

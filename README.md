@@ -47,7 +47,7 @@ Turn-based, Civilization-style empire building on a hex map, playable in the bro
 - Caravans (trade routes, help with wonders) and diplomats (embassies and espionage)
 - Diplomacy: treaties, attitude and reputation, tribute, tech exchange, resource deals
 - Computer players that research, expand, build, trade, spy, race for wonders and the stars
-- Victory by conquest, domination, diplomacy (United Nations), culture (after Civ III: 60,000 points with twice any rival's, or 15,000 in a single city, scaled to the game's length), space race, or score at the last turn
+- Victory by conquest, domination, diplomacy (United Nations), culture (after Civ III: 60,000 points with 1.6 times any rival's, or 15,000 in a single city of a people of eight or more cities, scaled to the game's length), space race, or score at the last turn
 - Multi-turn orders, route preview, worker automation, stack moves, raze or keep captured cities
 - Advisors (science, foreign, trade, empire: government, cities, military, score) and an encyclopedia
 - Saved games: automatic every turn, and as files that anyone can load
@@ -442,7 +442,7 @@ working directory.
   40, however little science goes into it. The first people to learn Philosophy founds the Way of
   Reason and makes a free discovery; a Scientific people makes one on entering each new age.
 - **Traits and unique units**: every civilization has two traits - Militaristic (troops promoted
-  twice as often), Commercial (+1 gold a city), Scientific (+1 science a city and a
+  twice as often, and one more unit a city supported free), Commercial (+1 gold a city), Scientific (+1 science a city and a
   free discovery in each new age),
   Religious (+1 content a city, shorter revolutions), Industrious (+1 shield a city), Agricultural
   (+1 food a city) - and a unique unit (see below).
@@ -450,7 +450,7 @@ working directory.
   (same cost, technology and upgrades): stronger, and with an ability - **Charge** (+50% attack
   against units on open ground: grassland, plains, desert), **Storm** (+50% attack against cities),
   **Shield wall** (double defence against mounted troops), **Bastion** (+50% defence in a city),
-  **Outrider** (ignores zones of control), **Plunder** (10 gold from each victory) or
+  **Outrider** (ignores zones of control), **Plunder** (15 gold from each victory) or
   **Self-sufficient** (needs no Horses or Iron). Its first victory over another people also begins a
   golden age. The city panel shows it in place of the ordinary unit; a crest marks it on the map.
 
@@ -458,7 +458,7 @@ working directory.
 |---|---|---|---|---|
 | Rome | Praetorian | Legion | 4/2/1 | Storm |
 | Greece | Hoplite | Phalanx | 1/4/1 | Shield wall |
-| Macedon | Companion Cavalry | Horseman | 3/2/2 | Charge |
+| Macedon | Companion Cavalry | Horseman | 3/1/2 | Charge |
 | Carthage | Numidian Rider | Horseman | 2/2/3 | Plunder |
 | Egypt | Royal Chariot | War Chariot | 3/1/2 | Charge |
 | Persia | Immortal Guard | Immortal | 4/3/1 | Storm |
@@ -467,27 +467,27 @@ working directory.
 | India | War Elephant | Knight | 4/4/1 | Self-sufficient |
 | China | Chu-ko-nu | Longbowman | 4/2/1 | Bastion |
 | Japan | Samurai | Knight | 4/4/2 | Storm |
-| Mongols | Keshik | Knight | 4/2/2 | Outrider |
-| Aztecs | Jaguar Warrior | Warrior | 2/1/2 | Plunder |
+| Mongols | Keshik | Knight | 4/3/3 | Outrider |
+| Aztecs | Jaguar Warrior | Warrior | 2/1/2 (15 shields, Bronze Working) | Plunder |
 | Inca | Chasqui Runner | Spearman | 1/2/2 | Outrider |
 | Mali | Mandekalu Cavalry | Knight | 4/4/2 | Charge |
 | Songhai | Askia Rider | Horseman | 3/1/2 | Charge |
-| Spain | Conquistador | Knight | 3/2/2 | Plunder |
+| Spain | Conquistador | Knight | 4/3/2 | Plunder |
 | England | Man-O-War | Frigate | 4/3/4 | Plunder |
 | France | Musketeer | Musketman | 2/5/1 | Bastion |
 | Ottomans | Sipahi | Cavalry | 8/3/3 | Charge |
 | Muscovy | Cossack | Cavalry | 6/3/4 | Outrider |
-| United States† | Marine | Infantry | 8/10/1 | Storm |
-| Prussia† | Black Hussar | Cavalry | 7/3/3 | Charge |
-| Austria† | Grenzer | Musketman | 3/4/1 | Outrider |
-| Italy† | Bersaglieri | Infantry | 7/9/2 | Outrider |
-| Germany† | Panzer | Tank | 18/8/3 | Charge |
-| Russia† | Guards Rifleman | Rifleman | 4/8/1 | Bastion |
+| United States† | Marine | Infantry | 7/10/1 | Storm |
+| Prussia† | Black Hussar | Cavalry | 8/2/3 | Charge |
+| Austria† | Grenzer | Musketman | 3/5/1 | Outrider |
+| Italy† | Bersaglieri | Infantry | 6/10/2 | Outrider |
+| Germany† | Panzer | Tank | 17/8/2 | Charge |
+| Russia† | Guards Rifleman | Rifleman | 4/7/1 | Bastion |
 | Brazil* | Bandeirante | Musketman | 3/4/2 | Outrider |
 | Australia* | Light Horse | Cavalry | 7/3/3 | Charge |
-| Canada* | Mountie | Cavalry | 6/4/3 | Outrider |
-| Mexico* | Charro | Cavalry | 6/3/3 | Plunder |
-| United Kingdom* | Commando | Infantry | 7/9/2 | Outrider |
+| Canada* | Mountie | Cavalry | 7/4/3 | Outrider |
+| Mexico* | Charro | Cavalry | 7/3/3 | Plunder |
+| United Kingdom* | Commando | Infantry | 8/9/2 | Outrider |
 
 \* With the Modern Nations pack; † with the Age of Revolution or World Wars pack (see Expansion packs under Themes).
 
@@ -531,8 +531,9 @@ working directory.
   warriors to infantry and cavalry.
 - **United Nations**: the wonder (Computers) holds a vote for Secretary-General every 10 turns
   between its owner and the highest-scoring other people; every people votes for itself if a
-  candidate, else for the candidate it likes better (or abstains); a majority of all the members wins
-  a diplomatic victory.
+  candidate, else for the candidate it likes better (or abstains); a majority of the members - and
+  of all the peoples the world began with, so conquest does not make the vote cheap - wins a
+  diplomatic victory.
 - **More orders**: Sentry (Z) sleeps a unit until an enemy comes within two tiles; Join City (J)
   settles a worker (+1) or settler (+2) into the city it stands in. Missionaries preach in or next
   to a city, and computer players now train them for their state religion.
@@ -551,8 +552,11 @@ working directory.
 - **Capitals and the fallen**: a people that loses its capital moves the palace to its largest
   city (corruption and the state religion follow it). A people with no city and no settler left
   is out of the game: its troops disband and it leaves diplomacy. Scores count citizens (2),
-  technologies (10) and wonders (50) the same way for everyone, and a rival holding two in five of
-  the world's cities (at least five) wins by domination.
+  technologies (10) and wonders (50) the same way for everyone. Holding two in five of the world's
+  cities (at least five) for 10 turns in a row, from turn 150, wins by domination; everyone is
+  warned when a people first reaches it. A people down to three cities or fewer makes a **last
+  stand**: its cities' defenders get +50%, so nobody is wiped out in a stroke. A scenario's peoples
+  keep the government it starts them under for 50 turns.
 - **Build queue**: in the city panel, switch "Click to" from *Build now* to *Add to queue* and pick
   up to six projects; each starts when the one before is done (a unit in production gives way to
   the queue, otherwise units keep repeating). Click a queued project to take it off.
@@ -595,8 +599,8 @@ working directory.
   its owner's culture may defect: 20% a turn, more the further it lies from its own capital
   (+10% of that for every tile) and the more of its land the tempter's borders hold (+1/6 for each
   tile), divided by one plus the troops in it (at most 60%).
-- **Cultural victory**: 60,000 culture points with twice as much as any other people, or 15,000 in
-  a single city under your rule (for a 400-turn game; scaled to shorter games). Civ III asks
+- **Cultural victory**: 60,000 culture points with 1.6 times as much as any other people, or 15,000
+  in a single city under your rule if you hold eight cities or more and half the 60,000 (for a 400-turn game; scaled to shorter games). Civ III asks
   100,000 and 20,000 over a longer game; these are tuned so culture, space, diplomacy and
   domination all win a fair share of games.
   As in Civ III a people keeps the culture it has earned even if its cities fall, and a conqueror
@@ -618,7 +622,7 @@ working directory.
   someone has built the Apollo Program, cities with a Factory build 4 structures, 2 to 4 components
   (engines) and 2 modules. Launch from the
   Empire advisor's Space page, which shows every known ship's voyage from Sol to Alpha Centauri
-  (4.37 light-years): 24 turns, 2 fewer per extra engine. Computer players launch when ready. The
+  (4.37 light-years): 22 turns, 2 fewer per extra engine. Computer players launch when ready. The
   first ship to arrive wins; a ship in flight is lost with its capital - so a launch turns the world
   against the launcher: rivals declare war and march on its capital.
 - **Nuclear weapons**: the Manhattan Project (Nuclear Fission) lets everyone who knows Rocketry build
@@ -662,6 +666,11 @@ Choose one with `?theme=<id>` in the browser or `--theme <id>` natively (also fo
 `assets/themes/earth.json` documents the format; `example.json` is a small demonstration
 (`?theme=example`: Earth's maps with Colony Pods, Plasma Troopers, Methane Seas and years counted
 from the Landing).
+
+**Cities show their age**: a city is drawn in the style of its people's age - mud brick and a
+stepped temple in ancient times, castles and red roofs in the middle ages, brick terraces and
+smoking chimneys in the industrial age, towers of glass in the modern age - at four sizes each
+(`cities.png`, 4 sizes x 4 ages, drawn by `tools/art/world.cjs`).
 
 **Expansion packs** add nations and scenarios of later periods while the base game - the Whole
 Earth, New World, Rome and Discovery with their peoples - stays as it is. Each pack is switched on

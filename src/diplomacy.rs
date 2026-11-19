@@ -27,18 +27,20 @@ pub fn sprawl_unhappiness(cities: u32) -> u32 {
 }
 
 /// Goodwill a voter needs towards a candidate to back it at the United Nations.
-pub const UN_GOODWILL: i32 = 10;
+pub const UN_GOODWILL: i32 = 12;
 
 /// Votes a Secretary-General needs: a majority of all the members.
-pub fn un_votes_needed(members: usize) -> usize {
-    members / 2 + 1
+pub fn un_votes_needed(members: usize, peoples: usize) -> usize {
+    // A majority of the voters, and of all the peoples the world began with: conquest that empties
+    // the hall does not make the vote cheap.
+    (members.max(peoples) / 2 + 1).min(members)
 }
 
 /// A United Nations vote for Secretary-General between two candidates: each candidate votes for
 /// itself, every other voter for the candidate it likes better - if it is friendly with that one
 /// (otherwise, or with no preference, it abstains).
 /// Returns each candidate's votes and the winner, if one has a majority of all the voters.
-pub fn un_vote(voters: &[u32], candidates: [u32; 2], attitude: impl Fn(u32, u32) -> i32) -> ([usize; 2], Option<u32>) {
+pub fn un_vote(voters: &[u32], peoples: usize, candidates: [u32; 2], attitude: impl Fn(u32, u32) -> i32) -> ([usize; 2], Option<u32>) {
     let mut tally = [0usize; 2];
     for voter in voters {
         if let Some(i) = candidates.iter().position(|c| c == voter) {
@@ -53,7 +55,7 @@ pub fn un_vote(voters: &[u32], candidates: [u32; 2], attitude: impl Fn(u32, u32)
         }
         tally[if a > b { 0 } else { 1 }] += 1;
     }
-    let needed = un_votes_needed(voters.len());
+    let needed = un_votes_needed(voters.len(), peoples);
     let winner = (0..2).find(|i| tally[*i] >= needed).map(|i| candidates[i]);
     (tally, winner)
 }
@@ -185,13 +187,13 @@ mod un_tests {
     fn two_thirds_of_the_world_elects_a_secretary_general() {
         let voters = [0, 1, 2, 3, 4, 5];
         let fond_of_zero = |v: u32, c: u32| if v == 5 { -40 } else if c == 0 { 30 } else { 0 };
-        let (tally, winner) = un_vote(&voters, [0, 1], fond_of_zero);
+        let (tally, winner) = un_vote(&voters, voters.len(), [0, 1], fond_of_zero);
         assert_eq!(tally, [4, 1]);
         assert_eq!(winner, Some(0));
         let split = |v: u32, c: u32| if (v % 2 == 0) == (c == 0) { 10 } else { 0 };
-        assert_eq!(un_vote(&voters, [0, 1], split).1, None);
+        assert_eq!(un_vote(&voters, voters.len(), [0, 1], split).1, None);
         // Mild preference is not support: voters only lukewarm towards both abstain.
         let lukewarm = |_: u32, c: u32| if c == 0 { 5 } else { 0 };
-        assert_eq!(un_vote(&voters, [0, 1], lukewarm).0, [1, 1]);
+        assert_eq!(un_vote(&voters, voters.len(), [0, 1], lukewarm).0, [1, 1]);
     }
 }

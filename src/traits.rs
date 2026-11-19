@@ -41,7 +41,7 @@ impl Trait {
 
     pub fn effect(&self) -> &'static str {
         match self {
-            Trait::Militaristic => "troops are promoted twice as often",
+            Trait::Militaristic => "troops are promoted twice as often, and each city supports one more unit free",
             Trait::Commercial => "+1 gold in every city",
             Trait::Scientific => "+1 science in every city, a free discovery in each new age",
             Trait::Religious => "+1 content in every city, shorter revolutions",
@@ -143,11 +143,11 @@ pub fn of(name: &str) -> Character {
     let key = name.trim_start_matches("the ");
     let (traits, unique) = match key {
         "Rome" => ([Militaristic, Commercial], U::Praetorian),
-        "Carthage" => ([Commercial, Industrious], U::Numidian),
+        "Carthage" => ([Commercial, Militaristic], U::Numidian),
         "China" => ([Militaristic, Scientific], U::ChuKoNu),
         "Egypt" => ([Religious, Industrious], U::RoyalChariot),
         "England" => ([Commercial, Scientific], U::ManOWar),
-        "France" => ([Industrious, Commercial], U::Musketeer),
+        "France" => ([Commercial, Religious], U::Musketeer),
         "Greece" => ([Scientific, Commercial], U::Hoplite),
         "India" => ([Religious, Commercial], U::WarElephant),
         "Japan" => ([Militaristic, Religious], U::Samurai),
@@ -164,7 +164,7 @@ pub fn of(name: &str) -> Character {
         "Ottomans" => ([Militaristic, Scientific], U::Sipahi),
         "Seleucids" => ([Scientific, Militaristic], U::Cataphract),
         // The Modern Nations expansion's peoples.
-        "United States" => ([Commercial, Industrious], U::Marine),
+        "United States" => ([Industrious, Militaristic], U::Marine),
         "United Kingdom" => ([Commercial, Scientific], U::Commando),
         "Germany" => ([Industrious, Scientific], U::Panzer),
         "Russia" => ([Militaristic, Industrious], U::GuardsRifleman),
@@ -178,6 +178,9 @@ pub fn of(name: &str) -> Character {
         "Italy" => ([Religious, Commercial], U::Bersaglieri),
         "Great Britain" => ([Commercial, Scientific], U::ManOWar),
         "Soviet Union" => ([Militaristic, Industrious], U::GuardsRifleman),
+        // Peoples of the period scenarios.
+        "Iroquois" => ([Militaristic, Agricultural], U::JaguarWarrior),
+        "Argentina" => ([Agricultural, Commercial], U::Charro),
         _ => {
             let seed = key.bytes().fold(7u32, |h, b| h.wrapping_mul(31).wrapping_add(b as u32));
             let first = Trait::ALL[(seed % 6) as usize];

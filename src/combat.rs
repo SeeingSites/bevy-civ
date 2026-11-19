@@ -70,12 +70,19 @@ pub struct Ground {
     pub city: Option<u32>,
     /// A fortress on the tile (+50%).
     pub fortress: bool,
+    /// A city of a people down to its last few cities: its defenders make a last stand
+    /// ([`LAST_STAND_BONUS`]), so nobody is wiped out in a stroke.
+    pub last_stand: bool,
 }
+
+/// Defence bonus in the cities of a people with [`LAST_STAND_CITIES`] or fewer.
+pub const LAST_STAND_BONUS: f32 = 0.5;
+pub const LAST_STAND_CITIES: usize = 3;
 
 impl Ground {
     /// Open ground of this terrain: no city, river or works.
     pub fn open(terrain: Terrain) -> Ground {
-        Ground { terrain, fortified: false, walls: false, river: false, coast_fort: false, city: None, fortress: false }
+        Ground { terrain, fortified: false, walls: false, river: false, coast_fort: false, city: None, fortress: false, last_stand: false }
     }
 }
 
@@ -147,6 +154,9 @@ pub fn defence_bonus(ground: &Ground, attacker: Domain) -> f32 {
     }
     if let Some(population) = ground.city {
         bonus += city_bonus(population, ground.walls, attacker);
+        if ground.last_stand {
+            bonus += LAST_STAND_BONUS;
+        }
     }
     if ground.coast_fort && attacker == Domain::Sea {
         bonus += COASTAL_FORT_BONUS;
