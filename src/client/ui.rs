@@ -193,11 +193,13 @@ fn help_lines(topic: HelpTopic) -> Vec<String> {
             "Each wonder can be built only once in the world. Each speaks to one or two traits (in brackets): a people's first wonder that matches one of its own traits begins its golden age - {} turns in which every worked tile that yields a shield or gold yields one more. The first victory of a people's unique unit over another people begins it too. Each people has one golden age a game.",
             crate::GOLDEN_AGE_TURNS
         ))
+        .chain(std::iter::once("A few ancient wonders grow obsolete once their owner learns what supersedes them: their effect ends, though their culture goes on.".to_string()))
         .chain(Building::ALL.into_iter().filter(|b| b.is_wonder()).map(|b| {
             format!(
-                "{}: {} ({} shields{}) [{}]",
+                "{}: {}{} ({} shields{}) [{}]",
                 b.name(),
                 b.wonder_effect(),
+                b.obsoleted_by().map(|t| format!("; obsolete with {}", t.name())).unwrap_or_default(),
                 b.cost(),
                 b.required_tech().map(|t| format!(", needs {}", t.name())).unwrap_or_default(),
                 bevy_civ::traits::wonder_traits(b)
@@ -1609,6 +1611,9 @@ pub fn rebuild_panels(
                         .map(|b| {
                             let mut effect = b.effect().to_string();
                             // A wonder's spirit: one that speaks to our traits begins our golden age.
+                            if let Some(t) = b.obsoleted_by() {
+                                effect += &format!(" (until {})", t.name());
+                            }
                             if b.is_wonder() {
                                 let ours = civs.players.iter().find(|c| c.id == PLAYER).is_some_and(|c| bevy_civ::traits::of(&c.name).admires(b));
                                 let spirit = bevy_civ::traits::wonder_traits(b);

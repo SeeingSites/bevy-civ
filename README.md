@@ -119,41 +119,45 @@ shows the causes you hold and those held against you. Computer players with a gr
 to go to war - against you or each other - and say why.
 
 ## Wonders and great people
-There are 27 wonders. Each **wonder** can be built only once in the world: when one civilization finishes it, everyone
+There are 29 wonders. Each **wonder** can be built only once in the world: when one civilization finishes it, everyone
 else's work on it stops (their shields go to the next project) and the news is announced.
 
 | Wonder | Needs | Effect |
 |---|---|---|
 | Pyramids | Masonry | a Granary in every city of its owner (+2 food where there is none) |
-| Great Library | Writing | its owner learns every technology known to two or more of the peoples it has met (until it learns Theory of Gravity) |
+| Great Library | Writing | its owner learns every technology known to two or more of the peoples it has met (obsolete with Theory of Gravity) |
 | Hanging Gardens | Monarchy | +2 food in its city, +1 content in every city |
-| Colossus | Bronze Working | +1 gold on every ocean tile its city works (needs Iron) |
-| Oracle | Mysticism | +2 content in every city |
-| Great Lighthouse | Masonry | +1 move for ships and troops at sea |
+| Colossus | Bronze Working | +1 gold on every ocean tile its city works (needs Iron; obsolete with Flight) |
+| Oracle | Mysticism | +2 content in every city (obsolete with Theology) |
+| Great Lighthouse | Masonry | +1 move for ships and troops at sea (obsolete with Navigation) |
 | Statue of Zeus | Bronze Working | one more unit per city supported free |
 | Mausoleum | Masonry | temples and walls each calm one more citizen |
-| Great Wall | Construction | every city counts as walled |
-| Copernicus' Observatory | Mathematics | +6 science in its city |
+| Great Wall | Construction | every city counts as walled (obsolete with Gunpowder) |
+| Copernicus' Observatory | Astronomy | +6 science in its city |
 | Sun Tzu's War Academy | Iron Working | new troops trained as veterans everywhere |
 | Marco Polo's Embassy | Currency | an embassy with every civilization |
 | King Richard's Crusade | Monarchy | +4 shields in its city |
 | Michelangelo's Chapel | Theology | +3 content in every city |
-| Leonardo's Workshop | Engineering | one obsolete unit upgraded free every turn |
+| Leonardo's Workshop | Engineering | one obsolete unit upgraded free every turn (obsolete with Motorized Transport) |
 | J.S. Bach's Cathedral | Printing Press | +2 content in every city |
-| Magellan's Expedition | Gunpowder | +2 moves for ships |
-| Isaac Newton's College | Steam Power | +8 science in its city |
-| Adam Smith's Trading Company | Industrialization | +1 gold for every Marketplace, Bank and Harbor |
-| Shakespeare's Theatre | Sanitation | no unhappy citizens in its city |
+| Magellan's Expedition | Navigation | +2 moves for ships |
+| Isaac Newton's College | Theory of Gravity | +8 science in its city |
+| Adam Smith's Trading Company | Economics | +1 gold for every Marketplace, Bank and Harbor |
+| Shakespeare's Theatre | Medicine | no unhappy citizens in its city |
 | Statue of Liberty | Democracy | revolutions without anarchy |
 | Darwin's Voyage | Electricity | two technologies at once |
 | Eiffel Tower | Refining | +2 culture a turn in every city |
-| Hoover Dam | Replaceable Parts | +25% shields in every city |
+| Hoover Dam | Electronics | +25% shields in every city |
 | The Internet | Computers | +3 science in every city with a Library |
 | Apollo Program | Space Flight | the whole world revealed to its owner; no people can build spaceship parts until it stands |
 | Cure for Cancer | Superconductors | +2 content in every city |
+| Manhattan Project | Nuclear Fission | every people that knows Rocketry may build Nuclear Missiles |
+| United Nations | Computers | every 10 turns the world votes for Secretary-General (see Diplomacy) |
 
 A captured city's wonders change hands with it. The Colossus, the Great Lighthouse and Magellan's
-Expedition can only be built in a coastal city.
+Expedition can only be built in a coastal city. As in Civ III, a few wonders grow obsolete once
+their owner learns what supersedes them (the turn after): their effect ends, though their culture
+goes on, and a new owner who does not know it yet enjoys the effect again.
 
 Every wonder speaks to one or two of the six traits (Pyramids: Agricultural and Industrious; Great
 Library: Scientific; Colossus: Commercial; Oracle: Religious; Great Wall: Militaristic and

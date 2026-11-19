@@ -483,7 +483,7 @@ impl Building {
             Building::Apollo => "the whole world revealed to its owner; opens the space race: no people can build spaceship parts until it stands",
             Building::CureForCancer => "+2 content in every city",
             Building::Manhattan => "lets every people who knows Rocketry build Nuclear Missiles",
-            Building::UnitedNations => "every 10 turns the world votes for Secretary-General: two thirds of the votes win a diplomatic victory",
+            Building::UnitedNations => "every 10 turns the world votes for Secretary-General: a majority of all the members wins a diplomatic victory",
             _ => "",
         }
     }
@@ -500,10 +500,31 @@ impl Building {
     }
 }
 
+impl Building {
+    /// The technology that makes a wonder obsolete once its owner knows it, as in Civ III: its
+    /// effect ends, though its culture goes on.
+    pub fn obsoleted_by(&self) -> Option<crate::tech::Tech> {
+        use crate::tech::Tech;
+        match self {
+            Building::Oracle => Some(Tech::Theology),
+            Building::GreatWall => Some(Tech::Gunpowder),
+            Building::GreatLighthouse => Some(Tech::Navigation),
+            Building::GreatLibrary => Some(Tech::TheoryOfGravity),
+            Building::Colossus => Some(Tech::Flight),
+            Building::Leonardo => Some(Tech::MotorizedTransport),
+            _ => None,
+        }
+    }
+}
+
 /// Which wonders stand in the world, and where: each can be built only once.
 #[derive(Resource, Default, Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct WorldWonders {
     pub built: std::collections::HashMap<Building, (u32, String)>,
+    /// Wonders made obsolete: their owner knows what supersedes them (see
+    /// [`Building::obsoleted_by`]), so their effects have ended.
+    #[serde(default)]
+    pub expired: std::collections::HashSet<Building>,
 }
 
 impl WorldWonders {
@@ -511,14 +532,30 @@ impl WorldWonders {
         self.built.contains_key(&wonder)
     }
 
-    /// Whether `owner` has the wonder.
+    /// Whether `owner` has the wonder and it is still in effect (not obsolete).
     pub fn owns(&self, owner: u32, wonder: Building) -> bool {
-        self.built.get(&wonder).is_some_and(|(o, _)| *o == owner)
+        self.built.get(&wonder).is_some_and(|(o, _)| *o == owner) && !self.expired.contains(&wonder)
     }
 
-    /// Content citizens every city of `owner` gets from its wonders.
+    /// Content citizens every city of `owner` gets from its wonders still in effect.
     pub fn empire_content(&self, owner: u32) -> u32 {
-        self.built.iter().filter(|(_, (o, _))| *o == owner).map(|(w, _)| w.empire_content()).sum()
+        self.built.iter().filter(|(w, (o, _))| *o == owner && !self.expired.contains(*w)).map(|(w, _)| w.empire_content()).sum()
+    }
+
+    /// Notes which wonders their owners have made obsolete (`knows(owner, tech)`); a wonder taken by
+    /// a people that does not know the technology works again. Returns those newly obsolete, with
+    /// their owners.
+    pub fn refresh_expired(&mut self, knows: impl Fn(u32, crate::tech::Tech) -> bool) -> Vec<(Building, u32)> {
+        let mut fresh = Vec::new();
+        for (wonder, (owner, _)) in &self.built {
+            let gone = wonder.obsoleted_by().is_some_and(|t| knows(*owner, t));
+            if gone && self.expired.insert(*wonder) {
+                fresh.push((*wonder, *owner));
+            } else if !gone {
+                self.expired.remove(wonder);
+            }
+        }
+        fresh
     }
 
     /// Extra moves a ship (or troops at sea) of `owner` gets each turn.
@@ -566,6 +603,17 @@ mod tests {
         world.transfer_city("Carthage", 1);
         assert_eq!(world.sea_moves(1), 1);
         assert_eq!(world.sea_moves(2), 0);
+        // Navigation makes the Lighthouse obsolete for its owner; a new owner without it uses it again.
+        let fresh = world.refresh_expired(|owner, tech| owner == 1 && tech == crate::tech::Tech::Navigation);
+        assert_eq!(fresh, vec![(Building::GreatLighthouse, 1)]);
+        assert_eq!(world.sea_moves(1), 0);
+        assert!(world.is_taken(Building::GreatLighthouse), "it still stands");
+        world.transfer_city("Carthage", 2);
+        assert!(world.refresh_expired(|owner, tech| owner == 1 && tech == crate::tech::Tech::Navigation).is_empty());
+        assert_eq!(world.sea_moves(2), 1);
+        // Theology ends the Oracle's calm.
+        world.refresh_expired(|_, tech| tech == crate::tech::Tech::Theology);
+        assert_eq!(world.empire_content(1), 0);
     }
 }
 

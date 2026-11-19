@@ -133,18 +133,16 @@ fn unique_victory(golden: &mut GoldenAges, civs: &Civilizations, met: &HashSet<u
     }
 }
 
-/// The technology after which the Great Library teaches no more.
-pub const GREAT_LIBRARY_UNTIL: Tech = Tech::TheoryOfGravity;
-
 /// The Great Library: its owner learns every technology that two or more of the other peoples it
-/// has met already know (and that it may study), until it learns [`GREAT_LIBRARY_UNTIL`] itself.
+/// has met already know (and that it may study), until the wonder is obsolete (see
+/// `Building::obsoleted_by`).
 fn great_library(civs: &mut Civilizations, tech: &mut TechState, wonders: &WorldWonders, met: &HashSet<u32>, holding: &HashSet<u32>, log: &mut GameLog) {
     let Some(&(owner, _)) = wonders.built.get(&Building::GreatLibrary) else { return };
     let knowledge = peoples_knowledge(civs, tech, holding);
     let known_to = |t: Tech| knowledge.iter().filter(|(id, k)| *id != owner && (owner != PLAYER || met.contains(id)) && k.contains(&t)).count();
     let learner = if owner == PLAYER { Some(tech) } else { civs.players.iter_mut().find(|c| c.id == owner && !c.eliminated).map(|c| &mut c.tech) };
     let Some(learner) = learner else { return };
-    if learner.researched.contains(&GREAT_LIBRARY_UNTIL) {
+    if Building::GreatLibrary.obsoleted_by().is_some_and(|t| learner.researched.contains(&t)) {
         return;
     }
     while let Some(t) = Tech::ALL.into_iter().find(|t| learner.can_research(*t) && known_to(*t) >= 2) {
@@ -3117,6 +3115,13 @@ fn process_turn(
         let met = &foreign.met;
         tech.set_known_abroad(|t| others(PLAYER).filter(|(id, k)| met.contains(id) && k.contains(&t)).count() as u32, others(PLAYER).count() as u32);
     }
+    // Wonders their owners have outgrown are obsolete: their effects end (their culture goes on).
+    for (wonder, owner) in wonders.refresh_expired(|owner, t| if owner == PLAYER { tech.researched.contains(&t) } else { civs.players.iter().any(|c| c.id == owner && c.tech.researched.contains(&t)) }) {
+        if owner == PLAYER {
+            let by = wonder.obsoleted_by().map(|t| t.name()).unwrap_or_default();
+            log.push(format!("Now that we know {by}, our {} is obsolete: its effect ends, though its culture goes on.", wonder.name()));
+        }
+    }
     // The chance to raze last turn's conquests has passed; their former owners hold it against us.
     taken.0.clear();
     for loser in std::mem::take(&mut taken.1) {
@@ -4139,7 +4144,7 @@ fn process_turn(
         }
     }
     // Leonardo's Workshop: one obsolete unit of its owner is upgraded free each turn.
-    if let Some(&(owner, _)) = wonders.built.get(&Building::Leonardo) {
+    if let Some(&(owner, _)) = wonders.built.get(&Building::Leonardo).filter(|_| !wonders.expired.contains(&Building::Leonardo)) {
         let known = |t: Option<Tech>| {
             t.is_none_or(|t| if owner == PLAYER { tech.researched.contains(&t) } else { civs.players.iter().any(|c| c.id == owner && c.tech.researched.contains(&t)) })
         };
@@ -5438,7 +5443,7 @@ pub fn work_tiles(
         let focus = effective_focus(&city, &city_situation(&city, buildings, happiness, at_war.contains(&owner), &rivers));
         // A Harbor makes every worked ocean tile one food richer, and the Colossus one gold.
         let harbor = buildings.has(Building::Harbor);
-        let colossus = buildings.has(Building::Colossus);
+        let colossus = buildings.has(Building::Colossus) && !Building::Colossus.obsoleted_by().is_some_and(|t| knows(owner, t));
         // GM Farms make every farmed tile one food richer.
         let engineered = buildings.has(Building::GmFarms);
         let base_yield = |owner: u32, hex: Hex| {
@@ -6039,7 +6044,7 @@ mod tests {
         assert!(tech.researched.contains(&Tech::Pottery) && tech.researched.contains(&Tech::Mining));
         assert!(!tech.researched.contains(&Tech::Alphabet));
         // Once we know Theory of Gravity it teaches no more.
-        tech.researched.insert(GREAT_LIBRARY_UNTIL);
+        tech.researched.insert(Building::GreatLibrary.obsoleted_by().unwrap());
         great_library(&mut civs, &mut tech, &wonders, &[1, 2, 3].into(), &holding, &mut log);
         assert!(!tech.researched.contains(&Tech::Alphabet));
 
