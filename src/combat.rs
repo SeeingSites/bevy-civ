@@ -21,7 +21,7 @@
 
 use crate::building::Building;
 use crate::terrain::Terrain;
-use crate::unit::{Domain, UnitType};
+use crate::unit::{Ability, Domain, UnitType};
 
 /// How much harder troops fight with a great general on their tile.
 pub const GENERAL_BONUS: f32 = 1.5;
@@ -162,18 +162,35 @@ fn army(members: u32) -> f32 {
     1.0 + crate::unit::ARMY_MEMBER_BONUS * members.saturating_sub(1) as f32
 }
 
+/// How much a unique unit's ability adds to an attack and to a defence (+50%).
+pub const ABILITY_BONUS: f32 = 1.5;
+
+/// A unique unit's ability in attack: a charge over open ground, or storming a city.
+fn ability_attack(kind: UnitType, ground: &Ground) -> f32 {
+    let open = matches!(ground.terrain, Terrain::Grassland | Terrain::Plains | Terrain::Desert);
+    match kind.ability() {
+        Some(Ability::Charge) if open && ground.city.is_none() => ABILITY_BONUS,
+        Some(Ability::Storm) if ground.city.is_some() => ABILITY_BONUS,
+        _ => 1.0,
+    }
+}
+
 /// The defence `defender` puts up on this ground against an attacker (or gun) of that kind.
 pub fn defence_against(attacker: UnitType, defender: &Side, ground: &Ground) -> f32 {
     let mut base = (defender.kind.stats().1 as f32).max(0.1);
     if defender.kind.anti_mounted() && attacker.is_mounted() {
         base *= 2.0;
     }
+    // A unique unit holding a city.
+    if defender.kind.ability() == Some(Ability::Bastion) && ground.city.is_some() {
+        base *= ABILITY_BONUS;
+    }
     base * (1.0 + defence_bonus(ground, attacker.domain())) * led(defender.led) * army(defender.members)
 }
 
 /// Attack and defence strength of each side.
 pub fn strengths(attacker: &Side, defender: &Side, ground: &Ground) -> (f32, f32) {
-    let attack = attacker.kind.stats().0 as f32 * led(attacker.led) * army(attacker.members);
+    let attack = attacker.kind.stats().0 as f32 * led(attacker.led) * army(attacker.members) * ability_attack(attacker.kind, ground);
     (attack.max(0.0), defence_against(attacker.kind, defender, ground))
 }
 
@@ -473,5 +490,27 @@ mod fight_tests {
         assert_eq!(promotion_chance(2, true, false), 0.0);
         assert_eq!(promotion_chance(0, true, false), 0.5);
         assert_eq!(promotion_chance(1, false, true), 0.0625);
+    }
+
+    #[test]
+    fn unique_abilities_change_the_odds_where_they_should() {
+        let mut in_city = open();
+        in_city.city = Some(5);
+        // Storm: the Praetorian strikes cities harder than the Legion, but not the open field.
+        let (praetorian, _) = strengths(&side(UnitType::Praetorian), &side(UnitType::Spearman), &in_city);
+        let (legion, _) = strengths(&side(UnitType::Legion), &side(UnitType::Spearman), &in_city);
+        assert!(praetorian > legion * 1.5 - 0.01);
+        let (praetorian_open, _) = strengths(&side(UnitType::Praetorian), &side(UnitType::Spearman), &open());
+        assert_eq!(praetorian_open, UnitType::Praetorian.stats().0 as f32);
+        // Bastion: a Musketeer holds a city half again as well; Shield wall: a Hoplite doubles against riders.
+        let (_, musketeer) = strengths(&side(UnitType::Knight), &side(UnitType::Musketeer), &in_city);
+        let (_, musketeer_open) = strengths(&side(UnitType::Knight), &side(UnitType::Musketeer), &open());
+        assert!(musketeer > musketeer_open);
+        let (_, hoplite) = strengths(&side(UnitType::Knight), &side(UnitType::Hoplite), &open());
+        assert_eq!(hoplite, 2.0 * UnitType::Hoplite.stats().1 as f32 * (1.0 + defence_bonus(&open(), Domain::Land)));
+        // Self-sufficient: the War Elephant needs no Horses.
+        assert!(UnitType::WarElephant.required_resources().is_empty() && !UnitType::Knight.required_resources().is_empty());
+        // Unique units are built in place of their base unit, never by name.
+        assert!(!UnitType::Hoplite.is_trainable() && UnitType::Hoplite.cost() == UnitType::Phalanx.cost());
     }
 }

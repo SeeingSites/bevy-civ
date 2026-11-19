@@ -1,8 +1,9 @@
 //! What sets each civilization apart: two traits and a unique unit.
 //!
 //! Traits give small, steady advantages in every city (more gold, science, shields, food or
-//! contentment) or in war (troops promoted twice as often). A civilization's unique unit is one of the
-//! ordinary units, trained by that civilization one rank higher (a veteran, or elite with Barracks).
+//! contentment) or in war (troops promoted twice as often). A civilization's unique unit takes the
+//! place of one ordinary unit in its cities: stronger, and with an ability of its own (see
+//! `unit::Ability`).
 //! Both follow from the civilization's name, so they need no saving.
 
 use crate::building::Building;
@@ -141,32 +142,32 @@ pub fn of(name: &str) -> Character {
     use UnitType as U;
     let key = name.trim_start_matches("the ");
     let (traits, unique) = match key {
-        "Rome" => ([Militaristic, Commercial], U::Legion),
-        "Carthage" => ([Commercial, Industrious], U::Horseman),
-        "China" => ([Militaristic, Scientific], U::Longbowman),
-        "Egypt" => ([Religious, Industrious], U::WarChariot),
-        "England" => ([Commercial, Scientific], U::Frigate),
-        "France" => ([Industrious, Commercial], U::Musketman),
-        "Greece" => ([Scientific, Commercial], U::Phalanx),
-        "India" => ([Religious, Commercial], U::Knight),
-        "Japan" => ([Militaristic, Religious], U::Knight),
-        "Macedon" => ([Militaristic, Scientific], U::Phalanx),
-        "Mali" => ([Commercial, Agricultural], U::Horseman),
-        "Muscovy" => ([Industrious, Agricultural], U::Cavalry),
-        "Mongols" => ([Militaristic, Agricultural], U::Knight),
-        "Persia" => ([Scientific, Industrious], U::Immortal),
-        "Songhai" => ([Commercial, Agricultural], U::Horseman),
-        "Spain" => ([Religious, Militaristic], U::Knight),
-        "Aztecs" => ([Militaristic, Religious], U::Warrior),
-        "Gauls" => ([Militaristic, Agricultural], U::Warrior),
-        "Inca" => ([Agricultural, Industrious], U::Spearman),
-        "Ottomans" => ([Militaristic, Scientific], U::Cavalry),
-        "Seleucids" => ([Scientific, Militaristic], U::Knight),
+        "Rome" => ([Militaristic, Commercial], U::Praetorian),
+        "Carthage" => ([Commercial, Industrious], U::Numidian),
+        "China" => ([Militaristic, Scientific], U::ChuKoNu),
+        "Egypt" => ([Religious, Industrious], U::RoyalChariot),
+        "England" => ([Commercial, Scientific], U::ManOWar),
+        "France" => ([Industrious, Commercial], U::Musketeer),
+        "Greece" => ([Scientific, Commercial], U::Hoplite),
+        "India" => ([Religious, Commercial], U::WarElephant),
+        "Japan" => ([Militaristic, Religious], U::Samurai),
+        "Macedon" => ([Militaristic, Scientific], U::Companion),
+        "Mali" => ([Commercial, Agricultural], U::Mandekalu),
+        "Muscovy" => ([Industrious, Agricultural], U::Cossack),
+        "Mongols" => ([Militaristic, Agricultural], U::Keshik),
+        "Persia" => ([Scientific, Industrious], U::ImmortalGuard),
+        "Songhai" => ([Commercial, Agricultural], U::AskiaRider),
+        "Spain" => ([Religious, Militaristic], U::Conquistador),
+        "Aztecs" => ([Militaristic, Religious], U::JaguarWarrior),
+        "Gauls" => ([Militaristic, Agricultural], U::GallicSwordsman),
+        "Inca" => ([Agricultural, Industrious], U::Chasqui),
+        "Ottomans" => ([Militaristic, Scientific], U::Sipahi),
+        "Seleucids" => ([Scientific, Militaristic], U::Cataphract),
         _ => {
             let seed = key.bytes().fold(7u32, |h, b| h.wrapping_mul(31).wrapping_add(b as u32));
             let first = Trait::ALL[(seed % 6) as usize];
             let second = Trait::ALL[((seed / 6) % 5 + 1 + seed % 6) as usize % 6];
-            let pool = [U::Legion, U::Horseman, U::Longbowman, U::Knight, U::Musketman, U::Cavalry, U::Phalanx];
+            let pool: Vec<UnitType> = UnitType::ALL.into_iter().filter(|u| u.unique_base().is_some()).collect();
             ([first, second], pool[(seed / 30) as usize % pool.len()])
         }
     };
@@ -184,7 +185,8 @@ mod tests {
             assert_ne!(c.traits[0], c.traits[1], "{name}");
         }
         assert_eq!(of("the Inca"), of("Inca"));
-        assert_eq!(of("Rome").unique, UnitType::Legion);
+        assert_eq!(of("Rome").unique, UnitType::Praetorian);
+        assert_eq!(UnitType::Praetorian.unique_base(), Some(UnitType::Legion));
         assert_eq!(of("Rome").city_bonus(), (0, 0, 1, 0));
         assert_eq!(of("Egypt").content(), 1);
         assert!(of("Rome").promotion_chance(0, false) > of("Egypt").promotion_chance(0, false));

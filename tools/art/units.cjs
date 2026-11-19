@@ -611,6 +611,21 @@ const UNITS = [
   },
 ];
 
+// ---- unique units: each people's own version of an ordinary unit (order matches UnitType) --------
+// The base unit's figure, with a gold crest and a pennant in the unit's own colour.
+const crest = (colour) =>
+  wrap(
+    `<path d="M10,8 h18 v12 q0,10 -9,14 q-9,-4 -9,-14 Z" fill="#e3b341"/><path d="M14,12 h10 v7 q0,6 -5,8 q-5,-2 -5,-8 Z" fill="${colour}"/>` +
+      `<path d="M108,6 v34" stroke-width="2.5"/><path d="M108,8 l14,5 l-14,5 Z" fill="${colour}"/>`,
+  );
+// Rows of the base units' figures (the boat drawn at row 19 shifts later rows by one).
+const UNIQUE_BASES = [6, 9, 5, 5, 7, 8, 11, 6, 11, 38, 11, 11, 2, 3, 11, 5, 11, 21, 33, 14, 14];
+const UNIQUE_COLOURS = ['#c8281c', '#2a6fb0', '#d9a441', '#7a3a8f', '#e0c060', '#5a3a8f', '#8a8f98', '#2f9a5a', '#b07a4e', '#c83a3a', '#33363f', '#6b4a2a', '#3a8a5a', '#e08a2a', '#d9a441', '#5b3a1c', '#b3261e', '#22305a', '#2a2f5a', '#8f1f2f', '#4f7a3a'];
+UNIQUE_BASES.forEach((base, i) => {
+  const draw = UNITS[base];
+  UNITS.push((f) => draw(f) + crest(UNIQUE_COLOURS[i]));
+});
+
 /** A great person: a figure standing in a softly pulsing golden aura. */
 function greatPerson(f, o) {
   const glow = [0.28, 0.36, 0.28, 0.2][f];
@@ -622,5 +637,8 @@ function greatPerson(f, o) {
 }
 
 module.exports = {
-  units: () => sheet({ cols: 4, rows: UNITS.length, fw: FW, fh: FH, draw: (col, row) => UNITS[row](col) }),
+  // Two units a row (four frames each), so the sheet stays within a browser's 8192-pixel texture
+  // limit; frame f of unit u is still cell u * 4 + f in reading order.
+  units: () =>
+    sheet({ cols: 8, rows: Math.ceil(UNITS.length / 2), fw: FW, fh: FH, draw: (col, row) => (UNITS[row * 2 + Math.floor(col / 4)] || (() => ''))(col % 4) }),
 };
