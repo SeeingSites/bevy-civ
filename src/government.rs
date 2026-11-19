@@ -40,27 +40,13 @@ impl Government {
         }
     }
 
-    pub fn production_modifier(&self) -> f32 {
-        match self {
-            Government::Anarchy => 0.75,
-            Government::Despotism => 1.0,
-            Government::Monarchy => 1.1,
-            Government::Republic => 1.0,
-            Government::Democracy => 0.9,
-            Government::Communism => 1.15,
-            Government::Fundamentalism => 1.05,
-        }
-    }
-
+    /// What science is worth under this government: Fundamentalism halves it, and Anarchy does no
+    /// research at all.
     pub fn science_modifier(&self) -> f32 {
         match self {
             Government::Anarchy => 0.0,
-            Government::Despotism => 0.8,
-            Government::Monarchy => 1.0,
-            Government::Republic => 1.2,
-            Government::Democracy => 1.5,
-            Government::Communism => 1.0,
-            Government::Fundamentalism => 0.7,
+            Government::Fundamentalism => 0.5,
+            _ => 1.0,
         }
     }
 
@@ -78,30 +64,49 @@ impl Government {
         }
     }
 
-    /// Corruption factor (higher = more corruption far from capital)
-    pub fn corruption_factor(&self) -> f32 {
+    /// How heavy corruption and waste are: the share of trade a city loses at the full distance
+    /// from its palace and at the optimal number of cities (see `economy::corruption`).
+    pub fn corruption_level(&self) -> f32 {
         match self {
-            Government::Anarchy => 0.25,
-            Government::Despotism => 0.15,
-            Government::Monarchy => 0.08,
-            Government::Republic => 0.05,
-            Government::Democracy => 0.02,
-            Government::Communism => 0.06,
-            Government::Fundamentalism => 0.04,
+            Government::Anarchy => 0.8,
+            Government::Despotism => 0.6,
+            Government::Monarchy => 0.45,
+            Government::Communism => 0.4,
+            Government::Republic | Government::Fundamentalism => 0.35,
+            Government::Democracy => 0.2,
         }
     }
 
-    /// Science rate cap (percentage)
-    pub fn science_cap(&self) -> u32 {
+    /// Communism spreads corruption evenly: distance from the palace does not matter.
+    pub fn communal(&self) -> bool {
+        *self == Government::Communism
+    }
+
+    /// The most of a people's trade that may go to any one of science, luxury and taxes (percent).
+    /// Anarchy collects no taxes and does no research.
+    pub fn rate_cap(&self) -> u32 {
         match self {
             Government::Anarchy => 0,
             Government::Despotism => 60,
             Government::Monarchy => 70,
-            Government::Republic => 80,
-            Government::Democracy => 100,
-            Government::Communism => 70,
-            Government::Fundamentalism => 50,
+            Government::Communism | Government::Republic | Government::Fundamentalism => 80,
+            Government::Democracy => 90,
         }
+    }
+
+    /// The limit on any one rate (see `rate_cap`).
+    pub fn science_cap(&self) -> u32 {
+        self.rate_cap()
+    }
+
+    /// Despotism and Anarchy take one from any tile that would give 3 or more food, shields or trade.
+    pub fn tile_penalty(&self) -> bool {
+        matches!(self, Government::Anarchy | Government::Despotism)
+    }
+
+    /// A Republic or Democracy adds a trade to every worked tile that already brings some.
+    pub fn commerce_bonus(&self) -> bool {
+        matches!(self, Government::Republic | Government::Democracy)
     }
 
     pub fn unit_upkeep_food(&self) -> u32 {
@@ -169,13 +174,13 @@ impl Government {
     /// In a few words, for the government advisor.
     pub fn summary(&self) -> &'static str {
         match self {
-            Government::Anarchy => "No science, poor production, rampant corruption",
-            Government::Despotism => "Slow science, heavy corruption; martial law",
-            Government::Monarchy => "+10% shields, steady science; martial law",
-            Government::Republic => "+20% science, low corruption; units cost upkeep",
-            Government::Democracy => "+50% science, least corruption; units cost upkeep",
-            Government::Communism => "+15% shields, even corruption; strong martial law",
-            Government::Fundamentalism => "+3 content everywhere, cheap armies; poor science",
+            Government::Anarchy => "No taxes or science, rampant corruption, poor land",
+            Government::Despotism => "Rich tiles give one less; heavy corruption; rates up to 60%; martial law; forced labour",
+            Government::Monarchy => "Moderate corruption; rates up to 70%; martial law",
+            Government::Republic => "+1 trade on tiles with trade; low corruption; rates up to 80%; war weariness",
+            Government::Democracy => "+1 trade on tiles with trade; least corruption; rates up to 90%; war weariness",
+            Government::Communism => "Corruption the same near and far; rates up to 80%; strong martial law; forced labour",
+            Government::Fundamentalism => "+3 content everywhere, cheap armies; science halved; rates up to 80%",
         }
     }
 

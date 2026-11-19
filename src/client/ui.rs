@@ -201,22 +201,25 @@ fn help_lines(topic: HelpTopic) -> Vec<String> {
         HelpTopic::Cities => [
             "A city's first five citizens are content; every one beyond is unhappy. Temples (+2), Colosseums and Cathedrals (+3), wonders, masterpieces, entertainers and, under Despotism, Monarchy and Communism, troops in the city (martial law) calm them. Each different luxury the city can reach makes one citizen happy.",
             "When the unhappy outnumber the happy the city falls into disorder: no growth, production, science or taxes until it is calmed.",
-            "Cities grow when their granary fills and cannot pass size 8 without an Aqueduct, or 16 without a Sewer System. Every citizen eats 2 food; specialists eat without working the land.",
-            "Each working citizen works one tile of its city's area, and the city's own tile is worked for free. Open a city to see each tile's food, shields and gold (worked tiles ringed in green); click a tile to move a citizen there or off it, or let the governor choose. Farms, mines, roads, railroads, resources and rivers make tiles richer.",
+            "Cities grow when their food box fills: 20 food while a town (up to size 6), 40 as a city (to 12), 60 as a metropolis. Past size 6 a city needs an Aqueduct (a river beside it serves as one), past 12 a Sewer System. A Granary keeps half the food when the city grows. Every citizen eats 2 food; specialists eat without working the land.",
+            "Trade: roads on flat land, rivers, the sea and some resources bring trade (the gold coins on a tile). Corruption takes a share of it, the rest is split by the rates (Empire window) into science, luxury and taxes, and buildings multiply each part: a Library, University and Research Lab add half to science each, a Marketplace half to taxes and luxury, a Bank and a Stock Exchange 30% more. Scientists add 3 science and tax collectors 2 gold before those multiply.",
+            "Upkeep: most buildings cost 1 gold a turn, a Factory or a Stock Exchange 2 (walls and wonders nothing). A building can be sold for its cost in gold, one a turn per city (city panel, Overview); a treasury that cannot pay its bills sells them itself.",
+            "Governments change the land: under Despotism (and Anarchy) a tile that would give 3 or more food, shields or trade gives one less; a Republic or Democracy adds a trade to every tile that has some. A golden age adds a shield and a trade to tiles that have them. A city of three or more with nobody unhappy and at least half its people happy celebrates its ruler: under Despotism its tiles escape the penalty, under Monarchy or Communism they earn a republic's extra trade - luxury is the way to it.",
+            "Each working citizen works one tile of its city's area, and the city's own tile is worked for free. Open a city to see each tile's food, shields and trade (worked tiles ringed in green); click a tile to move a citizen there or off it, or let the governor choose. Farms, mines, roads, railroads, resources and rivers make tiles richer.",
             "Modern troubles: once a people knows Sanitation, big unhappy cities may fall into a drug trade (up to 3 levels, each +1 unhappy and -1 gold), spread by smugglers from foreign cities nearby - a Police Station roots it out, and you can demand that a neighbour cracks down. With Industrialization, adulterated food may spoil half a granary and anger a city for 6 turns (likelier where corruption is high) unless it has a Food Safety Agency. GM Farms (Genetic Engineering) add a food on every farmed tile, but people distrust the food (+1 unhappy) without a Food Safety Agency.",
             "Migration: every 5 turns, citizens leave unhappy, hungry or troubled cities for clearly better ones within 10 tiles - at home, or abroad in peoples that know Industrialization and welcome them. Set your policy in the Empire window (Government): welcome migrants and grow (their rulers resent it), or turn them away. Communist and fundamentalist peoples admit none.",
-            "Each city's governor works the land for a focus, always feeding the city first: Growth (the most food), Production (shields), Trade (gold-rich tiles, for science and taxes) or Balanced. With Governor builds on, the governor also puts citizens to entertaining when the city would fall into disorder, and back to work once it is calm without them; and Workers it trains start on automatic. On Auto, the default, it picks one from the city's situation - production for a wonder or for troops in wartime, growth for a small city, trade for a big one with a library or market - and the city panel says why.",
+            "Each city's governor works the land for a focus, always feeding the city first: Growth (the most food), Production (shields), Trade (tiles rich in trade, for science and taxes) or Balanced. With Governor builds on, the governor also puts citizens to entertaining when the city would fall into disorder, and back to work once it is calm without them; and Workers it trains start on automatic. On Auto, the default, it picks one from the city's situation - production for a wonder or for troops in wartime, growth for a small city, trade for a big one with a library or market - and the city panel says why.",
             "Culture from temples, cathedrals, colosseums, libraries, universities and wonders widens a city's borders over time (2 tiles, 3 at 100, 4 at 1,000, 5 at 5,000). Where borders meet, the land goes to the city with the stronger culture for its distance, so a great culture pushes its neighbours' borders back. A city in disorder next to a much greater culture may defect to it.",
-            "Corruption grows with distance from the capital and is halved by a Courthouse. A city keeps training the same unit until told otherwise; a finished building or wonder leaves it waiting for its next project - unless its build queue holds more (switch the city panel to Add to queue and pick up to six projects).",
+            "Corruption takes trade (and waste, less heavily, shields) from cities far from a palace - the capital or a Forbidden Palace - and climbs steeply once a people has more cities than the world's land can support for it (the Empire window says how many); Despotism and Anarchy suffer it most, Democracy least, and under Communism distance does not matter. A Courthouse or a Police Station cuts it, and so does a road or harbour link to the capital. A city keeps training the same unit until told otherwise; a finished building or wonder leaves it waiting for its next project - unless its build queue holds more (switch the city panel to Add to queue and pick up to six projects).",
             "Pollution and nuclear fallout foul the land; past 15 fouled tiles in the world, global warming now and then turns land drier. Clean it up with workers; Mass Transit and Recycling Centers prevent it.",
-            "Projects other than wonders can be bought with gold, or rushed under Despotism and Communism by putting citizens to forced labour. Luxury (Empire advisor) makes one citizen happy for every 2 points.",
+            "Projects other than wonders can be bought with gold (2 a missing shield for a building, more for a unit; double if nothing is built yet), or rushed under Despotism and Communism by putting citizens to forced labour. Luxury (Empire advisor) makes one citizen happy for every 2 points.",
         ]
         .into_iter()
         .map(String::from)
         .collect(),
         HelpTopic::Peoples => vec![
             "Every people has two traits - Militaristic (troops promoted twice as often), Commercial (+1 gold a city), Scientific (+1 science a city), Religious (+1 content a city, shorter revolutions), Industrious (+1 shield a city) or Agricultural (+1 food a city) - and a unique unit, which it trains a rank higher.".to_string(),
-            "Governments: a revolution brings a few turns of anarchy. Each government limits how much of your commerce can go to science or luxury (Empire advisor, Government tab); taxes take the rest, and savings earn 5% interest, up to 2 gold per Bank and 3 per Stock Exchange.".to_string(),
+            "Governments: a revolution brings a few turns of anarchy, in which no taxes are collected and nothing is learned. Each government limits every share of your trade - science, luxury and taxes alike (Empire advisor, Government tab): Despotism 60%, Monarchy 70%, Communism, Republic and Fundamentalism 80%, Democracy 90%. Savings earn 5% interest, up to 2 gold per Bank and 3 per Stock Exchange.".to_string(),
             "Faith: the first to learn Mysticism, Philosophy, Theology and Printing Press founds the Old Gods, the Way of Reason, the One Faith and the Reformed Faith. Faiths spread to nearby cities; Missionaries carry your state religion (your capital's faith) further. Cities of your state religion get +1 content (+2 with a Temple); a holy city's owner earns gold from the faith's followers; shared faith warms relations, different faiths cool them.".to_string(),
             "Diplomacy (E): peace, alliances, gifts, tribute, trade agreements, technology and resource deals. A right of passage lets your units share tiles with theirs; an alliance includes it, and war ends it. Units cannot walk into the units or cities of a people at peace with you: declare war first.".to_string(),
             "Culture from temples, libraries, colosseums, cathedrals, universities and wonders widens borders (2 tiles, 3 at 100 culture, 4 at 1,000, 5 at 5,000) and pushes neighbours' borders back. A city in disorder next to a much greater culture may defect.".to_string(),
@@ -1394,9 +1397,6 @@ pub fn rebuild_panels(
         node.display = if city.is_some() { Display::Flex } else { Display::None };
         // Folded to the title bar (see `UiState::city_peek`), the sheet is no taller than that.
         node.max_height = if peek { Val::Px(64.0) } else { Val::Auto };
-        let capital = cities.iter().find(|(c, _, _)| c.is_capital && c.owner == PLAYER).map(|(c, _, _)| c.position);
-        // Seats of government (capital and Forbidden Palace): corruption counts from the nearer.
-        let seats: Vec<hexx::Hex> = cities.iter().filter(|(c, b, _)| c.owner == PLAYER && (c.is_capital || b.has(Building::ForbiddenPalace))).map(|(c, _, _)| c.position).collect();
         let has_forbidden_palace = cities.iter().any(|(c, b, _)| c.owner == PLAYER && b.has(Building::ForbiddenPalace));
         commands.entity(root).despawn_descendants().with_children(|p| {
             let Some((city, buildings, happiness)) = city else { return };
@@ -1447,23 +1447,42 @@ pub fn rebuild_panels(
             if routes > 0 {
                 p.spawn(label(&art.font_body, format!("Trade routes: {routes} of {}", bevy_civ::trade::MAX_ROUTES_PER_CITY), 14.0, CREAM));
             }
-            let dist = seats.iter().map(|s| city.position.distance_to(*s) as u32).min().or(capital.map(|c| city.position.distance_to(c) as u32)).unwrap_or(0);
             let gov = state.government;
-            let (extra_food, extra_shields, extra_gold) = supplies.yields.get(&city.position).copied().unwrap_or_default();
-            let food = city.food_per_turn(buildings, gov, dist) + extra_food;
-            let production = city.production_per_turn(buildings, gov, dist) + extra_shields;
+            // Corruption (by distance to a palace and the cities nearer it) and the city's accounts.
+            let rule_of = |owner: u32| if owner == PLAYER { gov } else { civs.players.iter().find(|c| c.id == owner).map_or(Government::Despotism, |c| c.government) };
+            let land_tiles = map.cells.len().saturating_sub(map.water.len());
+            let corruption = crate::corruption_rates(cities.iter().map(|(c, b, _)| (c, b)), rule_of, &supplies.linked, land_tiles).get(&city.position).copied().unwrap_or(0.0);
+            let character = civs.players.iter().find(|c| c.id == city.owner).map(|c| bevy_civ::traits::of(&c.name));
+            let (books, _) = crate::city_books(city, buildings, gov, state.rates(), corruption, &wonders, &great, character, &supplies);
+            let (extra_food, extra_shields, _) = supplies.yields.get(&city.position).copied().unwrap_or_default();
+            let food = city.food_per_turn(buildings) + extra_food;
+            let production = city.production_per_turn(buildings, bevy_civ::economy::waste(corruption)) + extra_shields;
+            let wasted = city.production_per_turn(buildings, 0.0).saturating_sub(city.production_per_turn(buildings, bevy_civ::economy::waste(corruption)));
             p.spawn(row(14.0)).with_children(|r| {
                 stat(r, art, icon::FOOD, format!("+{food}"), CREAM);
                 stat(r, art, icon::PRODUCTION, format!("+{production}"), CREAM);
-                let commerce = city.science_per_turn(buildings, gov, dist) + city.gold_per_turn(buildings) + 1;
-                let (science, luxury, gold) = state.split_commerce(commerce);
-                stat(r, art, icon::SCIENCE, format!("+{science}"), CREAM);
-                stat(r, art, icon::GOLD, format!("+{}", gold as i32 + extra_gold as i32 + great.merchant_gold(city.position)), CREAM);
-                if luxury > 0 {
-                    r.spawn(label(&art.font_body, format!("lux {luxury}"), 14.0, CREAM));
+                stat(r, art, icon::SCIENCE, format!("+{}", books.science), CREAM);
+                stat(r, art, icon::GOLD, format!("+{}", books.gold), CREAM);
+                if books.luxury > 0 {
+                    r.spawn(label(&art.font_body, format!("lux {}", books.luxury), 14.0, CREAM));
                 }
                 stat(r, art, icon::HAPPY, format!("{} / {}", happiness.happy + happiness.content, happiness.unhappy), if happiness.in_disorder() { Color::srgb(1.0, 0.45, 0.4) } else { CREAM });
             });
+            // Where the trade goes: corruption, waste and the upkeep of the city's buildings.
+            if mine {
+                p.spawn(label(
+                    &art.font_body,
+                    format!(
+                        "Trade {}: {} lost to corruption ({}%), {wasted} shields to waste. Buildings cost {} gold a turn.",
+                        books.trade,
+                        books.corruption,
+                        (corruption * 100.0).round(),
+                        books.upkeep
+                    ),
+                    13.0,
+                    if corruption >= 0.35 { Color::srgb(1.0, 0.6, 0.5) } else { MUTED },
+                ));
+            }
             // The mood, spelled out: a city in disorder produces nothing whatever the figures above say.
             if happiness.in_disorder() {
                 p.spawn(label(
@@ -1477,6 +1496,13 @@ pub fn rebuild_panels(
                 ));
             } else if happiness.unhappy > 0 {
                 p.spawn(label(&art.font_body, format!("Mood: {} happy, {} content, {} unhappy (disorder if the unhappy outnumber the happy).", happiness.happy, happiness.content, happiness.unhappy), 13.0, MUTED));
+            } else if mine && bevy_civ::economy::celebrating(city.population, happiness.happy, happiness.unhappy) {
+                let gain = match state.government {
+                    Government::Despotism | Government::Anarchy => " - its rich tiles escape the despot's penalty",
+                    Government::Monarchy | Government::Communism => " - +1 trade on tiles with trade, as in a republic",
+                    _ => "",
+                };
+                p.spawn(label(&art.font_bold, format!("Celebrating: the people love their ruler{gain}."), 13.0, GOLD));
             }
             let grow_in = (city.food_to_grow().saturating_sub(city.food_storage) as f32 / food.max(1) as f32).ceil();
             p.spawn(label(&art.font_body, format!("Growth: {}/{} food  (about {} turns)", city.food_storage, city.food_to_grow(), grow_in), 14.0, MUTED));
@@ -1488,7 +1514,7 @@ pub fn rebuild_panels(
                     r.spawn(label(
                         &art.font_body,
                         format!(
-                            "Land: {} of {} citizens work tiles ({f} food, {s} shields, {g} gold; {} eaten). {} to move a citizen.",
+                            "Land: {} of {} citizens work tiles ({f} food, {s} shields, {g} trade; {} eaten). {} to move a citizen.",
                             city.worked.len(),
                             city.population,
                             city.population * bevy_civ::tiles::FOOD_PER_CITIZEN,
@@ -1607,7 +1633,8 @@ pub fn rebuild_panels(
                         .filter(|b| b.required_building().is_none_or(|r| buildings.has(r)))
                         .filter(|b| !(b.one_per_people() && has_forbidden_palace))
                         .map(|b| {
-                            let effect = b.effect().to_string();
+                            let upkeep = bevy_civ::economy::upkeep(b);
+                            let effect = if upkeep > 0 { format!("{}; upkeep {upkeep} gold", b.effect()) } else { b.effect().to_string() };
                             (ProductionItem::Building(b), effect)
                         })
                         .collect()
@@ -1621,6 +1648,21 @@ pub fn rebuild_panels(
                 wonders.sort_by_key(|b| b.name());
                 let list = |items: &[&Building]| if items.is_empty() { "none yet".to_string() } else { items.iter().map(|b| b.name()).collect::<Vec<_>>().join(", ") };
                 p.spawn(label(&art.font_body, format!("Buildings: {}", list(&plain)), 14.0, CREAM));
+                // Upkeep: a building that is not worth its keep can be sold, one a turn.
+                if !plain.is_empty() {
+                    if state.sold.contains(&city.position) {
+                        p.spawn(label(&art.font_body, "A building was sold here this turn (one a turn).", 13.0, MUTED));
+                    } else {
+                        p.spawn(Node { flex_wrap: FlexWrap::Wrap, column_gap: Val::Px(4.0), row_gap: Val::Px(4.0), align_items: AlignItems::Center, ..default() }).with_children(|r| {
+                            r.spawn(label(&art.font_body, "Sell for gold (one a turn):", 13.0, MUTED));
+                            for building in plain.iter().filter(|b| !b.is_spaceship_part()) {
+                                let upkeep = bevy_civ::economy::upkeep(**building);
+                                let text = format!("{} +{} (-{upkeep}/turn)", building.name(), building.cost());
+                                button(r, art, text, Command::Game(Action::SellBuilding(**building)), BRONZE, 11.0);
+                            }
+                        });
+                    }
+                }
                 p.spawn(label(&art.font_body, format!("Wonders: {}", list(&wonders)), 14.0, CREAM));
                 // Progress towards the next great person, and what this city's points lean towards.
                 let earned = great::city_points(&buildings.buildings, &city.specialists, city.is_capital);
@@ -1642,7 +1684,7 @@ pub fn rebuild_panels(
                 let count = |kind: &Specialist| city.specialists.iter().filter(|s| *s == kind).count();
                 p.spawn(label(&art.font_body, format!("Citizens: {} working the land, {} specialists. Food {:+} a turn.", city.workers(), city.specialists.len(), city.food_balance(buildings)), 14.0, CREAM));
                 p.spawn(Node { flex_wrap: FlexWrap::Wrap, column_gap: Val::Px(5.0), row_gap: Val::Px(5.0), ..default() }).with_children(|grid| {
-                    for (kind, what) in [(Specialist::Entertainer, "+2 content"), (Specialist::TaxCollector, "+3 gold"), (Specialist::Scientist, "+3 science")] {
+                    for (kind, what) in [(Specialist::Entertainer, "+2 content"), (Specialist::TaxCollector, "+2 gold"), (Specialist::Scientist, "+3 science")] {
                         let name = match kind {
                             Specialist::Entertainer => "Entertainers",
                             Specialist::TaxCollector => "Tax collectors",
@@ -1903,6 +1945,19 @@ pub fn rebuild_panels(
                                     14.0,
                                     if sprawl > 0 { RED } else { INK_SOFT },
                                 ));
+                                // Corruption: how much trade it takes, and the empire size past which it climbs steeply.
+                                let peoples: std::collections::HashSet<u32> = city_list.iter().map(|(_, c)| c.owner).filter(|o| *o != crate::BARBARIANS).collect();
+                                let optimal = bevy_civ::economy::optimal_cities(map.cells.len().saturating_sub(map.water.len()), peoples.len());
+                                let books = state.accounts.get(&PLAYER).copied().unwrap_or_default();
+                                let share = books.corruption * 100 / books.trade.max(1);
+                                w.spawn(label(
+                                    &art.font_body,
+                                    format!(
+                                        "Corruption takes {share}% of our trade (waste takes shields the same way, if less): more in cities far from a palace, and steeply more past {optimal} cities. Courthouses and Police Stations cut it; under Communism distance does not matter."
+                                    ),
+                                    14.0,
+                                    if share >= 25 { RED } else { INK_SOFT },
+                                ));
                                 let fouled = tiles.iter().filter(|t| t.is_polluted()).count();
                                 w.spawn(label(
                                     &art.font_body,
@@ -1924,14 +1979,30 @@ pub fn rebuild_panels(
                                     ));
                                 }
                                 w.spawn(label(&art.font_body, format!("A revolution costs {} turns of anarchy: no science, poor production.", Government::REVOLUTION_TURNS), 14.0, INK_SOFT));
-                                // Rates: how the empire's commerce is split between science, luxury and taxes.
-                                let cap = state.government.science_cap();
-                                w.spawn(label(&art.font_bold, format!("Rates (a {} allows at most {cap}% in one)", state.government.name()), 15.0, INK));
-                                let (sci, lux) = (state.science_rate, state.luxury_rate);
+                                // Rates: how the empire's trade is split between science, luxury and taxes. The
+                                // government limits every share, taxes included.
+                                let gov = state.government;
+                                let cap = gov.rate_cap();
+                                let heading = if gov == Government::Anarchy {
+                                    "Rates: in anarchy no taxes are collected and nothing is learned - all trade goes to luxury".to_string()
+                                } else {
+                                    format!("Rates (a {} allows at most {cap}% in any one)", gov.name())
+                                };
+                                w.spawn(label(&art.font_bold, heading, 15.0, INK));
+                                let now = state.rates();
+                                let (sci, lux) = (now.science, now.luxury);
+                                let step = bevy_civ::economy::RATE_STEP;
+                                let try_rates = |science: Option<u32>, luxury: Option<u32>| {
+                                    let rates = bevy_civ::economy::Rates { science: science?, luxury: luxury? };
+                                    (gov != Government::Anarchy && rates.allowed(gov)).then_some((rates.science, rates.luxury))
+                                };
+                                // Taxes go up by taking from science (or luxury), down by giving to it.
+                                let tax_up = try_rates(sci.checked_sub(step), Some(lux)).or_else(|| try_rates(Some(sci), lux.checked_sub(step)));
+                                let tax_down = try_rates(Some(sci + step), Some(lux)).or_else(|| try_rates(Some(sci), Some(lux + step)));
                                 let rows: [(&str, u32, Option<(u32, u32)>, Option<(u32, u32)>); 3] = [
-                                    ("Science", sci, (sci >= 10).then(|| (sci - 10, lux)), (sci + 10 <= cap && sci + lux + 10 <= 100).then(|| (sci + 10, lux))),
-                                    ("Luxury", lux, (lux >= 10).then(|| (sci, lux - 10)), (lux + 10 <= cap && sci + lux + 10 <= 100).then(|| (sci, lux + 10))),
-                                    ("Taxes", state.tax_rate(), None, None),
+                                    ("Science", sci, try_rates(sci.checked_sub(step), Some(lux)), try_rates(Some(sci + step), Some(lux))),
+                                    ("Luxury", lux, try_rates(Some(sci), lux.checked_sub(step)), try_rates(Some(sci), Some(lux + step))),
+                                    ("Taxes", now.tax(), tax_down, tax_up),
                                 ];
                                 for (name, value, less, more) in rows {
                                     w.spawn(Node { align_items: AlignItems::Center, column_gap: Val::Px(10.0), ..default() }).with_children(|r| {
@@ -1940,25 +2011,32 @@ pub fn rebuild_panels(
                                         });
                                         for (text, change) in [("-10%", less), ("+10%", more)] {
                                             r.spawn(Node { width: Val::Px(64.0), ..default() }).with_children(|slot| {
-                                                // Taxes take the rest, so they have no buttons; elsewhere a step that is
-                                                // not allowed shows greyed, keeping the buttons in place.
-                                                if name == "Taxes" {
-                                                    return;
-                                                }
+                                                // A step that is not allowed shows greyed, keeping the buttons in place.
                                                 match change {
                                                     Some((s, l)) => button(slot, art, text, Command::Game(Action::SetRates(s, l)), BRONZE, 13.0),
                                                     None => button(slot, art, text, Command::Game(Action::SetRates(sci, lux)), SPENT, 13.0),
                                                 }
                                             });
                                         }
-                                        if name == "Taxes" {
-                                            r.spawn(label(&art.font_body, "the rest; every 2 luxury make a citizen happy", 13.0, INK_SOFT));
+                                        if name == "Luxury" {
+                                            r.spawn(label(&art.font_body, "every 2 luxury make a citizen happy", 13.0, INK_SOFT));
                                         }
                                     });
                                 }
+                                // Last turn's accounts.
+                                let books = state.accounts.get(&PLAYER).copied().unwrap_or_default();
                                 w.spawn(label(
                                     &art.font_body,
-                                    format!("Interest on the treasury: +{} gold a turn (5% of savings, up to 2 for each Bank and 3 for each Stock Exchange).", state.interest),
+                                    format!(
+                                        "Last turn: trade {}, of which {} lost to corruption; science {}, luxury {}, taxes {}. Buildings' upkeep -{}, units -{}, interest +{}: {:+} gold a turn.",
+                                        books.trade, books.corruption, books.science, books.luxury, books.gold, books.upkeep, state.unit_support, state.interest, state.gold_per_turn
+                                    ),
+                                    14.0,
+                                    if state.gold_per_turn < 0 { RED } else { INK_SOFT },
+                                ));
+                                w.spawn(label(
+                                    &art.font_body,
+                                    "Interest on the treasury: 5% of savings, up to 2 gold for each Bank and 3 for each Stock Exchange. A treasury that cannot pay its bills sells buildings.".to_string(),
                                     14.0,
                                     INK_SOFT,
                                 ));
@@ -2915,6 +2993,7 @@ pub fn update_tile_info(
     fog: Res<FogOfWar>,
     tiles: Query<&HexTile>,
     (tech, supplies, rivers): (Res<TechState>, Res<Supplies>, Res<crate::Rivers>),
+    (state, golden): (Res<GameState>, Res<crate::GoldenAges>),
     mut info: Query<&mut Text, With<TileInfoText>>,
 ) {
     let Ok(mut text) = info.get_single_mut() else { return };
@@ -2928,14 +3007,16 @@ pub fn update_tile_info(
                 .collect();
             extras.extend(tile.improvements.iter().map(|i| format!("{:?}", i)));
             let seen = tile.resource.filter(|r| r.reveal_tech().is_none_or(|t| tech.researched.contains(&t)));
-            let (f, s, g) = bevy_civ::tiles::tile_yield(tile.terrain, &tile.improvements, seen, rivers.tiles.contains(&tile.coord));
+            // As our government (and a golden age) makes it.
+            let raw = bevy_civ::tiles::tile_yield(tile.terrain, &tile.improvements, seen, rivers.tiles.contains(&tile.coord));
+            let (f, s, g) = bevy_civ::economy::tile_rule(raw, state.government, golden.active(PLAYER), false);
             let moves = match bevy_civ::pathfinding::terrain_cost(tile.terrain) {
                 _ if tile.has_road() => "road".to_string(),
                 Some(1) => "1 move".to_string(),
                 Some(n) => format!("{n} moves"),
                 None => "by sea".to_string(),
             };
-            format!("{}  -  {f} food, {s} shields, {g} gold  ({moves})\n{}", tile.terrain.name(), extras.join(", "))
+            format!("{}  -  {f} food, {s} shields, {g} trade  ({moves})\n{}", tile.terrain.name(), extras.join(", "))
         }
         Some(_) => "Unexplored".to_string(),
         None => String::new(),

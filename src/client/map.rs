@@ -257,7 +257,7 @@ pub struct AreaMark;
 #[allow(clippy::too_many_arguments)]
 pub fn show_city_area(
     selection: Res<Selection>,
-    cities: Query<(&City, &bevy_civ::building::CityBuildings)>,
+    cities: Query<(&City, &bevy_civ::building::CityBuildings, Option<&bevy_civ::diplomacy::Happiness>)>,
     changed: Query<(), Changed<City>>,
     supplies: Res<crate::supply::Supplies>,
     tiles: Query<&HexTile>,
@@ -266,6 +266,7 @@ pub fn show_city_area(
     art: Res<Art>,
     map: Res<MapData>,
     marks: Query<Entity, With<AreaMark>>,
+    (state, golden): (Res<crate::GameState>, Res<crate::GoldenAges>),
     mut commands: Commands,
 ) {
     if !(selection.is_changed() || supplies.is_changed() || !changed.is_empty()) {
@@ -274,7 +275,8 @@ pub fn show_city_area(
     for entity in &marks {
         commands.entity(entity).despawn_recursive();
     }
-    let Some((city, buildings)) = selection.city.and_then(|e| cities.get(e).ok()).filter(|(c, _)| c.owner == PLAYER) else { return };
+    let Some((city, buildings, happiness)) = selection.city.and_then(|e| cities.get(e).ok()).filter(|(c, _, _)| c.owner == PLAYER) else { return };
+    let festive = happiness.is_some_and(|h| bevy_civ::economy::celebrating(city.population, h.happy, h.unhappy));
     let harbor = buildings.has(bevy_civ::building::Building::Harbor);
     for (hex, _) in supplies.territory.iter().filter(|(_, (o, home))| *o == PLAYER && *home == city.position) {
         let Some(tile) = tiles.iter().find(|t| t.coord == *hex) else { continue };
@@ -287,6 +289,8 @@ pub fn show_city_area(
         if centre {
             y = bevy_civ::tiles::centre_yield(y);
         }
+        // What the government (and a golden age) makes of it.
+        y = bevy_civ::economy::tile_rule(y, state.government, golden.active(crate::PLAYER), festive);
         let worked = centre || city.worked.contains(hex);
         let pos = map.layout.hex_to_world_pos(*hex);
         let z = 6.5;

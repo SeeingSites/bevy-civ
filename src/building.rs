@@ -308,15 +308,15 @@ impl Building {
         }
     }
 
-    /// The largest a city can grow without (and with) the buildings that supply water. A river beside
-    /// the city counts as an aqueduct.
+    /// The largest a city can grow without (and with) the buildings that supply water: 6 without an
+    /// Aqueduct (a river beside the city serves as one), 12 without a Sewer System.
     pub fn size_limit(buildings: &[Building], fresh_water: bool) -> u32 {
         if buildings.contains(&Building::SewerSystem) {
             u32::MAX
         } else if buildings.contains(&Building::Aqueduct) || fresh_water {
-            16
+            AQUEDUCT_LIMIT * 2
         } else {
-            8
+            AQUEDUCT_LIMIT
         }
     }
 
@@ -328,19 +328,19 @@ impl Building {
     /// What it does in the default (Earth) theme.
     pub fn base_effect(&self) -> &'static str {
         match self {
-            Building::Granary => "+2 food",
+            Building::Granary => "the city keeps half its food when it grows",
             Building::Barracks => "+1 shields",
-            Building::Library => "+2 science",
-            Building::Marketplace => "+2 gold, luxuries count double",
+            Building::Library => "+50% science",
+            Building::Marketplace => "+50% taxes and luxury; luxuries count double",
             Building::Walls => "doubles defence against land attacks",
-            Building::Aqueduct => "lets the city grow past size 8 (to 16)",
-            Building::University => "+4 science",
-            Building::Bank => "+4 gold; interest on the treasury (needs a Marketplace)",
-            Building::StockExchange => "+3 gold, +50% gold here; more interest (needs a Bank)",
-            Building::Observatory => "+3 science",
-            Building::ResearchLab => "+6 science (needs a University)",
-            Building::PowerPlant => "+4 shields (needs a Factory)",
-            Building::PoliceStation => "+2 content; halves war weariness; stops narcotics and roots them out",
+            Building::Aqueduct => "lets the city grow past size 6 (to 12)",
+            Building::University => "+50% science (needs a Library)",
+            Building::Bank => "+30% taxes and luxury; interest on the treasury (needs a Marketplace)",
+            Building::StockExchange => "+30% taxes and luxury; more interest (needs a Bank)",
+            Building::Observatory => "+25% science",
+            Building::ResearchLab => "+50% science (needs a University)",
+            Building::PowerPlant => "+25% shields (needs a Factory)",
+            Building::PoliceStation => "+2 content; halves war weariness; cuts corruption; stops narcotics and roots them out",
             Building::FoodSafety => "no adulterated-food scandals; GM food is trusted",
             Building::GmFarms => "+1 food on every farmed tile worked (distrusted without a Food Safety Agency)",
             Building::Supermarket => "+3 food",
@@ -350,13 +350,13 @@ impl Building {
             Building::Airport => "aircraft trained here are veterans",
             Building::SdiDefense => "shoots down nuclear missiles aimed within 3 tiles",
             Building::ForbiddenPalace => "a second seat of government: corruption counts from here too (one per people)",
-            Building::Factory => "+3 shields; needed for spaceship parts",
+            Building::Factory => "+25% shields; needed for spaceship parts",
             Building::Harbor => "+1 food on worked ocean tiles; links coasts",
             Building::Temple => "+2 content",
-            Building::Courthouse => "halves corruption",
+            Building::Courthouse => "cuts corruption and waste (halves the part due to distance)",
             Building::Colosseum => "+3 content",
             Building::Cathedral => "+3 content",
-            Building::SewerSystem => "lets the city grow past size 16",
+            Building::SewerSystem => "lets the city grow past size 12",
             Building::SpaceStructure => "spaceship part (4 needed)",
             Building::SpaceComponent => "spaceship part (2 needed)",
             Building::SpaceModule => "spaceship part (2 needed)",
@@ -375,22 +375,17 @@ impl Building {
 
     pub fn food_bonus(&self) -> u32 {
         match self {
-            Building::Granary => 2,
             Building::HangingGardens => 2,
             Building::Supermarket => 3,
             _ => 0,
         }
     }
 
+    /// Science a wonder adds outright in its city (the Library and its like multiply science instead:
+    /// see `economy::science_bonus`).
     pub fn science_bonus(&self) -> u32 {
         match self {
-            Building::Library => 2,
-            Building::University => 4,
             Building::GreatLibrary => 5,
-            Building::Copernicus => 6,
-            Building::Newton => 8,
-            Building::Observatory => 3,
-            Building::ResearchLab => 6,
             _ => 0,
         }
     }
@@ -398,24 +393,24 @@ impl Building {
     pub fn production_bonus(&self) -> u32 {
         match self {
             Building::Barracks => 1,
-            Building::Factory => 3,
             Building::Pyramids => 3,
             Building::KingRichards => 4,
-            Building::PowerPlant => 4,
             _ => 0,
         }
     }
 
+    /// Gold a wonder adds outright in its city (markets and banks multiply taxes instead: see
+    /// `economy::tax_bonus`).
     pub fn gold_bonus(&self) -> u32 {
         match self {
-            Building::Marketplace => 2,
-            Building::Bank => 4,
-            Building::StockExchange => 3,
             Building::Colossus => 3,
             _ => 0,
         }
     }
 }
+
+/// The largest a city grows without an Aqueduct or fresh water; twice that without a Sewer System.
+pub const AQUEDUCT_LIMIT: u32 = 6;
 
 impl Building {
     /// Only one in each people's empire.
@@ -432,6 +427,7 @@ impl Building {
     pub fn required_building(&self) -> Option<Building> {
         match self {
             Building::Bank => Some(Building::Marketplace),
+            Building::University => Some(Building::Library),
             Building::StockExchange => Some(Building::Bank),
             Building::ResearchLab => Some(Building::University),
             Building::PowerPlant => Some(Building::Factory),
@@ -461,7 +457,7 @@ impl Building {
             Building::GreatWall => "every city of its owner counts as walled",
             Building::StatueOfZeus => "one more unit per city supported free",
             Building::Mausoleum => "temples and walls each calm one more citizen",
-            Building::Copernicus => "+6 science here",
+            Building::Copernicus => "+100% science here",
             Building::SunTzu => "new troops trained as veterans everywhere; armies hold a fifth unit",
             Building::MarcoPolo => "an embassy with every civilization",
             Building::KingRichards => "+4 shields here",
@@ -469,7 +465,7 @@ impl Building {
             Building::Leonardo => "upgrades one obsolete unit free every turn",
             Building::Bach => "+2 content in every city",
             Building::Magellan => "+2 moves for ships",
-            Building::Newton => "+8 science here",
+            Building::Newton => "+100% science here",
             Building::AdamSmith => "+1 gold for every Marketplace, Bank and Harbor",
             Building::Shakespeare => "no unhappy citizens here",
             Building::Darwin => "two technologies at once",
@@ -588,10 +584,9 @@ impl CityBuildings {
         self.buildings.iter().map(|b| b.production_bonus()).sum()
     }
 
-    /// Gold from the city's buildings; a Stock Exchange adds half again.
+    /// Gold the city's wonders add outright.
     pub fn total_gold_bonus(&self) -> u32 {
-        let sum: u32 = self.buildings.iter().map(|b| b.gold_bonus()).sum();
-        if self.buildings.contains(&Building::StockExchange) { sum * 3 / 2 } else { sum }
+        self.buildings.iter().map(|b| b.gold_bonus()).sum()
     }
 
     pub fn has_wonder(&self, wonder: Building) -> bool {
@@ -613,12 +608,9 @@ mod finance_tests {
     }
 
     #[test]
-    fn a_stock_exchange_adds_half_again_and_needs_a_bank() {
-        let city = CityBuildings { buildings: vec![Building::Marketplace, Building::Bank] };
-        assert_eq!(city.total_gold_bonus(), 6);
-        let city = CityBuildings { buildings: vec![Building::Marketplace, Building::Bank, Building::StockExchange] };
-        assert_eq!(city.total_gold_bonus(), (2 + 4 + 3) * 3 / 2);
+    fn finance_buildings_come_in_order() {
         assert_eq!(Building::StockExchange.required_building(), Some(Building::Bank));
+        assert_eq!(Building::University.required_building(), Some(Building::Library));
         assert_eq!(Building::Bank.required_building(), Some(Building::Marketplace));
         assert_eq!(Building::Bank.required_tech(), Some(crate::tech::Tech::Banking));
     }

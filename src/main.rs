@@ -185,6 +185,9 @@ pub struct GameState {
     /// Cities that drafted a citizen this turn.
     #[serde(default)]
     pub drafted: HashSet<Hex>,
+    /// Cities that sold a building this turn (one a turn).
+    #[serde(default)]
+    pub sold: HashSet<Hex>,
     /// Foreign migrants may settle in our cities.
     #[serde(default = "welcome_by_default")]
     pub welcome_migrants: bool,
@@ -202,6 +205,13 @@ pub struct GameState {
     /// Interest earned on the treasury last turn (included in `gold_per_turn`).
     #[serde(default)]
     pub interest: i32,
+    /// Every people's accounts last turn (trade, corruption, science, luxury, taxes, upkeep), the
+    /// player's under `PLAYER`.
+    #[serde(default)]
+    pub accounts: HashMap<u32, bevy_civ::economy::Ledger>,
+    /// Gold the player paid last turn for units beyond those supported free.
+    #[serde(default)]
+    pub unit_support: i32,
 }
 
 fn default_science_rate() -> u32 {
@@ -210,16 +220,19 @@ fn default_science_rate() -> u32 {
 
 impl GameState {
     pub fn tax_rate(&self) -> u32 {
-        100u32.saturating_sub(self.science_rate + self.luxury_rate)
+        self.rates().tax()
     }
 
-    /// Splits a city's commerce into (science, luxury, gold) by the rates.
-    pub fn split_commerce(&self, commerce: u32) -> (u32, u32, u32) {
-        // A government that allows less than the chosen rate caps it (the rest goes to taxes).
-        let cap = self.government.science_cap();
-        let science = commerce * self.science_rate.min(cap) / 100;
-        let luxury = commerce * self.luxury_rate.min(cap) / 100;
-        (science, luxury, commerce - science - luxury)
+    /// The player's rates, as the government allows them.
+    pub fn rates(&self) -> bevy_civ::economy::Rates {
+        bevy_civ::economy::Rates { science: self.science_rate, luxury: self.luxury_rate }.fit(self.government)
+    }
+
+    /// Sets the rates, brought within what the government allows.
+    pub fn set_rates(&mut self, rates: bevy_civ::economy::Rates) {
+        let rates = rates.fit(self.government);
+        self.science_rate = rates.science;
+        self.luxury_rate = rates.luxury;
     }
 }
 
@@ -249,6 +262,7 @@ impl Default for GameState {
             war_turns: HashMap::new(),
             warming: 0,
             drafted: HashSet::new(),
+            sold: HashSet::new(),
             welcome_migrants: true,
             migrations: (0, 0),
             raiders: (0, 0, 0),
@@ -256,6 +270,8 @@ impl Default for GameState {
             science_rate: 60,
             luxury_rate: 0,
             interest: 0,
+            accounts: HashMap::new(),
+            unit_support: 0,
         }
     }
 }
@@ -399,6 +415,8 @@ pub enum Action {
     AutoBuildAll(bool),
     /// Buy the rest of the selected city's project with gold (not wonders).
     Hurry,
+    /// Sell one of the selected city's buildings for its cost in gold (one a turn).
+    SellBuilding(Building),
     /// Rush the selected city's project with citizens' labour (Despotism and Communism).
     Rush,
     /// K: the selected worker looks after the land by itself (again to take it back).
@@ -550,8 +568,9 @@ pub fn needs_orders(unit: &Unit) -> bool {
     unit.owner == PLAYER && unit.can_move() && unit.build_turns_left.is_none() && !unit.fortified
 }
 
-/// Golden ages: a civilization's first wonder starts one (once per game): +50% shields and +1 gold
-/// in every city for [`GOLDEN_AGE_TURNS`] turns.
+/// Golden ages: a civilization's first wonder starts one (once per game): for [`GOLDEN_AGE_TURNS`]
+/// turns every worked tile that gives a shield gives one more, and so does every tile that gives a
+/// trade (see `bevy_civ::economy::tile_rule`).
 #[derive(Resource, Default, Clone, serde::Serialize, serde::Deserialize)]
 pub struct GoldenAges {
     #[serde(with = "bevy_civ::save::pairs")]
@@ -898,6 +917,7 @@ fn setup_world(
             anarchy: 0,
             pending_government: None,
             eliminated: false,
+            rates: Default::default(),
         })
         .collect();
     *tech = TechState::knowing(&defs[0].techs);
@@ -981,6 +1001,88 @@ fn setup_world(
     dirty.ui = true;
     log.turn = state.turn.max(1);
     log.push(format!("{}: you lead {} as {}.", scenario.name, defs[0].name, defs[0].leader));
+}
+
+/// The share of its trade every city loses to corruption this turn (see
+/// `bevy_civ::economy::corruption`): `government` gives each people's government, `linked` the cities
+/// joined to their capital by road or harbour, `land_tiles` the size of the world's land.
+pub fn corruption_rates<'a>(
+    cities: impl Iterator<Item = (&'a City, &'a CityBuildings)>,
+    government: impl Fn(u32) -> Government,
+    linked: &HashSet<Hex>,
+    land_tiles: usize,
+) -> HashMap<Hex, f32> {
+    let list: Vec<(&City, &CityBuildings)> = cities.collect();
+    let palace = |c: &City, b: &CityBuildings| c.is_capital || b.has(Building::ForbiddenPalace);
+    let standings = bevy_civ::economy::standings(&list.iter().map(|(c, b)| (c.position, c.owner, palace(c, b))).collect::<Vec<_>>());
+    let peoples: HashSet<u32> = list.iter().map(|(c, _)| c.owner).filter(|o| *o != BARBARIANS).collect();
+    let optimal = bevy_civ::economy::optimal_cities(land_tiles, peoples.len());
+    list.iter()
+        .map(|(c, b)| {
+            let standing = standings.get(&c.position).copied().unwrap_or_default();
+            (c.position, bevy_civ::economy::corruption(government(c.owner), standing, optimal, &b.buildings, palace(c, b), linked.contains(&c.position)))
+        })
+        .collect()
+}
+
+/// A city's accounts this turn (see `bevy_civ::economy::ledger`): its trade, less a trade for each
+/// level of a drug trade (the black market's cut) and less corruption, split by `rates` and
+/// multiplied by its buildings, plus what its wonders, its people's traits and settled merchants
+/// add outright (Adam Smith's Trading Company rewards markets, banks and harbours; the Internet,
+/// libraries). Also returns that outright gold.
+#[allow(clippy::too_many_arguments)]
+pub fn city_books(
+    city: &City,
+    buildings: &CityBuildings,
+    gov: Government,
+    rates: bevy_civ::economy::Rates,
+    corruption: f32,
+    wonders: &WorldWonders,
+    great: &GreatPeople,
+    character: Option<bevy_civ::traits::Character>,
+    supplies: &Supplies,
+) -> (bevy_civ::economy::Ledger, u32) {
+    let owner = city.owner;
+    let (_, _, trait_gold, trait_science) = character.map(|c| c.city_bonus()).unwrap_or_default();
+    let land_gold = supplies.yields.get(&city.position).map_or(0, |y| y.2);
+    let wonder_gold = if wonders.owns(owner, Building::AdamSmith) {
+        buildings.buildings.iter().filter(|b| matches!(b, Building::Marketplace | Building::Bank | Building::StockExchange | Building::Harbor)).count() as u32
+    } else {
+        0
+    };
+    let wonder_science = if wonders.owns(owner, Building::Internet) && buildings.has(Building::Library) { 3 } else { 0 };
+    let outright = land_gold + trait_gold + wonder_gold + great.merchant_gold(city.position).max(0) as u32 + buildings.total_gold_bonus();
+    let books = bevy_civ::economy::ledger(&bevy_civ::economy::CityTrade {
+        trade: city.land.2.saturating_sub(city.narcotics),
+        corruption,
+        rates,
+        government: gov,
+        buildings: &buildings.buildings,
+        scientists: city.scientists(),
+        tax_collectors: city.tax_collectors(),
+        extra_science: trait_science + wonder_science + buildings.total_science_bonus(),
+        extra_gold: outright,
+    });
+    (books, outright)
+}
+
+/// Sells the building of `owner`'s that costs the most to keep up (in its smallest city, among
+/// equals) to pay a debt. Returns the city's name and the building, or None if there is nothing to sell.
+fn sell_for_debt(cities: &mut Query<(&mut City, &mut CityBuildings, &mut Happiness)>, owner: u32) -> Option<(String, Building)> {
+    let mut best: Option<((u32, std::cmp::Reverse<u32>), Hex, Building)> = None;
+    for (city, buildings, _) in cities.iter().filter(|(c, _, _)| c.owner == owner) {
+        for building in &buildings.buildings {
+            let upkeep = bevy_civ::economy::upkeep(*building);
+            let key = (upkeep, std::cmp::Reverse(city.population));
+            if upkeep > 0 && best.as_ref().is_none_or(|(k, _, _)| key > *k) {
+                best = Some((key, city.position, *building));
+            }
+        }
+    }
+    let (_, at, building) = best?;
+    let (city, mut buildings, _) = cities.iter_mut().find(|(c, _, _)| c.position == at)?;
+    buildings.buildings.retain(|b| *b != building);
+    Some((city.name.clone(), building))
 }
 
 /// Removes the finished game so a new one can start from the menu.
@@ -1799,9 +1901,11 @@ fn automate_workers(
         match tile.terrain {
             Terrain::Hills | Terrain::Mountain if !tile.improvements.contains(&Improvement::Mine) => return Some((2, Improvement::Mine)),
             Terrain::Grassland | Terrain::Plains if !tile.improvements.contains(&Improvement::Farm) => return Some((3, Improvement::Farm)),
+            // A road on flat land brings trade.
+            Terrain::Grassland | Terrain::Plains | Terrain::Desert if !tile.has_road() => return Some((4, Improvement::Road)),
             _ => {}
         }
-        (steam && tile.has_road() && !tile.has_railroad()).then_some((4, Improvement::Railroad))
+        (steam && tile.has_road() && !tile.has_railroad()).then_some((5, Improvement::Railroad))
     };
     let jobs: Vec<(Hex, u8, Improvement)> = tiles.iter().filter_map(|t| job(t).map(|(p, j)| (t.coord, p, j))).collect();
     let mut claimed: HashSet<Hex> = HashSet::new();
@@ -1949,14 +2053,14 @@ fn apply_actions(
     mut log: ResMut<GameLog>,
     mut dirty: ResMut<Dirty>,
     (mut cycle, supplies, mut map, mut end_turn, mut focus, mut battles): (ResMut<Cycle>, Res<Supplies>, ResMut<MapData>, EventWriter<EndTurnRequest>, EventWriter<Focus>, EventWriter<BattleShown>),
-    (unit_entities, mut sounds, mut wonders, mut great, mut spies, homes, walled, mut taken, automated, rivers, mut saves, mut religions, mut space, mut last_move, exploring): (
+    (unit_entities, mut sounds, mut wonders, mut great, mut spies, homes, mut walled, mut taken, automated, rivers, mut saves, mut religions, mut space, mut last_move, exploring): (
         Query<Entity, With<Unit>>,
         EventWriter<Sfx>,
         ResMut<WorldWonders>,
         ResMut<GreatPeople>,
         ResMut<Espionage>,
         Query<&HomeCity>,
-        Query<(Entity, &CityBuildings)>,
+        Query<(Entity, &mut CityBuildings)>,
         ResMut<JustCaptured>,
         Query<Entity, With<Automated>>,
         Res<Rivers>,
@@ -2297,6 +2401,8 @@ fn apply_actions(
                 }
                 if wonders.owns(PLAYER, Building::Liberty) {
                     state.government = *government;
+                    let rates = state.rates();
+                    state.set_rates(rates);
                     log.push(format!("The Statue of Liberty spares us anarchy: we are now a {}.", government.name()));
                     continue;
                 }
@@ -2375,11 +2481,23 @@ fn apply_actions(
                 dirty.ui = true;
             }
             Action::SetRates(science, luxury) => {
-                let cap = state.government.science_cap();
-                let (science, luxury) = ((*science).min(cap), (*luxury).min(cap));
-                if science + luxury <= 100 {
-                    state.science_rate = science;
-                    state.luxury_rate = luxury;
+                let rates = bevy_civ::economy::Rates { science: *science, luxury: *luxury };
+                if rates.allowed(state.government) {
+                    state.set_rates(rates);
+                }
+            }
+            Action::SellBuilding(building) => {
+                let Some(entity) = selection.city else { continue };
+                let Ok(city) = cities.get(entity) else { continue };
+                if city.owner != PLAYER || building.is_wonder() || state.sold.contains(&city.position) {
+                    continue;
+                }
+                let Ok((_, mut built)) = walled.get_mut(entity) else { continue };
+                if built.has(*building) {
+                    built.buildings.retain(|b| b != building);
+                    state.sold.insert(city.position);
+                    state.gold += building.cost() as i32;
+                    log.push(format!("{} sells its {} for {} gold (it cost {} a turn to keep).", city.name, building.name(), building.cost(), bevy_civ::economy::upkeep(*building)));
                 }
             }
             Action::Hurry | Action::Rush => {
@@ -3120,6 +3238,7 @@ fn process_turn(
     dirty.ui = true;
     state.turn += 1;
     state.drafted.clear();
+    state.sold.clear();
     log.turn = state.turn;
     spies.tick();
     golden.tick();
@@ -3244,6 +3363,26 @@ fn process_turn(
     for (city, _, _) in cities.iter().filter(|(c, b, _)| c.is_capital || b.has(Building::ForbiddenPalace)) {
         seats.entry(city.owner).or_default().push(city.position);
     }
+    // The share of every city's trade lost to corruption (by distance to its palace and the number
+    // of cities nearer, under its people's government).
+    let corruption_of = corruption_rates(
+        cities.iter().map(|(c, b, _)| (c, b)),
+        |owner| governments.get(&owner).copied().unwrap_or_default(),
+        &supplies.linked,
+        map.cells.len().saturating_sub(map.water.len()),
+    );
+    // Each people's rates this turn: the player's as set, computer players' as they chose last turn.
+    let rates_of: HashMap<u32, bevy_civ::economy::Rates> = civs
+        .players
+        .iter()
+        .map(|c| (c.id, if c.id == PLAYER { state.rates() } else { c.rates.fit(governments.get(&c.id).copied().unwrap_or_default()) }))
+        .collect();
+    // Each people's accounts this turn; what its cities would raise at a 100% tax rate, its gold
+    // that does not depend on the rates, and its cities in disorder (for computer players' rates).
+    let mut accounts: HashMap<u32, bevy_civ::economy::Ledger> = HashMap::new();
+    let mut full_taxes: HashMap<u32, u32> = HashMap::new();
+    let mut fixed_income: HashMap<u32, i32> = HashMap::new();
+    let mut rioting: HashMap<u32, usize> = HashMap::new();
     // Peoples with a state religion (their capital's faith) and own cities that do not follow it yet.
     let missionary_work: HashSet<u32> = {
         let faith_of_capital: HashMap<u32, Faith> = capitals.iter().filter_map(|(o, cp)| religions.of(*cp).map(|f| (*o, f))).collect();
@@ -3351,12 +3490,13 @@ fn process_turn(
         if mine {
             player_cities += 1;
         }
-        let dist = seats.get(&city.owner).and_then(|s| s.iter().map(|cp| city.position.distance_to(*cp) as u32).min()).unwrap_or(0);
+        // Corruption takes a share of the city's trade, waste a share of its shields.
+        let corruption = corruption_of.get(&city.position).copied().unwrap_or(0.0);
+        let waste = bevy_civ::economy::waste(corruption);
 
         // Drugs, food scandals and distrust of engineered food.
         {
             let owner = city.owner;
-            let gov = governments.get(&owner).copied().unwrap_or(Government::Despotism);
             if urban.contains(&owner) || city.narcotics > 0 {
                 let smuggler = smuggled_into(city.position, owner);
                 if mine {
@@ -3403,7 +3543,7 @@ fn process_turn(
             }
             city.scandal = city.scandal.saturating_sub(1);
             if industrial.contains(&owner) && !buildings.has(Building::FoodSafety) && city.scandal == 0 {
-                let chance = bevy_civ::troubles::scandal_chance(city.population, city.corruption(&buildings, gov, dist));
+                let chance = bevy_civ::troubles::scandal_chance(city.population, corruption);
                 if rng.gen_bool(chance) {
                     city.scandal = bevy_civ::troubles::SCANDAL_TURNS;
                     city.food_storage /= 2;
@@ -3430,6 +3570,9 @@ fn process_turn(
             threatened: armies.iter().any(|(p, o)| enemies(owner, *o) && p.distance_to(city.position) <= 3),
             near_capital: capitals.get(&owner).is_none_or(|cp| cp.distance_to(city.position) <= 6),
             narcotics: city.narcotics,
+            trade: city.land.2,
+            corruption: (corruption * 100.0).round() as u32,
+            water_limit: Building::size_limit(&buildings.buildings, rivers.tiles.contains(&city.position) || city.position.all_neighbors().iter().any(|n| rivers.tiles.contains(n))),
         };
         let mut needs_orders = false;
         let mut just_trained = false;
@@ -3438,13 +3581,13 @@ fn process_turn(
                 // An empty city drops everything for a defender, and pays to hurry it when in danger.
                 let already = matches!(&city.production_queue, Some(ProductionItem::Unit(u)) if u.is_army());
                 if !already {
-                    let civ_view = governor::CivView { tech: &civ.tech, aggression: civ.aggression, cities: 1, workers: 1, settlers: 1, military: 0, navy: 0, air: 0, road_work: 0, cut_off: 0, at_war: true, wonders_taken: &wonders_taken, caravans: 1, diplomats: 1, missionaries: 1, faith_to_spread: false, wonder_elsewhere: false, space_parts: &[], room_to_expand: false, forbidden_palace: true, ferries: 1, ferry_wanted: 0 };
+                    let civ_view = governor::CivView { tech: &civ.tech, aggression: civ.aggression, cities: 1, workers: 1, settlers: 1, military: 0, navy: 0, air: 0, road_work: 0, cut_off: 0, at_war: true, wonders_taken: &wonders_taken, caravans: 1, diplomats: 1, missionaries: 1, faith_to_spread: false, wonder_elsewhere: false, space_parts: &[], room_to_expand: false, forbidden_palace: true, ferries: 1, ferry_wanted: 0, thrifty: true };
                     city.production_queue = Some(ProductionItem::Unit(governor::best_defender(&view, &civ_view, &supplies)));
                 }
-                let remaining = city.production_queue.as_ref().map(|i| i.cost()).unwrap_or(0).saturating_sub(city.production_progress) as i32;
-                if view.threatened && remaining > 0 && civ.gold >= remaining * 2 {
-                    civ.gold -= remaining * 2;
-                    city.production_progress += remaining as u32;
+                let remaining = city.shields_left();
+                if let Some(cost) = city.hurry_cost().filter(|cost| view.threatened && remaining > 0 && civ.gold >= *cost) {
+                    civ.gold -= cost;
+                    city.production_progress += remaining;
                 }
             }
         }
@@ -3455,35 +3598,25 @@ fn process_turn(
             if let Some(civ) = civs.players.iter_mut().find(|c| c.id == owner) {
                 let allowed = 1 + (civ.gold / 500).max(0) as u32;
                 let done = hurried.get(&owner).copied().unwrap_or(0);
-                let remaining = city.production_queue.as_ref().map(|i| i.cost()).unwrap_or(0).saturating_sub(city.production_progress) as i32;
-                if done < allowed && remaining > 0 && civ.gold >= 150 + remaining * 2 {
-                    civ.gold -= remaining * 2;
-                    city.production_progress += remaining as u32;
+                let remaining = city.shields_left();
+                if let Some(cost) = city.hurry_cost().filter(|cost| done < allowed && remaining > 0 && civ.gold >= 150 + *cost) {
+                    civ.gold -= cost;
+                    city.production_progress += remaining;
                     *hurried.entry(owner).or_default() += 1;
                 }
             }
         }
 
         // Farms, mines and bonus resources on the city's land add to what it gathers.
-        let (extra_food, extra_shields, extra_gold) = supplies.yields.get(&city.position).copied().unwrap_or_default();
+        let (extra_food, extra_shields, _) = supplies.yields.get(&city.position).copied().unwrap_or_default();
         // So do the civilization's traits.
         let character = characters.get(&owner).copied();
-        let (trait_food, trait_shields, trait_gold, trait_science) = character.map(|c| c.city_bonus()).unwrap_or_default();
-        let (extra_food, extra_shields, extra_gold) = (extra_food + trait_food, extra_shields + trait_shields, extra_gold + trait_gold);
-        if mine {
-            total_science += trait_science;
-        } else if owner != BARBARIANS {
-            ai_income.entry(owner).or_default().0 += trait_science;
-        }
-        city.food_storage += extra_food;
-        city.production_progress += extra_shields;
-        // (River trade is counted on the worked tiles; see `tiles`.)
-        let river_gold = 0;
-        if mine {
-            total_gold += extra_gold as i32 + river_gold;
-        } else if owner != BARBARIANS {
-            ai_income.entry(owner).or_default().1 += river_gold;
-        }
+        let (trait_food, trait_shields, _, _) = character.map(|c| c.city_bonus()).unwrap_or_default();
+        city.food_storage += extra_food + trait_food;
+        city.production_progress += extra_shields + trait_shields;
+        // The city's accounts: its trade less corruption, split by its people's rates, multiplied
+        // by its buildings.
+        let (books, outright_gold) = city_books(&city, &buildings, gov, rates_of.get(&owner).copied().unwrap_or_default(), corruption, &wonders, &great, character, &supplies);
 
         // Happiness. Temples and the like, wonders, masterpieces, entertainers and martial law calm the
         // unhappy; every different luxury the city can reach makes someone happy.
@@ -3505,12 +3638,8 @@ fn process_turn(
                 0
             }
             + if mine { state.difficulty.player_content() } else { 0 };
-        // The player's commerce (what the city's science and taxes would be) is split by the rates;
-        // every two points of luxury make one citizen happy.
-        // The black market takes a gold of trade for each level of the drug trade.
-        let commerce = (city.science_per_turn(&buildings, gov, dist) + city.gold_per_turn(&buildings) + 1).saturating_sub(city.narcotics);
-        let (rate_science, rate_luxury, rate_gold) = if mine { state.split_commerce(commerce) } else { (0, 0, 0) };
-        let joy = supply::luxury_happiness(supplies.luxuries(city.position), has_market) + rate_luxury / 2;
+        // Every two points of the city's luxury make one citizen happy.
+        let joy = supply::luxury_happiness(supplies.luxuries(city.position), has_market) + books.luxury / 2;
         // A long war wears on a republic or democracy (a Police Station halves it in its city).
         let weary = gov.war_weariness(war_turns.get(&owner).copied().unwrap_or(0));
         let weary = if buildings.has(Building::PoliceStation) { weary / 2 } else { weary };
@@ -3519,6 +3648,9 @@ fn process_turn(
         let troubled = bevy_civ::troubles::unhappiness(city.narcotics, city.scandal, gm_distrusted);
         let calm = calm.saturating_sub(weary + sprawl + troubled);
         happiness.update(city.population, calm, joy);
+        if happiness.in_disorder() {
+            *rioting.entry(owner).or_default() += 1;
+        }
         // A computer player's governor turns workers into entertainers to end disorder, and back again.
         if !mine && owner != BARBARIANS {
             if happiness.in_disorder() && city.workers() > 1 {
@@ -3617,22 +3749,16 @@ fn process_turn(
         // Difficulty: the computer players' cities build faster or slower.
         if !idle && !mine && owner != BARBARIANS {
             let factor = state.difficulty.ai_output();
-            let base = city.production_per_turn(&buildings, gov, dist) as f32;
+            let base = city.production_per_turn(&buildings, waste) as f32;
             let extra = (base * (factor - 1.0)).round() as i32;
             city.production_progress = (city.production_progress as i32 + extra).max(0) as u32;
         }
         // The Hoover Dam powers every city of its owner: a quarter more shields.
         if !idle && wonders.owns(owner, Building::HooverDam) {
-            city.production_progress += city.production_per_turn(&buildings, gov, dist) / 4;
+            city.production_progress += city.production_per_turn(&buildings, waste) / 4;
         }
-        // A golden age adds half again to every city's shields.
-        if !idle && golden.active(owner) {
-            city.production_progress += city.production_per_turn(&buildings, gov, dist) / 2;
-            if mine {
-                total_gold += 1;
-            }
-        }
-        let finished = if idle { None } else { city.process_production(&buildings, gov, dist) };
+        // (A golden age adds a shield and a trade to the tiles that have them: see `work_tiles`.)
+        let finished = if idle { None } else { city.process_production(&buildings, waste) };
         let finished_unit = matches!(finished, Some(ProductionItem::Unit(_)));
         let finished_any = finished.is_some();
         if let Some(completed) = finished {
@@ -3729,7 +3855,7 @@ fn process_turn(
                         }
                         if golden.begin(city.owner) && (mine || foreign.met.contains(&city.owner)) {
                             let who = if mine { "Our".to_string() } else { civs.players.iter().find(|c| c.id == city.owner).map(|c| format!("The {} people's", c.adjective)).unwrap_or_default() };
-                            log.push(format!("{who} first wonder begins a golden age: half again as many shields, and more gold, for {GOLDEN_AGE_TURNS} turns."));
+                            log.push(format!("{who} first wonder begins a golden age: for {GOLDEN_AGE_TURNS} turns every tile that gives a shield or a trade gives one more."));
                         }
                         let builder = civs.players.iter().find(|c| c.id == city.owner).map(|c| c.name.clone()).unwrap_or_else(|| "A people".into());
                         log.push(if mine {
@@ -3858,6 +3984,9 @@ fn process_turn(
                     forbidden_palace: seats.get(&owner).is_some_and(|s| s.len() > 1),
                     ferries: ferry_counts.get(&owner).copied().unwrap_or(0),
                     ferry_wanted: ferries.wanted.get(&owner).copied().unwrap_or(0),
+                    // Upkeep already leaves little for science (a computer player), or the treasury
+                    // runs at a loss (ours).
+                    thrifty: if mine { state.gold_per_turn < 0 } else { civ.rates.science <= 30 && civ.government != Government::Anarchy },
                 };
                 // The unit just trained (if any) now holds the city.
                 let view = governor::CityView { built: buildings.buildings.clone(), defended: view.defended || just_trained, ..view };
@@ -3877,39 +4006,28 @@ fn process_turn(
                 city.production_queue = Some(next);
             }
         }
-        // Adam Smith's Trading Company and the Internet reward the owner's markets and libraries.
-        let wonder_gold = if wonders.owns(owner, Building::AdamSmith) {
-            buildings.buildings.iter().filter(|b| matches!(b, Building::Marketplace | Building::Bank | Building::StockExchange | Building::Harbor)).count() as i32
-        } else {
-            0
-        };
-        let wonder_science = if wonders.owns(owner, Building::Internet) && buildings.has(Building::Library) { 3 } else { 0 };
-        // Great merchants settled here add their gold.
-        let wonder_gold = wonder_gold + great.merchant_gold(city.position);
         {
             let held = finance.entry(owner).or_default();
             held.0 += u32::from(buildings.has(Building::Bank));
             held.1 += u32::from(buildings.has(Building::StockExchange));
         }
-        if !idle {
+        // Science and taxes come in unless the city stands idle; its upkeep is owed all the same.
+        if owner != BARBARIANS {
+            let collected = if idle { bevy_civ::economy::Ledger { science: 0, gold: 0, ..books } } else { books };
+            accounts.entry(owner).or_default().add(&collected);
             if mine {
-                total_gold += wonder_gold;
-                total_science += wonder_science;
-            } else if owner != BARBARIANS {
+                total_science += collected.science;
+                total_gold += collected.gold as i32;
+            } else {
                 let income = ai_income.entry(owner).or_default();
-                income.0 += wonder_science;
-                income.1 += wonder_gold;
+                income.0 += collected.science;
+                income.1 += collected.gold as i32;
             }
-        }
-        if !mine && !idle {
-            let income = ai_income.entry(owner).or_default();
-            income.0 += city.science_per_turn(&buildings, gov, dist);
-            income.1 += city.gold_per_turn(&buildings) as i32 + 2 + supplies.yields.get(&city.position).map(|y| y.2 as i32).unwrap_or(0) - city.narcotics as i32;
-        }
-
-        if mine && !idle {
-            total_science += rate_science;
-            total_gold += rate_gold as i32;
+            if !idle {
+                let lift = 100 + bevy_civ::economy::tax_bonus(&buildings.buildings);
+                *full_taxes.entry(owner).or_default() += (books.trade - books.corruption) * lift / 100;
+                *fixed_income.entry(owner).or_default() += (outright_gold + bevy_civ::economy::TAX_COLLECTOR * city.tax_collectors() * lift / 100) as i32;
+            }
         }
     }
 
@@ -4029,11 +4147,19 @@ fn process_turn(
         let (trade_gold, trade_science) = trade.income(civ.id);
         let (science, gold) = (((science + trade_science) as f32 * difficulty.ai_output()) as u32, gold + trade_gold as i32);
         let (banks, exchanges) = finance.get(&civ.id).copied().unwrap_or_default();
-        civ.gold += gold + bevy_civ::building::interest(civ.gold, banks, exchanges);
+        let interest = bevy_civ::building::interest(civ.gold, banks, exchanges);
+        // Buildings cost their upkeep (not in anarchy, when no taxes come in).
+        let upkeep = if civ.government == Government::Anarchy { 0 } else { accounts.get(&civ.id).map_or(0, |a| a.upkeep) as i32 };
+        civ.gold += gold + interest - upkeep;
         // Savings beyond a reserve are invested in research.
         let invested = ((civ.gold - 300) / 3).max(0);
         civ.gold -= invested;
         civ.tech.science_per_turn = (science + invested as u32 / 2).max(1);
+        // Next turn's rates: luxury while its cities riot, then as much science as it can afford.
+        let held = city_counts.get(&civ.id).copied().unwrap_or(0);
+        let luxury = bevy_civ::economy::luxury_for(civ.rates.luxury, rioting.get(&civ.id).copied().unwrap_or(0), held);
+        let income = fixed_income.get(&civ.id).copied().unwrap_or(0) + trade_gold as i32 + interest;
+        civ.rates = bevy_civ::economy::computer_rates(civ.government, luxury, full_taxes.get(&civ.id).copied().unwrap_or(0), income, upkeep, civ.gold);
     }
 
     let (trade_gold, trade_science) = trade.income(PLAYER);
@@ -4046,15 +4172,43 @@ fn process_turn(
 
     let free_support = gov.free_unit_support() * player_cities.max(1) + if wonders.owns(PLAYER, Building::StatueOfZeus) { player_cities } else { 0 };
     let military = units.iter().filter(|(_, u)| u.owner == PLAYER && u.unit_type.is_military()).count() as u32;
-    if military > free_support {
-        total_gold -= (military - free_support) as i32 * gov.unit_upkeep_food() as i32;
+    state.unit_support = if military > free_support { (military - free_support) as i32 * gov.unit_upkeep_food() as i32 } else { 0 };
+    total_gold -= state.unit_support;
+    // Buildings cost their upkeep (not in anarchy, when no taxes come in).
+    if gov != Government::Anarchy {
+        total_gold -= accounts.get(&PLAYER).map_or(0, |a| a.upkeep) as i32;
     }
     let (banks, exchanges) = finance.get(&PLAYER).copied().unwrap_or_default();
     state.interest = bevy_civ::building::interest(state.gold, banks, exchanges);
     total_gold += state.interest;
     state.gold_per_turn = total_gold;
-    state.gold = (state.gold + total_gold).max(0);
+    state.gold += total_gold;
     tech.science_per_turn = total_science;
+    state.accounts = accounts;
+    // A treasury that cannot pay its bills sells buildings, the dearest to keep first, until it can.
+    {
+        let mut debtors: Vec<(u32, i32)> = civs.players.iter().filter(|c| !c.is_human && c.gold < 0).map(|c| (c.id, c.gold)).collect();
+        if state.gold < 0 {
+            debtors.push((PLAYER, state.gold));
+        }
+        for (owner, mut gold) in debtors {
+            while gold < 0 {
+                let Some((name, sold)) = sell_for_debt(&mut cities, owner) else {
+                    gold = 0;
+                    break;
+                };
+                gold += sold.cost() as i32;
+                if owner == PLAYER {
+                    log.push(format!("Our treasury is empty: {name} sells its {} for {} gold to pay the bills.", sold.name(), sold.cost()));
+                }
+            }
+            if owner == PLAYER {
+                state.gold = gold;
+            } else if let Some(civ) = civs.players.iter_mut().find(|c| c.id == owner) {
+                civ.gold = gold;
+            }
+        }
+    }
 
     // Marco Polo's Embassy: an embassy with every civilization (and the player meets them all).
     if let Some(&(owner, _)) = wonders.built.get(&Building::MarcoPolo) {
@@ -4992,6 +5146,9 @@ fn process_turn(
         if state.anarchy_turns == 0 {
             if let Some(next) = state.pending_government.take() {
                 state.government = next;
+                // The rates are brought within what the new government allows.
+                let rates = state.rates();
+                state.set_rates(rates);
                 log.push(format!("The anarchy ends: we are now a {}.", next.name()));
             }
         }
@@ -5434,15 +5591,24 @@ pub fn effective_focus(city: &City, situation: &bevy_civ::tiles::Situation) -> b
 
 pub fn work_tiles(
     (supplies, rivers, tech, civs, diplomacy): (Res<Supplies>, Res<Rivers>, Res<TechState>, Res<Civilizations>, Res<Diplomacy>),
+    (state, golden, mut last_rules): (Res<GameState>, Res<GoldenAges>, Local<Vec<(u32, Government, bool)>>),
     tiles: Query<&HexTile>,
     units: Query<&Unit>,
     mut cities: Query<(&mut City, &CityBuildings, Option<&Happiness>)>,
     (changed_tiles, changed_units): (Query<(), Changed<HexTile>>, Query<(), Changed<Unit>>),
 ) {
+    // Each people's government (and golden age) changes what its land gives.
+    let land_rule = |owner: u32| -> (Government, bool) {
+        let gov = if owner == PLAYER { state.government } else { civs.players.iter().find(|c| c.id == owner).map_or(Government::Despotism, |c| c.government) };
+        (gov, golden.active(owner))
+    };
+    let rules: Vec<(u32, Government, bool)> = civs.players.iter().map(|c| (c.id, land_rule(c.id).0, land_rule(c.id).1)).collect();
+    let rules_changed = *last_rules != rules;
     let city_changed = cities.iter_mut().any(|(c, _, _)| c.is_changed());
-    if !(supplies.is_changed() || city_changed || !changed_tiles.is_empty() || !changed_units.is_empty()) {
+    if !(supplies.is_changed() || city_changed || !changed_tiles.is_empty() || !changed_units.is_empty() || rules_changed) {
         return;
     }
+    *last_rules = rules;
     let tile_at: HashMap<Hex, &HexTile> = tiles.iter().map(|t| (t.coord, t)).collect();
     let knows = |owner: u32, t: Tech| if owner == PLAYER { tech.researched.contains(&t) } else { civs.players.iter().any(|c| c.id == owner && c.tech.researched.contains(&t)) };
     let yield_for = |owner: u32, hex: Hex| -> Option<bevy_civ::tiles::Yield> {
@@ -5463,7 +5629,7 @@ pub fn work_tiles(
         let harbor = buildings.has(Building::Harbor);
         // GM Farms make every farmed tile one food richer.
         let engineered = buildings.has(Building::GmFarms);
-        let yield_for = |owner: u32, hex: Hex| {
+        let raw_yield = |owner: u32, hex: Hex| {
             yield_for(owner, hex).map(|y| {
                 let tile = tile_at.get(&hex);
                 let sea = harbor && tile.is_some_and(|t| t.terrain == Terrain::Water);
@@ -5471,11 +5637,16 @@ pub fn work_tiles(
                 (y.0 + u32::from(sea) + u32::from(farmed), y.1, y.2)
             })
         };
+        let (gov, golden_age) = land_rule(owner);
+        // A city that celebrates its ruler escapes the despot's penalty, and under Monarchy or
+        // Communism earns a republic's trade.
+        let festive = happiness.is_some_and(|h| bevy_civ::economy::celebrating(city.population, h.happy, h.unhappy));
+        let ruled = |y| bevy_civ::economy::tile_rule(y, gov, golden_age, festive);
         let enemy_on = |h: &Hex| occupants.iter().any(|(p, o)| p == h && *o != owner && (*o == BARBARIANS || owner == BARBARIANS || diplomacy.get_treaty(owner, *o) == Treaty::War));
-        let centre = bevy_civ::tiles::centre_yield(yield_for(owner, city.position).unwrap_or((2, 0, 0)));
+        let centre = ruled(bevy_civ::tiles::centre_yield(raw_yield(owner, city.position).unwrap_or((2, 0, 0))));
         let mut candidates: Vec<(Hex, bevy_civ::tiles::Yield)> = areas
             .get(&city.position)
-            .map(|area| area.iter().filter(|h| **h != city.position && !enemy_on(h)).filter_map(|h| yield_for(owner, *h).map(|y| (*h, y))).collect())
+            .map(|area| area.iter().filter(|h| **h != city.position && !enemy_on(h)).filter_map(|h| raw_yield(owner, *h).map(|y| (*h, ruled(y)))).collect())
             .unwrap_or_default();
         candidates.sort_by_key(|(h, _)| (h.x, h.y));
         let keep = if owner == PLAYER { city.pinned.clone() } else { Vec::new() };
@@ -5637,20 +5808,23 @@ mod tests {
     }
 
     #[test]
-    fn rates_split_commerce_within_the_government_cap() {
+    fn rates_stay_within_the_government_limit() {
+        use bevy_civ::economy::Rates;
         let mut state = GameState::default();
-        assert_eq!(state.split_commerce(10), (6, 0, 4));
-        state.science_rate = 50;
-        state.luxury_rate = 30;
-        assert_eq!(state.split_commerce(10), (5, 3, 2));
-        assert_eq!(state.tax_rate(), 20);
-        // Despotism allows at most 60% in one: a 90% science rate pays only 60%.
-        state.government = bevy_civ::government::Government::Despotism;
-        state.science_rate = 90;
-        state.luxury_rate = 0;
-        assert_eq!(state.split_commerce(10), (6, 0, 4));
+        assert_eq!(state.rates(), Rates { science: 60, luxury: 0 });
+        assert_eq!(state.rates().split(10, state.government), (6, 0, 4));
+        state.set_rates(Rates { science: 50, luxury: 10 });
+        assert_eq!(state.tax_rate(), 40);
+        // Despotism allows at most 60% in any share, taxes included.
+        state.set_rates(Rates { science: 90, luxury: 0 });
+        assert_eq!(state.rates(), Rates { science: 60, luxury: 0 });
+        state.set_rates(Rates { science: 20, luxury: 0 });
+        assert_eq!(state.tax_rate(), 60);
+        state.government = bevy_civ::government::Government::Democracy;
+        state.set_rates(Rates { science: 90, luxury: 0 });
+        assert_eq!(state.rates().science, 90);
         state.government = bevy_civ::government::Government::Anarchy;
-        assert_eq!(state.split_commerce(10).0, 0);
+        assert_eq!(state.rates().split(10, state.government), (0, 10, 0));
     }
 
     fn plain_map() -> MapData {
@@ -5723,6 +5897,7 @@ mod tests {
             anarchy: 0,
             pending_government: None,
             eliminated: false,
+            rates: Default::default(),
         });
         app
     }
@@ -5772,6 +5947,24 @@ mod tests {
         app.update();
         let city = app.world().get::<City>(roma).unwrap();
         assert_eq!((city.population, city.production_progress), (2, Building::Barracks.cost()));
+    }
+
+    #[test]
+    fn a_building_can_be_sold_once_a_turn() {
+        let mut app = order_app();
+        let mut cities = app.world_mut().query::<(Entity, &City)>();
+        let roma = cities.iter(app.world()).find(|(_, c)| c.name == "Roma").map(|(e, _)| e).unwrap();
+        app.world_mut().get_mut::<CityBuildings>(roma).unwrap().buildings = vec![Building::Temple, Building::Library];
+        app.world_mut().resource_mut::<Selection>().city = Some(roma);
+        app.world_mut().resource_mut::<GameState>().gold = 0;
+        app.world_mut().send_event(Action::SellBuilding(Building::Library));
+        app.update();
+        assert_eq!(app.world().resource::<GameState>().gold, Building::Library.cost() as i32);
+        assert_eq!(app.world().get::<CityBuildings>(roma).unwrap().buildings, vec![Building::Temple]);
+        // Only one a turn.
+        app.world_mut().send_event(Action::SellBuilding(Building::Temple));
+        app.update();
+        assert_eq!(app.world().get::<CityBuildings>(roma).unwrap().buildings, vec![Building::Temple]);
     }
 
     #[test]

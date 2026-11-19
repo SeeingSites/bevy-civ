@@ -168,6 +168,19 @@ fn troubles(world: &mut World) {
         let list: Vec<String> = all.iter().map(|(k, v)| format!("{k} {v}")).collect();
         println!("--- buildings in {n} cities: {}", list.join(", "));
     }
+    {
+        // Growth: how many cities are held at the size their water supply allows.
+        let rivers = world.resource::<crate::Rivers>().tiles.clone();
+        let mut q = world.query::<(&bevy_civ::city::City, &CityBuildings)>();
+        let (mut capped, mut total, mut people) = (0, 0, 0);
+        for (city, built) in q.iter(world) {
+            let fresh = rivers.contains(&city.position) || city.position.all_neighbors().iter().any(|n| rivers.contains(n));
+            total += 1;
+            people += city.population;
+            capped += usize::from(city.population >= Building::size_limit(&built.buildings, fresh));
+        }
+        println!("--- growth: {capped} of {total} cities at their water limit; {:.1} citizens a city", people as f32 / total.max(1) as f32);
+    }
     let (moved, abroad) = world.resource::<GameState>().migrations;
     let (cartels, cells, raids) = world.resource::<GameState>().raiders;
     println!("--- troubles: {drugs} cities with a drug trade, {scandals} in a food scandal; {police} Police Stations, {safety} Food Safety Agencies, {gm} GM Farms; {moved} migrants ({abroad} abroad)");
@@ -213,6 +226,7 @@ fn snapshot(world: &mut World, turn: u32) {
     let space = world.resource::<SpaceRace>().clone();
     let culture = world.resource::<CultureLedger>().clone();
     let wonders = world.resource::<WorldWonders>().clone();
+    let accounts = world.resource::<GameState>().accounts.clone();
     let mut cities = world.query::<(&City, &CityBuildings)>();
     let city_list: Vec<(u32, u32, bool, bevy_civ::city::City)> = cities.iter(world).map(|(c, b)| (c.owner, c.population, b.buildings.len() > 3, c.clone())).collect();
     let mut units = world.query::<&Unit>();
@@ -231,8 +245,14 @@ fn snapshot(world: &mut World, turn: u32) {
         let points: u32 = owned.iter().map(|c| culture.of(c.3.position)).sum();
         let held = wonders.built.values().filter(|(o, _)| *o == civ.id).count();
         let ship = space.ships.get(&civ.id).map(|s| format!(", ship needs {}", if s.arrives.is_some() { "nothing (launched)".into() } else { s.missing() })).unwrap_or_default();
+        // The economy: trade from the land worked, the share lost to corruption, the upkeep of
+        // buildings, the rates (science/luxury) and the science it all comes to.
+        let trade: u32 = owned.iter().map(|c| c.3.land.2).sum();
+        let books = accounts.get(&civ.id).copied().unwrap_or_default();
+        let corrupt = books.corruption * 100 / books.trade.max(1);
+        let economy = format!("corr {corrupt:>2}% upk {:>3} rates {}/{}", books.upkeep, civ.rates.science, civ.rates.luxury);
         println!(
-            "  {:<14} {:>2} cities {:>3} people {:>2} techs {:>3} army{grouped} {:>5} gold  {:<14} culture {:>5}  wonders {}{ship}",
+            "  {:<14} {:>2} cities {:>3} people {:>2} techs {:>3} army{grouped} {:>5} gold  {:<14} culture {:>5}  wonders {}  trade {:>4} sci {:>4} {economy}{ship}",
             civ.name.trim_start_matches("the "),
             owned.len(),
             people,
@@ -241,7 +261,9 @@ fn snapshot(world: &mut World, turn: u32) {
             civ.gold,
             civ.government.name(),
             points,
-            held
+            held,
+            trade,
+            civ.tech.science_per_turn
         );
     }
 }

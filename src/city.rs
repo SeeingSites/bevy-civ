@@ -44,6 +44,16 @@ pub struct City {
     pub auto_build: bool,
 }
 
+/// Food a city of this size must gather to grow: 20 while it is a town (up to size 6), 40 as a
+/// city (up to 12), 60 as a metropolis beyond.
+pub fn food_box(population: u32) -> u32 {
+    match population {
+        0..=6 => 20,
+        7..=12 => 40,
+        _ => 60,
+    }
+}
+
 /// Most projects a city can have waiting.
 pub const QUEUE_LIMIT: usize = 6;
 
@@ -55,9 +65,12 @@ pub fn resistance_turns(population: u32) -> u32 {
 
 #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum Specialist {
-    Entertainer,   // +2 luxury
-    TaxCollector,  // +3 gold
-    Scientist,     // +3 science
+    /// Calms two citizens.
+    Entertainer,
+    /// +2 gold, multiplied by the city's market and bank.
+    TaxCollector,
+    /// +3 science, multiplied by the city's library and university.
+    Scientist,
 }
 
 /// What a turn of eating did to a city.
@@ -114,14 +127,18 @@ impl City {
         }
     }
 
-    /// Gold to buy the rest of the current project: two gold a shield plus a premium that grows with
-    /// what is missing, and double if nothing has been built of it yet.
+    /// Gold to buy the rest of the current project: two gold a missing shield for a building; for a
+    /// unit, a premium on top that grows with what is missing. Double if nothing has been built of
+    /// it yet.
     pub fn hurry_cost(&self) -> Option<i32> {
         if !self.can_hurry() {
             return None;
         }
         let left = self.shields_left() as i32;
-        let gold = 2 * left + left * left / 20;
+        let gold = match self.production_queue {
+            Some(ProductionItem::Unit(_)) => 2 * left + left * left / 20,
+            _ => 2 * left,
+        };
         Some(if self.production_progress == 0 { gold * 2 } else { gold })
     }
 
@@ -140,10 +157,14 @@ impl City {
         self.population.saturating_sub(self.specialists.len() as u32)
     }
 
-    pub fn production_per_turn(&self, buildings: &CityBuildings, gov: Government, dist_to_capital: u32) -> u32 {
+    /// Shields the city's land and buildings give, less the share `waste` lost (see
+    /// `economy::waste`; it always leaves a city at least one shield), and a quarter more for a
+    /// Factory and again for a Power Plant.
+    pub fn production_per_turn(&self, buildings: &CityBuildings, waste: f32) -> u32 {
         let base = self.land.1 + buildings.total_production_bonus();
-        let corruption = self.corruption(buildings, gov, dist_to_capital);
-        ((base as f32) * gov.production_modifier() * (1.0 - corruption)).max(0.0) as u32
+        let lost = ((base as f32) * waste.clamp(0.0, 1.0)).round() as u32;
+        let kept = base.saturating_sub(lost).max(base.min(1));
+        (kept * (100 + crate::economy::production_bonus(&buildings.buildings)) + 50) / 100
     }
 
     /// Food left over each turn once everyone has eaten (two each): the worked land and the
@@ -153,41 +174,27 @@ impl City {
     }
 
     /// The surplus shown in the city panel (never below zero; see `food_balance`).
-    pub fn food_per_turn(&self, buildings: &CityBuildings, _gov: Government, _dist_to_capital: u32) -> u32 {
+    pub fn food_per_turn(&self, buildings: &CityBuildings) -> u32 {
         self.food_balance(buildings).max(0) as u32
     }
 
-    /// Corruption, halved by a courthouse.
-    pub fn corruption(&self, buildings: &CityBuildings, gov: Government, dist_to_capital: u32) -> f32 {
-        let corruption = self.corruption_penalty(gov, dist_to_capital);
-        if buildings.has(crate::building::Building::Courthouse) { corruption / 2.0 } else { corruption }
-    }
-
-    pub fn science_per_turn(&self, buildings: &CityBuildings, gov: Government, dist_to_capital: u32) -> u32 {
-        let base = 1 + self.population / 2 + buildings.total_science_bonus();
-        let specialist_sci = self.specialists.iter().filter(|s| matches!(s, Specialist::Scientist)).count() as u32 * 3;
-        let corruption = self.corruption(buildings, gov, dist_to_capital);
-        // Round up so a small city under a weak government still contributes something.
-        (((base + specialist_sci) as f32) * gov.science_modifier() * (1.0 - corruption)).max(0.0).ceil() as u32
-    }
-
-    pub fn gold_per_turn(&self, buildings: &CityBuildings) -> u32 {
-        let base = buildings.total_gold_bonus() + self.land.2;
-        let specialist_gold = self.specialists.iter().filter(|s| matches!(s, Specialist::TaxCollector)).count() as u32 * 3;
-        base + specialist_gold
-    }
-
+    /// Citizens its entertainers calm (two each).
     pub fn luxury_from_specialists(&self) -> u32 {
         self.specialists.iter().filter(|s| matches!(s, Specialist::Entertainer)).count() as u32 * 2
     }
 
-    pub fn corruption_penalty(&self, gov: Government, dist_to_capital: u32) -> f32 {
-        if self.is_capital { return 0.0; }
-        (gov.corruption_factor() * dist_to_capital as f32).min(0.5)
+    /// Its scientists and tax collectors.
+    pub fn scientists(&self) -> u32 {
+        self.specialists.iter().filter(|s| matches!(s, Specialist::Scientist)).count() as u32
     }
 
+    pub fn tax_collectors(&self) -> u32 {
+        self.specialists.iter().filter(|s| matches!(s, Specialist::TaxCollector)).count() as u32
+    }
+
+    /// Food the city must gather to grow (see `food_box`).
     pub fn food_to_grow(&self) -> u32 {
-        10 + self.population * 5
+        food_box(self.population)
     }
 
     /// A turn of eating: the city grows when its granary fills (up to the size its water supply
@@ -220,21 +227,26 @@ impl City {
             return Growth::Capped;
         }
         self.food_storage -= self.food_to_grow();
+        // A Granary keeps half of the food the city had gathered.
+        if buildings.has(crate::building::Building::Granary) {
+            self.food_storage += self.food_to_grow() / 2;
+        }
         self.population += 1;
+        self.food_storage = self.food_storage.min(self.food_to_grow().saturating_sub(1));
         Growth::Grew
     }
 
-    pub fn process_production(&mut self, buildings: &CityBuildings, gov: Government, dist: u32) -> Option<ProductionItem> {
+    pub fn process_production(&mut self, buildings: &CityBuildings, waste: f32) -> Option<ProductionItem> {
         let Some(item) = &self.production_queue else {
             // No project: the shields are kept for the next one.
-            self.production_progress += self.production_per_turn(buildings, gov, dist);
+            self.production_progress += self.production_per_turn(buildings, waste);
             return None;
         };
         let cost = match item {
             ProductionItem::Unit(u) => u.cost(),
             ProductionItem::Building(b) => b.cost(),
         };
-        let prod = self.production_per_turn(buildings, gov, dist);
+        let prod = self.production_per_turn(buildings, waste);
         self.production_progress += prod;
         if self.production_progress >= cost {
             self.production_progress -= cost;
@@ -325,13 +337,59 @@ mod hurry_tests {
 
     #[test]
     fn buying_costs_more_for_more_and_double_from_scratch() {
+        // Buildings: two gold a missing shield.
         let temple = city(ProductionItem::Building(Building::Temple), 10, 5);
-        assert_eq!(temple.hurry_cost(), Some(2 * 20 + 20 * 20 / 20));
+        assert_eq!(temple.hurry_cost(), Some(2 * 20));
         let fresh = city(ProductionItem::Building(Building::Temple), 0, 5);
-        assert_eq!(fresh.hurry_cost(), Some(2 * (2 * 30 + 30 * 30 / 20)));
+        assert_eq!(fresh.hurry_cost(), Some(2 * (2 * 30)));
         assert_eq!(city(ProductionItem::Building(Building::Pyramids), 10, 5).hurry_cost(), None, "no buying wonders");
-        let units = city(ProductionItem::Unit(UnitType::Legion), 5, 5);
-        assert!(units.hurry_cost().is_some());
+        // Units: a premium that grows with what is missing.
+        let legion = city(ProductionItem::Unit(UnitType::Legion), 5, 5);
+        let left = (UnitType::Legion.cost() - 5) as i32;
+        assert_eq!(legion.hurry_cost(), Some(2 * left + left * left / 20));
+    }
+
+    #[test]
+    fn waste_leaves_at_least_a_shield() {
+        let mut town = city(ProductionItem::Building(Building::Temple), 0, 3);
+        town.land = (6, 10, 2);
+        let none = CityBuildings { buildings: vec![] };
+        assert_eq!(town.production_per_turn(&none, 0.0), 10);
+        assert_eq!(town.production_per_turn(&none, 0.3), 7);
+        assert_eq!(town.production_per_turn(&none, 1.0), 1);
+        town.land = (6, 0, 2);
+        assert_eq!(town.production_per_turn(&none, 0.5), 0);
+        // A Factory and a Power Plant each add a quarter.
+        town.land = (6, 12, 2);
+        let industry = CityBuildings { buildings: vec![Building::Factory, Building::PowerPlant] };
+        assert_eq!(town.production_per_turn(&industry, 0.0), 18);
+    }
+
+    #[test]
+    fn a_granary_keeps_half_the_food_and_water_limits_growth() {
+        let full = |granary: bool, population: u32| {
+            let mut town = city(ProductionItem::Building(Building::Temple), 0, population);
+            town.food_storage = town.food_to_grow() - 1;
+            town.land = (population * 2 + 3, 1, 0);
+            let built = CityBuildings { buildings: if granary { vec![Building::Granary] } else { vec![] } };
+            let growth = town.process_food(&built, false);
+            (growth, town)
+        };
+        let (growth, plain) = full(false, 3);
+        assert_eq!(growth, Growth::Grew);
+        assert_eq!(plain.food_storage, 2);
+        let (_, stored) = full(true, 3);
+        assert_eq!(stored.food_storage, 2 + 20 / 2);
+        // The box is the same through a town's sizes, then doubles for a city.
+        assert_eq!((food_box(1), food_box(6), food_box(7), food_box(12), food_box(13)), (20, 20, 40, 40, 60));
+        // Size 6 is the limit without an aqueduct or fresh water.
+        assert_eq!(full(false, 6).0, Growth::Capped);
+        let mut riverside = city(ProductionItem::Building(Building::Temple), 0, 6);
+        riverside.food_storage = riverside.food_to_grow();
+        riverside.land = (20, 1, 0);
+        assert_eq!(riverside.process_food(&CityBuildings { buildings: vec![] }, true), Growth::Grew);
+        assert_eq!(Building::size_limit(&[Building::Aqueduct], false), 12);
+        assert_eq!(Building::size_limit(&[], true), 12);
     }
 
     #[test]

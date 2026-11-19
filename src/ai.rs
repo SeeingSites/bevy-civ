@@ -82,6 +82,9 @@ pub struct Civ {
     /// Lost every city (and has no settler left): out of the game.
     #[serde(default)]
     pub eliminated: bool,
+    /// How it splits its cities' trade between science, luxury and taxes (set each turn).
+    #[serde(default)]
+    pub rates: crate::economy::Rates,
 }
 
 impl Default for Civilizations {
@@ -366,9 +369,9 @@ pub fn process_ai_turn(
             })
             .sum()
     };
-    let features: HashMap<Hex, (Terrain, bool, bool)> = tiles
+    let features: HashMap<Hex, (Terrain, bool, bool, bool)> = tiles
         .iter()
-        .map(|t| (t.coord, (t.terrain, t.improvements.contains(&Improvement::Farm), t.improvements.contains(&Improvement::Mine))))
+        .map(|t| (t.coord, (t.terrain, t.improvements.contains(&Improvement::Farm), t.improvements.contains(&Improvement::Mine), t.has_road())))
         .collect();
     let mut founded: Vec<Hex> = Vec::new();
     // Roads that could carry a railroad (cities need none), and which of them a worker has already taken.
@@ -588,12 +591,14 @@ pub fn process_ai_turn(
                 unit.start_build(Improvement::Fortress);
                 continue;
             }
-            // No road work: farm the flat land and mine the hills inside the borders.
+            // No road work: farm the flat land and mine the hills inside the borders, and road the
+            // flat land once it is farmed (a road brings trade on grassland, plains and desert).
             let on_city = city_positions.iter().any(|(p, _)| *p == here);
-            if let Some((terrain, farm, mine)) = features.get(&here).copied().filter(|_| owns(here, owner) && !on_city) {
+            if let Some((terrain, farm, mine, road)) = features.get(&here).copied().filter(|_| owns(here, owner) && !on_city) {
                 let job = match terrain {
                     Terrain::Hills | Terrain::Mountain if !mine => Some(Improvement::Mine),
                     Terrain::Grassland | Terrain::Plains if !farm => Some(Improvement::Farm),
+                    Terrain::Grassland | Terrain::Plains | Terrain::Desert if !road => Some(Improvement::Road),
                     _ => None,
                 };
                 if let Some(job) = job {
@@ -1008,6 +1013,7 @@ mod tests {
             anarchy: 0,
             pending_government: None,
             eliminated: false,
+            rates: Default::default(),
         }
     }
 
@@ -1296,5 +1302,19 @@ mod tests {
         world.insert_resource(Jobs(HashMap::new()));
         world.run_system_once(ai_phase).unwrap();
         assert_eq!(world.get::<Unit>(worker).unwrap().current_build, Some(Improvement::Mine));
+    }
+
+    #[test]
+    fn farmed_flat_land_gets_a_road_for_its_trade() {
+        let (mut world, worker) = world_with_worker(Terrain::Grassland);
+        for mut tile in world.query::<&mut HexTile>().iter_mut(&mut world) {
+            if tile.coord == Hex::new(1, 0) {
+                tile.add_improvement(Improvement::Farm);
+            }
+        }
+        world.get_mut::<Unit>(worker).unwrap().position = Hex::new(1, 0);
+        world.insert_resource(Jobs(HashMap::new()));
+        world.run_system_once(ai_phase).unwrap();
+        assert_eq!(world.get::<Unit>(worker).unwrap().current_build, Some(Improvement::Road));
     }
 }
