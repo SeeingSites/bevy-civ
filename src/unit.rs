@@ -744,8 +744,9 @@ pub fn spawn_unit(commands: &mut Commands, coord: Hex, unit_type: UnitType, owne
         .id()
 }
 
-/// Most units in one army (the leader and its troops); Sun Tzu's War Academy adds one more.
-pub const ARMY_SIZE: usize = 4;
+/// Most units in one army (the leader and its troops), three as in Civilization III; Sun Tzu's War
+/// Academy adds one more.
+pub const ARMY_SIZE: usize = 3;
 
 /// How many units an army of this owner can hold.
 pub fn army_capacity(sun_tzu: bool) -> usize {
@@ -839,11 +840,11 @@ mod army_tests {
         assert!(army.display_name().starts_with("Army (Knight"));
         // An army does not join another.
         assert!(plan_army(&[&army, &units[0]], 3).is_none());
-        // A unit joins the army while there is room: 4 units, or 5 with Sun Tzu.
-        assert!(army.take_into_army(&units[0], army_capacity(false)));
-        assert_eq!((army.members(), army.max_hp(), army.hp), (4, 12, 11));
-        assert!(!army.take_into_army(&units[4], army_capacity(false)), "full");
-        assert!(army.take_into_army(&units[4], army_capacity(true)));
+        // A unit joins the army while there is room: 3 units, or 4 with Sun Tzu.
+        assert!(!army.take_into_army(&units[0], army_capacity(false)), "full");
         assert!(!army.take_into_army(&units[2], army_capacity(true)), "workers never join");
+        assert!(army.take_into_army(&units[0], army_capacity(true)));
+        assert_eq!((army.members(), army.max_hp(), army.hp), (4, 12, 11));
+        assert!(!army.take_into_army(&units[4], army_capacity(true)), "full");
     }
 }

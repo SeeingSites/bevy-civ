@@ -2217,7 +2217,7 @@ fn apply_actions(
                                 true
                             }
                             None => {
-                                log.push("A Great General forms an army: bring it and two to four land units into one of your cities, then press U. Until then, troops on its tile fight half again as hard.");
+                                log.push("A Great General forms an army: bring it and two or three land units into one of your cities, then press U. Until then, troops on its tile fight half again as hard.");
                                 false
                             }
                         }

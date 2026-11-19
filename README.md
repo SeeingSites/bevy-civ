@@ -34,7 +34,7 @@ Turn-based, Civilization-style empire building on a hex map, playable in the bro
 - Governors: with Governor builds on, a city picks its projects, calms disorder with entertainers (and releases them when they are no longer needed) and sends the Workers it trains to work on automatic; a city in disorder says so plainly in its panel
 - Auto-explore (C): scouts, soldiers and warships roam to the edge of the known world by themselves, turn after turn
 - Ending the turn with a city that has no soldier in it and an enemy in sight nearby asks for a second End Turn
-- Armies: a great general in one of your cities forms up to four land units (five with Sun Tzu) into one army, 10% stronger per member; more troops can join later
+- Armies: a great general in one of your cities forms up to three land units (four with Sun Tzu) into one army, 10% stronger per member; more troops can join later
 - Battles played out on the map, one at a time: the camera goes to every battle you fight (also
   attacks on your units in the other peoples' turns), the attacker lunges, blows land, the fallen
   topple and the result floats over the tile; the next unit waits until the battle is over
@@ -272,8 +272,9 @@ Battles follow the rules of Civilization III:
 ## Computer players
 Computer players follow the same rules as you and are run by three pieces of code:
 
-- **Armies** (`src/ai.rs`): the best defender in each city is its garrison and stays put; an empty
-  city is re-occupied by the nearest unit; field units strike beatable enemies nearby and march on
+- **Armies** (`src/ai.rs`): the best defender in each city is its garrison and stays put (the best
+  two while enemy troops are within 2 tiles); an empty city, or a menaced one with a single
+  defender, is reinforced by the nearest unit; field units strike beatable enemies nearby and march on
   enemy cities, but gather outside a defended city until enough of the army has arrived. Workers
   road resources and cities, then farm and mine. Settlers walk clear of existing cities to found
   new ones: each settler heads for the best free site in reach (good land, resources, not too far),
@@ -390,6 +391,11 @@ working directory.
   state religion - your capital's faith - to any city at peace with you (U). Cities of your state
   religion get +1 content (+2 with a Temple); the holy city's owner earns a gold for every two
   cities of its faith; peoples of one faith grow friendlier, of different faiths cooler.
+- **Unit support**: as in Civilization III, each city supports a few military units free - 4 under
+  Despotism or Fundamentalism, 3 under Monarchy or Communism, 2 in anarchy, none under a Republic or
+  Democracy - and every unit beyond costs a gold a turn (2 under a Republic or Democracy, nothing
+  under Fundamentalism); the Statue of Zeus supports one more per city. Computer players are held
+  to an army size instead (see Computer players).
 - **War weariness**: under a Republic every 12 turns of war make one more citizen unhappy in every
   city (up to 2), under Democracy every 8 (up to 3); peace brings it back down; a Police Station
   halves it.

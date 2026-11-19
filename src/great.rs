@@ -36,7 +36,7 @@ pub const SETTLED_MERCHANT_GOLD: u32 = 3;
 /// What a great person does when used (shown on its button and in the unit panel).
 pub fn ability(kind: UnitType) -> &'static str {
     match kind {
-        UnitType::GreatGeneral => "Leads the troops it stands with (they fight half again as hard); in one of your cities, forms up to four units there into an army (five with Sun Tzu)",
+        UnitType::GreatGeneral => "Leads the troops it stands with (they fight half again as hard); in one of your cities, forms up to three units there into an army (four with Sun Tzu)",
         UnitType::GreatMerchant => "Trade mission in a foreign city not at war with you (gold now, more the farther from home), or settle in one of your cities (+3 gold there every turn)",
         UnitType::GreatScientist => "Discovery: completes the current research at once",
         UnitType::GreatArtist => "Masterpiece: in one of your cities, +3 content citizens for good",

@@ -193,6 +193,8 @@ pub const SIEGE_MAX: f32 = 8.0;
 /// The chance of winning a cautious leader's troops want before they attack (warlike leaders
 /// attack whatever stands in their way).
 pub const CAUTIOUS_ODDS: f64 = 0.5;
+/// A city with enemy troops this close keeps two defenders instead of one.
+pub const MENACE_RANGE: i32 = 2;
 
 /// One land unit seen by the siege planner: where, whose, what it is, how many men (an army counts
 /// every member) and the hit points they have left.
@@ -375,8 +377,15 @@ pub fn process_ai_turn(
         .map(|(_, u)| u.position)
         .collect();
 
-    // The best defender standing in each city is its garrison and stays there.
-    let mut holders: HashMap<Hex, (Entity, f32)> = HashMap::new();
+    // Cities of computer players with enemy troops close by: they keep a second defender.
+    let menaced: HashSet<Hex> = city_positions
+        .iter()
+        .filter(|(p, o)| *o != 0 && fighters.iter().any(|f| f.attacks() && hostile(*o, f.owner) && f.at.distance_to(*p) <= MENACE_RANGE))
+        .map(|(p, _)| *p)
+        .collect();
+    let keep = |city: &Hex| if menaced.contains(city) { 2 } else { 1 };
+    // The best defenders standing in each city are its garrison and stay there.
+    let mut holders: HashMap<Hex, Vec<(Entity, f32)>> = HashMap::new();
     let mut field_armies: HashMap<u32, usize> = HashMap::new();
     for (entity, unit) in units.iter() {
         if unit.owner == 0 || !unit.unit_type.is_army() {
@@ -386,21 +395,22 @@ pub fn process_ai_turn(
         if city_positions.iter().any(|(p, o)| *p == unit.position && *o == unit.owner) {
             // A gun holds a city only when there is nothing else.
             let defence = unit.unit_type.stats().1 as f32 - if unit.unit_type.bombard_only() { 0.5 } else { 0.0 };
-            if holders.get(&unit.position).is_none_or(|(_, best)| defence > *best) {
-                holders.insert(unit.position, (entity, defence));
-            }
+            holders.entry(unit.position).or_default().push((entity, defence));
         }
     }
-    let garrison: std::collections::HashSet<Entity> = holders.values().map(|(e, _)| *e).collect();
+    for (city, list) in holders.iter_mut() {
+        list.sort_by(|a, b| b.1.total_cmp(&a.1).then(a.0.index().cmp(&b.0.index())));
+        list.truncate(keep(city));
+    }
+    let garrison: std::collections::HashSet<Entity> = holders.values().flatten().map(|(e, _)| *e).collect();
     for (pos, owner) in city_positions {
-        if holders.contains_key(pos) {
-            if let Some(count) = field_armies.get_mut(owner) {
-                *count = count.saturating_sub(1);
-            }
+        if let (Some(list), Some(count)) = (holders.get(pos), field_armies.get_mut(owner)) {
+            *count = count.saturating_sub(list.len());
         }
     }
-    // Cities of computer players that nobody is holding.
-    let mut undefended: Vec<(Hex, u32)> = city_positions.iter().copied().filter(|(p, o)| *o != 0 && !holders.contains_key(p)).collect();
+    // Cities of computer players that nobody is holding, and menaced ones with a single defender:
+    // the nearest troops come to hold them.
+    let mut undefended: Vec<(Hex, u32)> = city_positions.iter().copied().filter(|(p, o)| *o != 0 && holders.get(p).map_or(0, |l| l.len()) < keep(p)).collect();
 
     for (entity, mut unit) in units.iter_mut() {
         if unit.owner == 0 || unit.movement_left == 0 || unit.build_turns_left.is_some() {
@@ -720,7 +730,11 @@ pub fn process_ai_turn(
             // gathered - at least two or three units, and half again the garrison's strength.
             let defended = occupied.get(&city).is_some_and(|(other, _)| *other != owner);
             let needed = if !defended { 1 } else if aggression > 0.6 { 2 } else { 3 };
-            let near: Vec<&Fighter> = fighters.iter().filter(|f| f.owner == owner && f.attacks() && here.distance_to(f.at) <= 3).collect();
+            // The army gathered close by (troops in our own cities hold them and do not count).
+            let near: Vec<&Fighter> = fighters
+                .iter()
+                .filter(|f| f.owner == owner && f.attacks() && here.distance_to(f.at) <= 3 && !city_positions.iter().any(|(p, o)| *p == f.at && *o == owner))
+                .collect();
             let garrison_of: Vec<&Fighter> = fighters.iter().filter(|f| f.at == city && f.owner != owner).collect();
             let ground = Ground { fortified: true, ..ground_at(city) };
             // Guns already within range soften the garrison up before the assault.
@@ -1104,7 +1118,9 @@ mod tests {
     fn a_lone_unit_waits_for_support_before_a_defended_city() {
         let (mut world, worker) = world_with_worker(Terrain::Plains);
         world.despawn(worker);
-        soldier(&mut world, UnitType::Phalanx, 1, 0); // garrison
+        // The garrison: two, as the enemy is close.
+        soldier(&mut world, UnitType::Phalanx, 1, 0);
+        soldier(&mut world, UnitType::Spearman, 1, 0);
         let scout = soldier(&mut world, UnitType::Warrior, 1, 1);
         let support = soldier(&mut world, UnitType::Warrior, 1, -3);
         soldier(&mut world, UnitType::Warrior, 1, -3);
@@ -1136,6 +1152,24 @@ mod tests {
         // The cannon (range 1) closes in, but does not attack or walk into the city.
         let at = world.get::<Unit>(cannon).unwrap().position;
         assert!(at.distance_to(Hex::new(3, 0)) >= 1 && at != Hex::new(3, 0));
+    }
+
+    #[test]
+    fn a_menaced_city_keeps_two_defenders() {
+        let (mut world, worker) = world_with_worker(Terrain::Plains);
+        world.despawn(worker);
+        let phalanx = soldier(&mut world, UnitType::Phalanx, 1, 0);
+        let spearman = soldier(&mut world, UnitType::Spearman, 1, 0);
+        let warrior = soldier(&mut world, UnitType::Warrior, 1, 0);
+        let legion = soldier(&mut world, UnitType::Legion, 0, 2); // an enemy two tiles away
+        world.run_system_once(war_phase).unwrap();
+        assert!(world.get::<Unit>(phalanx).unwrap().fortified && world.get::<Unit>(spearman).unwrap().fortified, "the two best defenders hold the city");
+        assert!(!world.get::<Unit>(warrior).unwrap().fortified, "the third takes the field");
+        // With the enemy gone, one defender is enough.
+        world.despawn(legion);
+        world.get_mut::<Unit>(spearman).unwrap().movement_left = 1;
+        world.run_system_once(war_phase).unwrap();
+        assert!(!world.get::<Unit>(spearman).unwrap().fortified);
     }
 
     #[test]
