@@ -53,6 +53,13 @@ pub fn run(which: &str, turns: u32) -> bool {
     let started = Instant::now();
     let mut seen_techs: HashSet<Tech> = HashSet::new();
     let mut eras_reached: BTreeMap<&str, u32> = BTreeMap::new();
+    // What the scenario starts with is no milestone.
+    for civ in &app.world().resource::<Civilizations>().players {
+        for tech in &civ.tech.researched {
+            seen_techs.insert(*tech);
+            eras_reached.insert(era_of(*tech), 0);
+        }
+    }
     let mut log_seen = 0;
     // Cities changing hands (conquest, defection), and peoples wiped out.
     let mut owners: std::collections::HashMap<hexx::Hex, u32> = std::collections::HashMap::new();
@@ -72,7 +79,7 @@ pub fn run(which: &str, turns: u32) -> bool {
                 if seen_techs.insert(*tech) {
                     let era = era_of(*tech);
                     eras_reached.entry(era).or_insert_with(|| {
-                        println!("  turn {turn:>3}: {} enter the {era} era ({}).", civ.name, tech.name());
+                        println!("  turn {turn:>3}: {} enter the {era} ({}).", civ.name, tech.name());
                         turn
                     });
                 }
@@ -85,7 +92,7 @@ pub fn run(which: &str, turns: u32) -> bool {
         let news: Vec<String> = log.lines.iter().skip(log.lines.len() - fresh).cloned().collect();
         log_seen = log.written;
         for line in news {
-            let notable = ["Secretary-General", "missionaries bring", "nuclear missile", "lifts off", "have launched a spaceship", "priests found", "Wonder of the world", "launched a spaceship", "adopt", "golden age", "has been born", "Alpha Centauri", "cultural victory"];
+            let notable = ["Secretary-General", "first to master", "missionaries bring", "nuclear missile", "lifts off", "have launched a spaceship", "priests found", "Wonder of the world", "launched a spaceship", "adopt", "golden age", "has been born", "Alpha Centauri", "cultural victory"];
             if notable.iter().any(|n| line.contains(n)) {
                 println!("  turn {turn:>3}: {line}");
             }
@@ -113,12 +120,26 @@ pub fn run(which: &str, turns: u32) -> bool {
             }
             alive = holding;
         }
+        // For tuning the cultural victory: the leading peoples' culture every five turns.
+        if turn % 5 == 0 && std::env::var_os("BEVY_CIV_CULTURE_TRACE").is_some() {
+            let ledger = world.resource::<CultureLedger>().clone();
+            let mut q = world.query::<&City>();
+            let totals = ledger.totals(q.iter(world).filter(|c| c.owner != bevy_civ::barbarians::BARBARIANS).map(|c| (c.position, c.owner)));
+            let mut top: Vec<u32> = totals.values().copied().collect();
+            top.sort_unstable_by(|a, b| b.cmp(a));
+            top.resize(3.max(top.len()), 0);
+            let owners: Vec<(hexx::Hex, u32)> = q.iter(world).map(|c| (c.position, c.owner)).collect();
+            let best_city = ledger.best_city(&owners).map_or(0, |(_, _, points)| points);
+            println!("culture-trace {turn} {} city {best_city}", top.iter().take(3).map(|c| c.to_string()).collect::<Vec<_>>().join(" "));
+        }
         if turn % 25 == 0 {
             snapshot(world, turn);
         }
         if let Some(outcome) = world.resource::<GameState>().victory.clone() {
             println!("Game over on turn {turn}: {outcome}");
             println!("Cities that changed hands: {changes} ({between} between civilizations).");
+            println!("Technologies traded between computer players: {}.", world.resource::<crate::foreign::Foreign>().tech_trades);
+            dominance(world);
             snapshot(world, turn);
             armies(world);
             troubles(world);
@@ -133,14 +154,36 @@ pub fn run(which: &str, turns: u32) -> bool {
     true
 }
 
+/// How much of the world the strongest peoples hold at the end: cities, land within their borders
+/// and citizens, each as a share of the world's (for weighing domination rules).
+fn dominance(world: &mut World) {
+    let map = world.resource::<crate::MapData>();
+    let land = map.cells.len().saturating_sub(map.water.len()).max(1);
+    let water = map.water.clone();
+    let territory = world.resource::<crate::supply::Supplies>().territory.clone();
+    let mut q = world.query::<&City>();
+    let cities: Vec<(u32, u32)> = q.iter(world).filter(|c| c.owner != bevy_civ::barbarians::BARBARIANS).map(|c| (c.owner, c.population)).collect();
+    let (all_cities, all_people) = (cities.len().max(1), cities.iter().map(|c| c.1).sum::<u32>().max(1));
+    let mut owners: Vec<u32> = cities.iter().map(|c| c.0).collect();
+    owners.sort_unstable();
+    owners.dedup();
+    let mut rows: Vec<(f32, f32, f32, u32)> = owners
+        .into_iter()
+        .map(|o| {
+            let held = cities.iter().filter(|c| c.0 == o).count() as f32 / all_cities as f32;
+            let tiles = territory.iter().filter(|(at, (owner, _))| *owner == o && !water.contains(at)).count() as f32 / land as f32;
+            let people = cities.iter().filter(|c| c.0 == o).map(|c| c.1).sum::<u32>() as f32 / all_people as f32;
+            (held, tiles, people, o)
+        })
+        .collect();
+    rows.sort_by(|a, b| b.0.total_cmp(&a.0));
+    let text: Vec<String> = rows.iter().take(3).map(|(c, l, p, o)| format!("#{o}: cities {:.0}%, land {:.0}%, people {:.0}%", c * 100.0, l * 100.0, p * 100.0)).collect();
+    println!("--- dominance: {}", text.join("; "));
+}
+
 /// Era of a technology, by its cost (as the science advisor groups them).
 fn era_of(tech: Tech) -> &'static str {
-    match tech.cost() {
-        0..=25 => "Ancient",
-        26..=45 => "Classical",
-        46..=95 => "Industrial",
-        _ => "Modern",
-    }
+    tech.era().name()
 }
 
 /// The make-up of each civilization's military at the end: its most common unit types.
@@ -167,6 +210,19 @@ fn troubles(world: &mut World) {
         let n = world.query::<&bevy_civ::city::City>().iter(world).count();
         let list: Vec<String> = all.iter().map(|(k, v)| format!("{k} {v}")).collect();
         println!("--- buildings in {n} cities: {}", list.join(", "));
+    }
+    {
+        // Growth: how many cities are held at the size their water supply allows.
+        let rivers = world.resource::<crate::Rivers>().tiles.clone();
+        let mut q = world.query::<(&bevy_civ::city::City, &CityBuildings)>();
+        let (mut capped, mut total, mut people) = (0, 0, 0);
+        for (city, built) in q.iter(world) {
+            let fresh = rivers.contains(&city.position) || city.position.all_neighbors().iter().any(|n| rivers.contains(n));
+            total += 1;
+            people += city.population;
+            capped += usize::from(city.population >= Building::size_limit(&built.buildings, fresh));
+        }
+        println!("--- growth: {capped} of {total} cities at their water limit; {:.1} citizens a city", people as f32 / total.max(1) as f32);
     }
     let (moved, abroad) = world.resource::<GameState>().migrations;
     let (cartels, cells, raids) = world.resource::<GameState>().raiders;
@@ -196,6 +252,12 @@ fn armies(world: &mut World) {
         }
         println!("--- civilian units: {}", civ_units.iter().map(|(k, v)| format!("{k} {v}")).collect::<Vec<_>>().join(", "));
     }
+    let t = world.resource::<bevy_civ::combat::BattleTally>().clone();
+    let share = |n: u32| 100 * n / t.battles.max(1);
+    println!(
+        "--- battles: {} ({}% won by the attacker, {}% pulled back), {} promotions, {} won by elites, {} generals born; {} bombardments took {} hit points",
+        t.battles, share(t.won), share(t.retreated), t.promotions, t.elite_wins, t.generals, t.bombardments, t.shelled
+    );
     let ferries = world.resource::<bevy_civ::ai::Ferries>();
     let landed: Vec<String> = civs.players.iter().filter_map(|c| ferries.landed.get(&c.id).map(|n| format!("{} {n}", c.name.trim_start_matches("the ")))).collect();
     println!("--- landed overseas: {}", if landed.is_empty() { "none".to_string() } else { landed.join(", ") });
@@ -207,6 +269,7 @@ fn snapshot(world: &mut World, turn: u32) {
     let space = world.resource::<SpaceRace>().clone();
     let culture = world.resource::<CultureLedger>().clone();
     let wonders = world.resource::<WorldWonders>().clone();
+    let accounts = world.resource::<GameState>().accounts.clone();
     let mut cities = world.query::<(&City, &CityBuildings)>();
     let city_list: Vec<(u32, u32, bool, bevy_civ::city::City)> = cities.iter(world).map(|(c, b)| (c.owner, c.population, b.buildings.len() > 3, c.clone())).collect();
     let mut units = world.query::<&Unit>();
@@ -222,11 +285,17 @@ fn snapshot(world: &mut World, turn: u32) {
         let army = armies.iter().filter(|o| **o == civ.id).count();
         let sizes: Vec<String> = groups.iter().filter(|(o, _)| *o == civ.id).map(|(_, m)| m.to_string()).collect();
         let grouped = if sizes.is_empty() { String::new() } else { format!(" ({} armies: {})", sizes.len(), sizes.join("+")) };
-        let points: u32 = owned.iter().map(|c| culture.of(c.3.position)).sum();
+        let points = culture.of_people(civ.id);
         let held = wonders.built.values().filter(|(o, _)| *o == civ.id).count();
         let ship = space.ships.get(&civ.id).map(|s| format!(", ship needs {}", if s.arrives.is_some() { "nothing (launched)".into() } else { s.missing() })).unwrap_or_default();
+        // The economy: trade from the land worked, the share lost to corruption, the upkeep of
+        // buildings, the rates (science/luxury) and the science it all comes to.
+        let trade: u32 = owned.iter().map(|c| c.3.land.2).sum();
+        let books = accounts.get(&civ.id).copied().unwrap_or_default();
+        let corrupt = books.corruption * 100 / books.trade.max(1);
+        let economy = format!("corr {corrupt:>2}% upk {:>3} rates {}/{}", books.upkeep, civ.rates.science, civ.rates.luxury);
         println!(
-            "  {:<14} {:>2} cities {:>3} people {:>2} techs {:>3} army{grouped} {:>5} gold  {:<14} culture {:>5}  wonders {}{ship}",
+            "  {:<14} {:>2} cities {:>3} people {:>2} techs {:>3} army{grouped} {:>5} gold  {:<14} culture {:>5}  wonders {}  trade {:>4} sci {:>4} {economy}{ship}",
             civ.name.trim_start_matches("the "),
             owned.len(),
             people,
@@ -235,7 +304,9 @@ fn snapshot(world: &mut World, turn: u32) {
             civ.gold,
             civ.government.name(),
             points,
-            held
+            held,
+            trade,
+            civ.tech.science_per_turn
         );
     }
 }

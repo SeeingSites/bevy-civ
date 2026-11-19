@@ -15,6 +15,7 @@ pub mod trade;
 pub mod space;
 pub mod save;
 pub mod culture;
+pub mod economy;
 pub mod espionage;
 pub mod great;
 pub mod traits;

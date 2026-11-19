@@ -213,6 +213,9 @@ pub struct Foreign {
     /// Just causes for war that peoples hold against each other (see [`Grievance`]).
     #[serde(default)]
     pub grievances: Vec<Grievance>,
+    /// Technologies computer players have traded among themselves so far (swapped or sold).
+    #[serde(default)]
+    pub tech_trades: u32,
 }
 
 impl Foreign {
@@ -759,6 +762,20 @@ pub const CONQUEST_WAR: f64 = 0.04;
 
 /// Chance each turn that a rival declares war on a people whose spaceship is in flight.
 pub const SPACE_RACE_WAR: f64 = 0.15;
+/// Chance each turn that two computer players on speaking terms trade knowledge, and the goodwill
+/// it takes (a swap; a sale for gold needs none).
+pub const AI_TECH_TRADE: f64 = 0.05;
+pub const AI_TECH_GOODWILL: i32 = 5;
+/// Gold a technology sells for, per beaker of its base cost.
+pub const TECH_PRICE: i32 = 3;
+/// Goodwill a trade of knowledge builds between two computer players: a swap, and a sale.
+pub const SWAP_GOODWILL: i32 = 3;
+pub const SALE_GOODWILL: i32 = 1;
+
+/// The most valuable technology `from` knows that `to` may study.
+fn best_lesson(from: &TechState, to: &TechState) -> Option<Tech> {
+    Tech::ALL.into_iter().filter(|t| from.researched.contains(t) && to.can_research(*t)).max_by_key(|t| t.cost())
+}
 
 pub fn turn(ctx: &mut Ctx, fog: &FogOfWar, supplies: &Supplies, units: &[(Hex, u32)], cities: &[(Hex, u32)]) {
     let mut rng = rand::thread_rng();
@@ -1056,6 +1073,43 @@ pub fn turn(ctx: &mut Ctx, fog: &FogOfWar, supplies: &Supplies, units: &[(Hex, u
             }
         }
     }
+    // ...and knowledge: neighbours not at war swap a technology each, as computer players do
+    // eagerly, if they are on good terms; one with nothing to teach buys a lesson with gold.
+    for (i, a) in alive.iter().enumerate() {
+        for b in alive.iter().skip(i + 1) {
+            if ctx.diplomacy.get_treaty(a.0, b.0) == Treaty::War || nearest(a.0, b.0) > 16 || !rng.gen_bool(AI_TECH_TRADE) {
+                continue;
+            }
+            let (Some(ia), Some(ib)) = (ctx.civs.players.iter().position(|c| c.id == a.0), ctx.civs.players.iter().position(|c| c.id == b.0)) else { continue };
+            let (ta, tb) = (&ctx.civs.players[ia].tech, &ctx.civs.players[ib].tech);
+            let (a_teaches, b_teaches) = (best_lesson(ta, tb), best_lesson(tb, ta));
+            let friendly = ctx.diplomacy.get_attitude(a.0, b.0) >= AI_TECH_GOODWILL;
+            let price = |t: Tech| t.cost() as i32 * TECH_PRICE;
+            match (a_teaches, b_teaches) {
+                (Some(x), Some(y)) if friendly => {
+                    ctx.civs.players[ib].tech.learn(x);
+                    ctx.civs.players[ia].tech.learn(y);
+                    ctx.foreign.tech_trades += 2;
+                    ctx.diplomacy.change_attitude(a.0, b.0, SWAP_GOODWILL);
+                }
+                (Some(x), None) if ctx.civs.players[ib].gold >= price(x) + 100 => {
+                    ctx.civs.players[ib].tech.learn(x);
+                    ctx.civs.players[ib].gold -= price(x);
+                    ctx.civs.players[ia].gold += price(x);
+                    ctx.foreign.tech_trades += 1;
+                    ctx.diplomacy.change_attitude(a.0, b.0, SALE_GOODWILL);
+                }
+                (None, Some(y)) if ctx.civs.players[ia].gold >= price(y) + 100 => {
+                    ctx.civs.players[ia].tech.learn(y);
+                    ctx.civs.players[ia].gold -= price(y);
+                    ctx.civs.players[ib].gold += price(y);
+                    ctx.foreign.tech_trades += 1;
+                    ctx.diplomacy.change_attitude(a.0, b.0, SALE_GOODWILL);
+                }
+                _ => {}
+            }
+        }
+    }
     let _ = BARBARIANS;
 }
 
@@ -1081,6 +1135,7 @@ mod tests {
             anarchy: 0,
             pending_government: None,
             eliminated: false,
+            rates: Default::default(),
         }
     }
 
@@ -1199,6 +1254,54 @@ mod tests {
         table.state.turn += 1;
         foreign_turn(&mut table, &fog, &supplies, &cities);
         assert!(table.foreign.ai_deals.iter().all(|d| !(d.seller == 1 && d.buyer == 2)));
+    }
+
+    #[test]
+    fn rivals_on_good_terms_swap_knowledge_and_others_buy_it() {
+        let mut table = Table::new(2);
+        table.civs.players[1].tech.learn(Tech::Pottery);
+        table.civs.players[2].tech.learn(Tech::Alphabet);
+        table.diplomacy.change_attitude(1, 2, 20);
+        table.diplomacy.set_treaty(1, 2, Treaty::Peace);
+        let cities = [(Hex::ZERO, PLAYER), (Hex::new(6, 0), 1), (Hex::new(12, 0), 2)];
+        let fog = FogOfWar::default();
+        for turn in 1..400 {
+            table.state.turn = turn;
+            table.foreign.offer = None;
+            // (A fresh peace: they do not fall out on their own meanwhile.)
+            table.foreign.since.insert((1, 2), turn);
+            foreign_turn(&mut table, &fog, &Supplies::default(), &cities);
+            if table.foreign.tech_trades > 0 {
+                break;
+            }
+        }
+        let knows = |t: &Table, id: usize, tech: Tech| t.civs.players[id].tech.researched.contains(&tech);
+        assert!(knows(&table, 1, Tech::Alphabet) && knows(&table, 2, Tech::Pottery), "a swap, one each");
+        assert_eq!(table.diplomacy.get_attitude(1, 2), 30 + SWAP_GOODWILL, "trade builds goodwill");
+        // At war, nothing changes hands.
+        let mut table = Table::new(2);
+        table.civs.players[1].tech.learn(Tech::Pottery);
+        table.civs.players[2].gold = 1_000;
+        table.diplomacy.set_treaty(1, 2, Treaty::War);
+        for turn in 1..200 {
+            table.state.turn = turn;
+            // (A fresh war: they do not make peace on their own meanwhile.)
+            table.foreign.since.insert((1, 2), turn);
+            foreign_turn(&mut table, &fog, &Supplies::default(), &cities);
+        }
+        assert!(!knows(&table, 2, Tech::Pottery));
+        // At peace, a people with nothing to teach pays for the lesson.
+        table.diplomacy.set_treaty(1, 2, Treaty::Peace);
+        for turn in 200..600 {
+            table.state.turn = turn;
+            table.foreign.since.insert((1, 2), turn);
+            foreign_turn(&mut table, &fog, &Supplies::default(), &cities);
+            if knows(&table, 2, Tech::Pottery) {
+                break;
+            }
+        }
+        assert!(knows(&table, 2, Tech::Pottery));
+        assert!(table.civs.players[2].gold < 1_000 && table.civs.players[1].gold > 100);
     }
 
     #[test]

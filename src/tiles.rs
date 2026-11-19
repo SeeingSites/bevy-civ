@@ -81,7 +81,7 @@ pub enum Focus {
     Growth,
     /// Shields first, once everyone is fed: projects finish sooner.
     Production,
-    /// Gold-rich tiles first (sea, rivers, roads), once everyone is fed: more science and taxes.
+    /// Trade-rich tiles first (sea, rivers, roads), once everyone is fed: more science and taxes.
     Trade,
 }
 

@@ -298,6 +298,12 @@ impl Building {
         matches!(self, Building::SpaceStructure | Building::SpaceComponent | Building::SpaceModule)
     }
 
+    /// A world wonder that must stand somewhere in the world before anyone can build this: the
+    /// Apollo Program opens the space race to every people.
+    pub fn required_wonder(&self) -> Option<Building> {
+        self.is_spaceship_part().then_some(Building::Apollo)
+    }
+
     /// Citizens this building makes content in its city.
     pub fn content(&self) -> u32 {
         match self {
@@ -308,15 +314,15 @@ impl Building {
         }
     }
 
-    /// The largest a city can grow without (and with) the buildings that supply water. A river beside
-    /// the city counts as an aqueduct.
+    /// The largest a city can grow without (and with) the buildings that supply water: 6 without an
+    /// Aqueduct (a river beside the city serves as one), 12 without a Sewer System.
     pub fn size_limit(buildings: &[Building], fresh_water: bool) -> u32 {
         if buildings.contains(&Building::SewerSystem) {
             u32::MAX
         } else if buildings.contains(&Building::Aqueduct) || fresh_water {
-            16
+            AQUEDUCT_LIMIT * 2
         } else {
-            8
+            AQUEDUCT_LIMIT
         }
     }
 
@@ -328,19 +334,19 @@ impl Building {
     /// What it does in the default (Earth) theme.
     pub fn base_effect(&self) -> &'static str {
         match self {
-            Building::Granary => "+2 food",
+            Building::Granary => "the city keeps half its food when it grows",
             Building::Barracks => "+1 shields",
-            Building::Library => "+2 science",
-            Building::Marketplace => "+2 gold, luxuries count double",
+            Building::Library => "+50% science",
+            Building::Marketplace => "+50% taxes and luxury; luxuries count double",
             Building::Walls => "doubles defence against land attacks",
-            Building::Aqueduct => "lets the city grow past size 8 (to 16)",
-            Building::University => "+4 science",
-            Building::Bank => "+4 gold; interest on the treasury (needs a Marketplace)",
-            Building::StockExchange => "+3 gold, +50% gold here; more interest (needs a Bank)",
-            Building::Observatory => "+3 science",
-            Building::ResearchLab => "+6 science (needs a University)",
-            Building::PowerPlant => "+4 shields (needs a Factory)",
-            Building::PoliceStation => "+2 content; halves war weariness; stops narcotics and roots them out",
+            Building::Aqueduct => "lets the city grow past size 6 (to 12)",
+            Building::University => "+50% science (needs a Library)",
+            Building::Bank => "+30% taxes and luxury; interest on the treasury (needs a Marketplace)",
+            Building::StockExchange => "+30% taxes and luxury; more interest (needs a Bank)",
+            Building::Observatory => "+25% science",
+            Building::ResearchLab => "+50% science (needs a University)",
+            Building::PowerPlant => "+25% shields (needs a Factory)",
+            Building::PoliceStation => "+2 content; halves war weariness; cuts corruption; stops narcotics and roots them out",
             Building::FoodSafety => "no adulterated-food scandals; GM food is trusted",
             Building::GmFarms => "+1 food on every farmed tile worked (distrusted without a Food Safety Agency)",
             Building::Supermarket => "+3 food",
@@ -350,13 +356,13 @@ impl Building {
             Building::Airport => "aircraft trained here are veterans",
             Building::SdiDefense => "shoots down nuclear missiles aimed within 3 tiles",
             Building::ForbiddenPalace => "a second seat of government: corruption counts from here too (one per people)",
-            Building::Factory => "+3 shields; needed for spaceship parts",
+            Building::Factory => "+25% shields; needed for spaceship parts",
             Building::Harbor => "+1 food on worked ocean tiles; links coasts",
             Building::Temple => "+2 content",
-            Building::Courthouse => "halves corruption",
+            Building::Courthouse => "cuts corruption and waste (halves the part due to distance)",
             Building::Colosseum => "+3 content",
             Building::Cathedral => "+3 content",
-            Building::SewerSystem => "lets the city grow past size 16",
+            Building::SewerSystem => "lets the city grow past size 12",
             Building::SpaceStructure => "spaceship part (4 needed)",
             Building::SpaceComponent => "spaceship part (2 needed)",
             Building::SpaceModule => "spaceship part (2 needed)",
@@ -375,22 +381,16 @@ impl Building {
 
     pub fn food_bonus(&self) -> u32 {
         match self {
-            Building::Granary => 2,
             Building::HangingGardens => 2,
             Building::Supermarket => 3,
             _ => 0,
         }
     }
 
+    /// Science a wonder adds outright in its city (the Library and its like multiply science instead:
+    /// see `economy::science_bonus`).
     pub fn science_bonus(&self) -> u32 {
         match self {
-            Building::Library => 2,
-            Building::University => 4,
-            Building::GreatLibrary => 5,
-            Building::Copernicus => 6,
-            Building::Newton => 8,
-            Building::Observatory => 3,
-            Building::ResearchLab => 6,
             _ => 0,
         }
     }
@@ -398,24 +398,22 @@ impl Building {
     pub fn production_bonus(&self) -> u32 {
         match self {
             Building::Barracks => 1,
-            Building::Factory => 3,
-            Building::Pyramids => 3,
             Building::KingRichards => 4,
-            Building::PowerPlant => 4,
             _ => 0,
         }
     }
 
+    /// Gold a wonder adds outright in its city (markets and banks multiply taxes instead: see
+    /// `economy::tax_bonus`).
     pub fn gold_bonus(&self) -> u32 {
         match self {
-            Building::Marketplace => 2,
-            Building::Bank => 4,
-            Building::StockExchange => 3,
-            Building::Colossus => 3,
             _ => 0,
         }
     }
 }
+
+/// The largest a city grows without an Aqueduct or fresh water; twice that without a Sewer System.
+pub const AQUEDUCT_LIMIT: u32 = 6;
 
 impl Building {
     /// Only one in each people's empire.
@@ -423,15 +421,16 @@ impl Building {
         *self == Building::ForbiddenPalace
     }
 
-    /// Only a city on the coast can build it.
+    /// Only a city on the coast can build it (the seafaring wonders too, as in Civ III).
     pub fn needs_coast(&self) -> bool {
-        matches!(self, Building::Harbor | Building::CoastalFortress)
+        matches!(self, Building::Harbor | Building::CoastalFortress | Building::Colossus | Building::GreatLighthouse | Building::Magellan)
     }
 
     /// A building the city must already have before it can build this one.
     pub fn required_building(&self) -> Option<Building> {
         match self {
             Building::Bank => Some(Building::Marketplace),
+            Building::University => Some(Building::Library),
             Building::StockExchange => Some(Building::Bank),
             Building::ResearchLab => Some(Building::University),
             Building::PowerPlant => Some(Building::Factory),
@@ -452,16 +451,16 @@ impl Building {
     /// What a wonder does, in a few words (its yields in its own city, plus anything wider).
     pub fn wonder_effect(&self) -> &'static str {
         match self {
-            Building::Pyramids => "+3 shields here",
-            Building::GreatLibrary => "+5 science here",
+            Building::Pyramids => "a Granary in every city of its owner (+2 food where there is none)",
+            Building::GreatLibrary => "teaches its owner every technology known to two or more of the peoples it has met (until it learns Theory of Gravity)",
             Building::HangingGardens => "+2 food here, +1 content in every city",
-            Building::Colossus => "+3 gold here",
+            Building::Colossus => "+1 gold on every ocean tile its city works",
             Building::Oracle => "+2 content in every city",
             Building::GreatLighthouse => "+1 move for ships and troops at sea",
             Building::GreatWall => "every city of its owner counts as walled",
             Building::StatueOfZeus => "one more unit per city supported free",
             Building::Mausoleum => "temples and walls each calm one more citizen",
-            Building::Copernicus => "+6 science here",
+            Building::Copernicus => "+100% science here",
             Building::SunTzu => "new troops trained as veterans everywhere; armies hold a fifth unit",
             Building::MarcoPolo => "an embassy with every civilization",
             Building::KingRichards => "+4 shields here",
@@ -469,7 +468,7 @@ impl Building {
             Building::Leonardo => "upgrades one obsolete unit free every turn",
             Building::Bach => "+2 content in every city",
             Building::Magellan => "+2 moves for ships",
-            Building::Newton => "+8 science here",
+            Building::Newton => "+100% science here",
             Building::AdamSmith => "+1 gold for every Marketplace, Bank and Harbor",
             Building::Shakespeare => "no unhappy citizens here",
             Building::Darwin => "two technologies at once",
@@ -477,10 +476,10 @@ impl Building {
             Building::HooverDam => "+25% shields in every city",
             Building::Eiffel => "+2 culture a turn in every city",
             Building::Internet => "+3 science in every city with a Library",
-            Building::Apollo => "the whole world revealed",
+            Building::Apollo => "the whole world revealed to its owner; opens the space race: no people can build spaceship parts until it stands",
             Building::CureForCancer => "+2 content in every city",
             Building::Manhattan => "lets every people who knows Rocketry build Nuclear Missiles",
-            Building::UnitedNations => "every 10 turns the world votes for Secretary-General: two thirds of the votes win a diplomatic victory",
+            Building::UnitedNations => "every 10 turns the world votes for Secretary-General: a majority of all the members wins a diplomatic victory",
             _ => "",
         }
     }
@@ -497,10 +496,31 @@ impl Building {
     }
 }
 
+impl Building {
+    /// The technology that makes a wonder obsolete once its owner knows it, as in Civ III: its
+    /// effect ends, though its culture goes on.
+    pub fn obsoleted_by(&self) -> Option<crate::tech::Tech> {
+        use crate::tech::Tech;
+        match self {
+            Building::Oracle => Some(Tech::Theology),
+            Building::GreatWall => Some(Tech::Gunpowder),
+            Building::GreatLighthouse => Some(Tech::Navigation),
+            Building::GreatLibrary => Some(Tech::TheoryOfGravity),
+            Building::Colossus => Some(Tech::Flight),
+            Building::Leonardo => Some(Tech::MotorizedTransport),
+            _ => None,
+        }
+    }
+}
+
 /// Which wonders stand in the world, and where: each can be built only once.
 #[derive(Resource, Default, Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct WorldWonders {
     pub built: std::collections::HashMap<Building, (u32, String)>,
+    /// Wonders made obsolete: their owner knows what supersedes them (see
+    /// [`Building::obsoleted_by`]), so their effects have ended.
+    #[serde(default)]
+    pub expired: std::collections::HashSet<Building>,
 }
 
 impl WorldWonders {
@@ -508,14 +528,30 @@ impl WorldWonders {
         self.built.contains_key(&wonder)
     }
 
-    /// Whether `owner` has the wonder.
+    /// Whether `owner` has the wonder and it is still in effect (not obsolete).
     pub fn owns(&self, owner: u32, wonder: Building) -> bool {
-        self.built.get(&wonder).is_some_and(|(o, _)| *o == owner)
+        self.built.get(&wonder).is_some_and(|(o, _)| *o == owner) && !self.expired.contains(&wonder)
     }
 
-    /// Content citizens every city of `owner` gets from its wonders.
+    /// Content citizens every city of `owner` gets from its wonders still in effect.
     pub fn empire_content(&self, owner: u32) -> u32 {
-        self.built.iter().filter(|(_, (o, _))| *o == owner).map(|(w, _)| w.empire_content()).sum()
+        self.built.iter().filter(|(w, (o, _))| *o == owner && !self.expired.contains(*w)).map(|(w, _)| w.empire_content()).sum()
+    }
+
+    /// Notes which wonders their owners have made obsolete (`knows(owner, tech)`); a wonder taken by
+    /// a people that does not know the technology works again. Returns those newly obsolete, with
+    /// their owners.
+    pub fn refresh_expired(&mut self, knows: impl Fn(u32, crate::tech::Tech) -> bool) -> Vec<(Building, u32)> {
+        let mut fresh = Vec::new();
+        for (wonder, (owner, _)) in &self.built {
+            let gone = wonder.obsoleted_by().is_some_and(|t| knows(*owner, t));
+            if gone && self.expired.insert(*wonder) {
+                fresh.push((*wonder, *owner));
+            } else if !gone {
+                self.expired.remove(wonder);
+            }
+        }
+        fresh
     }
 
     /// Extra moves a ship (or troops at sea) of `owner` gets each turn.
@@ -563,6 +599,17 @@ mod tests {
         world.transfer_city("Carthage", 1);
         assert_eq!(world.sea_moves(1), 1);
         assert_eq!(world.sea_moves(2), 0);
+        // Navigation makes the Lighthouse obsolete for its owner; a new owner without it uses it again.
+        let fresh = world.refresh_expired(|owner, tech| owner == 1 && tech == crate::tech::Tech::Navigation);
+        assert_eq!(fresh, vec![(Building::GreatLighthouse, 1)]);
+        assert_eq!(world.sea_moves(1), 0);
+        assert!(world.is_taken(Building::GreatLighthouse), "it still stands");
+        world.transfer_city("Carthage", 2);
+        assert!(world.refresh_expired(|owner, tech| owner == 1 && tech == crate::tech::Tech::Navigation).is_empty());
+        assert_eq!(world.sea_moves(2), 1);
+        // Theology ends the Oracle's calm.
+        world.refresh_expired(|_, tech| tech == crate::tech::Tech::Theology);
+        assert_eq!(world.empire_content(1), 0);
     }
 }
 
@@ -588,10 +635,9 @@ impl CityBuildings {
         self.buildings.iter().map(|b| b.production_bonus()).sum()
     }
 
-    /// Gold from the city's buildings; a Stock Exchange adds half again.
+    /// Gold the city's wonders add outright.
     pub fn total_gold_bonus(&self) -> u32 {
-        let sum: u32 = self.buildings.iter().map(|b| b.gold_bonus()).sum();
-        if self.buildings.contains(&Building::StockExchange) { sum * 3 / 2 } else { sum }
+        self.buildings.iter().map(|b| b.gold_bonus()).sum()
     }
 
     pub fn has_wonder(&self, wonder: Building) -> bool {
@@ -613,12 +659,9 @@ mod finance_tests {
     }
 
     #[test]
-    fn a_stock_exchange_adds_half_again_and_needs_a_bank() {
-        let city = CityBuildings { buildings: vec![Building::Marketplace, Building::Bank] };
-        assert_eq!(city.total_gold_bonus(), 6);
-        let city = CityBuildings { buildings: vec![Building::Marketplace, Building::Bank, Building::StockExchange] };
-        assert_eq!(city.total_gold_bonus(), (2 + 4 + 3) * 3 / 2);
+    fn finance_buildings_come_in_order() {
         assert_eq!(Building::StockExchange.required_building(), Some(Building::Bank));
+        assert_eq!(Building::University.required_building(), Some(Building::Library));
         assert_eq!(Building::Bank.required_building(), Some(Building::Marketplace));
         assert_eq!(Building::Bank.required_tech(), Some(crate::tech::Tech::Banking));
     }

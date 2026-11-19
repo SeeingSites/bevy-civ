@@ -1,5 +1,5 @@
 //! Barbarians: raiders who appear in the wild lands outside every border, in bands that grow with
-//! the age of the world and carry its weapons (warriors at first, rifles and artillery much later).
+//! the age of the world and carry its weapons (warriors at first, rifles much later).
 //!
 //! Modern raiders rise inside a people's own lands, out of its cities' troubles, and fight on the
 //! barbarians' side:
@@ -94,7 +94,7 @@ pub fn band(techs: usize) -> Vec<UnitType> {
         24..=31 => [UnitType::Longbowman, UnitType::Knight],
         32..=39 => [UnitType::Musketman, UnitType::Cavalry],
         40..=45 => [UnitType::Rifleman, UnitType::Cavalry],
-        _ => [UnitType::Infantry, UnitType::Artillery],
+        _ => [UnitType::Infantry, UnitType::Cavalry],
     };
     let size = match techs {
         0..=11 => 1,

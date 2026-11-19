@@ -15,25 +15,30 @@ Turn-based, Civilization-style empire building on a hex map, playable in the bro
   the moves still enters but is worn out for the turns it owes (a one-move unit takes 2 turns a hill,
   3 a mountain); roads triple movement and railroads make it free. Wheeled units (chariots,
   catapults, cannon, artillery) keep out of forest and mountains unless a road leads through
-- Cities that grow (up to 8, 16 with an Aqueduct or a river, beyond with a Sewer System), can
+- Cities that grow (up to 6, 12 with an Aqueduct or a river, beyond with a Sewer System), can
   starve, and need happy citizens: disorder stops growth, production, science and taxes
-- Specialists (entertainers, tax collectors, scientists) and corruption by distance
-- Science, luxury and tax rates, capped by your government
+- An economy after Civilization III: trade from the land, corruption and waste by distance from a
+  palace and by empire size, science, luxury and tax rates capped by the government (computer
+  players set theirs too), buildings that multiply science or taxes, and gold upkeep for buildings
+- Specialists (entertainers, tax collectors, scientists)
 - Strategic and luxury resources joined to cities by roads and harbours, and traded with leaders
-- 53 technologies from Pottery to Genetic Engineering, shown as a tree by era; click any to research the way to it
+- 53 technologies from Pottery to Genetic Engineering in four ages (Ancient Times, Middle Ages,
+  Industrial Age, Modern Age), shown as a tree; click any to research the way to it
 - Six governments chosen in a revolution (with anarchy): Despotism to Democracy, Communism and
   Fundamentalism; martial law where it applies
-- Combat in rounds with hit points, veterans and elites, retreat, walls, fortification, river and
-  terrain defence, artillery bombardment, great generals, zone of control and unit upgrades
+- Combat by Civilization III's rules: rounds over hit points, veterans and elites, retreat, city
+  size and walls, fortification, river and terrain defence, guns that bombard from range, great
+  generals, zone of control and unit upgrades
 - A defender for every age: Warrior, Spearman, Phalanx, Pikeman, Musketman, Rifleman, Infantry and
   Mech. Infantry, and Modern Armor after the Tank
 - Ships and aircraft: transports carry troops across the sea, carriers carry aircraft
-- World wonders (one per world) with real effects, golden ages
+- World wonders (one per world) with real effects; golden ages begun by a wonder in a people's spirit
+  or its unique unit's first victory
 - Great people: generals, merchants, scientists, artists, engineers
 - Governors: with Governor builds on, a city picks its projects, calms disorder with entertainers (and releases them when they are no longer needed) and sends the Workers it trains to work on automatic; a city in disorder says so plainly in its panel
 - Auto-explore (C): scouts, soldiers and warships roam to the edge of the known world by themselves, turn after turn
 - Ending the turn with a city that has no soldier in it and an enemy in sight nearby asks for a second End Turn
-- Armies: a great general in one of your cities forms up to four land units (five with Sun Tzu) into one army, 10% stronger per member; more troops can join later
+- Armies: a great general in one of your cities forms up to three land units (four with Sun Tzu) into one army, 10% stronger per member; more troops can join later
 - Battles played out on the map, one at a time: the camera goes to every battle you fight (also
   attacks on your units in the other peoples' turns), the attacker lunges, blows land, the fallen
   topple and the result floats over the tile; the next unit waits until the battle is over
@@ -42,7 +47,7 @@ Turn-based, Civilization-style empire building on a hex map, playable in the bro
 - Caravans (trade routes, help with wonders) and diplomats (embassies and espionage)
 - Diplomacy: treaties, attitude and reputation, tribute, tech exchange, resource deals
 - Computer players that research, expand, build, trade, spy, race for wonders and the stars
-- Victory by conquest, domination, diplomacy (United Nations), culture (20,000 points and 1.6 times any rival, scaled to the game's length), space race, or score at the last turn
+- Victory by conquest, domination, diplomacy (United Nations), culture (after Civ III: 60,000 points with twice any rival's, or 15,000 in a single city, scaled to the game's length), space race, or score at the last turn
 - Multi-turn orders, route preview, worker automation, stack moves, raze or keep captured cities
 - Advisors (science, foreign, trade, empire: government, cities, military, score) and an encyclopedia
 - Saved games: automatic every turn, and as files that anyone can load
@@ -117,47 +122,61 @@ shows the causes you hold and those held against you. Computer players with a gr
 to go to war - against you or each other - and say why.
 
 ## Wonders and great people
-There are 27 wonders. Each **wonder** can be built only once in the world: when one civilization finishes it, everyone
+There are 29 wonders. Each **wonder** can be built only once in the world: when one civilization finishes it, everyone
 else's work on it stops (their shields go to the next project) and the news is announced.
 
 | Wonder | Needs | Effect |
 |---|---|---|
-| Pyramids | Masonry | +3 shields in its city |
-| Great Library | Writing | +5 science in its city |
+| Pyramids | Masonry | a Granary in every city of its owner (+2 food where there is none) |
+| Great Library | Writing | its owner learns every technology known to two or more of the peoples it has met (obsolete with Theory of Gravity) |
 | Hanging Gardens | Monarchy | +2 food in its city, +1 content in every city |
-| Colossus | Bronze Working | +3 gold in its city (needs Iron) |
-| Oracle | Mysticism | +2 content in every city |
-| Great Lighthouse | Masonry | +1 move for ships and troops at sea |
+| Colossus | Bronze Working | +1 gold on every ocean tile its city works (needs Iron; obsolete with Flight) |
+| Oracle | Mysticism | +2 content in every city (obsolete with Theology) |
+| Great Lighthouse | Masonry | +1 move for ships and troops at sea (obsolete with Navigation) |
 | Statue of Zeus | Bronze Working | one more unit per city supported free |
 | Mausoleum | Masonry | temples and walls each calm one more citizen |
-| Great Wall | Construction | every city counts as walled |
-| Copernicus' Observatory | Mathematics | +6 science in its city |
+| Great Wall | Construction | every city counts as walled (obsolete with Gunpowder) |
+| Copernicus' Observatory | Astronomy | +100% science in its city |
 | Sun Tzu's War Academy | Iron Working | new troops trained as veterans everywhere |
 | Marco Polo's Embassy | Currency | an embassy with every civilization |
 | King Richard's Crusade | Monarchy | +4 shields in its city |
 | Michelangelo's Chapel | Theology | +3 content in every city |
-| Leonardo's Workshop | Engineering | one obsolete unit upgraded free every turn |
+| Leonardo's Workshop | Engineering | one obsolete unit upgraded free every turn (obsolete with Motorized Transport) |
 | J.S. Bach's Cathedral | Printing Press | +2 content in every city |
-| Magellan's Expedition | Gunpowder | +2 moves for ships |
-| Isaac Newton's College | Steam Power | +8 science in its city |
-| Adam Smith's Trading Company | Industrialization | +1 gold for every Marketplace, Bank and Harbor |
-| Shakespeare's Theatre | Sanitation | no unhappy citizens in its city |
+| Magellan's Expedition | Navigation | +2 moves for ships |
+| Isaac Newton's College | Theory of Gravity | +100% science in its city |
+| Adam Smith's Trading Company | Economics | +1 gold for every Marketplace, Bank and Harbor |
+| Shakespeare's Theatre | Medicine | no unhappy citizens in its city |
 | Statue of Liberty | Democracy | revolutions without anarchy |
 | Darwin's Voyage | Electricity | two technologies at once |
 | Eiffel Tower | Refining | +2 culture a turn in every city |
-| Hoover Dam | Replaceable Parts | +25% shields in every city |
+| Hoover Dam | Electronics | +25% shields in every city |
 | The Internet | Computers | +3 science in every city with a Library |
-| Apollo Program | Space Flight | the whole world revealed |
+| Apollo Program | Space Flight | the whole world revealed to its owner; no people can build spaceship parts until it stands |
 | Cure for Cancer | Superconductors | +2 content in every city |
+| Manhattan Project | Nuclear Fission | every people that knows Rocketry may build Nuclear Missiles |
+| United Nations | Computers | every 10 turns the world votes for Secretary-General (see Diplomacy) |
 
-A captured city's wonders change hands with it.
+A captured city's wonders change hands with it. The Colossus, the Great Lighthouse and Magellan's
+Expedition can only be built in a coastal city. As in Civ III, a few wonders grow obsolete once
+their owner learns what supersedes them (the turn after): their effect ends, though their culture
+goes on, and a new owner who does not know it yet enjoys the effect again.
+
+Every wonder speaks to one or two of the six traits (Pyramids: Agricultural and Industrious; Great
+Library: Scientific; Colossus: Commercial; Oracle: Religious; Great Wall: Militaristic and
+Industrious; and so on - the encyclopedia's Wonders page and the city panel list them). A people's
+first wonder that matches one of its own traits begins its **golden age**, and so does the first
+victory of its unique unit over another people (not barbarians), whichever comes first: for 20 turns
+every worked tile that yields a shield yields one more, and every one that yields gold one more
+gold. Each people has one golden age a game.
 
 **Great people** are born in cities. Every turn a city earns great-person points from its buildings
 (Marketplace, Harbor and Bank for merchants; Library and University for scientists; Aqueduct and
 Factory for engineers), its wonders, its specialists and, in the capital, the court (artists). When
 a city's points reach the threshold (40, then 30 more for each great person a civilization has had)
 one is born there, its kind drawn in proportion to the points; the city panel's Overview shows the
-progress. **Great generals** come from battle instead: every fourth victory, attacking or defending.
+progress. **Great generals** come from battle instead, as Civilization III's great leaders do: one
+victory in sixteen won by an elite unit (attacking or defending) brings one forth.
 Select a great person and press **U** (or its Use button):
 
 - **Great Scientist**: completes the current research at once.
@@ -204,6 +223,61 @@ other and from you, and you hear about it when they target you. Now and then an 
 stages an incident to justify a war, and one at war frames its enemy in a neutral city to drag that
 city's owner into the fight; you hear the rumours when you are involved.
 
+## Combat
+Battles follow the rules of Civilization III:
+
+- **Rounds**: a battle is fought in rounds until one side has no hit points left. Each round the
+  attacker lands a blow with chance attack / (attack + defence), both with all their modifiers;
+  whoever is struck loses a hit point. Units have 3 hit points, 4 as veterans and 5 as elites:
+  experience adds hit points, never strength. Barracks (and Sun Tzu's War Academy) train veterans,
+  an Airport veteran aircraft, and a people trains its unique unit a rank higher.
+- **Defence**: the defender's bonuses are added up and then multiply its defence: open ground and
+  the sea +10%, forest +25%, hills +50%, mountains +100%, a river +25%, fortified +25%, a fortress
+  +50%. A city defends by its size: a town (up to the size a city reaches without water works,
+  8 now) has no defences of its own, a city (up to the size an Aqueduct allows, 16) +50%, a
+  metropolis beyond that +100%. City walls (and the Great Wall) give +100% against land attacks
+  wherever that is more than the city's own; a Coastal Fortress +100% against ships. Pikemen
+  defend twice as hard against mounted units (chariots, horsemen, knights, cavalry). The attacker
+  fights at its plain attack. This game adds two multipliers of its own: a Great General on the
+  tile (+50%) and an army's extra members (+10% each), for attack and defence alike.
+- **Retreat**: a fast unit (2 moves or more) attacking a slow one, brought down to its last hit
+  point while the defender has more than one, pulls back instead of dying half the time - 58% as a
+  veteran, 66% as an elite. There is no retreat from a fast defender.
+- **Promotion**: a victor (attacking or defending) may be promoted: a regular to veteran one time in
+  four, a veteran to elite one time in eight; twice as often for a militaristic people, half as
+  often after beating barbarians. A promotion adds a hit point at once.
+- **Guns**: catapults, cannon, artillery and radar artillery cannot attack or take cities. They
+  bombard (B, or click an enemy within range): a gun fires as many rounds as its rate of fire, each
+  hitting with chance bombard / (bombard + defence) against the defender's full defence, and every
+  hit takes a hit point - but never the last one, and the gun takes no harm. Frigates, ironclads,
+  battleships and bombers may bombard too. Shell a garrison, then storm it in the same turn: units
+  in their own city heal fully every turn.
+
+| Unit | Attack | Defence | Moves | Bombard (range, rate of fire) | Shields |
+|---|---|---|---|---|---|
+| Warrior | 1 | 1 | 1 | | 10 |
+| Spearman | 1 | 2 | 1 | | 20 |
+| Archer | 2 | 1 | 1 | | 20 |
+| Horseman | 2 | 1 | 2 | | 20 |
+| War Chariot | 2 | 1 | 2 | | 20 |
+| Phalanx | 1 | 3 | 1 | | 30 |
+| Legion (swordsmen) | 3 | 2 | 1 | | 30 |
+| Immortal | 4 | 2 | 1 | | 40 |
+| Catapult | 0 | 1 | 1 | 4 (1, 1) | 20 |
+| Pikeman | 1 | 2 (4 against mounted) | 1 | | 30 |
+| Longbowman | 4 | 1 | 1 | | 30 |
+| Knight | 4 | 3 | 2 | | 50 |
+| Musketman | 2 | 4 | 1 | | 30 |
+| Cannon | 0 | 1 | 1 | 8 (1, 1) | 40 |
+| Cavalry | 6 | 3 | 3 | | 70 |
+| Rifleman | 4 | 6 | 1 | | 50 |
+| Artillery | 0 | 2 | 1 | 12 (2, 2) | 80 |
+| Infantry | 6 | 10 | 1 | | 70 |
+| Tank | 16 | 8 | 2 | | 100 |
+| Radar Artillery | 0 | 2 | 2 | 16 (2, 3) | 100 |
+| Mech. Infantry | 12 | 18 | 2 | | 110 |
+| Modern Armor | 24 | 16 | 3 | | 150 |
+
 ## Ships and aircraft
 - **Warships** (Galley, Frigate, Ironclad, Destroyer, Battleship) are built in coastal cities. They
   sail on water and into your own cities, can attack units at sea or on the shore, and cannot take
@@ -215,22 +289,32 @@ city's owner into the fight; you hear the rumours when you are involved.
 ## Computer players
 Computer players follow the same rules as you and are run by three pieces of code:
 
-- **Armies** (`src/ai.rs`): the best defender in each city is its garrison and stays put; an empty
-  city is re-occupied by the nearest unit; field units strike beatable enemies nearby and march on
+- **Armies** (`src/ai.rs`): the best defender in each city is its garrison and stays put (the best
+  two while enemy troops are within 2 tiles, and one more in every city of a people down to three
+  cities or fewer); an empty city, or one short of defenders, is reinforced by the nearest unit; field units strike beatable enemies nearby and march on
   enemy cities, but gather outside a defended city until enough of the army has arrived. Workers
   road resources and cities, then farm and mine. Settlers walk clear of existing cities to found
   new ones: each settler heads for the best free site in reach (good land, resources, not too far),
   sailing there once the civilization knows Seafaring. Research follows temperament: warlike
   leaders study arms first, builders the economy; a civilization hemmed in on a small island
   studies Seafaring first; a technology that gives a better form of government is studied early.
+  Like the player, they trade knowledge: neighbours not at war swap a technology each (5% a turn
+  for each pair, when on good terms), and one with nothing to teach buys a lesson for gold (three
+  gold a beaker of its base cost). Trading builds goodwill between them (+3 a swap, +1 a sale),
+  which counts when they vote at the United Nations.
   Troop ships wait in port for a load of four (or eight turns) rather than carry a lone soldier
   to its death; settlers sail at once. A computer player keeps at most three great generals.
 - **Cities** (`src/governor.rs`): each city picks its next project in order of need - a defender if
   it has none, workers while roads are missing, a Harbor if it is cut off from the capital, an army
   sized to peace or war, settlers, then buildings and wonders. A city in danger pays gold to hurry
   its defender. A city with nothing left to build adds at most a couple of spare workers (and raises no soldiers beyond the army limit). Settlers keep coming (one per six cities) while there is free land within reach.
-- **Economy and diplomacy** (`src/main.rs`, `src/foreign.rs`): science and gold come from their own
-  cities and buildings. Spare gold hurries production and is invested in research. Their merchants
+- **Economy and diplomacy** (`src/main.rs`, `src/foreign.rs`, `src/economy.rs`): science and gold
+  come from their own cities' trade under the same rules as yours. Each turn they set their rates:
+  luxury while cities riot, then the most science their bills allow (keeping a small surplus while
+  the treasury is low, spending a large one down). Their governors build where buildings pay their
+  upkeep (a Courthouse where corruption bites, libraries and markets where there is trade, an
+  Aqueduct when a city nears size 6) and hold back while upkeep leaves little for science. Spare
+  gold hurries production and is invested in research. Their merchants
   propose resource deals: to buy what you can spare and sell what they can. They also buy and
   sell resources among themselves.
 - **Reaching cut-off cities**: a city with no land route to the capital is roaded to the nearest
@@ -241,10 +325,14 @@ Computer players follow the same rules as you and are run by three pieces of cod
 - **Wars of conquest**: an aggressive power with 1.4 times a neighbour's military strength is far
   likelier to attack it and slow to make peace while it wins. Armies grow with the empire (two units
   a city, up to 6 plus three for every two cities, so a great empire keeps a field army beyond its garrisons). A defended city is stormed only once the army
-  gathered before it can wear the garrison down: the planner weighs each side's attack against the
-  garrison's best defence (fortified, walled), and every defender costs about (1-p)/p attackers,
-  p being the odds of one blow. Warlike leaders commit with half the margin. Then every unit there
-  joins the assault.
+  gathered before it can wear the garrison down: the planner weighs each attacker against the
+  garrison's best defence against it, with every bonus of the city (its land, size and walls, dug
+  in), takes off what the guns in range will knock off by bombarding first, and every hit point
+  left costs about (1-p)/p of an attacker's, p being the odds of one blow. Warlike leaders commit
+  with half the margin. Then every unit there joins the assault, guns firing first. Elsewhere a
+  cautious leader's troops attack only at even odds or better, a warlike leader's whatever stands
+  in their way. One unit in four that an army raises for the field is a gun, once guns are known;
+  guns keep their distance and bombard.
   The last cities of a people with three or fewer, and the capital of a people whose spaceship is in
   flight, draw armies from much further away.
 - **Settling overseas**: a seafaring people looks for free land up to 20 tiles from its cities and
@@ -268,7 +356,7 @@ Computer players follow the same rules as you and are run by three pieces of cod
 - **N** or the **Next Unit** button — go to the next unit without skipping this one
 - **H** — fortify (or put a non-military unit to sleep) so it is no longer asked for orders
 - **Enter** or the **End Turn** button — end the turn now
-- **B** — settler founds a city
+- **B** — settler founds a city; a gun, warship or bomber bombards
 - **F / M / R / X** — worker builds Farm / Mine / Road (Railroad on a road, with Steam Power) /
   clears terrain or cleans pollution; **K** — automate the worker
 - **Shift-click** — move the whole stack (or switch on *Move together* in the unit panel)
@@ -282,9 +370,9 @@ Computer players follow the same rules as you and are run by three pieces of cod
 - **Esc** — close a window or deselect
 
 A city's project (anything but a wonder) can be finished at once from the city panel: **Buy now**
-costs two gold a missing shield plus a premium that grows with what is missing, doubled if nothing
-has been built of it yet; under Despotism and Communism **Rush** spends one citizen for every 20
-shields instead.
+costs two gold a missing shield for a building, plus a premium that grows with what is missing for
+a unit, doubled if nothing has been built of it yet (computer players pay the same); under
+Despotism and Communism **Rush** spends one citizen for every 20 shields instead.
 
 Units also have buttons for upgrading (in a city, for gold), bombarding (artillery, warships,
 bombers) and diplomats' missions. A city keeps training the same unit until you change its order;
@@ -318,18 +406,44 @@ keep it as a backup. On the desktop the files are `autosave.json` and `savegame.
 working directory.
 
 ## Rules in brief
-- **Finance**: Currency brings the Marketplace (+2 gold, luxuries count double); Banking (Currency
-  and The Republic) the Bank (+4 gold, needs a Marketplace); Economics (Banking and Printing Press)
-  the Stock Exchange (+3 gold and +50% of the city's building gold, needs a Bank) and Adam Smith's
-  Trading Company. Savings earn 5% interest a turn, up to 2 gold per Bank and 3 per Stock Exchange.
-  A Great Merchant makes a trade mission abroad (gold now) or settles in one of your cities as a
-  trading house (+3 gold there every turn).
-- **Rates**: each of your cities' commerce (its science and taxes) is pooled and split by the rates
-  in the Empire advisor's Government tab: science, luxury, and taxes for the rest. Every 2 luxury
-  make a citizen happy. A government limits any one rate: Despotism 60%, Monarchy and Communism
-  70%, Republic 80%, Democracy 100%, Fundamentalism 50%; Anarchy allows no science.
+- **Trade and rates** (after Civilization III): the land a city works brings in trade - the sea 2,
+  a river 1, a road on grassland, plains or desert 1, some resources more. Corruption takes a share
+  (below), and the rest is split by the rates in the Empire advisor's Government tab into science,
+  luxury and taxes. A government limits every share, taxes included: Despotism 60%, Monarchy 70%,
+  Communism, Republic and Fundamentalism 80%, Democracy 90%; in anarchy nothing is taxed or
+  learned and all trade goes to luxury. Buildings then multiply each part: Library, University
+  (needs a Library) and Research Lab +50% science each, Observatory +25%; Marketplace +50% taxes
+  and luxury, Bank and Stock Exchange +30% each. Scientists add 3 science and tax collectors 2 gold
+  before the multipliers; entertainers calm two citizens. Every 2 luxury make a citizen happy.
+- **Corruption and waste**: a city's corruption has two halves - distance to the nearest palace
+  (the capital or a Forbidden Palace; full at 24 tiles) and rank, the number of its people's cities
+  nearer a palace, which counts against the optimal number of cities (the world's land shared
+  among its peoples, 10 to 20) and climbs twice as fast past it. The government sets the scale:
+  Anarchy 80%, Despotism 60%, Monarchy 45%, Communism 40% (distance does not matter: every city
+  counts as halfway), Republic and Fundamentalism 35%, Democracy 20%, at most 90% of trade. A
+  Courthouse and a Police Station each halve the distance half and let the city count a quarter
+  more cities as optimal; a road or harbour link to the capital takes 15% off the distance half.
+  Waste takes 60% of that share of a city's shields (always leaving one). Palace cities have none.
+- **Upkeep**: buildings cost gold every turn - most 1, a Factory or a Stock Exchange 2; walls,
+  coastal forts, the Forbidden Palace and wonders nothing (no upkeep is paid in anarchy). A city can sell one building a turn for its cost in gold (Overview
+  tab); a treasury that cannot pay its bills sells the dearest to keep, empire-wide.
+- **Finance**: Currency brings the Marketplace; Banking (Currency and The Republic) the Bank (needs
+  a Marketplace); Economics (Banking and Printing Press) the Stock Exchange (needs a Bank) and Adam
+  Smith's Trading Company. Savings earn 5% interest a turn, up to 2 gold per Bank and 3 per Stock
+  Exchange. A Great Merchant makes a trade mission abroad (gold now) or settles in one of your
+  cities as a trading house (+3 gold there every turn).
+- **Science and ages**: technologies belong to four ages - Ancient Times, the Middle Ages, the
+  Industrial Age and the Modern Age. A people enters an age with its first discovery there, and can
+  study an age's technologies only once it knows every required technology of the ages before
+  (optional: Horseback Riding, Seafaring and The Republic; Chivalry, Navigation and Democracy;
+  Communism and Fundamentalism). Each discovery makes the next ones dearer, and a technology is
+  cheaper the more of the other peoples know it - of those you have met (computer players count
+  every people) - down to half price when all of them do. A discovery takes at least 4 turns (beakers beyond its cost are lost) and at most
+  40, however little science goes into it. The first people to learn Philosophy founds the Way of
+  Reason and makes a free discovery; a Scientific people makes one on entering each new age.
 - **Traits and unique units**: every civilization has two traits - Militaristic (troops promoted
-  after half their victories), Commercial (+1 gold a city), Scientific (+1 science a city),
+  twice as often), Commercial (+1 gold a city), Scientific (+1 science a city and a
+  free discovery in each new age),
   Religious (+1 content a city, shorter revolutions), Industrious (+1 shield a city), Agricultural
   (+1 food a city) - and a unique unit it trains a rank higher (Roman Legion, Spanish Knight...).
 - **Religion**: the first to learn Mysticism, Philosophy, Theology and Printing Press founds the Old
@@ -338,17 +452,29 @@ working directory.
   state religion - your capital's faith - to any city at peace with you (U). Cities of your state
   religion get +1 content (+2 with a Temple); the holy city's owner earns a gold for every two
   cities of its faith; peoples of one faith grow friendlier, of different faiths cooler.
+- **Unit support**: as in Civilization III, each city supports a few military units free - 4 under
+  Despotism or Fundamentalism, 3 under Monarchy or Communism, 2 in anarchy, none under a Republic or
+  Democracy - and every unit beyond costs a gold a turn (2 under a Republic or Democracy, nothing
+  under Fundamentalism); the Statue of Zeus supports one more per city. Computer players are held
+  to an army size instead (see Computer players).
 - **War weariness**: under a Republic every 12 turns of war make one more citizen unhappy in every
   city (up to 2), under Democracy every 8 (up to 3); peace brings it back down; a Police Station
   halves it.
 - **Resistance**: a captured city produces nothing for 1 turn plus 1 per 3 citizens (up to 6); a
   garrison of two settles it twice as fast.
-- **Working the land**: every tile yields food, shields and gold - grassland 2/0/0, plains 1/1/0,
+- **Working the land**: every tile yields food, shields and trade - grassland 2/0/0, plains 1/1/0,
   desert 0/1/0, hills 1/0/0, mountains 0/1/0, forest 1/2/0, ocean 1/0/2 - plus farms (+1 food),
-  mines (+2 shields on hills and mountains, +1 elsewhere), roads (+1 gold on flat land), railroads
-  (+1 shield), resources and rivers (+1 gold); a Harbor adds a food to worked ocean tiles. Each
-  working citizen works one tile of its city's area and every citizen eats 2 food; the city's own
-  tile is worked for free with a bonus. A governor picks tiles (food first until the city can grow,
+  mines (+2 shields on hills and mountains, +1 elsewhere), roads (+1 trade on flat land), railroads
+  (+1 shield), resources and rivers (+1 trade); a Harbor adds a food to worked ocean tiles. The
+  government changes it: under Despotism and Anarchy a tile giving 3 or more of anything gives one
+  less; a Republic or Democracy adds a trade to tiles that already give some. A city of three or
+  more with nobody unhappy and at least half its people happy celebrates its ruler: under
+  Despotism its tiles escape the penalty, under Monarchy or Communism they earn a republic's extra
+  trade (luxury is the way to it). Workers farm and
+  mine, then road the farmed flat land. Each working citizen works one tile of its city's area and
+  every citizen eats 2 food; the city's own tile is worked for free with a bonus. A city grows when
+  its food box fills: 20 food as a town (up to size 6), 40 as a city (to 12), 60 as a metropolis;
+  a Granary keeps half the food when it grows. A governor picks tiles (food first until the city can grow,
   then a balance); open a city and its area shows each tile's yield, the worked tiles ringed:
   click a tile to move a citizen there or off it (to entertain), or let the governor choose again.
 - **Governor builds**: each of your cities' governors also chooses its next project when one is
@@ -357,7 +483,7 @@ working directory.
   hand - then units repeat until you change the order and buildings wait for one.
 - **Barbarians**: from turn 10, every 8 turns a band rises on wild land outside every border and
   away from any unit; it grows (one to three units) and re-arms with the age of the world, from
-  warriors to infantry and artillery.
+  warriors to infantry and cavalry.
 - **United Nations**: the wonder (Computers) holds a vote for Secretary-General every 10 turns
   between its owner and the highest-scoring other people; every people votes for itself if a
   candidate, else for the candidate it likes better (or abstains); a majority of all the members wins
@@ -373,9 +499,9 @@ working directory.
   the game's last 2,000 messages, and its "great events" view is the chronicle offered at the end;
   a New World can be Small, Normal or Large with 3, 5 or 8 peoples; generated background music
   plays during the game (Music on/off in the Game menu).
-- **Big empires**: past 12 cities, every 6 more make one more citizen unhappy in every city; a
-  Forbidden Palace (Monarchy, one per people) is a second seat of government, corruption counting
-  from the nearer of it and the capital. Great people grow rarer: 60 points for the first, then
+- **Big empires**: past 12 cities, every 6 more make one more citizen unhappy in every city, and
+  corruption climbs steeply past the optimal number of cities; a Forbidden Palace (Monarchy, one
+  per people) is a second palace, corruption counting from the nearer of it and the capital. Great people grow rarer: 60 points for the first, then
   180, 360, 600 and so on. Computer players spend their gold more freely.
 - **Capitals and the fallen**: a people that loses its capital moves the palace to its largest
   city (corruption and the state religion follow it). A people with no city and no settler left
@@ -387,17 +513,18 @@ working directory.
   the queue, otherwise units keep repeating). Click a queued project to take it off.
 - **Pillage and fortresses**: troops on improved enemy land (at war) press P to wreck the railroad,
   fortress, mine, farm or road there, for 5 gold; computer troops raid your land too. Workers build
-  a Fortress (O, needs Construction) in the field: troops in it defend as if behind walls.
+  a Fortress (O, needs Construction) in the field: troops in it defend 50% harder.
 - **Right of passage**: ask a people at peace for one (Diplomacy); your units and theirs may then
   share tiles and pass through each other. Walking into the units or an empty city of a people at
   peace is refused (declare war first). An alliance includes passage; war ends it.
 - **Tribal villages**: scattered on the land at the start (about one per 30 land tiles). The first
   unit in finds gold, a technology, warriors who join, maps of the area, or now and then hostile
   tribesmen (scouts are careful and rarely meet them).
-- **Late buildings**: Observatory (Astronomy, +3 science), Research Lab (Computers, +6 science,
-  needs a University), Power Plant (Electronics, +4 shields, needs a Factory), Police Station
-  (Communism, +2 content), Supermarket (Sanitation, +3 food), Mass Transit (Mass Production, no
-  pollution), Recycling Center (Ecology, halves pollution), Coastal Fortress (Steel, doubles defence
+- **Late buildings**: Observatory (Astronomy, +25% science), Research Lab (Computers, +50% science,
+  needs a University), Factory (Industrialization, +25% shields), Power Plant (Electronics, +25%
+  shields, needs a Factory), Police Station (Sanitation, +2 content, cuts corruption), Supermarket
+  (Sanitation, +3 food), Mass Transit (Mass Production, no
+  pollution), Recycling Center (Ecology, halves pollution), Coastal Fortress (Steel, +100% defence
   against ships) and Airport (Flight, veteran aircraft).
 - **More units**: Scout (explorer, 2 moves), Longbowman (Monarchy), Knight (Chivalry), Galleon
   (Navigation), Submarine (Electronics), Engineers (Steam Power: workers that move 2 and finish jobs
@@ -413,25 +540,40 @@ working directory.
   colosseums and cathedrals (+3), wonders, masterpieces, entertainers or martial law (troops in the
   city under Despotism, Monarchy and Communism). Each luxury the city can reach makes one citizen
   happy. Disorder (more unhappy than happy) stops the city.
-- **Culture**: temples, libraries, colosseums, cathedrals, universities, wonders and the palace earn
-  culture. Borders reach 2 tiles, 3 from 100 culture, 4 from 1,000 and 5 from 5,000. Where borders
+- **Culture**: as in Civ III, each turn a Temple or Colosseum earns 2 culture, a Library or
+  Cathedral 3, a University 4, a Research Lab or Forbidden Palace 2, every wonder 4 and the palace 1,
+  and a building or wonder that has stood a quarter of the game (100 turns of 400) earns double.
+  Borders reach 2 tiles, 3 from 100 culture, 4 from 1,000 and 5 from 10,000. Where borders
   meet, each tile goes to the city pressing hardest on it: (culture + 50) / distance², so a great
   culture pushes its neighbours back (every city keeps its own ring). Land lost this way takes its
-  resources and river gold with it. A city in disorder within 5
-  tiles of a civilization with twice its owner's culture may defect.
-- **Golden age**: a civilization's first wonder brings 10 turns of +50% shields and extra gold.
+  resources and river gold with it. A city in disorder within 5 tiles of a civilization with twice
+  its owner's culture may defect: 20% a turn, more the further it lies from its own capital
+  (+10% of that for every tile) and the more of its land the tempter's borders hold (+1/6 for each
+  tile), divided by one plus the troops in it (at most 60%).
+- **Cultural victory**: 60,000 culture points with twice as much as any other people, or 15,000 in
+  a single city under your rule (for a 400-turn game; scaled to shorter games). Civ III asks
+  100,000 and 20,000 over a longer game; these are tuned so culture, space, diplomacy and
+  domination all win a fair share of games.
+  As in Civ III a people keeps the culture it has earned even if its cities fall, and a conqueror
+  counts only what a captured city earns from then on (the city keeps its own culture for its
+  borders).
+- **Golden age**: once a game, begun by a people's first wonder that matches one of its traits or by
+  its unique unit's first victory over another people: 20 turns of one more shield on every worked
+  tile that yields shields, and one more trade on every one that yields trade.
 - **Rivers**: +1 gold per river tile in a city's land, +25% defence, and fresh water.
 - **Pollution**: big industrial cities spoil tiles, which yield nothing until cleaned.
-- **Combat**: 3 hit points (4 veteran, 5 elite); winners may be promoted, Barracks train veterans,
-  wounds heal while resting (fully in a city). Faster attackers retreat rather than die.
+- **Combat**: Civilization III's rules (see [Combat](#combat)): 3 hit points (4 veteran, 5 elite);
+  winners may be promoted, Barracks train veterans, wounds heal while resting (fully in a city).
+  Fast attackers may pull back from slow defenders; guns bombard but cannot attack.
 - **Armies**: select a Great General in one of your cities with two or three land units and press
   U (Form Army). The strongest unit leads; the army fights with its strength and the hit points of
   every member, moves at its slowest member's pace and is re-equipped member by member. The general is used up.
   Computer players form armies too.
-- **Space race to the nearest star**: research Space Flight, Plastics and Superconductors; cities
-  with a Factory build 4 structures, 2 to 4 components (engines) and 2 modules. Launch from the
+- **Space race to the nearest star**: research Space Flight, Plastics and Superconductors; once
+  someone has built the Apollo Program, cities with a Factory build 4 structures, 2 to 4 components
+  (engines) and 2 modules. Launch from the
   Empire advisor's Space page, which shows every known ship's voyage from Sol to Alpha Centauri
-  (4.37 light-years): 18 turns, 2 fewer per extra engine. Computer players launch when ready. The
+  (4.37 light-years): 24 turns, 2 fewer per extra engine. Computer players launch when ready. The
   first ship to arrive wins; a ship in flight is lost with its capital - so a launch turns the world
   against the launcher: rivals declare war and march on its capital.
 - **Nuclear weapons**: the Manhattan Project (Nuclear Fission) lets everyone who knows Rocketry build
@@ -498,7 +640,10 @@ the default `audio` feature: `cargo run --no-default-features --features full`.
 ## Autoplay
 `cargo run --release -- --autoplay [rome|earth|discovery] [turns]` plays a whole game between
 computer players under the real rules, without a window, and prints a snapshot every 25 turns plus
-the milestones (eras, wonders, governments, spaceships) and how it ends. The Game Simulator
+the milestones (ages, wonders, governments, golden ages, spaceships) and how it ends, with the
+technologies the computer players traded and the largest peoples' shares of the world's cities,
+land and citizens. With `BEVY_CIV_CULTURE_TRACE=1` it also prints the leading peoples' culture
+(and the best city's) every five turns, for tuning the cultural victory. The Game Simulator
 workflow runs all three scenarios to 400 turns on demand. Across recent batches of 18
 games (six per scenario), the space race, culture and diplomacy each win a share, mostly between
 turns 250 and 380; a few games go to the turn limit and are decided on score.

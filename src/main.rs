@@ -106,6 +106,76 @@ impl Difficulty {
     }
 }
 
+/// What every people still in the game (holding a city) knows: the computer players' and ours.
+fn peoples_knowledge(civs: &Civilizations, tech: &TechState, holding: &HashSet<u32>) -> Vec<(u32, HashSet<Tech>)> {
+    civs.players
+        .iter()
+        .filter(|c| !c.is_human && !c.eliminated && holding.contains(&c.id))
+        .map(|c| (c.id, c.tech.researched.clone()))
+        .chain(holding.contains(&PLAYER).then(|| (PLAYER, tech.researched.clone())))
+        .collect()
+}
+
+/// The first victory of a people's unique unit over another people (not barbarians) begins its
+/// golden age, if it has not had one.
+fn unique_victory(golden: &mut GoldenAges, civs: &Civilizations, met: &HashSet<u32>, log: &mut GameLog, winner: u32, kind: UnitType, loser: u32) {
+    if winner == BARBARIANS || loser == BARBARIANS {
+        return;
+    }
+    let Some(civ) = civs.players.iter().find(|c| c.id == winner) else { return };
+    if bevy_civ::traits::of(&civ.name).unique != kind || !golden.begin(winner) {
+        return;
+    }
+    if winner == PLAYER {
+        log.push(format!("Our {} win their first battle against another people: a golden age begins! For {GOLDEN_AGE_TURNS} turns every worked tile that yields a shield or gold yields one more.", kind.name()));
+    } else if met.contains(&winner) {
+        log.push(format!("The victories of the {} {} begin a golden age for their people.", civ.adjective, kind.name()));
+    }
+}
+
+/// The Great Library: its owner learns every technology that two or more of the other peoples it
+/// has met already know (and that it may study), until the wonder is obsolete (see
+/// `Building::obsoleted_by`).
+fn great_library(civs: &mut Civilizations, tech: &mut TechState, wonders: &WorldWonders, met: &HashSet<u32>, holding: &HashSet<u32>, log: &mut GameLog) {
+    let Some(&(owner, _)) = wonders.built.get(&Building::GreatLibrary) else { return };
+    let knowledge = peoples_knowledge(civs, tech, holding);
+    let known_to = |t: Tech| knowledge.iter().filter(|(id, k)| *id != owner && (owner != PLAYER || met.contains(id)) && k.contains(&t)).count();
+    let learner = if owner == PLAYER { Some(tech) } else { civs.players.iter_mut().find(|c| c.id == owner && !c.eliminated).map(|c| &mut c.tech) };
+    let Some(learner) = learner else { return };
+    if Building::GreatLibrary.obsoleted_by().is_some_and(|t| learner.researched.contains(&t)) {
+        return;
+    }
+    while let Some(t) = Tech::ALL.into_iter().find(|t| learner.can_research(*t) && known_to(*t) >= 2) {
+        learner.learn(t);
+        if owner == PLAYER {
+            log.push(format!("The {} teaches us {}, already known to {} peoples.", Building::GreatLibrary.name(), t.name(), known_to(t)));
+        }
+    }
+}
+
+/// A people entering a new age: the news, and a free discovery for a scientific people.
+fn new_ages(civs: &mut Civilizations, tech: &mut TechState, met: &HashSet<u32>, holding: &HashSet<u32>, log: &mut GameLog) {
+    for civ in civs.players.iter_mut().filter(|c| !c.is_human && !c.eliminated) {
+        let Some(era) = civ.tech.enter_new_era() else { continue };
+        let scientific = bevy_civ::traits::of(&civ.name).has(bevy_civ::traits::Trait::Scientific);
+        let gift = if scientific { civ.tech.discover() } else { None };
+        if met.contains(&civ.id) {
+            let gift = gift.map(|t| format!(" Their scholars mark it with a discovery: {}.", t.name())).unwrap_or_default();
+            log.push(format!("{} enter the {}.{gift}", capitalised(&civ.name), era.name()));
+        }
+    }
+    if !holding.contains(&PLAYER) {
+        return;
+    }
+    if let Some(era) = tech.enter_new_era() {
+        let scientific = civs.players.iter().find(|c| c.id == PLAYER).is_some_and(|c| bevy_civ::traits::of(&c.name).has(bevy_civ::traits::Trait::Scientific));
+        match scientific.then(|| tech.discover()).flatten() {
+            Some(gift) => log.push(format!("We enter the {}! Our scientific people marks it with a free discovery: {}.", era.name(), gift.name())),
+            None => log.push(format!("We enter the {}.", era.name())),
+        }
+    }
+}
+
 /// A computer player's score, counted the same way as the player's (population, cities' buildings).
 /// A computer player's score, counted exactly as the player's is (see `Score::calculate`): two points
 /// a citizen, ten a technology, fifty a wonder.
@@ -185,6 +255,9 @@ pub struct GameState {
     /// Cities that drafted a citizen this turn.
     #[serde(default)]
     pub drafted: HashSet<Hex>,
+    /// Cities that sold a building this turn (one a turn).
+    #[serde(default)]
+    pub sold: HashSet<Hex>,
     /// Foreign migrants may settle in our cities.
     #[serde(default = "welcome_by_default")]
     pub welcome_migrants: bool,
@@ -202,6 +275,13 @@ pub struct GameState {
     /// Interest earned on the treasury last turn (included in `gold_per_turn`).
     #[serde(default)]
     pub interest: i32,
+    /// Every people's accounts last turn (trade, corruption, science, luxury, taxes, upkeep), the
+    /// player's under `PLAYER`.
+    #[serde(default)]
+    pub accounts: HashMap<u32, bevy_civ::economy::Ledger>,
+    /// Gold the player paid last turn for units beyond those supported free.
+    #[serde(default)]
+    pub unit_support: i32,
 }
 
 fn default_science_rate() -> u32 {
@@ -210,16 +290,19 @@ fn default_science_rate() -> u32 {
 
 impl GameState {
     pub fn tax_rate(&self) -> u32 {
-        100u32.saturating_sub(self.science_rate + self.luxury_rate)
+        self.rates().tax()
     }
 
-    /// Splits a city's commerce into (science, luxury, gold) by the rates.
-    pub fn split_commerce(&self, commerce: u32) -> (u32, u32, u32) {
-        // A government that allows less than the chosen rate caps it (the rest goes to taxes).
-        let cap = self.government.science_cap();
-        let science = commerce * self.science_rate.min(cap) / 100;
-        let luxury = commerce * self.luxury_rate.min(cap) / 100;
-        (science, luxury, commerce - science - luxury)
+    /// The player's rates, as the government allows them.
+    pub fn rates(&self) -> bevy_civ::economy::Rates {
+        bevy_civ::economy::Rates { science: self.science_rate, luxury: self.luxury_rate }.fit(self.government)
+    }
+
+    /// Sets the rates, brought within what the government allows.
+    pub fn set_rates(&mut self, rates: bevy_civ::economy::Rates) {
+        let rates = rates.fit(self.government);
+        self.science_rate = rates.science;
+        self.luxury_rate = rates.luxury;
     }
 }
 
@@ -249,6 +332,7 @@ impl Default for GameState {
             war_turns: HashMap::new(),
             warming: 0,
             drafted: HashSet::new(),
+            sold: HashSet::new(),
             welcome_migrants: true,
             migrations: (0, 0),
             raiders: (0, 0, 0),
@@ -256,6 +340,8 @@ impl Default for GameState {
             science_rate: 60,
             luxury_rate: 0,
             interest: 0,
+            accounts: HashMap::new(),
+            unit_support: 0,
         }
     }
 }
@@ -399,6 +485,8 @@ pub enum Action {
     AutoBuildAll(bool),
     /// Buy the rest of the selected city's project with gold (not wonders).
     Hurry,
+    /// Sell one of the selected city's buildings for its cost in gold (one a turn).
+    SellBuilding(Building),
     /// Rush the selected city's project with citizens' labour (Despotism and Communism).
     Rush,
     /// K: the selected worker looks after the land by itself (again to take it back).
@@ -407,8 +495,11 @@ pub enum Action {
     Explore,
     /// Make one of the selected city's workers a specialist of this kind (true), or send one back (false).
     Specialist(bevy_civ::city::Specialist, bool),
-    /// The selected artillery, ship or bomber fires on the strongest enemy next to it.
+    /// The selected gun, warship or bomber bombards the stoutest enemy within its range (a city's
+    /// garrison first).
     Bombard,
+    /// The selected gun, warship or bomber bombards the defender of this tile (if it is in range).
+    BombardAt(Hex),
     /// Tab: the next of the player's units on the selected unit's or city's tile.
     CycleStack,
     /// Shift+Tab: the previous unit on the tile.
@@ -547,8 +638,10 @@ pub fn needs_orders(unit: &Unit) -> bool {
     unit.owner == PLAYER && unit.can_move() && unit.build_turns_left.is_none() && !unit.fortified
 }
 
-/// Golden ages: a civilization's first wonder starts one (once per game): +50% shields and +1 gold
-/// in every city for [`GOLDEN_AGE_TURNS`] turns.
+/// Golden ages, once per game for each people: begun by its first wonder that speaks to one of its
+/// traits (see `bevy_civ::traits::of_wonder`), or by the first victory of its unique unit over
+/// another people. For [`GOLDEN_AGE_TURNS`] turns every worked tile that gives a shield gives one
+/// more, and so does every tile that gives a trade (see `bevy_civ::economy::tile_rule`).
 #[derive(Resource, Default, Clone, serde::Serialize, serde::Deserialize)]
 pub struct GoldenAges {
     #[serde(with = "bevy_civ::save::pairs")]
@@ -556,11 +649,17 @@ pub struct GoldenAges {
     pub had: HashSet<u32>,
 }
 
-pub const GOLDEN_AGE_TURNS: u32 = 10;
+pub const GOLDEN_AGE_TURNS: u32 = 20;
 
 impl GoldenAges {
     pub fn active(&self, owner: u32) -> bool {
         self.turns_left.get(&owner).is_some_and(|t| *t > 0)
+    }
+
+    /// What a worked tile yields to a people in its golden age.
+    pub fn tile(food_shields_gold: bevy_civ::tiles::Yield) -> bevy_civ::tiles::Yield {
+        let (food, shields, gold) = food_shields_gold;
+        (food, shields + u32::from(shields > 0), gold + u32::from(gold > 0))
     }
 
     /// Starts one if the civilization never had one. Returns whether it started.
@@ -792,6 +891,7 @@ pub fn init_game(app: &mut App) {
         .insert_resource(Cycle { advance: true, force: false })
         .init_resource::<WorldWonders>()
         .init_resource::<GreatPeople>()
+        .init_resource::<combat::BattleTally>()
         .init_resource::<Espionage>()
         .init_resource::<History>()
         .init_resource::<CultureLedger>()
@@ -894,6 +994,7 @@ fn setup_world(
             anarchy: 0,
             pending_government: None,
             eliminated: false,
+            rates: Default::default(),
         })
         .collect();
     *tech = TechState::knowing(&defs[0].techs);
@@ -979,6 +1080,88 @@ fn setup_world(
     log.push(format!("{}: you lead {} as {}.", scenario.name, defs[0].name, defs[0].leader));
 }
 
+/// The share of its trade every city loses to corruption this turn (see
+/// `bevy_civ::economy::corruption`): `government` gives each people's government, `linked` the cities
+/// joined to their capital by road or harbour, `land_tiles` the size of the world's land.
+pub fn corruption_rates<'a>(
+    cities: impl Iterator<Item = (&'a City, &'a CityBuildings)>,
+    government: impl Fn(u32) -> Government,
+    linked: &HashSet<Hex>,
+    land_tiles: usize,
+) -> HashMap<Hex, f32> {
+    let list: Vec<(&City, &CityBuildings)> = cities.collect();
+    let palace = |c: &City, b: &CityBuildings| c.is_capital || b.has(Building::ForbiddenPalace);
+    let standings = bevy_civ::economy::standings(&list.iter().map(|(c, b)| (c.position, c.owner, palace(c, b))).collect::<Vec<_>>());
+    let peoples: HashSet<u32> = list.iter().map(|(c, _)| c.owner).filter(|o| *o != BARBARIANS).collect();
+    let optimal = bevy_civ::economy::optimal_cities(land_tiles, peoples.len());
+    list.iter()
+        .map(|(c, b)| {
+            let standing = standings.get(&c.position).copied().unwrap_or_default();
+            (c.position, bevy_civ::economy::corruption(government(c.owner), standing, optimal, &b.buildings, palace(c, b), linked.contains(&c.position)))
+        })
+        .collect()
+}
+
+/// A city's accounts this turn (see `bevy_civ::economy::ledger`): its trade, less a trade for each
+/// level of a drug trade (the black market's cut) and less corruption, split by `rates` and
+/// multiplied by its buildings, plus what its wonders, its people's traits and settled merchants
+/// add outright (Adam Smith's Trading Company rewards markets, banks and harbours; the Internet,
+/// libraries). Also returns that outright gold.
+#[allow(clippy::too_many_arguments)]
+pub fn city_books(
+    city: &City,
+    buildings: &CityBuildings,
+    gov: Government,
+    rates: bevy_civ::economy::Rates,
+    corruption: f32,
+    wonders: &WorldWonders,
+    great: &GreatPeople,
+    character: Option<bevy_civ::traits::Character>,
+    supplies: &Supplies,
+) -> (bevy_civ::economy::Ledger, u32) {
+    let owner = city.owner;
+    let (_, _, trait_gold, trait_science) = character.map(|c| c.city_bonus()).unwrap_or_default();
+    let land_gold = supplies.yields.get(&city.position).map_or(0, |y| y.2);
+    let wonder_gold = if wonders.owns(owner, Building::AdamSmith) {
+        buildings.buildings.iter().filter(|b| matches!(b, Building::Marketplace | Building::Bank | Building::StockExchange | Building::Harbor)).count() as u32
+    } else {
+        0
+    };
+    let wonder_science = if wonders.owns(owner, Building::Internet) && buildings.has(Building::Library) { 3 } else { 0 };
+    let outright = land_gold + trait_gold + wonder_gold + great.merchant_gold(city.position).max(0) as u32 + buildings.total_gold_bonus();
+    let books = bevy_civ::economy::ledger(&bevy_civ::economy::CityTrade {
+        trade: city.land.2.saturating_sub(city.narcotics),
+        corruption,
+        rates,
+        government: gov,
+        buildings: &buildings.buildings,
+        scientists: city.scientists(),
+        tax_collectors: city.tax_collectors(),
+        extra_science: trait_science + wonder_science + buildings.total_science_bonus(),
+        extra_gold: outright,
+    });
+    (books, outright)
+}
+
+/// Sells the building of `owner`'s that costs the most to keep up (in its smallest city, among
+/// equals) to pay a debt. Returns the city's name and the building, or None if there is nothing to sell.
+fn sell_for_debt(cities: &mut Query<(&mut City, &mut CityBuildings, &mut Happiness)>, owner: u32) -> Option<(String, Building)> {
+    let mut best: Option<((u32, std::cmp::Reverse<u32>), Hex, Building)> = None;
+    for (city, buildings, _) in cities.iter().filter(|(c, _, _)| c.owner == owner) {
+        for building in &buildings.buildings {
+            let upkeep = bevy_civ::economy::upkeep(*building);
+            let key = (upkeep, std::cmp::Reverse(city.population));
+            if upkeep > 0 && best.as_ref().is_none_or(|(k, _, _)| key > *k) {
+                best = Some((key, city.position, *building));
+            }
+        }
+    }
+    let (_, at, building) = best?;
+    let (city, mut buildings, _) = cities.iter_mut().find(|(c, _, _)| c.position == at)?;
+    buildings.buildings.retain(|b| *b != building);
+    Some((city.name.clone(), building))
+}
+
 /// Removes the finished game so a new one can start from the menu.
 fn cleanup_world(
     mut commands: Commands,
@@ -1031,6 +1214,7 @@ fn handle_map_click(
     mut dirty: ResMut<Dirty>,
     (mut cycle, mut wonders, mut great, mut taken): (ResMut<Cycle>, ResMut<WorldWonders>, ResMut<GreatPeople>, ResMut<JustCaptured>),
     (mut sounds, mut battles, mut strikes, mut aim, mut last_move): (EventWriter<Sfx>, EventWriter<BattleShown>, EventWriter<Detonation>, ResMut<NukeAim>, ResMut<LastMove>),
+    mut orders: EventWriter<Action>,
     mut commands: Commands,
 ) {
     for click in clicks.read() {
@@ -1198,6 +1382,7 @@ fn handle_map_click(
             }
             Domain::Land if enemy.is_some() && map.water.contains(&unit.position) => Some("Troops cannot attack from a ship; land them first."),
             Domain::Land if enemy.is_some() && map.water.contains(&hex) => Some("Land units cannot attack ships at sea."),
+            Domain::Land if enemy.is_none() && unit.unit_type.bombard_only() && city_here.is_some_and(|(_, o)| o != PLAYER) => Some("Guns cannot take a city: send in troops (guns bombard its defenders from range)."),
             _ => None,
         };
         if let Some(reason) = refusal {
@@ -1214,8 +1399,14 @@ fn handle_map_click(
         unit.fortified = false;
         cycle.advance = true;
 
-        // Stop next to a defended tile; the last step is the attack itself.
-        let approach = if enemy.is_some() { &route[..route.len() - 1] } else { &route[..] };
+        // Stop next to a defended tile; the last step is the attack itself. A gun stops as soon as
+        // its target is within range.
+        let gun_range = unit.unit_type.bombard().filter(|_| unit.unit_type.bombard_only()).map(|(_, range, _)| range);
+        let approach = match (enemy.is_some(), gun_range) {
+            (true, Some(range)) => &route[..=route.iter().position(|h| h.distance_to(hex) <= range).unwrap_or(route.len().saturating_sub(2))],
+            (true, None) => &route[..route.len() - 1],
+            (false, _) => &route[..],
+        };
         let mut trail = Vec::new();
         let enemies: HashSet<Hex> = snapshot
             .iter()
@@ -1239,7 +1430,16 @@ fn handle_map_click(
         }
         if let Some((enemy_entity, _, enemy_owner, enemy_type)) = enemy {
             let adjacent = unit.position.distance_to(hex) == 1;
-            if adjacent && unit.can_move() && unit.unit_type.is_military() {
+            if let Some(range) = gun_range {
+                // A gun does not attack: it bombards, once the target is within range.
+                if unit.position.distance_to(hex) <= range {
+                    if unit.can_move() {
+                        orders.send(Action::BombardAt(hex));
+                    } else {
+                        log.push(format!("Our {} is in range but has no moves left: it can bombard next turn.", unit.unit_type.name()));
+                    }
+                }
+            } else if adjacent && unit.can_move() && unit.unit_type.is_military() {
                 unit.spend(StepCost::Full);
                 // A bomber may be met by an enemy fighter within three tiles of the target.
                 if unit.unit_type == UnitType::Bomber {
@@ -1266,17 +1466,17 @@ fn handle_map_click(
                     diplomacy.set_treaty(PLAYER, enemy_owner, Treaty::War);
                     log.push("Your attack means war!");
                 }
-                let terrain = defence_terrain(Some(terrain), city_here.is_some());
                 let enemy_type = defending_as(enemy_type, hex, &map);
                 let led = |at: Hex, owner: u32| snapshot.iter().any(|u| u.1 == at && u.2 == owner && u.3 == UnitType::GreatGeneral);
                 let (d_hp, d_level, dug_in) = vitals.get(&enemy_entity).copied().unwrap_or((3, 0, false));
-                let walls = city_here.is_some_and(|(e, owner)| walls_of.get(e).is_ok_and(|b| b.has(Building::Walls)) || wonders.walls_everywhere(owner))
-                    || tiles.iter().any(|t| t.coord == hex && t.improvements.contains(&Improvement::Fortress));
+                let walls = city_here.is_some_and(|(e, owner)| walls_of.get(e).is_ok_and(|b| b.has(Building::Walls)) || wonders.walls_everywhere(owner));
                 let coast_fort = city_here.is_some_and(|(e, _)| walls_of.get(e).is_ok_and(|b| b.has(Building::CoastalFortress)));
+                let population = city_here.and_then(|(e, _)| cities.get(e).ok().map(|(_, c)| c.population));
+                let fortress = tiles.iter().any(|t| t.coord == hex && t.improvements.contains(&Improvement::Fortress));
                 let outcome = combat::fight(
                     Side { kind: unit.unit_type, hp: unit.hp, level: unit.level, led: led(unit.position, PLAYER), members: unit.members() },
                     Side { kind: enemy_type, hp: d_hp, level: d_level, led: led(hex, enemy_owner), members: members_of.get(&enemy_entity).copied().unwrap_or(1) },
-                    Ground { terrain, fortified: dug_in, walls, river: rivers.tiles.contains(&hex), coast_fort },
+                    Ground { terrain, fortified: dug_in, walls, river: rivers.tiles.contains(&hex), coast_fort, city: population, fortress },
                     &mut rand::thread_rng(),
                 );
                 // The defender's wounds (it is another entity, so the change is queued).
@@ -1290,11 +1490,14 @@ fn handle_map_click(
                         }
                     });
                 };
-                // The winner may be promoted (more often in a militaristic civilization).
+                // The winner may be promoted (more often in a militaristic civilization, less for
+                // beating barbarians).
                 let character = |owner: u32| civs.players.iter().find(|c| c.id == owner).map(|c| bevy_civ::traits::of(&c.name));
-                let ours = character(PLAYER).map_or(1.0 / 3.0, |c| c.promotion_chance());
-                let theirs = character(enemy_owner).map_or(1.0 / 3.0, |c| c.promotion_chance());
-                let won_chance = if matches!(outcome, Outcome::Won { .. }) { ours } else { theirs };
+                let chance = |owner: u32, level: u8, beat: u32| {
+                    let barbarian = beat == BARBARIANS;
+                    character(owner).map_or(combat::promotion_chance(level, false, barbarian), |c| c.promotion_chance(level, barbarian))
+                };
+                let won_chance = if matches!(outcome, Outcome::Won { .. }) { chance(PLAYER, unit.level, enemy_owner) } else { chance(enemy_owner, d_level, PLAYER) };
                 let promoted = rand::thread_rng().gen_bool(won_chance);
                 let (result, good) = match outcome {
                     Outcome::Won { attacker_hp } => (format!("Victory! {attacker_hp}/{} HP", unit.max_hp()), true),
@@ -1330,6 +1533,7 @@ fn handle_map_click(
                     }
                 };
                 if won {
+                    let fought_as = unit.level;
                     let rank = if promoted && unit.promote() { format!(" It is promoted to {}.", unit.level_name()) } else { String::new() };
                     log.push(format!("Victory! Your {} defeated the enemy {} ({} of {} hit points left).{rank}", unit.unit_type.name(), enemy_type.name(), unit.hp, unit.max_hp()));
                     // A cartel's assets are seized.
@@ -1337,10 +1541,15 @@ fn handle_map_click(
                         commands.queue(|world: &mut World| world.resource_mut::<GameState>().gold += bevy_civ::barbarians::SEIZED_GOLD);
                         log.push(format!("We seize the cartel's assets: {} gold.", bevy_civ::barbarians::SEIZED_GOLD));
                     }
-                    if great.victory(PLAYER) {
+                    if great.victory(PLAYER, fought_as, &mut rand::thread_rng()) {
                         spawn_unit(&mut commands, unit.position, UnitType::GreatGeneral, PLAYER);
-                        log.push("Your victories bring forth a Great General! Keep it with your troops: they fight half again as hard.");
+                        log.push(format!("The victory of our elite {} brings forth a Great General! Keep it with your troops (they fight half again as hard), or form an army in one of our cities.", unit.unit_type.name()));
                     }
+                    // Our unique unit's first victory over another people begins our golden age.
+                    let kind = unit.unit_type;
+                    commands.queue(move |world: &mut World| world.resource_scope(|world, mut golden: Mut<GoldenAges>| {
+                        world.resource_scope(|world, mut log: Mut<GameLog>| unique_victory(&mut golden, world.resource::<Civilizations>(), &world.resource::<foreign::Foreign>().met, &mut log, PLAYER, kind, enemy_owner));
+                    }));
                     commands.entity(enemy_entity).try_despawn_recursive();
                     let more_defenders = snapshot.iter().any(|u| u.1 == hex && u.2 != PLAYER && u.0 != enemy_entity);
                     if !more_defenders && may_enter(unit.unit_type, hex, &map, &ports) {
@@ -1348,6 +1557,9 @@ fn handle_map_click(
                     }
                 } else {
                     log.push(format!("Defeat. Your {} was lost attacking a {}.", unit.unit_type.name(), enemy_type.name()));
+                    commands.queue(move |world: &mut World| world.resource_scope(|world, mut golden: Mut<GoldenAges>| {
+                        world.resource_scope(|world, mut log: Mut<GameLog>| unique_victory(&mut golden, world.resource::<Civilizations>(), &world.resource::<foreign::Foreign>().met, &mut log, enemy_owner, enemy_type, PLAYER));
+                    }));
                     commands.entity(selected).try_despawn_recursive();
                     selection.unit = None;
                     continue;
@@ -1410,7 +1622,7 @@ fn handle_map_click(
 
 /// An army standing in a foreign city takes it.
 fn capture<'a>(unit: &Unit, cities: impl Iterator<Item = Mut<'a, City>>, wonders: &mut WorldWonders, taken: &mut JustCaptured, log: &mut GameLog) {
-    if !unit.unit_type.is_army() {
+    if !unit.unit_type.is_army() || unit.unit_type.bombard_only() {
         return;
     }
     for mut city in cities {
@@ -1774,9 +1986,11 @@ fn automate_workers(
         match tile.terrain {
             Terrain::Hills | Terrain::Mountain if !tile.improvements.contains(&Improvement::Mine) => return Some((2, Improvement::Mine)),
             Terrain::Grassland | Terrain::Plains if !tile.improvements.contains(&Improvement::Farm) => return Some((3, Improvement::Farm)),
+            // A road on flat land brings trade.
+            Terrain::Grassland | Terrain::Plains | Terrain::Desert if !tile.has_road() => return Some((4, Improvement::Road)),
             _ => {}
         }
-        (steam && tile.has_road() && !tile.has_railroad()).then_some((4, Improvement::Railroad))
+        (steam && tile.has_road() && !tile.has_railroad()).then_some((5, Improvement::Railroad))
     };
     let jobs: Vec<(Hex, u8, Improvement)> = tiles.iter().filter_map(|t| job(t).map(|(p, j)| (t.coord, p, j))).collect();
     let mut claimed: HashSet<Hex> = HashSet::new();
@@ -1866,16 +2080,6 @@ fn may_enter(unit: UnitType, tile: Hex, map: &MapData, own_cities: &HashSet<Hex>
     }
 }
 
-/// Terrain used for a defender's bonus: city streets and walls defend at least as well as hills.
-fn defence_terrain(terrain: Option<Terrain>, in_city: bool) -> Terrain {
-    // `in_city` also covers fortified units.
-    match terrain.unwrap_or(Terrain::Plains) {
-        Terrain::Mountain => Terrain::Mountain,
-        _ if in_city => Terrain::Hills,
-        other => other,
-    }
-}
-
 /// How near an enemy must be for ending the turn to be worth a second thought.
 const THREAT_RANGE: i32 = 3;
 
@@ -1933,15 +2137,15 @@ fn apply_actions(
     mut civs: ResMut<Civilizations>,
     mut log: ResMut<GameLog>,
     mut dirty: ResMut<Dirty>,
-    (mut cycle, supplies, mut map, mut end_turn, mut focus): (ResMut<Cycle>, Res<Supplies>, ResMut<MapData>, EventWriter<EndTurnRequest>, EventWriter<Focus>),
-    (unit_entities, mut sounds, mut wonders, mut great, mut spies, homes, walled, mut taken, automated, rivers, mut saves, mut religions, mut space, mut last_move, exploring): (
+    (mut cycle, supplies, mut map, mut end_turn, mut focus, mut battles): (ResMut<Cycle>, Res<Supplies>, ResMut<MapData>, EventWriter<EndTurnRequest>, EventWriter<Focus>, EventWriter<BattleShown>),
+    (unit_entities, mut sounds, mut wonders, mut great, mut spies, homes, mut walled, mut taken, automated, rivers, mut saves, mut religions, mut space, mut last_move, exploring): (
         Query<Entity, With<Unit>>,
         EventWriter<Sfx>,
         ResMut<WorldWonders>,
         ResMut<GreatPeople>,
         ResMut<Espionage>,
         Query<&HomeCity>,
-        Query<(Entity, &CityBuildings)>,
+        Query<(Entity, &mut CityBuildings)>,
         ResMut<JustCaptured>,
         Query<Entity, With<Automated>>,
         Res<Rivers>,
@@ -1957,10 +2161,13 @@ fn apply_actions(
         dirty.ui = true;
         dirty.map = true;
         let selected_unit = selection.unit.filter(|e| units.get(*e).is_ok_and(|u| u.owner == PLAYER));
+        // B founds a city with a settler and bombards with a gun, warship or bomber, as in Civ III.
+        let bombards = selected_unit.and_then(|e| units.get(e).ok()).is_some_and(|u| u.unit_type.can_bombard());
+        let action = if matches!(action, Action::FoundCity) && bombards { &Action::Bombard } else { action };
         // Anything a unit does besides moving cannot be taken back with Undo.
         if matches!(
             action,
-            Action::Bombard | Action::Pillage | Action::UseUnit | Action::Spy(_) | Action::TradeRoute | Action::FoundCity | Action::Build(_) | Action::Transform | Action::JoinCity | Action::Upgrade | Action::UpgradeAll | Action::EndTurn
+            Action::Bombard | Action::BombardAt(_) | Action::Pillage | Action::UseUnit | Action::Spy(_) | Action::TradeRoute | Action::FoundCity | Action::Build(_) | Action::Transform | Action::JoinCity | Action::Upgrade | Action::UpgradeAll | Action::EndTurn
         ) {
             last_move.0 = None;
         }
@@ -2259,7 +2466,7 @@ fn apply_actions(
                                 true
                             }
                             None => {
-                                log.push("A Great General forms an army: bring it and two to four land units into one of your cities, then press U. Until then, troops on its tile fight half again as hard.");
+                                log.push("A Great General forms an army: bring it and two or three land units into one of your cities, then press U. Until then, troops on its tile fight half again as hard.");
                                 false
                             }
                         }
@@ -2279,6 +2486,8 @@ fn apply_actions(
                 }
                 if wonders.owns(PLAYER, Building::Liberty) {
                     state.government = *government;
+                    let rates = state.rates();
+                    state.set_rates(rates);
                     log.push(format!("The Statue of Liberty spares us anarchy: we are now a {}.", government.name()));
                     continue;
                 }
@@ -2357,11 +2566,23 @@ fn apply_actions(
                 dirty.ui = true;
             }
             Action::SetRates(science, luxury) => {
-                let cap = state.government.science_cap();
-                let (science, luxury) = ((*science).min(cap), (*luxury).min(cap));
-                if science + luxury <= 100 {
-                    state.science_rate = science;
-                    state.luxury_rate = luxury;
+                let rates = bevy_civ::economy::Rates { science: *science, luxury: *luxury };
+                if rates.allowed(state.government) {
+                    state.set_rates(rates);
+                }
+            }
+            Action::SellBuilding(building) => {
+                let Some(entity) = selection.city else { continue };
+                let Ok(city) = cities.get(entity) else { continue };
+                if city.owner != PLAYER || building.is_wonder() || state.sold.contains(&city.position) {
+                    continue;
+                }
+                let Ok((_, mut built)) = walled.get_mut(entity) else { continue };
+                if built.has(*building) {
+                    built.buildings.retain(|b| b != building);
+                    state.sold.insert(city.position);
+                    state.gold += building.cost() as i32;
+                    log.push(format!("{} sells its {} for {} gold (it cost {} a turn to keep).", city.name, building.name(), building.cost(), bevy_civ::economy::upkeep(*building)));
                 }
             }
             Action::Hurry | Action::Rush => {
@@ -2494,38 +2715,68 @@ fn apply_actions(
                     _ => log.push(format!("{done} units re-equipped for {spent} gold; {short} more wait for gold.")),
                 }
             }
-            Action::Bombard => {
+            Action::Bombard | Action::BombardAt(_) => {
                 let Some(entity) = selected_unit else { continue };
                 let Ok(unit) = units.get(entity) else { continue };
-                if !unit.unit_type.can_bombard() || !unit.can_move() {
+                let Some((_, range, _)) = unit.unit_type.bombard() else { continue };
+                if !unit.can_move() {
+                    log.push(format!("Our {} has no moves left: it can bombard next turn.", unit.unit_type.name()));
                     continue;
                 }
-                let (kind, level, here) = (unit.unit_type, unit.level, unit.position);
-                // The strongest enemy we are at war with (or barbarians) next to us.
+                let (kind, here) = (unit.unit_type, unit.position);
+                let aimed = if let Action::BombardAt(at) = action { Some(*at) } else { None };
+                // The stoutest enemy we are at war with (or barbarians) within range: a city's
+                // garrison first.
+                let at_war = |owner: u32| owner == BARBARIANS || diplomacy.get_treaty(PLAYER, owner) == Treaty::War;
+                let in_city = |at: Hex| cities.iter().any(|c| c.position == at);
                 let target = unit_entities
                     .iter()
                     .filter_map(|e| units.get(e).ok().map(|u| (e, u)))
-                    .filter(|(_, u)| u.position.distance_to(here) == 1 && u.owner != PLAYER && (u.owner == BARBARIANS || diplomacy.get_treaty(PLAYER, u.owner) == Treaty::War))
-                    .max_by_key(|(_, u)| defending_as(u.unit_type, u.position, &map).stats().1 * 10 + u.hp)
-                    .map(|(e, u)| (e, u.unit_type, u.hp, u.level, u.fortified, u.position));
-                let Some((target, their_kind, their_hp, their_level, dug_in, at)) = target else {
-                    log.push("There is no enemy we are at war with next to us to bombard.");
+                    .filter(|(_, u)| (1..=range).contains(&u.position.distance_to(here)) && u.owner != PLAYER && at_war(u.owner) && aimed.is_none_or(|a| a == u.position))
+                    .max_by_key(|(_, u)| (in_city(u.position), defending_as(u.unit_type, u.position, &map).stats().1 * 10 + u.hp))
+                    .map(|(e, u)| (e, u.unit_type, u.hp, u.max_hp(), u.level, u.fortified, u.position, u.owner, u.members()));
+                let Some((target, their_kind, their_hp, their_max, their_level, dug_in, at, their_owner, members)) = target else {
+                    let reach = if range > 1 { format!("within {range} tiles") } else { "next to it".to_string() };
+                    log.push(format!("There is no enemy we are at war with {reach} for our {} to bombard.", kind.name()));
                     continue;
                 };
-                let terrain = defence_terrain(map.terrain.get(&at).copied(), cities.iter().any(|c| c.position == at));
-                let hp = combat::bombard(
-                    Side { kind, hp: 3, level, led: false, members: 1 },
-                    Side { kind: their_kind, hp: their_hp, level: their_level, led: false, members: 1 },
-                    Ground { terrain, fortified: dug_in, walls: false, river: rivers.tiles.contains(&at), coast_fort: false },
-                    &mut rand::thread_rng(),
-                );
+                let terrain = map.terrain.get(&at).copied().unwrap_or(Terrain::Plains);
+                let city = cities.iter().find(|c| c.position == at).map(|c| (c.population, c.owner));
+                let has = |building: Building| walled.iter().any(|(e, b)| b.has(building) && cities.get(e).is_ok_and(|c| c.position == at));
+                let ground = Ground {
+                    fortified: dug_in,
+                    walls: city.is_some_and(|(_, owner)| has(Building::Walls) || wonders.walls_everywhere(owner)),
+                    river: rivers.tiles.contains(&at),
+                    coast_fort: has(Building::CoastalFortress),
+                    city: city.map(|(population, _)| population),
+                    fortress: tiles.iter().any(|t| t.coord == at && t.improvements.contains(&Improvement::Fortress)),
+                    ..Ground::open(terrain)
+                };
+                let defender = Side { kind: defending_as(their_kind, at, &map), hp: their_hp, level: their_level, led: false, members };
+                let hp = combat::bombard(kind, defender, ground, &mut rand::thread_rng());
                 if let Ok(mut victim) = units.get_mut(target) {
                     victim.hp = hp;
                 }
                 if let Ok(mut unit) = units.get_mut(entity) {
                     unit.end_move();
                 }
-                log.push(format!("Our {} bombards the enemy {}: {} of {} hit points left.", kind.name(), their_kind.name(), hp, their_hp));
+                let hits = their_hp - hp;
+                log.push(match hits {
+                    0 => format!("Our {} bombards the enemy {}, without effect ({their_hp} of {their_max} hit points).", kind.name(), their_kind.name()),
+                    _ => format!("Our {} bombards the enemy {}: {hp} of {their_max} hit points left.", kind.name(), their_kind.name()),
+                });
+                battles.send(BattleShown {
+                    from: here,
+                    at,
+                    attacker: Some(entity),
+                    result: if hits == 0 { "No effect".to_string() } else { format!("-{hits} HP: {hp}/{their_max}") },
+                    good: Some(hits > 0),
+                    ours: true,
+                    attacker_side: (kind, PLAYER),
+                    defender_side: (their_kind, their_owner),
+                    attacker_died: false,
+                    defender_died: false,
+                });
                 sounds.send(Sfx::Battle);
                 cycle.advance = true;
             }
@@ -2877,7 +3128,7 @@ fn apply_actions(
                     continue;
                 }
                 let at = city.position;
-                let score = |u: &UnitType| u.stats().1 as f32 * u.defense_bonus() + u.stats().0 as f32 * 0.1;
+                let score = |u: &UnitType| u.stats().1 as f32 + u.stats().0 as f32 * 0.1;
                 let Some(recruit) = UnitType::ALL
                     .into_iter()
                     .filter(|u| u.is_army() && u.is_trainable() && u.required_tech().is_none_or(|t| tech.researched.contains(&t)))
@@ -2981,6 +3232,10 @@ fn apply_actions(
                         log.push("Spaceship parts are built in cities with a Factory.");
                         continue;
                     }
+                    if let Some(wonder) = part.required_wonder().filter(|w| !wonders.built.contains_key(w)) {
+                        log.push(format!("No people can build a {} until the {} stands somewhere in the world.", part.name(), wonder.name()));
+                        continue;
+                    }
                     if let Some(needed) = part.required_building() {
                         if !selection.city.and_then(|e| walled.get(e).ok()).is_some_and(|(_, b)| b.has(needed)) {
                             log.push(format!("A {} needs a {} in the city first.", part.name(), needed.name()));
@@ -3050,7 +3305,7 @@ fn process_turn(
     (mut diplomacy, mut foreign): (ResMut<Diplomacy>, ResMut<Foreign>),
     (mut trade, mut map, supplies, mut religions): (ResMut<TradeRoutes>, ResMut<MapData>, Res<Supplies>, ResMut<Religions>),
     (mut space, mut wonders, mut great, mut spies): (ResMut<SpaceRace>, ResMut<WorldWonders>, ResMut<GreatPeople>, ResMut<Espionage>),
-    (mut log, mut dirty, mut cycle): (ResMut<GameLog>, ResMut<Dirty>, ResMut<Cycle>),
+    (mut log, mut dirty, mut cycle, mut tally): (ResMut<GameLog>, ResMut<Dirty>, ResMut<Cycle>, ResMut<combat::BattleTally>),
     (mut battles, mut strikes, sentries): (EventWriter<BattleShown>, EventWriter<Detonation>, Query<Entity, With<Sentry>>),
     (homes, mut history, mut culture, mut golden, mut taken, rivers, mut saves, observer, mut ferries): (
         Query<&HomeCity>,
@@ -3072,9 +3327,30 @@ fn process_turn(
     dirty.ui = true;
     state.turn += 1;
     state.drafted.clear();
+    state.sold.clear();
     log.turn = state.turn;
     spies.tick();
     golden.tick();
+    // Knowledge spreads: a technology is cheaper to study the more of the other peoples know it -
+    // of those we have met, for us - down to half price once all of them do.
+    {
+        let holding: HashSet<u32> = cities.iter().map(|(c, _, _)| c.owner).collect();
+        let knowledge = peoples_knowledge(&civs, &tech, &holding);
+        let others = |me: u32| knowledge.iter().filter(move |(id, _)| *id != me);
+        for civ in civs.players.iter_mut().filter(|c| !c.is_human) {
+            let id = civ.id;
+            civ.tech.set_known_abroad(|t| others(id).filter(|(_, k)| k.contains(&t)).count() as u32, others(id).count() as u32);
+        }
+        let met = &foreign.met;
+        tech.set_known_abroad(|t| others(PLAYER).filter(|(id, k)| met.contains(id) && k.contains(&t)).count() as u32, others(PLAYER).count() as u32);
+    }
+    // Wonders their owners have outgrown are obsolete: their effects end (their culture goes on).
+    for (wonder, owner) in wonders.refresh_expired(|owner, t| if owner == PLAYER { tech.researched.contains(&t) } else { civs.players.iter().any(|c| c.id == owner && c.tech.researched.contains(&t)) }) {
+        if owner == PLAYER {
+            let by = wonder.obsoleted_by().map(|t| t.name()).unwrap_or_default();
+            log.push(format!("Now that we know {by}, our {} is obsolete: its effect ends, though its culture goes on.", wonder.name()));
+        }
+    }
     // The chance to raze last turn's conquests has passed; their former owners hold it against us.
     taken.0.clear();
     for loser in std::mem::take(&mut taken.1) {
@@ -3094,6 +3370,8 @@ fn process_turn(
         }
     }
 
+    // (A game saved before peoples kept the culture they earned credits each city's to its owner.)
+    culture.seed(&cities.iter().map(|(c, _, _)| (c.position, c.owner)).collect::<Vec<_>>());
     let wonders_taken: HashSet<Building> = wonders.built.keys().copied().collect();
     // Caravans and diplomats each civilization has, and the cities building wonders.
     let mut envoy_counts: HashMap<(u32, UnitType), usize> = HashMap::new();
@@ -3196,6 +3474,26 @@ fn process_turn(
     for (city, _, _) in cities.iter().filter(|(c, b, _)| c.is_capital || b.has(Building::ForbiddenPalace)) {
         seats.entry(city.owner).or_default().push(city.position);
     }
+    // The share of every city's trade lost to corruption (by distance to its palace and the number
+    // of cities nearer, under its people's government).
+    let corruption_of = corruption_rates(
+        cities.iter().map(|(c, b, _)| (c, b)),
+        |owner| governments.get(&owner).copied().unwrap_or_default(),
+        &supplies.linked,
+        map.cells.len().saturating_sub(map.water.len()),
+    );
+    // Each people's rates this turn: the player's as set, computer players' as they chose last turn.
+    let rates_of: HashMap<u32, bevy_civ::economy::Rates> = civs
+        .players
+        .iter()
+        .map(|c| (c.id, if c.id == PLAYER { state.rates() } else { c.rates.fit(governments.get(&c.id).copied().unwrap_or_default()) }))
+        .collect();
+    // Each people's accounts this turn; what its cities would raise at a 100% tax rate, its gold
+    // that does not depend on the rates, and its cities in disorder (for computer players' rates).
+    let mut accounts: HashMap<u32, bevy_civ::economy::Ledger> = HashMap::new();
+    let mut full_taxes: HashMap<u32, u32> = HashMap::new();
+    let mut fixed_income: HashMap<u32, i32> = HashMap::new();
+    let mut rioting: HashMap<u32, usize> = HashMap::new();
     // Peoples with a state religion (their capital's faith) and own cities that do not follow it yet.
     let missionary_work: HashSet<u32> = {
         let faith_of_capital: HashMap<u32, Faith> = capitals.iter().filter_map(|(o, cp)| religions.of(*cp).map(|f| (*o, f))).collect();
@@ -3303,12 +3601,13 @@ fn process_turn(
         if mine {
             player_cities += 1;
         }
-        let dist = seats.get(&city.owner).and_then(|s| s.iter().map(|cp| city.position.distance_to(*cp) as u32).min()).unwrap_or(0);
+        // Corruption takes a share of the city's trade, waste a share of its shields.
+        let corruption = corruption_of.get(&city.position).copied().unwrap_or(0.0);
+        let waste = bevy_civ::economy::waste(corruption);
 
         // Drugs, food scandals and distrust of engineered food.
         {
             let owner = city.owner;
-            let gov = governments.get(&owner).copied().unwrap_or(Government::Despotism);
             if urban.contains(&owner) || city.narcotics > 0 {
                 let smuggler = smuggled_into(city.position, owner);
                 if mine {
@@ -3355,7 +3654,7 @@ fn process_turn(
             }
             city.scandal = city.scandal.saturating_sub(1);
             if industrial.contains(&owner) && !buildings.has(Building::FoodSafety) && city.scandal == 0 {
-                let chance = bevy_civ::troubles::scandal_chance(city.population, city.corruption(&buildings, gov, dist));
+                let chance = bevy_civ::troubles::scandal_chance(city.population, corruption);
                 if rng.gen_bool(chance) {
                     city.scandal = bevy_civ::troubles::SCANDAL_TURNS;
                     city.food_storage /= 2;
@@ -3369,19 +3668,30 @@ fn process_turn(
             }
         }
 
-        // What a computer player's governor sees of this city.
+        // What a computer player's governor sees of this city (the Pyramids count as its Granary).
         let owner = city.owner;
         let gov = governments.get(&owner).copied().unwrap_or(Government::Despotism);
+        let has_pyramids = wonders.owns(owner, Building::Pyramids);
+        let governed_buildings = |b: &CityBuildings| {
+            let mut built = b.buildings.clone();
+            if has_pyramids && !built.contains(&Building::Granary) {
+                built.push(Building::Granary);
+            }
+            built
+        };
         let view = governor::CityView {
             position: city.position,
             population: city.population,
-            built: buildings.buildings.clone(),
+            built: governed_buildings(&buildings),
             coastal: city.position.all_neighbors().iter().any(|n| map.water.contains(n)),
             linked: supplies.linked.contains(&city.position),
             defended: armies.iter().any(|(p, o)| *p == city.position && *o == owner),
             threatened: armies.iter().any(|(p, o)| enemies(owner, *o) && p.distance_to(city.position) <= 3),
             near_capital: capitals.get(&owner).is_none_or(|cp| cp.distance_to(city.position) <= 6),
             narcotics: city.narcotics,
+            trade: city.land.2,
+            corruption: (corruption * 100.0).round() as u32,
+            water_limit: Building::size_limit(&buildings.buildings, rivers.tiles.contains(&city.position) || city.position.all_neighbors().iter().any(|n| rivers.tiles.contains(n))),
         };
         let mut needs_orders = false;
         let mut just_trained = false;
@@ -3390,13 +3700,13 @@ fn process_turn(
                 // An empty city drops everything for a defender, and pays to hurry it when in danger.
                 let already = matches!(&city.production_queue, Some(ProductionItem::Unit(u)) if u.is_army());
                 if !already {
-                    let civ_view = governor::CivView { tech: &civ.tech, aggression: civ.aggression, cities: 1, workers: 1, settlers: 1, military: 0, navy: 0, air: 0, road_work: 0, cut_off: 0, at_war: true, wonders_taken: &wonders_taken, caravans: 1, diplomats: 1, missionaries: 1, faith_to_spread: false, wonder_elsewhere: false, space_parts: &[], room_to_expand: false, forbidden_palace: true, ferries: 1, ferry_wanted: 0 };
+                    let civ_view = governor::CivView { tech: &civ.tech, aggression: civ.aggression, cities: 1, workers: 1, settlers: 1, military: 0, navy: 0, air: 0, road_work: 0, cut_off: 0, at_war: true, wonders_taken: &wonders_taken, caravans: 1, diplomats: 1, missionaries: 1, faith_to_spread: false, wonder_elsewhere: false, space_parts: &[], room_to_expand: false, forbidden_palace: true, ferries: 1, ferry_wanted: 0, thrifty: true };
                     city.production_queue = Some(ProductionItem::Unit(governor::best_defender(&view, &civ_view, &supplies)));
                 }
-                let remaining = city.production_queue.as_ref().map(|i| i.cost()).unwrap_or(0).saturating_sub(city.production_progress) as i32;
-                if view.threatened && remaining > 0 && civ.gold >= remaining * 2 {
-                    civ.gold -= remaining * 2;
-                    city.production_progress += remaining as u32;
+                let remaining = city.shields_left();
+                if let Some(cost) = city.hurry_cost().filter(|cost| view.threatened && remaining > 0 && civ.gold >= *cost) {
+                    civ.gold -= cost;
+                    city.production_progress += remaining;
                 }
             }
         }
@@ -3407,35 +3717,27 @@ fn process_turn(
             if let Some(civ) = civs.players.iter_mut().find(|c| c.id == owner) {
                 let allowed = 1 + (civ.gold / 500).max(0) as u32;
                 let done = hurried.get(&owner).copied().unwrap_or(0);
-                let remaining = city.production_queue.as_ref().map(|i| i.cost()).unwrap_or(0).saturating_sub(city.production_progress) as i32;
-                if done < allowed && remaining > 0 && civ.gold >= 150 + remaining * 2 {
-                    civ.gold -= remaining * 2;
-                    city.production_progress += remaining as u32;
+                let remaining = city.shields_left();
+                if let Some(cost) = city.hurry_cost().filter(|cost| done < allowed && remaining > 0 && civ.gold >= 150 + *cost) {
+                    civ.gold -= cost;
+                    city.production_progress += remaining;
                     *hurried.entry(owner).or_default() += 1;
                 }
             }
         }
 
         // Farms, mines and bonus resources on the city's land add to what it gathers.
-        let (extra_food, extra_shields, extra_gold) = supplies.yields.get(&city.position).copied().unwrap_or_default();
+        let (extra_food, extra_shields, _) = supplies.yields.get(&city.position).copied().unwrap_or_default();
         // So do the civilization's traits.
         let character = characters.get(&owner).copied();
-        let (trait_food, trait_shields, trait_gold, trait_science) = character.map(|c| c.city_bonus()).unwrap_or_default();
-        let (extra_food, extra_shields, extra_gold) = (extra_food + trait_food, extra_shields + trait_shields, extra_gold + trait_gold);
-        if mine {
-            total_science += trait_science;
-        } else if owner != BARBARIANS {
-            ai_income.entry(owner).or_default().0 += trait_science;
-        }
-        city.food_storage += extra_food;
-        city.production_progress += extra_shields;
-        // (River trade is counted on the worked tiles; see `tiles`.)
-        let river_gold = 0;
-        if mine {
-            total_gold += extra_gold as i32 + river_gold;
-        } else if owner != BARBARIANS {
-            ai_income.entry(owner).or_default().1 += river_gold;
-        }
+        let (trait_food, trait_shields, _, _) = character.map(|c| c.city_bonus()).unwrap_or_default();
+        // The Pyramids are a Granary in every city of their owner.
+        let extra_food = extra_food + if has_pyramids && !buildings.has(Building::Granary) { Building::Granary.food_bonus() } else { 0 };
+        city.food_storage += extra_food + trait_food;
+        city.production_progress += extra_shields + trait_shields;
+        // The city's accounts: its trade less corruption, split by its people's rates, multiplied
+        // by its buildings.
+        let (books, outright_gold) = city_books(&city, &buildings, gov, rates_of.get(&owner).copied().unwrap_or_default(), corruption, &wonders, &great, character, &supplies);
 
         // Happiness. Temples and the like, wonders, masterpieces, entertainers and martial law calm the
         // unhappy; every different luxury the city can reach makes someone happy.
@@ -3457,12 +3759,8 @@ fn process_turn(
                 0
             }
             + if mine { state.difficulty.player_content() } else { 0 };
-        // The player's commerce (what the city's science and taxes would be) is split by the rates;
-        // every two points of luxury make one citizen happy.
-        // The black market takes a gold of trade for each level of the drug trade.
-        let commerce = (city.science_per_turn(&buildings, gov, dist) + city.gold_per_turn(&buildings) + 1).saturating_sub(city.narcotics);
-        let (rate_science, rate_luxury, rate_gold) = if mine { state.split_commerce(commerce) } else { (0, 0, 0) };
-        let joy = supply::luxury_happiness(supplies.luxuries(city.position), has_market) + rate_luxury / 2;
+        // Every two points of the city's luxury make one citizen happy.
+        let joy = supply::luxury_happiness(supplies.luxuries(city.position), has_market) + books.luxury / 2;
         // A long war wears on a republic or democracy (a Police Station halves it in its city).
         let weary = gov.war_weariness(war_turns.get(&owner).copied().unwrap_or(0));
         let weary = if buildings.has(Building::PoliceStation) { weary / 2 } else { weary };
@@ -3471,6 +3769,9 @@ fn process_turn(
         let troubled = bevy_civ::troubles::unhappiness(city.narcotics, city.scandal, gm_distrusted);
         let calm = calm.saturating_sub(weary + sprawl + troubled);
         happiness.update(city.population, calm, joy);
+        if happiness.in_disorder() {
+            *rioting.entry(owner).or_default() += 1;
+        }
         // A computer player's governor turns workers into entertainers to end disorder, and back again.
         if !mine && owner != BARBARIANS {
             if happiness.in_disorder() && city.workers() > 1 {
@@ -3569,22 +3870,16 @@ fn process_turn(
         // Difficulty: the computer players' cities build faster or slower.
         if !idle && !mine && owner != BARBARIANS {
             let factor = state.difficulty.ai_output();
-            let base = city.production_per_turn(&buildings, gov, dist) as f32;
+            let base = city.production_per_turn(&buildings, waste) as f32;
             let extra = (base * (factor - 1.0)).round() as i32;
             city.production_progress = (city.production_progress as i32 + extra).max(0) as u32;
         }
         // The Hoover Dam powers every city of its owner: a quarter more shields.
         if !idle && wonders.owns(owner, Building::HooverDam) {
-            city.production_progress += city.production_per_turn(&buildings, gov, dist) / 4;
+            city.production_progress += city.production_per_turn(&buildings, waste) / 4;
         }
-        // A golden age adds half again to every city's shields.
-        if !idle && golden.active(owner) {
-            city.production_progress += city.production_per_turn(&buildings, gov, dist) / 2;
-            if mine {
-                total_gold += 1;
-            }
-        }
-        let finished = if idle { None } else { city.process_production(&buildings, gov, dist) };
+        // (A golden age adds a shield and a trade to the tiles that have them: see `work_tiles`.)
+        let finished = if idle { None } else { city.process_production(&buildings, waste) };
         let finished_unit = matches!(finished, Some(ProductionItem::Unit(_)));
         let finished_any = finished.is_some();
         if let Some(completed) = finished {
@@ -3679,9 +3974,15 @@ fn process_turn(
                             }
                             _ => {}
                         }
-                        if golden.begin(city.owner) && (mine || foreign.met.contains(&city.owner)) {
-                            let who = if mine { "Our".to_string() } else { civs.players.iter().find(|c| c.id == city.owner).map(|c| format!("The {} people's", c.adjective)).unwrap_or_default() };
-                            log.push(format!("{who} first wonder begins a golden age: half again as many shields, and more gold, for {GOLDEN_AGE_TURNS} turns."));
+                        // A wonder in the spirit of its builders begins their golden age.
+                        if character.is_some_and(|c| c.admires(b)) && golden.begin(city.owner) && (mine || foreign.met.contains(&city.owner)) {
+                            let spirit = bevy_civ::traits::wonder_traits(b);
+                            log.push(if mine {
+                                format!("Our {spirit} people take pride in the {}: a golden age begins! For {GOLDEN_AGE_TURNS} turns every worked tile that gives a shield or a trade gives one more.", b.name())
+                            } else {
+                                let who = civs.players.iter().find(|c| c.id == city.owner).map(|c| c.adjective.clone()).unwrap_or_default();
+                                format!("A golden age begins for the {who} people, inspired by the {}.", b.name())
+                            });
                         }
                         let builder = civs.players.iter().find(|c| c.id == city.owner).map(|c| c.name.clone()).unwrap_or_else(|| "A people".into());
                         log.push(if mine {
@@ -3690,6 +3991,7 @@ fn process_turn(
                             format!("Wonder of the world: {} completed the {} in {}.", builder, b.name(), city.name)
                         });
                         buildings.buildings.push(b);
+                        culture.record(city.position, b, state.turn);
                     } else {
                         // Beaten to it this very turn: the shields are kept.
                         city.production_progress += b.cost();
@@ -3704,6 +4006,7 @@ fn process_turn(
                         log.push(format!("{} completes the {}. {}", city.name, b.name(), next_hint(&city)));
                     }
                     buildings.buildings.push(b);
+                    culture.record(city.position, b, state.turn);
                 }
             }
         }
@@ -3750,7 +4053,8 @@ fn process_turn(
         }
 
         // Culture accrues whatever the city's mood.
-        culture.add(city.position, culture_rules::per_turn(&buildings.buildings, city.is_capital) + if wonders.owns(owner, Building::Eiffel) { 2 } else { 0 });
+        let earned = culture.earned(city.position, &buildings.buildings, city.is_capital, state.turn, state.last_turn);
+        culture.add(city.position, owner, earned + if wonders.owns(owner, Building::Eiffel) { 2 } else { 0 });
 
         // Great-person points; a birth appears in the city. Computer players put theirs to work at once.
         if owner != BARBARIANS {
@@ -3810,9 +4114,12 @@ fn process_turn(
                     forbidden_palace: seats.get(&owner).is_some_and(|s| s.len() > 1),
                     ferries: ferry_counts.get(&owner).copied().unwrap_or(0),
                     ferry_wanted: ferries.wanted.get(&owner).copied().unwrap_or(0),
+                    // Upkeep already leaves little for science (a computer player), or the treasury
+                    // runs at a loss (ours).
+                    thrifty: if mine { state.gold_per_turn < 0 } else { civ.rates.science <= 30 && civ.government != Government::Anarchy },
                 };
                 // The unit just trained (if any) now holds the city.
-                let view = governor::CityView { built: buildings.buildings.clone(), defended: view.defended || just_trained, ..view };
+                let view = governor::CityView { built: governed_buildings(&buildings), defended: view.defended || just_trained, ..view };
                 let next = governor::choose(&view, &civ_view, &supplies, &mut rng);
                 // Count what is now on order so the civilization's other cities do not duplicate it.
                 match &next {
@@ -3829,39 +4136,28 @@ fn process_turn(
                 city.production_queue = Some(next);
             }
         }
-        // Adam Smith's Trading Company and the Internet reward the owner's markets and libraries.
-        let wonder_gold = if wonders.owns(owner, Building::AdamSmith) {
-            buildings.buildings.iter().filter(|b| matches!(b, Building::Marketplace | Building::Bank | Building::StockExchange | Building::Harbor)).count() as i32
-        } else {
-            0
-        };
-        let wonder_science = if wonders.owns(owner, Building::Internet) && buildings.has(Building::Library) { 3 } else { 0 };
-        // Great merchants settled here add their gold.
-        let wonder_gold = wonder_gold + great.merchant_gold(city.position);
         {
             let held = finance.entry(owner).or_default();
             held.0 += u32::from(buildings.has(Building::Bank));
             held.1 += u32::from(buildings.has(Building::StockExchange));
         }
-        if !idle {
+        // Science and taxes come in unless the city stands idle; its upkeep is owed all the same.
+        if owner != BARBARIANS {
+            let collected = if idle { bevy_civ::economy::Ledger { science: 0, gold: 0, ..books } } else { books };
+            accounts.entry(owner).or_default().add(&collected);
             if mine {
-                total_gold += wonder_gold;
-                total_science += wonder_science;
-            } else if owner != BARBARIANS {
+                total_science += collected.science;
+                total_gold += collected.gold as i32;
+            } else {
                 let income = ai_income.entry(owner).or_default();
-                income.0 += wonder_science;
-                income.1 += wonder_gold;
+                income.0 += collected.science;
+                income.1 += collected.gold as i32;
             }
-        }
-        if !mine && !idle {
-            let income = ai_income.entry(owner).or_default();
-            income.0 += city.science_per_turn(&buildings, gov, dist);
-            income.1 += city.gold_per_turn(&buildings) as i32 + 2 + supplies.yields.get(&city.position).map(|y| y.2 as i32).unwrap_or(0) - city.narcotics as i32;
-        }
-
-        if mine && !idle {
-            total_science += rate_science;
-            total_gold += rate_gold as i32;
+            if !idle {
+                let lift = 100 + bevy_civ::economy::tax_bonus(&buildings.buildings);
+                *full_taxes.entry(owner).or_default() += (books.trade - books.corruption) * lift / 100;
+                *fixed_income.entry(owner).or_default() += (outright_gold + bevy_civ::economy::TAX_COLLECTOR * city.tax_collectors() * lift / 100) as i32;
+            }
         }
     }
 
@@ -3981,11 +4277,19 @@ fn process_turn(
         let (trade_gold, trade_science) = trade.income(civ.id);
         let (science, gold) = (((science + trade_science) as f32 * difficulty.ai_output()) as u32, gold + trade_gold as i32);
         let (banks, exchanges) = finance.get(&civ.id).copied().unwrap_or_default();
-        civ.gold += gold + bevy_civ::building::interest(civ.gold, banks, exchanges);
+        let interest = bevy_civ::building::interest(civ.gold, banks, exchanges);
+        // Buildings cost their upkeep (not in anarchy, when no taxes come in).
+        let upkeep = if civ.government == Government::Anarchy { 0 } else { accounts.get(&civ.id).map_or(0, |a| a.upkeep) as i32 };
+        civ.gold += gold + interest - upkeep;
         // Savings beyond a reserve are invested in research.
         let invested = ((civ.gold - 300) / 3).max(0);
         civ.gold -= invested;
         civ.tech.science_per_turn = (science + invested as u32 / 2).max(1);
+        // Next turn's rates: luxury while its cities riot, then as much science as it can afford.
+        let held = city_counts.get(&civ.id).copied().unwrap_or(0);
+        let luxury = bevy_civ::economy::luxury_for(civ.rates.luxury, rioting.get(&civ.id).copied().unwrap_or(0), held);
+        let income = fixed_income.get(&civ.id).copied().unwrap_or(0) + trade_gold as i32 + interest;
+        civ.rates = bevy_civ::economy::computer_rates(civ.government, luxury, full_taxes.get(&civ.id).copied().unwrap_or(0), income, upkeep, civ.gold);
     }
 
     let (trade_gold, trade_science) = trade.income(PLAYER);
@@ -3998,15 +4302,43 @@ fn process_turn(
 
     let free_support = gov.free_unit_support() * player_cities.max(1) + if wonders.owns(PLAYER, Building::StatueOfZeus) { player_cities } else { 0 };
     let military = units.iter().filter(|(_, u)| u.owner == PLAYER && u.unit_type.is_military()).count() as u32;
-    if military > free_support {
-        total_gold -= (military - free_support) as i32 * gov.unit_upkeep_food() as i32;
+    state.unit_support = if military > free_support { (military - free_support) as i32 * gov.unit_upkeep_food() as i32 } else { 0 };
+    total_gold -= state.unit_support;
+    // Buildings cost their upkeep (not in anarchy, when no taxes come in).
+    if gov != Government::Anarchy {
+        total_gold -= accounts.get(&PLAYER).map_or(0, |a| a.upkeep) as i32;
     }
     let (banks, exchanges) = finance.get(&PLAYER).copied().unwrap_or_default();
     state.interest = bevy_civ::building::interest(state.gold, banks, exchanges);
     total_gold += state.interest;
     state.gold_per_turn = total_gold;
-    state.gold = (state.gold + total_gold).max(0);
+    state.gold += total_gold;
     tech.science_per_turn = total_science;
+    state.accounts = accounts;
+    // A treasury that cannot pay its bills sells buildings, the dearest to keep first, until it can.
+    {
+        let mut debtors: Vec<(u32, i32)> = civs.players.iter().filter(|c| !c.is_human && c.gold < 0).map(|c| (c.id, c.gold)).collect();
+        if state.gold < 0 {
+            debtors.push((PLAYER, state.gold));
+        }
+        for (owner, mut gold) in debtors {
+            while gold < 0 {
+                let Some((name, sold)) = sell_for_debt(&mut cities, owner) else {
+                    gold = 0;
+                    break;
+                };
+                gold += sold.cost() as i32;
+                if owner == PLAYER {
+                    log.push(format!("Our treasury is empty: {name} sells its {} for {} gold to pay the bills.", sold.name(), sold.cost()));
+                }
+            }
+            if owner == PLAYER {
+                state.gold = gold;
+            } else if let Some(civ) = civs.players.iter_mut().find(|c| c.id == owner) {
+                civ.gold = gold;
+            }
+        }
+    }
 
     // Marco Polo's Embassy: an embassy with every civilization (and the player meets them all).
     if let Some(&(owner, _)) = wonders.built.get(&Building::MarcoPolo) {
@@ -4085,7 +4417,7 @@ fn process_turn(
         }
     }
     // Leonardo's Workshop: one obsolete unit of its owner is upgraded free each turn.
-    if let Some(&(owner, _)) = wonders.built.get(&Building::Leonardo) {
+    if let Some(&(owner, _)) = wonders.built.get(&Building::Leonardo).filter(|_| !wonders.expired.contains(&Building::Leonardo)) {
         let known = |t: Option<Tech>| {
             t.is_none_or(|t| if owner == PLAYER { tech.researched.contains(&t) } else { civs.players.iter().any(|c| c.id == owner && c.tech.researched.contains(&t)) })
         };
@@ -4134,7 +4466,9 @@ fn process_turn(
         }
     }
 
-    // A city in disorder near a far greater culture may defect to it, its garrison sent home.
+    // A city in disorder near a far greater culture may defect to it, its garrison sent home - more
+    // readily far from its own capital and where the tempter's borders hold its land, less so with
+    // troops inside.
     {
         let owners: Vec<(Hex, u32)> = cities.iter().map(|(c, _, _)| (c.position, c.owner)).collect();
         let totals = culture.totals(owners.iter().copied());
@@ -4155,7 +4489,11 @@ fn process_turn(
                 })
                 .min_by_key(|(at, _)| at.distance_to(city.position))
                 .map(|(_, owner)| *owner);
-            if let Some(new_owner) = tempter.filter(|_| rng.gen_bool(culture_rules::DEFECTION_CHANCE)) {
+            let Some(new_owner) = tempter else { continue };
+            let far = capitals.get(&city.owner).map_or(0, |cp| cp.distance_to(city.position).max(0) as u32);
+            let held = supplies.territory.iter().filter(|(at, (o, _))| *o == new_owner && at.distance_to(city.position) <= CITY_RADIUS).count() as u32;
+            let garrison = armies.iter().filter(|(p, o)| *p == city.position && *o == city.owner).count() as u32;
+            if rng.gen_bool(culture_rules::defection_chance(far, held, garrison)) {
                 defections.push((city.position, city.owner, new_owner));
             }
         }
@@ -4247,15 +4585,29 @@ fn process_turn(
         .filter(|(c, _, _)| (c.is_capital && space.ships.get(&c.owner).is_some_and(|s| s.arrives.is_some())) || dying.contains(&c.owner))
         .map(|(c, _, _)| c.position)
         .collect();
-    let attacks = process_ai_turn(&mut civs, &mut units, &city_owners, &tiles, &hostile, &mut road_jobs, &owns, &mut ferries, &mut commands, &must_fall);
+    // What a defender stands on, tile by tile: the land, a river, a fortress, and a city's size and walls.
+    let walled_cities: HashSet<Hex> = cities.iter().filter(|(c, b, _)| b.has(Building::Walls) || wonders.walls_everywhere(c.owner)).map(|(c, _, _)| c.position).collect();
+    let forts: HashSet<Hex> = cities.iter().filter(|(_, b, _)| b.has(Building::CoastalFortress)).map(|(c, _, _)| c.position).collect();
+    let fortresses: HashSet<Hex> = tiles.iter().filter(|t| t.improvements.contains(&Improvement::Fortress)).map(|t| t.coord).collect();
+    let populations: HashMap<Hex, u32> = cities.iter().map(|(c, _, _)| (c.position, c.population)).collect();
+    let terrain_of: HashMap<Hex, Terrain> = tiles.iter().map(|t| (t.coord, t.terrain)).collect();
+    let ground_at = |at: Hex| Ground {
+        terrain: terrain_of.get(&at).copied().unwrap_or(Terrain::Plains),
+        fortified: false,
+        walls: walled_cities.contains(&at),
+        river: rivers.tiles.contains(&at),
+        coast_fort: forts.contains(&at),
+        city: populations.get(&at).copied(),
+        fortress: fortresses.contains(&at),
+    };
+    let attacks = process_ai_turn(&mut civs, &mut units, &city_owners, &tiles, &hostile, &mut road_jobs, &owns, &mut ferries, &mut commands, &must_fall, &ground_at);
     let names: HashMap<u32, String> = civs.players.iter().map(|c| (c.id, c.adjective.clone())).collect();
     let civ_name = |owner: u32| names.get(&owner).cloned().unwrap_or_else(|| bevy_civ::theme::term("barbarian", "Barbarian").to_string());
 
-    let mut walled_cities: HashSet<Hex> = cities.iter().filter(|(c, b, _)| b.has(Building::Walls) || wonders.walls_everywhere(c.owner)).map(|(c, _, _)| c.position).collect();
-    // Fortresses in the field defend like walls.
-    walled_cities.extend(tiles.iter().filter(|t| t.improvements.contains(&Improvement::Fortress)).map(|t| t.coord));
-    let forts: HashSet<Hex> = cities.iter().filter(|(_, b, _)| b.has(Building::CoastalFortress)).map(|(c, _, _)| c.position).collect();
     let mut dead: HashSet<Entity> = HashSet::new();
+    // Guns fire first, softening up what the troops then storm.
+    let mut attacks = attacks;
+    attacks.sort_by_key(|a| !a.bombard);
     for attack in attacks {
         if dead.contains(&attack.attacker) {
             continue;
@@ -4271,7 +4623,7 @@ fn process_turn(
         let own_cities: HashSet<Hex> = city_owners.iter().filter(|(_, o)| *o == a_owner).map(|(p, _)| *p).collect();
         let can_enter = may_enter(a_type, attack.target, &map, &own_cities);
         let Some((d_entity, d_type, d_owner, dug_in)) = defender else {
-            if can_enter {
+            if can_enter && !attack.bombard {
                 if let Ok((_, mut attacker)) = units.get_mut(attack.attacker) {
                     attacker.position = attack.target;
                 }
@@ -4282,6 +4634,34 @@ fn process_turn(
             diplomacy.set_treaty(PLAYER, a_owner, Treaty::War);
             log.push(format!("The {} attack means war!", civ_name(a_owner)));
             foreign.since.insert((PLAYER, a_owner), state.turn);
+        }
+        // A gun's bombardment: it wears the defender down but never kills, at no risk to itself.
+        if attack.bombard {
+            let Ok((_, victim)) = units.get(d_entity) else { continue };
+            let (before, most, level, members) = (victim.hp, victim.max_hp(), victim.level, victim.members());
+            let side = Side { kind: defending_as(d_type, attack.target, &map), hp: before, level, led: false, members };
+            let hp = combat::bombard(a_type, side, Ground { fortified: dug_in, ..ground_at(attack.target) }, &mut rng);
+            if let Ok((_, mut victim)) = units.get_mut(d_entity) {
+                victim.hp = hp;
+            }
+            tally.bombardments += 1;
+            tally.shelled += before - hp;
+            if d_owner == PLAYER {
+                log.push(format!("A {} {} bombards our {}: {hp} of {most} hit points left.", civ_name(a_owner), a_type.name(), d_type.name()));
+                battles.send(BattleShown {
+                    from: a_pos,
+                    at: attack.target,
+                    attacker: Some(attack.attacker),
+                    result: if hp == before { "No effect".to_string() } else { format!("-{} HP: {hp}/{most}", before - hp) },
+                    good: Some(hp == before),
+                    ours: true,
+                    attacker_side: (a_type, a_owner),
+                    defender_side: (d_type, d_owner),
+                    attacker_died: false,
+                    defender_died: false,
+                });
+            }
+            continue;
         }
         // A bomber may be met by a fighter of the defender (or of anyone at war with the attacker)
         // within three tiles of the target that has not flown this turn.
@@ -4308,8 +4688,6 @@ fn process_turn(
                 }
             }
         }
-        let in_city = city_owners.iter().any(|(p, _)| *p == attack.target);
-        let terrain = defence_terrain(tiles.iter().find(|t| t.coord == attack.target).map(|t| t.terrain), in_city);
         let led = |at: Hex, owner: u32| units.iter().any(|(e, u)| !dead.contains(&e) && u.position == at && u.owner == owner && u.unit_type == UnitType::GreatGeneral);
         let (a_led, d_led) = (led(a_pos, a_owner), led(attack.target, d_owner));
         let d_vitals = units.get(d_entity).map(|(_, u)| (u.hp, u.level)).unwrap_or((3, 0));
@@ -4318,7 +4696,7 @@ fn process_turn(
         let outcome = combat::fight(
             Side { kind: a_type, hp: a_vitals.0, level: a_vitals.1, led: a_led, members: a_members },
             Side { kind: defending_as(d_type, attack.target, &map), hp: d_vitals.0, level: d_vitals.1, led: d_led, members: d_members },
-            Ground { terrain, fortified: dug_in, walls: walled_cities.contains(&attack.target), river: rivers.tiles.contains(&attack.target), coast_fort: forts.contains(&attack.target) },
+            Ground { fortified: dug_in, ..ground_at(attack.target) },
             &mut rng,
         );
         // Show it: every battle against the player, and others the player can see.
@@ -4344,37 +4722,51 @@ fn process_turn(
                 defender_died: matches!(outcome, Outcome::Won { .. }),
             });
         }
-        // Hit points left after the fight, and a chance of promotion for the victor.
-        let mut settle = |entity: Entity, hp: u32, won: bool, rng: &mut rand::rngs::ThreadRng| {
+        tally.battles += 1;
+        tally.won += u32::from(matches!(outcome, Outcome::Won { .. }));
+        tally.elite_wins += u32::from(match outcome {
+            Outcome::Won { .. } => a_vitals.1 >= 2,
+            Outcome::Lost { .. } => d_vitals.1 >= 2,
+            Outcome::Retreated { .. } => false,
+        });
+        tally.retreated += u32::from(matches!(outcome, Outcome::Retreated { .. }));
+        // Hit points left after the fight, and a chance of promotion for the victor (`beat`: whose
+        // unit it defeated).
+        let mut settle = |entity: Entity, hp: u32, beat: Option<u32>, rng: &mut rand::rngs::ThreadRng| {
             if let Ok((_, mut unit)) = units.get_mut(entity) {
                 unit.hp = hp.max(1);
-                let chance = characters.get(&unit.owner).map_or(1.0 / 3.0, |c| c.promotion_chance());
-                if won && rng.gen_bool(chance) {
-                    unit.promote();
+                if let Some(loser) = beat {
+                    let barbarian = loser == BARBARIANS;
+                    let chance = characters.get(&unit.owner).map_or(combat::promotion_chance(unit.level, false, barbarian), |c| c.promotion_chance(unit.level, barbarian));
+                    if rng.gen_bool(chance) && unit.promote() {
+                        tally.promotions += 1;
+                    }
                 }
             }
         };
         let attacker_won = match outcome {
             Outcome::Won { attacker_hp } => {
-                settle(attack.attacker, attacker_hp, true, &mut rng);
+                settle(attack.attacker, attacker_hp, Some(d_owner), &mut rng);
                 true
             }
             Outcome::Retreated { defender_hp } => {
-                settle(attack.attacker, 1, false, &mut rng);
-                settle(d_entity, defender_hp, false, &mut rng);
+                settle(attack.attacker, 1, None, &mut rng);
+                settle(d_entity, defender_hp, None, &mut rng);
                 if d_owner == PLAYER {
                     log.push(format!("Our {} drove off a {} {}.", d_type.name(), civ_name(a_owner), a_type.name()));
                 }
                 continue;
             }
             Outcome::Lost { defender_hp } => {
-                settle(d_entity, defender_hp, true, &mut rng);
+                settle(d_entity, defender_hp, Some(a_owner), &mut rng);
                 false
             }
         };
         if attacker_won {
-            if a_owner != BARBARIANS && great.victory(a_owner) {
+            unique_victory(&mut golden, &civs, &foreign.met, &mut log, a_owner, a_type, d_owner);
+            if a_owner != BARBARIANS && great.victory(a_owner, a_vitals.1, &mut rng) {
                 spawn_unit(&mut commands, a_pos, UnitType::GreatGeneral, a_owner);
+                tally.generals += 1;
             }
             dead.insert(d_entity);
             commands.entity(d_entity).try_despawn_recursive();
@@ -4393,10 +4785,12 @@ fn process_turn(
             if d_owner == PLAYER {
                 log.push(format!("Our {} repelled a {} {}.", d_type.name(), civ_name(a_owner), a_type.name()));
             }
-            if d_owner != BARBARIANS && great.victory(d_owner) {
+            unique_victory(&mut golden, &civs, &foreign.met, &mut log, d_owner, d_type, a_owner);
+            if d_owner != BARBARIANS && great.victory(d_owner, d_vitals.1, &mut rng) {
                 spawn_unit(&mut commands, attack.target, UnitType::GreatGeneral, d_owner);
+                tally.generals += 1;
                 if d_owner == PLAYER {
-                    log.push("Your stand brings forth a Great General! Keep it with your troops: they fight half again as hard.");
+                    log.push(format!("The stand of our elite {} brings forth a Great General! Keep it with your troops (they fight half again as hard), or form an army in one of our cities.", d_type.name()));
                 }
             }
         }
@@ -4409,7 +4803,7 @@ fn process_turn(
         let occupying = units
             .iter()
             .find(|(e, u)| {
-                !dead.contains(e) && u.position == city.position && u.owner != PLAYER && u.owner != city.owner && u.unit_type.is_army() && hostile(u.owner, city.owner)
+                !dead.contains(e) && u.position == city.position && u.owner != PLAYER && u.owner != city.owner && u.unit_type.is_army() && !u.unit_type.bombard_only() && hostile(u.owner, city.owner)
             })
             .map(|(e, u)| (e, u.owner, u.unit_type));
         if let Some((raider, _, kind)) = occupying.filter(|(_, _, k)| k.is_raider() && !defended) {
@@ -4473,7 +4867,8 @@ fn process_turn(
         let city_count = |owner: u32| city_spots.values().filter(|o| **o == owner).count();
         for civ in civs.players.iter_mut().filter(|c| c.id != PLAYER && !c.is_human) {
             let knows = |t: Option<Tech>| t.is_none_or(|t| civ.tech.researched.contains(&t));
-            let power = |u: UnitType| u.stats().0 + u.stats().1;
+            // A unit's worth: its attack (a gun's bombardment) and defence.
+            let power = |u: UnitType| u.stats().0.max(u.bombard().map_or(0, |(strength, _, _)| strength)) + u.stats().1;
             let mut upgraded = 0;
             let mut candidates: Vec<(Entity, bool, i32)> = units
                 .iter()
@@ -4882,6 +5277,11 @@ fn process_turn(
             log.push(format!("We may now adopt {}: open the Empire advisor (Y) to start a revolution.", government.name()));
         }
     }
+    {
+        let holding: HashSet<u32> = cities.iter().map(|(c, _, _)| c.owner).collect();
+        great_library(&mut civs, &mut tech, &wonders, &foreign.met, &holding, &mut log);
+        new_ages(&mut civs, &mut tech, &foreign.met, &holding, &mut log);
+    }
 
     // A revolution ends after its turns of anarchy.
     if state.anarchy_turns > 0 {
@@ -4889,6 +5289,9 @@ fn process_turn(
         if state.anarchy_turns == 0 {
             if let Some(next) = state.pending_government.take() {
                 state.government = next;
+                // The rates are brought within what the new government allows.
+                let rates = state.rates();
+                state.set_rates(rates);
                 log.push(format!("The anarchy ends: we are now a {}.", next.name()));
             }
         }
@@ -4943,7 +5346,7 @@ fn process_turn(
             *held.entry(city.owner).or_default() += 1;
         }
         let leader = held.iter().max_by_key(|(_, n)| **n).map(|(o, n)| (*o, *n));
-        let culture_winner = culture_rules::cultural_winner(&culture.totals(cities.iter().map(|(c, _, _)| (c.position, c.owner))), culture_rules::victory_culture(state.last_turn));
+        let culture_winner = culture.winner(&cities.iter().filter(|(c, _, _)| c.owner != BARBARIANS).map(|(c, _, _)| (c.position, c.owner)).collect::<Vec<_>>(), state.last_turn);
         state.victory = if held.len() == 1 {
             leader.map(|(o, _)| format!("Conquest victory for {}.", civ_named(o)))
         } else if let Some((o, n)) = leader.filter(|(_, n)| dominates(*n, total_cities)) {
@@ -4973,7 +5376,7 @@ fn process_turn(
         state.victory = Some("Conquest Victory!".into());
     } else if dominates(player_cities, total_cities) {
         state.victory = Some("Domination Victory!".into());
-    } else if let Some(winner) = culture_rules::cultural_winner(&culture.totals(cities.iter().map(|(c, _, _)| (c.position, c.owner))), culture_rules::victory_culture(state.last_turn)) {
+    } else if let Some(winner) = culture.winner(&cities.iter().filter(|(c, _, _)| c.owner != BARBARIANS).map(|(c, _, _)| (c.position, c.owner)).collect::<Vec<_>>(), state.last_turn) {
         state.victory = Some(if winner == PLAYER {
             "Cultural Victory! Our civilization is the envy of the world.".to_string()
         } else {
@@ -5099,7 +5502,7 @@ fn idle_city<'a>(cities: impl Iterator<Item = (Entity, &'a City)>) -> Option<(En
 pub fn religion_turn(
     mut state: ResMut<GameState>,
     mut last: Local<u32>,
-    tech: Res<TechState>,
+    mut tech: ResMut<TechState>,
     mut civs: ResMut<Civilizations>,
     cities: Query<&City>,
     mut religions: ResMut<Religions>,
@@ -5115,7 +5518,8 @@ pub fn religion_turn(
     let city_list: Vec<(Hex, u32, String, bool, u32)> = cities.iter().map(|c| (c.position, c.owner, c.name.clone(), c.is_capital, c.population)).collect();
     let positions: Vec<Hex> = city_list.iter().map(|c| c.0).collect();
     religions.retain(&positions);
-    let name_of = |id: u32| civs.players.iter().find(|c| c.id == id).map(|c| c.adjective.clone()).unwrap_or_default();
+    let adjectives: HashMap<u32, String> = civs.players.iter().map(|c| (c.id, c.adjective.clone())).collect();
+    let name_of = |id: u32| adjectives.get(&id).cloned().unwrap_or_default();
 
     // Founding: the first civilization to know a faith's technology founds it in one of its cities
     // that has none yet (the capital if it can).
@@ -5139,6 +5543,17 @@ pub fn religion_turn(
             ));
         } else {
             log.push(format!("{} priests found {} in {}.", capitalised(&name_of(founder)), faith.name(), site.2));
+        }
+        // The first people to master Philosophy (the founders of its faith) also make a free discovery.
+        if faith.founding_tech() == Tech::Philosophy && !fresh {
+            let gift = if founder == PLAYER { tech.discover() } else { civs.players.iter_mut().find(|c| c.id == founder).and_then(|c| c.tech.discover()) };
+            if let Some(gift) = gift {
+                log.push(if founder == PLAYER {
+                    format!("As the first to master {}, our thinkers make a free discovery: {}!", Tech::Philosophy.name(), gift.name())
+                } else {
+                    format!("As the first to master {}, the {} thinkers make a free discovery.", Tech::Philosophy.name(), name_of(founder))
+                });
+            }
         }
     }
     if fresh {
@@ -5331,15 +5746,24 @@ pub fn effective_focus(city: &City, situation: &bevy_civ::tiles::Situation) -> b
 
 pub fn work_tiles(
     (supplies, rivers, tech, civs, diplomacy): (Res<Supplies>, Res<Rivers>, Res<TechState>, Res<Civilizations>, Res<Diplomacy>),
+    (state, golden, mut last_rules): (Res<GameState>, Res<GoldenAges>, Local<Vec<(u32, Government, bool)>>),
     tiles: Query<&HexTile>,
     units: Query<&Unit>,
     mut cities: Query<(&mut City, &CityBuildings, Option<&Happiness>)>,
     (changed_tiles, changed_units): (Query<(), Changed<HexTile>>, Query<(), Changed<Unit>>),
 ) {
+    // Each people's government (and golden age) changes what its land gives.
+    let land_rule = |owner: u32| -> (Government, bool) {
+        let gov = if owner == PLAYER { state.government } else { civs.players.iter().find(|c| c.id == owner).map_or(Government::Despotism, |c| c.government) };
+        (gov, golden.active(owner))
+    };
+    let rules: Vec<(u32, Government, bool)> = civs.players.iter().map(|c| (c.id, land_rule(c.id).0, land_rule(c.id).1)).collect();
+    let rules_changed = *last_rules != rules;
     let city_changed = cities.iter_mut().any(|(c, _, _)| c.is_changed());
-    if !(supplies.is_changed() || city_changed || !changed_tiles.is_empty() || !changed_units.is_empty()) {
+    if !(supplies.is_changed() || city_changed || golden.is_changed() || !changed_tiles.is_empty() || !changed_units.is_empty() || rules_changed) {
         return;
     }
+    *last_rules = rules;
     let tile_at: HashMap<Hex, &HexTile> = tiles.iter().map(|t| (t.coord, t)).collect();
     let knows = |owner: u32, t: Tech| if owner == PLAYER { tech.researched.contains(&t) } else { civs.players.iter().any(|c| c.id == owner && c.tech.researched.contains(&t)) };
     let yield_for = |owner: u32, hex: Hex| -> Option<bevy_civ::tiles::Yield> {
@@ -5356,23 +5780,29 @@ pub fn work_tiles(
     for (mut city, buildings, happiness) in &mut cities {
         let owner = city.owner;
         let focus = effective_focus(&city, &city_situation(&city, buildings, happiness, at_war.contains(&owner), &rivers));
-        // A Harbor makes every worked ocean tile one food richer.
+        // A Harbor makes every worked ocean tile one food richer, and the Colossus one gold.
         let harbor = buildings.has(Building::Harbor);
+        let colossus = buildings.has(Building::Colossus) && !Building::Colossus.obsoleted_by().is_some_and(|t| knows(owner, t));
         // GM Farms make every farmed tile one food richer.
         let engineered = buildings.has(Building::GmFarms);
-        let yield_for = |owner: u32, hex: Hex| {
+        let raw_yield = |owner: u32, hex: Hex| {
             yield_for(owner, hex).map(|y| {
                 let tile = tile_at.get(&hex);
-                let sea = harbor && tile.is_some_and(|t| t.terrain == Terrain::Water);
+                let water = tile.is_some_and(|t| t.terrain == Terrain::Water);
                 let farmed = engineered && tile.is_some_and(|t| t.improvements.contains(&Improvement::Farm));
-                (y.0 + u32::from(sea) + u32::from(farmed), y.1, y.2)
+                (y.0 + u32::from(harbor && water) + u32::from(farmed), y.1, y.2 + u32::from(colossus && water))
             })
         };
+        let (gov, golden_age) = land_rule(owner);
+        // A city that celebrates its ruler escapes the despot's penalty, and under Monarchy or
+        // Communism earns a republic's trade.
+        let festive = happiness.is_some_and(|h| bevy_civ::economy::celebrating(city.population, h.happy, h.unhappy));
+        let ruled = |y| bevy_civ::economy::tile_rule(y, gov, golden_age, festive);
         let enemy_on = |h: &Hex| occupants.iter().any(|(p, o)| p == h && *o != owner && (*o == BARBARIANS || owner == BARBARIANS || diplomacy.get_treaty(owner, *o) == Treaty::War));
-        let centre = bevy_civ::tiles::centre_yield(yield_for(owner, city.position).unwrap_or((2, 0, 0)));
+        let centre = ruled(bevy_civ::tiles::centre_yield(raw_yield(owner, city.position).unwrap_or((2, 0, 0))));
         let mut candidates: Vec<(Hex, bevy_civ::tiles::Yield)> = areas
             .get(&city.position)
-            .map(|area| area.iter().filter(|h| **h != city.position && !enemy_on(h)).filter_map(|h| yield_for(owner, *h).map(|y| (*h, y))).collect())
+            .map(|area| area.iter().filter(|h| **h != city.position && !enemy_on(h)).filter_map(|h| raw_yield(owner, *h).map(|y| (*h, ruled(y)))).collect())
             .unwrap_or_default();
         candidates.sort_by_key(|(h, _)| (h.x, h.y));
         let keep = if owner == PLAYER { city.pinned.clone() } else { Vec::new() };
@@ -5530,24 +5960,27 @@ mod tests {
         assert_eq!(moves_per_turn(UnitType::Galley, land, &map, 1), 4, "a ship in port is afloat too");
         assert_eq!(moves_per_turn(UnitType::Fighter, sea, &map, 1), 8, "aircraft ignore the sea");
         assert_eq!(moves_per_turn(UnitType::Rifleman, sea, &map, 1), 1, "troops aboard keep their own moves");
-        assert_eq!(moves_per_turn(UnitType::Cavalry, land, &map, 1), 2);
+        assert_eq!(moves_per_turn(UnitType::Cavalry, land, &map, 1), 3);
     }
 
     #[test]
-    fn rates_split_commerce_within_the_government_cap() {
+    fn rates_stay_within_the_government_limit() {
+        use bevy_civ::economy::Rates;
         let mut state = GameState::default();
-        assert_eq!(state.split_commerce(10), (6, 0, 4));
-        state.science_rate = 50;
-        state.luxury_rate = 30;
-        assert_eq!(state.split_commerce(10), (5, 3, 2));
-        assert_eq!(state.tax_rate(), 20);
-        // Despotism allows at most 60% in one: a 90% science rate pays only 60%.
-        state.government = bevy_civ::government::Government::Despotism;
-        state.science_rate = 90;
-        state.luxury_rate = 0;
-        assert_eq!(state.split_commerce(10), (6, 0, 4));
+        assert_eq!(state.rates(), Rates { science: 60, luxury: 0 });
+        assert_eq!(state.rates().split(10, state.government), (6, 0, 4));
+        state.set_rates(Rates { science: 50, luxury: 10 });
+        assert_eq!(state.tax_rate(), 40);
+        // Despotism allows at most 60% in any share, taxes included.
+        state.set_rates(Rates { science: 90, luxury: 0 });
+        assert_eq!(state.rates(), Rates { science: 60, luxury: 0 });
+        state.set_rates(Rates { science: 20, luxury: 0 });
+        assert_eq!(state.tax_rate(), 60);
+        state.government = bevy_civ::government::Government::Democracy;
+        state.set_rates(Rates { science: 90, luxury: 0 });
+        assert_eq!(state.rates().science, 90);
         state.government = bevy_civ::government::Government::Anarchy;
-        assert_eq!(state.split_commerce(10).0, 0);
+        assert_eq!(state.rates().split(10, state.government), (0, 10, 0));
     }
 
     fn plain_map() -> MapData {
@@ -5574,6 +6007,7 @@ mod tests {
             .add_event::<EndTurnRequest>()
             .add_event::<Sfx>()
             .add_event::<Focus>()
+            .add_event::<BattleShown>()
             .add_event::<savegame::SaveRequest>()
             .insert_resource(plain_map())
             .insert_resource(Dirty { map: false, ui: false })
@@ -5619,6 +6053,7 @@ mod tests {
             anarchy: 0,
             pending_government: None,
             eliminated: false,
+            rates: Default::default(),
         });
         app
     }
@@ -5668,6 +6103,24 @@ mod tests {
         app.update();
         let city = app.world().get::<City>(roma).unwrap();
         assert_eq!((city.population, city.production_progress), (2, Building::Barracks.cost()));
+    }
+
+    #[test]
+    fn a_building_can_be_sold_once_a_turn() {
+        let mut app = order_app();
+        let mut cities = app.world_mut().query::<(Entity, &City)>();
+        let roma = cities.iter(app.world()).find(|(_, c)| c.name == "Roma").map(|(e, _)| e).unwrap();
+        app.world_mut().get_mut::<CityBuildings>(roma).unwrap().buildings = vec![Building::Temple, Building::Library];
+        app.world_mut().resource_mut::<Selection>().city = Some(roma);
+        app.world_mut().resource_mut::<GameState>().gold = 0;
+        app.world_mut().send_event(Action::SellBuilding(Building::Library));
+        app.update();
+        assert_eq!(app.world().resource::<GameState>().gold, Building::Library.cost() as i32);
+        assert_eq!(app.world().get::<CityBuildings>(roma).unwrap().buildings, vec![Building::Temple]);
+        // Only one a turn.
+        app.world_mut().send_event(Action::SellBuilding(Building::Temple));
+        app.update();
+        assert_eq!(app.world().get::<CityBuildings>(roma).unwrap().buildings, vec![Building::Temple]);
     }
 
     #[test]
@@ -5912,5 +6365,87 @@ mod tests {
         assert_eq!(walked(&roads, &mut fog), 3);
         let rails: HashMap<Hex, Road> = route.iter().map(|h| (*h, Road::Rail)).collect();
         assert_eq!(walked(&rails, &mut fog), 9);
+    }
+
+    fn people(id: u32, name: &str, techs: &[&str]) -> bevy_civ::ai::Civ {
+        bevy_civ::ai::Civ {
+            id,
+            name: name.into(),
+            is_human: id == PLAYER,
+            gold: 100,
+            tech: TechState::knowing(&techs.iter().map(|t| t.to_string()).collect::<Vec<_>>()),
+            aggression: 0.5,
+            leader: "Leader".into(),
+            adjective: name.into(),
+            portrait: 0,
+            city_names: vec![],
+            government: bevy_civ::government::Government::Despotism,
+            anarchy: 0,
+            pending_government: None,
+            eliminated: false,
+            rates: Default::default(),
+        }
+    }
+
+    #[test]
+    fn a_golden_age_comes_once_from_a_unique_unit_and_enriches_productive_tiles() {
+        let civs = Civilizations { players: vec![people(PLAYER, "Rome", &[]), people(1, "Egypt", &[])] };
+        let (mut golden, mut log) = (GoldenAges::default(), GameLog::default());
+        let met: HashSet<u32> = [1].into();
+        // Beating barbarians or winning with another unit does nothing.
+        unique_victory(&mut golden, &civs, &met, &mut log, PLAYER, UnitType::Legion, BARBARIANS);
+        unique_victory(&mut golden, &civs, &met, &mut log, PLAYER, UnitType::Spearman, 1);
+        assert!(!golden.active(PLAYER));
+        // Rome's Legion beats Egypt: twenty turns of plenty, once a game.
+        unique_victory(&mut golden, &civs, &met, &mut log, PLAYER, UnitType::Legion, 1);
+        assert!(golden.active(PLAYER) && !golden.active(1));
+        assert!(!golden.begin(PLAYER), "only one golden age a game");
+        for _ in 0..GOLDEN_AGE_TURNS - 1 {
+            golden.tick();
+        }
+        assert!(golden.active(PLAYER));
+        golden.tick();
+        assert!(!golden.active(PLAYER));
+        // A shield more where the land gives shields, a gold more where it gives gold.
+        assert_eq!(GoldenAges::tile((2, 0, 1)), (2, 0, 2));
+        assert_eq!(GoldenAges::tile((1, 2, 0)), (1, 3, 0));
+    }
+
+    #[test]
+    fn the_great_library_teaches_what_two_known_peoples_know_and_scientists_mark_new_ages() {
+        let ancient: Vec<&str> = Tech::ALL.into_iter().filter(|t| t.era() == bevy_civ::tech::Era::Ancient && !t.optional()).map(|t| t.base_name()).collect();
+        let mut civs = Civilizations {
+            players: vec![
+                people(PLAYER, "Rome", &[]),
+                people(1, "Egypt", &["Pottery", "Mining", "Alphabet"]),
+                people(2, "Persia", &["Pottery", "Mining"]),
+                people(3, "Greece", &["Pottery", "Alphabet"]),
+            ],
+        };
+        let mut tech = TechState::knowing(&["Bronze Working".to_string()]);
+        let mut wonders = WorldWonders::default();
+        wonders.complete(Building::GreatLibrary, PLAYER, "Roma");
+        let holding: HashSet<u32> = [PLAYER, 1, 2, 3].into();
+        let mut log = GameLog::default();
+        // We have met only Egypt and Persia: Pottery and Mining are known to both; the Alphabet to Egypt alone.
+        great_library(&mut civs, &mut tech, &wonders, &[1, 2].into(), &holding, &mut log);
+        assert!(tech.researched.contains(&Tech::Pottery) && tech.researched.contains(&Tech::Mining));
+        assert!(!tech.researched.contains(&Tech::Alphabet));
+        // Once we know Theory of Gravity it teaches no more.
+        tech.researched.insert(Building::GreatLibrary.obsoleted_by().unwrap());
+        great_library(&mut civs, &mut tech, &wonders, &[1, 2, 3].into(), &holding, &mut log);
+        assert!(!tech.researched.contains(&Tech::Alphabet));
+
+        // Greece is Scientific: entering the Middle Ages brings a free discovery; Egypt's does not.
+        let mut civs = Civilizations { players: vec![people(PLAYER, "Rome", &[]), people(1, "Egypt", &ancient), people(2, "Greece", &ancient)] };
+        let mut tech = TechState::knowing(&[]);
+        new_ages(&mut civs, &mut tech, &HashSet::new(), &holding, &mut log);
+        for civ in civs.players.iter_mut() {
+            civ.tech.learn(Tech::Engineering);
+            civ.tech.current = Some(Tech::Astronomy);
+        }
+        new_ages(&mut civs, &mut tech, &HashSet::new(), &holding, &mut log);
+        assert!(civs.players[2].tech.researched.contains(&Tech::Astronomy), "a scientific people's free discovery");
+        assert!(!civs.players[1].tech.researched.contains(&Tech::Astronomy));
     }
 }

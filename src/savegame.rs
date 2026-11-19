@@ -392,7 +392,7 @@ mod tests {
         let mut great = GreatPeople::default();
         great.city.insert(Hex::new(1, 2), [1, 2, 3, 4]);
         let mut culture = CultureLedger::default();
-        culture.add(Hex::new(1, 2), 77);
+        culture.add(Hex::new(1, 2), 0, 77);
         let city = City {
             name: "Roma".into(),
             population: 6,
@@ -449,6 +449,7 @@ mod tests {
         assert_eq!(game.diplomacy.get_treaty(0, 2), Treaty::War);
         assert_eq!(game.great.city[&Hex::new(1, 2)], [1, 2, 3, 4]);
         assert_eq!(game.culture.of(Hex::new(1, 2)), 77);
+        assert_eq!((game.culture.of_people(0), game.culture.held_by(Hex::new(1, 2), 0)), (77, 77));
         assert_eq!(game.cities[0].buildings, vec![Building::Temple, Building::Oracle]);
         assert_eq!(game.cities[0].mood, Some([0, 5, 1]));
         assert_eq!(game.cities[0].city.production_queue, Some(ProductionItem::Building(Building::Temple)));
