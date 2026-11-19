@@ -650,6 +650,16 @@ Choose one with `?theme=<id>` in the browser or `--theme <id>` natively (also fo
 (`?theme=example`: Earth's maps with Colony Pods, Plasma Troopers, Methane Seas and years counted
 from the Landing).
 
+**The modern game** (`?theme=modern`, `assets/themes/modern.json`) is a separate game on the same
+engine: "Modern Nations", with its own scenario, *The Modern World* (`assets/scenarios/modern.json`):
+eleven of today's powers - the United States, Brazil, the United Kingdom, France, Germany, Russia,
+Egypt, India, China, Japan and Australia - on the Earth map from 2025, one year a turn, knowing
+everything up to the Modern Age and fielding modern troops. Leaders are generic titles (the
+President, the Prime Minister, the Chancellor) with generic portraits, never real people. The theme
+switches unique units off (`"unique_units": false`). The ancient game never lists it, and it never
+lists the ancient scenarios. Not yet adapted for it: ancient religions are still founded early and
+ancient wonders can still be built, and the splash page's title and art are the ancient game's.
+
 Still Earth-only (later stages): the wording of tips, help and many messages, the civilizations'
 traits (keyed by name in `src/traits.rs`), and the rules themselves, which are written against
 specific units and buildings.

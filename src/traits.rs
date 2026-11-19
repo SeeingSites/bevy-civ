@@ -163,6 +163,13 @@ pub fn of(name: &str) -> Character {
         "Inca" => ([Agricultural, Industrious], U::Chasqui),
         "Ottomans" => ([Militaristic, Scientific], U::Sipahi),
         "Seleucids" => ([Scientific, Militaristic], U::Cataphract),
+        // Modern nations (their unique units are switched off by the modern theme).
+        "United States" => ([Commercial, Industrious], U::Infantry),
+        "United Kingdom" => ([Commercial, Scientific], U::Infantry),
+        "Germany" => ([Industrious, Scientific], U::Infantry),
+        "Russia" => ([Militaristic, Industrious], U::Infantry),
+        "Brazil" => ([Agricultural, Commercial], U::Infantry),
+        "Australia" => ([Agricultural, Industrious], U::Infantry),
         _ => {
             let seed = key.bytes().fold(7u32, |h, b| h.wrapping_mul(31).wrapping_add(b as u32));
             let first = Trait::ALL[(seed % 6) as usize];
@@ -171,7 +178,16 @@ pub fn of(name: &str) -> Character {
             ([first, second], pool[(seed / 30) as usize % pool.len()])
         }
     };
+    // A theme without unique units (the modern game): every people trains the ordinary units.
+    let unique = if crate::theme::unique_units() { unique } else { U::Infantry };
     Character { traits, unique }
+}
+
+impl Character {
+    /// Its unique unit, if the game has unique units and it has one.
+    pub fn unique_unit(&self) -> Option<UnitType> {
+        Some(self.unique).filter(|u| u.unique_base().is_some())
+    }
 }
 
 #[cfg(test)]

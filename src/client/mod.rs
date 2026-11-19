@@ -117,7 +117,7 @@ fn load_art(mut commands: Commands, assets: Res<AssetServer>, mut layouts: ResMu
         parchment: assets.load(format!("{}/parchment.png", bevy_civ::theme::sprites())),
         button: assets.load(format!("{}/button.png", bevy_civ::theme::sprites())),
         leaders: assets.load(format!("{}/leaders.png", bevy_civ::theme::sprites())),
-        leaders_layout: grid(128, 128, 18, 1),
+        leaders_layout: grid(128, 128, 22, 1),
         font_title: assets.load("fonts/Cinzel.ttf"),
         font_body: assets.load("fonts/AlegreyaSans-Medium.ttf"),
         font_bold: assets.load("fonts/AlegreyaSans-Bold.ttf"),

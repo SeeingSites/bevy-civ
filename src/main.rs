@@ -123,7 +123,7 @@ fn unique_victory(golden: &mut GoldenAges, civs: &Civilizations, met: &HashSet<u
         return;
     }
     let Some(civ) = civs.players.iter().find(|c| c.id == winner) else { return };
-    if bevy_civ::traits::of(&civ.name).unique != kind || !golden.begin(winner) {
+    if bevy_civ::traits::of(&civ.name).unique_unit() != Some(kind) || !golden.begin(winner) {
         return;
     }
     if winner == PLAYER {

@@ -7,10 +7,11 @@ use rand::Rng;
 use serde::Deserialize;
 
 /// Scenario files produced by `tools/maps/build.cjs`.
-const BUILT_IN: [&str; 3] = [
+const BUILT_IN: [&str; 4] = [
     include_str!("../assets/scenarios/earth.json"),
     include_str!("../assets/scenarios/rome.json"),
     include_str!("../assets/scenarios/discovery.json"),
+    include_str!("../assets/scenarios/modern.json"),
 ];
 
 #[derive(Deserialize, Clone, Default)]

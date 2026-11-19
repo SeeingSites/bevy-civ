@@ -744,19 +744,30 @@ pub fn update_sound_button(settings: Res<SoundSettings>, mut labels: Query<&mut 
 pub fn character_line(name: &str, adjective: &str) -> String {
     let c = bevy_civ::traits::of(name);
     let _ = adjective;
-    let (a, d, m) = c.unique.stats();
-    let base = c.unique.unique_base().map(|b| format!(" in place of the {}", b.name())).unwrap_or_default();
-    let ability = c.unique.ability().map(|x| format!("; {}: {}", x.name(), x.describe())).unwrap_or_default();
+    let Some(unique) = c.unique_unit() else {
+        return format!(
+            "{} ({}) and {} ({}). Golden age: with the first {} or {} wonder.",
+            c.traits[0].name(),
+            c.traits[0].effect(),
+            c.traits[1].name(),
+            c.traits[1].effect(),
+            c.traits[0].name(),
+            c.traits[1].name()
+        );
+    };
+    let (a, d, m) = unique.stats();
+    let base = unique.unique_base().map(|b| format!(" in place of the {}", b.name())).unwrap_or_default();
+    let ability = unique.ability().map(|x| format!("; {}: {}", x.name(), x.describe())).unwrap_or_default();
     format!(
         "{} ({}) and {} ({}). Unique unit: {}{base} ({a}/{d}/{m}{ability}). Golden age: with the first {} or {} wonder, or the {}'s first victory over another people.",
         c.traits[0].name(),
         c.traits[0].effect(),
         c.traits[1].name(),
         c.traits[1].effect(),
-        c.unique.name(),
+        unique.name(),
         c.traits[0].name(),
         c.traits[1].name(),
-        c.unique.name()
+        unique.name()
     )
 }
 
@@ -835,7 +846,7 @@ const GRAY: Color = Color::srgb(0.62, 0.6, 0.57);
 fn portrait(art: &Art, index: usize, size: f32) -> impl Bundle {
     (
         Node { width: Val::Px(size), height: Val::Px(size), flex_shrink: 0.0, ..default() },
-        ImageNode { image: art.leaders.clone(), texture_atlas: Some(art.atlas(&art.leaders_layout, index.min(17))), ..default() },
+        ImageNode { image: art.leaders.clone(), texture_atlas: Some(art.atlas(&art.leaders_layout, index.min(21))), ..default() },
     )
 }
 
@@ -3383,12 +3394,14 @@ pub fn rebuild_menu(
                         w.spawn(label(&art.font_bold, notice.clone(), 15.0, INK));
                     }
                     w.spawn(label(&art.font_body, "Or choose a world to rule.", 18.0, INK_SOFT));
-                    w.spawn(label(
-                        &art.font_body,
-                        "New to games like this? The Rise of Rome is the quickest to learn: a small map, with your first cities already founded. Once in, Help (F1) opens How to play; short tips explain each new thing as it comes up.",
-                        14.0,
-                        INK_SOFT,
-                    ));
+                    // The Rise of Rome is recommended to beginners only where this game offers it.
+                    let rome = menu.catalog.iter().any(|s| s.id == "rome");
+                    let intro = if rome {
+                        "New to games like this? The Rise of Rome is the quickest to learn: a small map, with your first cities already founded. Once in, Help (F1) opens How to play; short tips explain each new thing as it comes up."
+                    } else {
+                        "New to games like this? Once in, Help (F1) opens How to play; short tips explain each new thing as it comes up."
+                    };
+                    w.spawn(label(&art.font_body, intro, 14.0, INK_SOFT));
                     for (index, scenario) in menu.catalog.iter().enumerate() {
                         w.spawn((
                             Button,

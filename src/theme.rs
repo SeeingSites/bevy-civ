@@ -36,6 +36,9 @@ pub struct Theme {
     pub name: String,
     /// A theme whose scenarios this one also plays (e.g. a reskin of Earth's maps).
     pub base: Option<String>,
+    /// Whether peoples have unique units (an ancient game's Hoplites make no sense in 2025).
+    #[serde(default = "yes")]
+    pub unique_units: bool,
     /// The folder the sprite sheets are loaded from, under `assets/` (default `sprites`).
     pub sprites: Option<String>,
     pub calendar: Calendar,
@@ -53,10 +56,20 @@ pub struct Theme {
     pub terms: HashMap<String, String>,
 }
 
+fn yes() -> bool {
+    true
+}
+
+/// Whether the theme in force gives peoples unique units (yes, unless it says otherwise).
+pub fn unique_units() -> bool {
+    active().is_none_or(|t| t.unique_units)
+}
+
 /// Themes built into the game, by id.
 pub const BUILT_IN: &[(&str, &str)] = &[
     ("earth", include_str!("../assets/themes/earth.json")),
     ("example", include_str!("../assets/themes/example.json")),
+    ("modern", include_str!("../assets/themes/modern.json")),
 ];
 
 /// The theme in force: leaked once per change so names can be handed out as `&'static str`.
