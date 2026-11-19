@@ -3141,6 +3141,8 @@ fn process_turn(
         }
     }
 
+    // (A game saved before peoples kept the culture they earned credits each city's to its owner.)
+    culture.seed(&cities.iter().map(|(c, _, _)| (c.position, c.owner)).collect::<Vec<_>>());
     let wonders_taken: HashSet<Building> = wonders.built.keys().copied().collect();
     // Caravans and diplomats each civilization has, and the cities building wonders.
     let mut envoy_counts: HashMap<(u32, UnitType), usize> = HashMap::new();
@@ -3809,7 +3811,7 @@ fn process_turn(
 
         // Culture accrues whatever the city's mood.
         let earned = culture.earned(city.position, &buildings.buildings, city.is_capital, state.turn, state.last_turn);
-        culture.add(city.position, earned + if wonders.owns(owner, Building::Eiffel) { 2 } else { 0 });
+        culture.add(city.position, owner, earned + if wonders.owns(owner, Building::Eiffel) { 2 } else { 0 });
 
         // Great-person points; a birth appears in the city. Computer players put theirs to work at once.
         if owner != BARBARIANS {

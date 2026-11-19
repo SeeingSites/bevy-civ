@@ -254,7 +254,7 @@ fn help_lines(topic: HelpTopic) -> Vec<String> {
             "Diplomacy: once the United Nations (Computers) stands, every 10 turns the world votes for Secretary-General between its owner and the highest-scoring other people. Each candidate votes for itself; every other people backs the candidate it likes better, but only one it is friendly with (peace treaties, alliances, gifts, trade and a shared faith build goodwill) - otherwise it abstains. A majority of all the members wins.".to_string(),
             "Space: the race to Alpha Centauri, the nearest star. Research Space Flight, Plastics and Superconductors; once anyone has built the Apollo Program, cities with a Factory build 4 Space Structures, 2 to 4 Components (engines) and 2 Modules. Launch from the Empire advisor's Space page: the voyage takes 18 turns, 2 fewer for each extra engine. The first ship to arrive wins - unless its capital falls first, and every rival will try to make it fall.".to_string(),
             format!(
-                "Culture: gather {} culture points with {} times as much as any rival, or {} in a single city (in a game of {} turns; scaled to the game's length).",
+                "Culture: gather {} culture points with {} times as much as any rival, or {} in a single city under your rule (in a game of {} turns; scaled to the game's length). A people keeps the culture it has earned even if its cities fall; a conqueror counts only what a captured city earns from then on.",
                 bevy_civ::culture::VICTORY_CULTURE,
                 bevy_civ::culture::VICTORY_LEAD_TENTHS as f32 / 10.0,
                 bevy_civ::culture::CITY_VICTORY_CULTURE,
@@ -1648,7 +1648,9 @@ pub fn rebuild_panels(
                 let points = culture.of(city.position);
                 let next = bevy_civ::culture::next_border_step(points).map(|step| format!(" (borders widen at {step})")).unwrap_or_default();
                 let earned = culture.earned(city.position, &buildings.buildings, city.is_capital, state.turn, state.last_turn);
-                p.spawn(label(&art.font_body, format!("Culture: {points}, +{earned} a turn{next}"), 14.0, CREAM));
+                let ours = culture.held_by(city.position, city.owner);
+                let since = if ours < points { format!(" ({ours} earned under its present rulers)") } else { String::new() };
+                p.spawn(label(&art.font_body, format!("Culture: {points}{since}, +{earned} a turn{next}"), 14.0, CREAM));
                 // Citizens: workers on the land, and specialists who eat without farming.
                 use bevy_civ::city::Specialist;
                 let count = |kind: &Specialist| city.specialists.iter().filter(|s| *s == kind).count();

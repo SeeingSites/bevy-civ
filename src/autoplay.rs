@@ -128,7 +128,8 @@ pub fn run(which: &str, turns: u32) -> bool {
             let mut top: Vec<u32> = totals.values().copied().collect();
             top.sort_unstable_by(|a, b| b.cmp(a));
             top.resize(3.max(top.len()), 0);
-            let best_city = q.iter(world).map(|c| ledger.of(c.position)).max().unwrap_or(0);
+            let owners: Vec<(hexx::Hex, u32)> = q.iter(world).map(|c| (c.position, c.owner)).collect();
+            let best_city = ledger.best_city(&owners).map_or(0, |(_, _, points)| points);
             println!("culture-trace {turn} {} city {best_city}", top.iter().take(3).map(|c| c.to_string()).collect::<Vec<_>>().join(" "));
         }
         if turn % 25 == 0 {
@@ -264,7 +265,7 @@ fn snapshot(world: &mut World, turn: u32) {
         let army = armies.iter().filter(|o| **o == civ.id).count();
         let sizes: Vec<String> = groups.iter().filter(|(o, _)| *o == civ.id).map(|(_, m)| m.to_string()).collect();
         let grouped = if sizes.is_empty() { String::new() } else { format!(" ({} armies: {})", sizes.len(), sizes.join("+")) };
-        let points: u32 = owned.iter().map(|c| culture.of(c.3.position)).sum();
+        let points = culture.of_people(civ.id);
         let held = wonders.built.values().filter(|(o, _)| *o == civ.id).count();
         let ship = space.ships.get(&civ.id).map(|s| format!(", ship needs {}", if s.arrives.is_some() { "nothing (launched)".into() } else { s.missing() })).unwrap_or_default();
         println!(

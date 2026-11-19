@@ -93,12 +93,21 @@ pub fn next_border_step(points: u32) -> Option<u32> {
 /// Culture gathered by every city, by its tile (a captured city keeps its culture).
 #[derive(Resource, Default, Clone, Debug, Serialize, Deserialize)]
 pub struct CultureLedger {
+    /// Each city's own culture, whoever earned it: it sets the reach of the city's borders.
     #[serde(with = "crate::save::pairs")]
     pub city: HashMap<Hex, u32>,
     /// The turn each city's buildings and wonders were completed, by the city's tile (anything not
     /// listed has stood since the game began).
     #[serde(default, with = "crate::save::pairs")]
     pub built: HashMap<Hex, Vec<(Building, u32)>>,
+    /// Culture each people has earned over the game. As in Civ III it is never lost: a people keeps
+    /// what its cities earned even if they fall, and a conqueror gains only what a captured city
+    /// earns from then on.
+    #[serde(default, with = "crate::save::pairs")]
+    pub by_people: HashMap<u32, u32>,
+    /// What each city has earned under its present owner: (owner, culture).
+    #[serde(default, with = "crate::save::pairs")]
+    pub held: HashMap<Hex, (u32, u32)>,
 }
 
 impl CultureLedger {
@@ -106,8 +115,38 @@ impl CultureLedger {
         self.city.get(&city).copied().unwrap_or(0)
     }
 
-    pub fn add(&mut self, city: Hex, points: u32) {
+    /// A turn's culture in a city of `owner`: the city's, its owner's, and its owner's in that city.
+    pub fn add(&mut self, city: Hex, owner: u32, points: u32) {
         *self.city.entry(city).or_default() += points;
+        *self.by_people.entry(owner).or_default() += points;
+        let held = self.held.entry(city).or_insert((owner, 0));
+        if held.0 != owner {
+            *held = (owner, 0);
+        }
+        held.1 += points;
+    }
+
+    /// Culture a people has earned over the game.
+    pub fn of_people(&self, owner: u32) -> u32 {
+        self.by_people.get(&owner).copied().unwrap_or(0)
+    }
+
+    /// Culture a city has earned for `owner` since it came into its hands (nothing if it is not theirs).
+    pub fn held_by(&self, city: Hex, owner: u32) -> u32 {
+        self.held.get(&city).filter(|(o, _)| *o == owner).map_or(0, |(_, points)| *points)
+    }
+
+    /// A game saved before peoples kept their own culture: credit every city's culture to its
+    /// present owner, once.
+    pub fn seed(&mut self, owners: &[(Hex, u32)]) {
+        if !self.by_people.is_empty() || self.city.is_empty() {
+            return;
+        }
+        for (city, owner) in owners {
+            let points = self.of(*city);
+            *self.by_people.entry(*owner).or_default() += points;
+            self.held.insert(*city, (*owner, points));
+        }
     }
 
     /// Notes the turn a building or wonder was completed in a city.
@@ -128,13 +167,9 @@ impl CultureLedger {
         per_turn(buildings, capital, |b| self.age(city, b, turn), historic_after(last_turn))
     }
 
-    /// Each civilization's total, given who owns which city.
+    /// The culture each people holding a city has earned over the game, given who owns which city.
     pub fn totals(&self, owners: impl Iterator<Item = (Hex, u32)>) -> HashMap<u32, u32> {
-        let mut totals = HashMap::new();
-        for (city, owner) in owners {
-            *totals.entry(owner).or_default() += self.of(city);
-        }
-        totals
+        owners.map(|(_, owner)| (owner, self.of_people(owner))).collect()
     }
 }
 
@@ -147,16 +182,18 @@ pub fn cultural_winner(totals: &HashMap<u32, u32>, threshold: u32) -> Option<u32
 
 impl CultureLedger {
     /// The civilization (if any) that has won by culture in a game of `last_turn` turns, given who
-    /// owns which city: by its total (see [`cultural_winner`]), or by a single city's culture.
+    /// owns which city: by the culture it has earned (see [`cultural_winner`]), or by what one of
+    /// its cities has earned under its rule.
     pub fn winner(&self, owners: &[(Hex, u32)], last_turn: u32) -> Option<u32> {
         cultural_winner(&self.totals(owners.iter().copied()), victory_culture(last_turn)).or_else(|| {
-            owners.iter().filter(|(at, _)| self.of(*at) >= city_victory_culture(last_turn)).max_by_key(|(at, _)| self.of(*at)).map(|(_, owner)| *owner)
+            let (_, owner, points) = self.best_city(owners)?;
+            (points >= city_victory_culture(last_turn)).then_some(owner)
         })
     }
 
-    /// The city with the most culture, and its owner.
+    /// The city that has earned the most culture under its present owner: (city, owner, culture).
     pub fn best_city(&self, owners: &[(Hex, u32)]) -> Option<(Hex, u32, u32)> {
-        owners.iter().map(|(at, owner)| (*at, *owner, self.of(*at))).max_by_key(|(_, _, points)| *points)
+        owners.iter().map(|(at, owner)| (*at, *owner, self.held_by(*at, *owner))).max_by_key(|(_, _, points)| *points)
     }
 }
 
@@ -203,19 +240,43 @@ mod tests {
         // Many cities of modest culture: the total counts.
         let ours: Vec<(Hex, u32)> = (0..10).map(|i| (Hex::new(i * 4, 0), 0)).collect();
         let theirs = (Hex::new(0, 9), 1);
-        for (at, _) in &ours {
-            ledger.add(*at, 11_000);
+        for (at, owner) in &ours {
+            ledger.add(*at, *owner, 11_000);
         }
-        ledger.add(theirs.0, 50_000);
+        ledger.add(theirs.0, theirs.1, 50_000);
         let owners: Vec<(Hex, u32)> = ours.iter().copied().chain([theirs]).collect();
         let totals = ledger.totals(owners.iter().copied());
         assert_eq!(cultural_winner(&totals, threshold), Some(0));
         // A rival not far enough behind: no win by the total - but a city of 20,000 wins alone.
-        ledger.add(theirs.0, 10_000);
+        ledger.add(theirs.0, theirs.1, 10_000);
         let totals = ledger.totals(owners.iter().copied());
         assert_eq!(cultural_winner(&totals, threshold), None, "not twice the next");
         assert_eq!(ledger.winner(&owners, 400), Some(1), "their great city wins");
         assert_eq!(ledger.best_city(&owners), Some((theirs.0, 1, 60_000)));
         assert_eq!(CultureLedger::default().winner(&owners, 400), None, "no culture, no winner");
+    }
+
+    #[test]
+    fn a_people_keeps_the_culture_it_earned_and_a_conqueror_starts_afresh() {
+        let mut ledger = CultureLedger::default();
+        let city = Hex::new(2, 2);
+        ledger.add(city, 1, 15_000);
+        // Taken by people 2: the city keeps its culture (and its borders), people 1 keeps its history.
+        ledger.add(city, 2, 300);
+        assert_eq!(ledger.of(city), 15_300);
+        assert_eq!((ledger.of_people(1), ledger.of_people(2)), (15_000, 300));
+        assert_eq!((ledger.held_by(city, 2), ledger.held_by(city, 1)), (300, 0));
+        // So the great city wins nothing for its conqueror until it has earned it again.
+        let owners = [(city, 2)];
+        assert_eq!(ledger.best_city(&owners), Some((city, 2, 300)));
+        assert_eq!(ledger.winner(&owners, 400), None, "the conqueror has earned too little there");
+        ledger.add(city, 2, 19_700);
+        assert_eq!(ledger.winner(&owners, 400), Some(2), "20,000 earned under its rule");
+        // An old save: every city's culture goes to its present owner, once.
+        let mut old = CultureLedger::default();
+        old.city.insert(city, 5_000);
+        old.seed(&owners);
+        old.seed(&owners);
+        assert_eq!((old.of_people(2), old.held_by(city, 2)), (5_000, 5_000));
     }
 }

@@ -444,7 +444,10 @@ working directory.
   (+10% of that for every tile) and the more of its land the tempter's borders hold (+1/6 for each
   tile), divided by one plus the troops in it (at most 60%).
 - **Cultural victory**: 100,000 culture points with twice as much as any other people, or 20,000 in
-  a single city (Civ III's numbers, for a 400-turn game; scaled to shorter games).
+  a single city under your rule (Civ III's numbers, for a 400-turn game; scaled to shorter games).
+  As in Civ III a people keeps the culture it has earned even if its cities fall, and a conqueror
+  counts only what a captured city earns from then on (the city keeps its own culture for its
+  borders).
 - **Golden age**: once a game, begun by a people's first wonder that matches one of its traits or by
   its unique unit's first victory over another people: 20 turns of one more shield on every worked
   tile that yields shields, and one more gold on every one that yields gold.
