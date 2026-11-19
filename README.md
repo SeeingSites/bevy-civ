@@ -632,7 +632,9 @@ working directory.
   Nuclear Missiles. Select one, click a target within 12 tiles and click again to launch: every unit
   within a tile dies, a city there loses half its people and two buildings, fallout spoils the land,
   the victim declares war and the world trusts the attacker less. SDI Defense (Superconductors)
-  shoots down missiles aimed within 3 tiles. Computer players at war build and fire them.
+  shoots down missiles aimed within 3 tiles. Computer players at war build them and keep to
+  deterrence: they answer a people that has struck them, strike first only in desperation (down to
+  three cities or fewer), never first at a people with missiles of its own, and never at raiders.
 
 Every order also has a button, so the game is playable with a mouse or touch screen alone.
 City production is chosen from the city panel, whose tabs split **Units**, **Buildings** and
@@ -700,9 +702,14 @@ A score at the turn limit then rewards winning the period's war, not sitting it 
 (so India, China, Africa and Europe have as much room per city as the Americas), every city linked
 by roads and railroads to its neighbours and capital, the land around it farmed and mined, and
 its buildings those of its size (granary, temple, library, market, harbour and supermarket; then
-courthouse, aqueduct, university, bank; in great cities factories, sewers and exchanges). The old
-wonders stand where they stand (the Pyramids in Cairo, the Great Wall in Beijing, Michelangelo's in
-Rome; those with no nation here are lost to history), armies, fleets and air forces are in place,
+courthouse, aqueduct, university, bank; in great cities factories, sewers and exchanges). The wonders
+stand as they do today: the Pyramids in Cairo and the Great Wall in Beijing; the long-destroyed
+(the Colossus, the Great Library, the Hanging Gardens...) lost to history; the Statue of Liberty,
+the United Nations, Apollo, the Hoover Dam and the Manhattan Project in the United States, the
+Eiffel Tower in Paris; the Internet shared by the whole world (nobody has its bonus); the Cure for
+Cancer still to be found. Forces are those of 2025, scaled: the American carrier fleet, Russian,
+Chinese and American armour and bombers, the nine nuclear arsenals (the US, Russia, China, France,
+the UK, India, Pakistan), submarine fleets and air forces down to a garrison in every city,
 and nobody needs settlers or workers - in a developed world no one founds new cities. Scenario
 options for this: `"developed"`, `"wonders"` (wonder and city, or null) and `"objectives"`.
 

@@ -141,13 +141,46 @@ const NATIONS = [
 ];
 
 const PORTRAIT = { 'The President': 18, 'The Prime Minister': 20, 'The Chancellor': 18, 'The Premier': 18, 'The King': 21, 'The Supreme Leader': 19, 'The General Secretary': 19 };
-/** Armies in place: a defender in every city (two in the capital), and for the larger powers an army, an air force and a navy. */
-function modernUnits(size) {
-  const units = [['Infantry', 2, 0], ['Artillery', 1, 0]];
-  const cities = (n) => Array.from({ length: n }, (_, i) => ['Infantry', 1, i + 1]);
-  if (size === 'great') return [...units, ['Tank', 3, 0], ['Fighter', 2, 0], ['Bomber', 1, 0], ['Destroyer', 2, 'coast'], ['Battleship', 1, 'coast'], ['Carrier', 1, 'coast'], ['Transport', 1, 'coast'], ['Submarine', 1, 'coast'], ...cities(16)];
-  if (size === 'power') return [...units, ['Tank', 2, 0], ['Fighter', 1, 0], ['Destroyer', 1, 'coast'], ['Transport', 1, 'coast'], ...cities(12)];
-  return [...units, ['Tank', 1, 0], ['Destroyer', 1, 'coast'], ...cities(10)];
+// Each nation's forces as they stand in 2025, scaled to the game: its armour, artillery, air force,
+// navy (carriers, destroyers, submarines) and - for the nine nuclear powers - missiles. Land forces
+// and aircraft stand in the capital, ships in the first port; every city also keeps a garrison.
+const FORCES = {
+  'the United States': { ModernArmor: 4, MechInfantry: 6, RadarArtillery: 2, Fighter: 6, Bomber: 3, Carrier: 6, Destroyer: 6, Submarine: 4, Transport: 2, NuclearMissile: 3 },
+  'Russia': { ModernArmor: 3, Tank: 4, MechInfantry: 4, RadarArtillery: 2, Artillery: 2, Fighter: 4, Bomber: 3, Carrier: 1, Destroyer: 2, Submarine: 4, NuclearMissile: 3 },
+  'China': { ModernArmor: 3, Tank: 3, MechInfantry: 5, RadarArtillery: 2, Fighter: 5, Bomber: 2, Carrier: 2, Destroyer: 5, Submarine: 4, Transport: 1, NuclearMissile: 2 },
+  'India': { Tank: 4, MechInfantry: 3, Artillery: 2, Fighter: 4, Carrier: 2, Destroyer: 3, Submarine: 2, NuclearMissile: 1 },
+  'the United Kingdom': { ModernArmor: 1, MechInfantry: 2, Fighter: 2, Carrier: 2, Destroyer: 3, Submarine: 2, NuclearMissile: 1 },
+  'France': { ModernArmor: 1, MechInfantry: 2, Artillery: 1, Fighter: 3, Carrier: 1, Destroyer: 3, Submarine: 2, NuclearMissile: 1 },
+  'Pakistan': { Tank: 2, Artillery: 2, MechInfantry: 1, Fighter: 2, Destroyer: 1, Submarine: 1, NuclearMissile: 1 },
+  'Japan': { Tank: 2, MechInfantry: 2, Fighter: 3, Carrier: 1, Destroyer: 4, Submarine: 2 },
+  'South Korea': { Tank: 3, MechInfantry: 2, Artillery: 2, Fighter: 2, Destroyer: 2, Submarine: 1 },
+  'Turkey': { Tank: 3, MechInfantry: 2, Artillery: 1, Fighter: 2, Destroyer: 2, Submarine: 1 },
+  'Italy': { Tank: 1, MechInfantry: 1, Fighter: 2, Carrier: 1, Destroyer: 2, Submarine: 1 },
+  'Germany': { ModernArmor: 1, MechInfantry: 2, Artillery: 1, Fighter: 2, Destroyer: 2, Submarine: 1 },
+  'Iran': { Tank: 2, Artillery: 2, Fighter: 1, Submarine: 1 },
+  'Egypt': { Tank: 3, MechInfantry: 1, Artillery: 1, Fighter: 2, Destroyer: 1, Submarine: 1 },
+  'Brazil': { Tank: 1, MechInfantry: 1, Fighter: 1, Destroyer: 2, Submarine: 1 },
+  'Indonesia': { Tank: 1, Fighter: 1, Destroyer: 2, Submarine: 1 },
+  'Saudi Arabia': { Tank: 2, MechInfantry: 1, Fighter: 2, Destroyer: 1 },
+  'Australia': { Tank: 1, MechInfantry: 1, Fighter: 2, Destroyer: 2, Submarine: 1 },
+  'Poland': { Tank: 2, MechInfantry: 1, Artillery: 1, Fighter: 1 },
+  'Ukraine': { Tank: 2, MechInfantry: 1, Artillery: 2, Fighter: 1 },
+  'Spain': { Tank: 1, MechInfantry: 1, Fighter: 1, Carrier: 1, Destroyer: 2, Submarine: 1 },
+  'Canada': { MechInfantry: 1, Fighter: 1, Destroyer: 1, Submarine: 1 },
+  'Mexico': { Tank: 1, Destroyer: 1 },
+  'Sweden': { Tank: 1, Fighter: 1, Submarine: 1 },
+  'Vietnam': { Tank: 1, Artillery: 1, Destroyer: 1 },
+  'Algeria': { Tank: 1, Fighter: 1 },
+  'Nigeria': { Tank: 1 },
+};
+const NAVAL_TYPES = new Set(['Destroyer', 'Submarine', 'Carrier', 'Transport', 'Battleship']);
+const UNIT_NAMES = { ModernArmor: 'Modern Armor', MechInfantry: 'Mech. Infantry', RadarArtillery: 'Radar Artillery', NuclearMissile: 'Nuclear Missile' };
+function modernUnits(name, cities) {
+  const units = [['Infantry', 1, 0], ...cities.map((_, i) => ['Infantry', 1, i])];
+  for (const [kind, count] of Object.entries(FORCES[name] || { Tank: 1 })) {
+    if (count > 0) units.push([UNIT_NAMES[kind] || kind, count, NAVAL_TYPES.has(kind) ? 'coast' : 0]);
+  }
+  return units;
 }
 
 const modernWorld = {
@@ -159,19 +192,23 @@ const modernWorld = {
     name, adjective, leader, portrait: PORTRAIT[leader] ?? 18, aggression, government,
     gold: size === 'great' ? 450 : size === 'power' ? 400 : 250,
     techs: government === 'Communism' ? [...MODERN_TECHS, 'Communism'] : MODERN_TECHS,
-    cities, units: modernUnits(size).filter(([, , i]) => i === 'coast' || i < cities.length),
+    cities, units: modernUnits(name, cities),
     cityNames: [],
   })),
-  // The wonders of the past stand where they stand; those whose land is in no nation here are lost.
+  // The wonders as they stand today: those still standing in their cities, the great works of the
+  // modern age where they were made, and those long destroyed lost to history. The Cure for Cancer
+  // is still to be found.
   wonders: [
-    ['Pyramids', 'Cairo'], ['Great Library', 'Alexandria'], ['Great Lighthouse', 'Alexandria'], ['Great Wall', 'Beijing'],
-    ['Hanging Gardens', 'Baghdad'], ['Colossus', 'Athens'], ['Oracle', 'Athens'], ['Statue of Zeus', null], ['Mausoleum', 'Izmir'],
+    ['Pyramids', 'Cairo'], ['Great Wall', 'Beijing'],
+    ['Great Library', null], ['Hanging Gardens', null], ['Colossus', null], ['Oracle', null], ['Great Lighthouse', null],
+    ['Statue of Zeus', null], ['Mausoleum', null],
     ["Copernicus' Observatory", 'Kraków'], ["Sun Tzu's War Academy", "Xi'an"], ["Marco Polo's Embassy", 'Venice'], ["King Richard's Crusade", 'London'],
     ["Michelangelo's Chapel", 'Rome'], ["Leonardo's Workshop", 'Milan'], ["J.S. Bach's Cathedral", 'Leipzig'], ["Magellan's Expedition", 'Lisbon'],
     ["Isaac Newton's College", 'London'], ["Adam Smith's Trading Company", 'Glasgow'], ["Shakespeare's Theatre", 'London'], ["Darwin's Voyage", 'Manchester'],
-    ['Statue of Liberty', 'New York'], ['Eiffel Tower', 'Paris'],
-    // The Hoover Dam (+25% shields everywhere) is left to be built: given to one people at the start
-    // it decides the space race.
+    ['Statue of Liberty', 'New York'], ['Eiffel Tower', 'Paris'], ['Hoover Dam', 'Los Angeles'],
+    ['United Nations', 'New York'], ['Apollo Program', 'Houston'], ['Manhattan Project', 'Denver'],
+    // The Internet belongs to the whole world, not to one people: it stands, but nobody owns its bonus.
+    ['The Internet', null],
   ],
 };
 

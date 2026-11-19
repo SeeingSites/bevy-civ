@@ -242,6 +242,9 @@ pub struct GameState {
     /// A world already built (see `Scenario::developed`): no frontier left to settle.
     #[serde(default)]
     pub developed: bool,
+    /// Nuclear strikes made: (by, on whom). A people struck may answer in kind (see `process_turn`).
+    #[serde(default)]
+    pub nuclear_strikes: Vec<(u32, u32)>,
     pub score: Score,
     pub start_year: i32,
     pub years_per_turn: i32,
@@ -335,6 +338,7 @@ impl Default for GameState {
             dominance: (0, 0),
             objectives: Vec::new(),
             developed: false,
+            nuclear_strikes: Vec::new(),
             score: Score::default(),
             start_year: -4000,
             years_per_turn: 40,
@@ -1072,11 +1076,14 @@ fn setup_world(
         }
     }
 
-    // Wonders lost to history: nobody may build them again.
+    // Wonders that stand in no people's city: the ancient ones lost to history, the modern ones (the
+    // Internet) shared by the whole world. Nobody may build them again, and nobody has their effect.
     for (wonder, at) in &scenario.wonders {
         if at.is_none() {
             if let Some(w) = Building::ALL.into_iter().find(|b| b.is_wonder() && b.base_name() == wonder) {
-                wonders.built.insert(w, (NOBODY, "lost to history".into()));
+                let modern = w.required_tech().is_some_and(|t| t.era() == bevy_civ::tech::Era::Modern);
+                let fate = if modern { "shared by the whole world" } else { "lost to history" };
+                wonders.built.insert(w, (NOBODY, fate.into()));
             }
         }
     }
@@ -5148,22 +5155,34 @@ fn process_turn(
         }
     }
     // Computer players at war fire their nuclear missiles at the largest enemy city in range that no
-    // SDI Defense protects.
+    // SDI Defense protects - under deterrence: they answer a people that has struck them, but strike
+    // first only in desperation (down to their last few cities), never first at a people that has
+    // missiles of its own, and never at raiders holding a city (it was someone's home).
     {
         let missiles: Vec<(Entity, u32, Hex)> = units
             .iter()
             .filter(|(e, u)| !dead.contains(e) && u.owner != PLAYER && u.unit_type == UnitType::NuclearMissile)
             .map(|(e, u)| (e, u.owner, u.position))
             .collect();
+        let armed: HashSet<u32> = units.iter().filter(|(_, u)| u.unit_type == UnitType::NuclearMissile).map(|(_, u)| u.owner).collect();
+        let mut held: HashMap<u32, usize> = HashMap::new();
+        for (c, _, _) in cities.iter() {
+            *held.entry(c.owner).or_default() += 1;
+        }
         for (entity, owner, at) in missiles {
             if !rng.gen_bool(0.3) {
                 continue;
             }
+            let desperate = held.get(&owner).copied().unwrap_or(0) <= combat::LAST_STAND_CITIES;
+            let may_strike = |enemy: u32| {
+                enemy != BARBARIANS && (state.nuclear_strikes.contains(&(enemy, owner)) || (!armed.contains(&enemy) && desperate))
+            };
             let shielded = |hex: Hex| cities.iter().any(|(c, b, _)| c.owner != owner && b.has(Building::SdiDefense) && c.position.distance_to(hex) <= SDI_RANGE);
             let target = cities
                 .iter()
                 .filter(|(c, _, _)| c.owner != owner && c.position.distance_to(at) <= MISSILE_RANGE)
                 .filter(|(c, _, _)| c.owner == BARBARIANS || diplomacy.get_treaty(owner, c.owner) == Treaty::War)
+                .filter(|(c, _, _)| may_strike(c.owner))
                 .filter(|(c, _, _)| !shielded(c.position))
                 .max_by_key(|(c, _, _)| c.population)
                 .map(|(c, _, _)| c.position);
@@ -6067,6 +6086,7 @@ pub fn nuclear_strikes(
     mut tiles: Query<&mut HexTile>,
     (mut diplomacy, civs, supplies): (ResMut<Diplomacy>, Res<Civilizations>, Res<Supplies>),
     (mut log, mut dirty, mut bursts): (ResMut<GameLog>, ResMut<Dirty>, EventWriter<Burst>),
+    mut state: ResMut<GameState>,
     mut commands: Commands,
 ) {
     let name_of = |id: u32| if id == PLAYER { "We".to_string() } else { civs.players.iter().find(|c| c.id == id).map(|c| capitalised(&c.name)).unwrap_or_else(|| "Someone".into()) };
@@ -6075,6 +6095,10 @@ pub fn nuclear_strikes(
         dirty.map = true;
         let target_city = cities.iter().find(|(c, _)| c.position == strike.at).map(|(c, _)| (c.owner, c.name.clone()));
         let victim = target_city.as_ref().map(|(o, _)| *o).or_else(|| supplies.territory.get(&strike.at).map(|(o, _)| *o));
+        // The people struck may answer in kind (see the computer players' deterrence).
+        if let Some(victim) = victim.filter(|v| !state.nuclear_strikes.contains(&(strike.by, *v))) {
+            state.nuclear_strikes.push((strike.by, victim));
+        }
         let place = target_city.as_ref().map(|(_, n)| n.clone()).unwrap_or_else(|| "open country".into());
         // An SDI Defense of anyone but the attacker shoots the missile down.
         let shield = cities.iter().find(|(c, b)| c.owner != strike.by && b.has(Building::SdiDefense) && c.position.distance_to(strike.at) <= SDI_RANGE).map(|(c, _)| c.name.clone());
