@@ -185,7 +185,11 @@ pub fn of(name: &str) -> Character {
             let seed = key.bytes().fold(7u32, |h, b| h.wrapping_mul(31).wrapping_add(b as u32));
             let first = Trait::ALL[(seed % 6) as usize];
             let second = Trait::ALL[((seed / 6) % 5 + 1 + seed % 6) as usize % 6];
-            let pool: Vec<UnitType> = UnitType::ALL.into_iter().filter(|u| u.unique_base().is_some()).collect();
+            // A people the game does not know draws one of the older peoples' units, never a modern one.
+            let pool: Vec<UnitType> = UnitType::ALL
+                .into_iter()
+                .filter(|u| u.unique_base().is_some_and(|b| b.required_tech().is_none_or(|t| t.era() <= crate::tech::Era::Middle)))
+                .collect();
             ([first, second], pool[(seed / 30) as usize % pool.len()])
         }
     };

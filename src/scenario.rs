@@ -48,6 +48,17 @@ pub struct Scenario {
     /// Pairs of civilization names that start allied.
     #[serde(default)]
     pub alliances: Vec<(String, String)>,
+    /// Cities worth points to whoever holds them (see `bevy_civ::score::OBJECTIVE_POINTS`): what a
+    /// period's war is fought over, so a score at the end rewards winning it, not sitting it out.
+    #[serde(default)]
+    pub objectives: Vec<String>,
+    /// A world already built: its land worked (roads, farms, mines, railroads) and its cities
+    /// furnished with the buildings of their size and time.
+    #[serde(default)]
+    pub developed: bool,
+    /// Wonders already standing, by the city they stand in (or none: lost to history).
+    #[serde(default)]
+    pub wonders: Vec<(String, Option<String>)>,
 }
 
 /// An expansion pack (`assets/expansions/`): nations that can be led from 4000 BC, on the Whole

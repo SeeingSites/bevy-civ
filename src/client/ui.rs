@@ -781,6 +781,10 @@ fn wonders_of_the_world(p: &mut ChildBuilder, art: &Art, wonders: &WorldWonders,
     built.sort_by_key(|(w, _)| w.name());
     p.spawn(label(&art.font_title, "Wonders of the world", 14.0, GOLD));
     for (wonder, (owner, city)) in built {
+        if *owner == crate::NOBODY {
+            p.spawn(label(&art.font_body, format!("{}: lost to history", wonder.name()), 13.0, INK_SOFT));
+            continue;
+        }
         p.spawn(label(&art.font_body, format!("{}: {} ({}) - {}", wonder.name(), city, owner_name(*owner, civs), wonder.wonder_effect()), 13.0, owner_color(*owner).mix(&Color::WHITE, 0.55)));
     }
 }
@@ -2324,11 +2328,12 @@ pub fn rebuild_panels(
                         }
                         if state.victory.is_some() && history.scores.iter().any(|(_, c, _)| *c == PLAYER) {
                             w.spawn(label(&art.font_body, format!(
-                                    "Our score: {} for {} citizens, {} for technologies, {} for wonders - {} in all.",
+                                    "Our score: {} for {} citizens, {} for technologies, {} for wonders, {} for objectives - {} in all.",
                                     state.score.population * 2,
                                     state.score.population,
                                     state.score.techs,
                                     state.score.wonders,
+                                    state.score.objectives,
                                     state.score.total
                                 ), 13.0, INK_SOFT));
                         }

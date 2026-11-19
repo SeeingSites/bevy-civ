@@ -48,16 +48,25 @@ function isLand(polygons, lon, lat) {
   return false;
 }
 
-const merc = (lat) => Math.log(Math.tan(Math.PI / 4 + (lat * Math.PI) / 360));
-const unmerc = (y) => (Math.atan(Math.exp(y)) * 360) / Math.PI - 90;
+const mercator = (lat) => Math.log(Math.tan(Math.PI / 4 + (lat * Math.PI) / 360));
+const unmercator = (y) => (Math.atan(Math.exp(y)) * 360) / Math.PI - 90;
 const hash = (a, b) => {
   let h = (a * 374761393 + b * 668265263) | 0;
   h = Math.imul(h ^ (h >>> 13), 1274126177);
   return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
 };
 
-/** Map projection: Mercator onto an odd-q offset hex grid (odd columns sit half a row lower). */
-function projection({ lon0, lon1, latTop, latBottom, cols }) {
+// An equal-area projection (Behrmann: true scale at 30 degrees): every region gets land in
+// proportion to its real area, where Mercator swells the north and shrinks the tropics.
+const STANDARD = Math.cos((30 * Math.PI) / 180) ** 2;
+const equal = (lat) => Math.sin((lat * Math.PI) / 180) / STANDARD;
+const unequal = (y) => (Math.asin(Math.max(-1, Math.min(1, y * STANDARD))) * 180) / Math.PI;
+
+/** Map projection onto an odd-q offset hex grid (odd columns sit half a row lower): Mercator, or
+ * equal-area with `equalArea: true`. */
+function projection({ lon0, lon1, latTop, latBottom, cols, equalArea }) {
+  const merc = equalArea ? equal : mercator;
+  const unmerc = equalArea ? unequal : unmercator;
   const top = merc(latTop);
   const bottom = merc(latBottom);
   const lonSpan = lon1 - lon0;
@@ -170,6 +179,7 @@ function buildMapUncached(polygons, spec) {
 }
 
 // ---- scenario assembly -------------------------------------------------------------------------
+const NAVAL = new Set(['Galley', 'Frigate', 'Galleon', 'Ironclad', 'Destroyer', 'Battleship', 'Submarine', 'Transport', 'Carrier', 'Man-O-War']);
 function neighbours(col, row) {
   const odd = col % 2;
   return [[col, row - 1], [col, row + 1], [col - 1, row - 1 + odd], [col - 1, row + odd], [col + 1, row - 1 + odd], [col + 1, row + odd]];
@@ -210,11 +220,16 @@ function assemble(def, polygons) {
       return { name, col: cell[0], row: cell[1], pop: pop || 1, capital: i === 0 };
     });
     const units = [];
+    // A unit's city is an index, or 'coast' for the first city by the sea (a navy's home port).
+    const coastal = cities.findIndex((c) => neighbours(c.col, c.row).some(([nc, nr]) => nr >= 0 && nr < proj.rows && nc >= 0 && nc < proj.cols && rows[nr][nc] === '~'));
     (civ.units || []).forEach(([type, count, cityIndex]) => {
-      const home = cities[cityIndex || 0];
+      if (cityIndex === 'coast' && coastal < 0) return;
+      const home = cities[cityIndex === 'coast' ? coastal : cityIndex || 0];
       const spots = [[home.col, home.row], ...neighbours(home.col, home.row).filter((n) => land(...n))];
+      // Ships start in port (the city itself); troops spread over the land around it.
+      const naval = NAVAL.has(type);
       for (let i = 0; i < count; i++) {
-        const [col, row] = spots[(units.length + 1) % spots.length];
+        const [col, row] = naval ? [home.col, home.row] : spots[(units.length + 1) % spots.length];
         units.push({ type, col, row });
       }
     });
@@ -228,6 +243,7 @@ function assemble(def, polygons) {
     id: def.id, name: def.name, blurb: def.blurb, start_year: def.startYear, years_per_turn: def.yearsPerTurn,
     width: proj.cols, height: proj.rows, rows: rows.map((r) => r.join('')), civs, wars: def.wars || [], known: !!def.known,
     ...(def.alliances ? { alliances: def.alliances } : {}), ...(def.expansion ? { expansion: def.expansion } : {}),
+    ...(def.objectives ? { objectives: def.objectives } : {}), ...(def.developed ? { developed: true } : {}), ...(def.wonders ? { wonders: def.wonders } : {}),
   };
 }
 

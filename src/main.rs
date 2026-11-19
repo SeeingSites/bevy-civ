@@ -179,13 +179,14 @@ fn new_ages(civs: &mut Civilizations, tech: &mut TechState, met: &HashSet<u32>, 
 /// A computer player's score, counted the same way as the player's (population, cities' buildings).
 /// A computer player's score, counted exactly as the player's is (see `Score::calculate`): two points
 /// a citizen, ten a technology, fifty a wonder.
-fn rival_score(civ: &bevy_civ::ai::Civ, cities: &Query<(&mut City, &mut CityBuildings, &mut Happiness)>) -> u32 {
+fn rival_score(civ: &bevy_civ::ai::Civ, cities: &Query<(&mut City, &mut CityBuildings, &mut Happiness)>, objectives: &[String]) -> u32 {
     let held: u32 = cities
         .iter()
         .filter(|(c, _, _)| c.owner == civ.id)
         .map(|(c, b, _)| c.population * 2 + b.buildings.iter().map(|w| if w.is_wonder() { 50 } else { 0 }).sum::<u32>())
         .sum();
-    held + civ.tech.researched.len() as u32 * 10
+    let names: Vec<String> = cities.iter().filter(|(c, _, _)| c.owner == civ.id).map(|(c, _, _)| c.name.clone()).collect();
+    held + civ.tech.researched.len() as u32 * 10 + bevy_civ::score::objective_points(names.iter().map(String::as_str), objectives)
 }
 
 /// "the Gauls" -> "The Gauls" at the start of a sentence.
@@ -235,6 +236,12 @@ pub struct GameState {
     /// The people holding a dominating share of the cities, and for how many turns in a row.
     #[serde(default)]
     pub dominance: (u32, u32),
+    /// The scenario's objective cities: each is worth points to whoever holds it.
+    #[serde(default)]
+    pub objectives: Vec<String>,
+    /// A world already built (see `Scenario::developed`): no frontier left to settle.
+    #[serde(default)]
+    pub developed: bool,
     pub score: Score,
     pub start_year: i32,
     pub years_per_turn: i32,
@@ -326,6 +333,8 @@ impl Default for GameState {
             government: Government::Despotism,
             victory: None,
             dominance: (0, 0),
+            objectives: Vec::new(),
+            developed: false,
             score: Score::default(),
             start_year: -4000,
             years_per_turn: 40,
@@ -949,6 +958,7 @@ fn setup_world(
     mut foreign: ResMut<Foreign>,
     mut log: ResMut<GameLog>,
     mut dirty: ResMut<Dirty>,
+    mut wonders: ResMut<WorldWonders>,
     mut camera: Query<(&mut Transform, &mut OrthographicProjection), With<Camera2d>>,
 ) {
     let (scenario, player) = if new_game.scenario.rows.is_empty() {
@@ -964,6 +974,8 @@ fn setup_world(
     let layout = HexLayout::flat().with_hex_size(client::map::HEX_SIZE);
     let mut rng = rand::thread_rng();
     let mut map = MapData { layout, cells: HashSet::new(), water: HashSet::new(), terrain: HashMap::new(), min: Vec2::splat(f32::MAX), max: Vec2::splat(f32::MIN) };
+    // A developed world: the land around every city already worked (see `developed_land`).
+    let worked: HashMap<Hex, Vec<Improvement>> = if scenario.developed { developed_land(&scenario, &defs) } else { HashMap::new() };
     for (row, line) in scenario.rows.iter().enumerate() {
         for (col, code) in line.chars().enumerate() {
             let hex = scenario::offset_to_hex(col as i32, row as i32);
@@ -976,7 +988,7 @@ fn setup_world(
             if terrain == Terrain::Water {
                 map.water.insert(hex);
             }
-            commands.spawn(HexTile { coord: hex, terrain, improvements: vec![], resource: random_resource(&mut rng, terrain) });
+            commands.spawn(HexTile { coord: hex, terrain, improvements: worked.get(&hex).cloned().unwrap_or_default(), resource: random_resource(&mut rng, terrain) });
         }
     }
 
@@ -1009,13 +1021,15 @@ fn setup_world(
         let owner = id as u32;
         for city in &def.cities {
             let hex = scenario::offset_to_hex(city.col, city.row);
-            let land: Vec<Terrain> = hexx::shapes::hexagon(hex, 2)
-                .filter(|h| *h != hex && sites.iter().min_by_key(|s| (s.distance_to(*h), s.x, s.y)) == Some(&hex))
-                .filter_map(|h| map.terrain.get(&h).copied())
-                .collect();
-            let centre = bevy_civ::tiles::centre_yield(bevy_civ::tiles::tile_yield(map.terrain.get(&hex).copied().unwrap_or(Terrain::Plains), &[], None, false)).0;
+            let area: Vec<Hex> = hexx::shapes::hexagon(hex, 2).filter(|h| *h != hex && sites.iter().min_by_key(|s| (s.distance_to(*h), s.x, s.y)) == Some(&hex)).collect();
+            let land: Vec<Terrain> = area.iter().filter_map(|h| map.terrain.get(h).copied()).collect();
+            let none = Vec::new();
+            let works: Vec<&Vec<Improvement>> = area.iter().filter(|h| map.terrain.contains_key(h)).map(|h| worked.get(h).unwrap_or(&none)).collect();
+            // A developed city's Supermarket feeds three more (see `developed_buildings`).
+            let centre = bevy_civ::tiles::centre_yield(bevy_civ::tiles::tile_yield(map.terrain.get(&hex).copied().unwrap_or(Terrain::Plains), &[], None, false)).0
+                + if scenario.developed { Building::Supermarket.food_bonus() } else { 0 };
             let foods = |harbour: bool| -> Vec<u32> {
-                land.iter().map(|t| bevy_civ::tiles::tile_yield(*t, &[], None, false).0 + u32::from(harbour && *t == Terrain::Water)).collect()
+                land.iter().zip(&works).map(|(t, w)| bevy_civ::tiles::tile_yield(*t, w, None, false).0 + u32::from(harbour && *t == Terrain::Water)).collect()
             };
             // A port that could not feed its people has a harbour; a city that still could not starts smaller.
             let wanted = city.pop.max(1);
@@ -1023,8 +1037,26 @@ fn setup_world(
             let harbour = coastal && bevy_civ::tiles::sustainable(wanted, centre, foods(false)) < wanted;
             let pop = bevy_civ::tiles::sustainable(wanted, centre, foods(harbour));
             let entity = spawn_city(&mut commands, hex, city.name.clone(), pop, owner, city.capital);
-            if harbour {
-                commands.entity(entity).insert(CityBuildings { buildings: vec![Building::Harbor] });
+            let mut buildings = if scenario.developed {
+                let known: HashSet<Tech> = def.techs.iter().filter_map(|t| Tech::ALL.into_iter().find(|x| x.base_name() == t)).collect();
+                developed_buildings(pop, coastal, |t| known.contains(&t))
+            } else {
+                Vec::new()
+            };
+            if harbour && !buildings.contains(&Building::Harbor) {
+                buildings.push(Building::Harbor);
+            }
+            // Wonders that already stand here.
+            for (wonder, at) in &scenario.wonders {
+                if at.as_deref() == Some(city.name.as_str()) {
+                    if let Some(w) = Building::ALL.into_iter().find(|b| b.is_wonder() && b.base_name() == wonder) {
+                        wonders.complete(w, owner, &city.name);
+                        buildings.push(w);
+                    }
+                }
+            }
+            if !buildings.is_empty() {
+                commands.entity(entity).insert(CityBuildings { buildings });
             }
             if owner == PLAYER {
                 fog.reveal(hex, 3);
@@ -1040,6 +1072,14 @@ fn setup_world(
         }
     }
 
+    // Wonders lost to history: nobody may build them again.
+    for (wonder, at) in &scenario.wonders {
+        if at.is_none() {
+            if let Some(w) = Building::ALL.into_iter().find(|b| b.is_wonder() && b.base_name() == wonder) {
+                wonders.built.insert(w, (NOBODY, "lost to history".into()));
+            }
+        }
+    }
     let id_of = |name: &str| defs.iter().position(|d| d.name == name).map(|i| i as u32);
     for (a, b) in &scenario.wars {
         if let (Some(a), Some(b)) = (id_of(a), id_of(b)) {
@@ -1064,6 +1104,8 @@ fn setup_world(
         years_per_turn: scenario.years_per_turn,
         title: defs[0].name.trim_start_matches("the ").to_string(),
         government: defs[0].starting_government(),
+        objectives: scenario.objectives.clone(),
+        developed: scenario.developed,
         difficulty: new_game.difficulty,
         last_turn: new_game.last_turn,
         ..default()
@@ -1083,12 +1125,88 @@ fn setup_world(
         .collect();
     let mut land: Vec<Hex> = map.cells.iter().copied().filter(|h| !map.water.contains(h)).collect();
     land.sort_by_key(|h| (h.x, h.y));
-    commands.insert_resource(Villages { sites: bevy_civ::villages::place(&land, &starts, &mut rng) });
+    // A developed world has no tribal villages left to find.
+    let sites = if scenario.developed { Default::default() } else { bevy_civ::villages::place(&land, &starts, &mut rng) };
+    commands.insert_resource(Villages { sites });
     commands.insert_resource(map);
     dirty.map = true;
     dirty.ui = true;
     log.turn = state.turn.max(1);
     log.push(format!("{}: you lead {} as {}.", scenario.name, defs[0].name, defs[0].leader));
+    if !scenario.objectives.is_empty() {
+        log.push(format!(
+            "Objectives: {} - each is worth {} points to whoever holds it when time runs out.",
+            scenario.objectives.join(", "),
+            bevy_civ::score::OBJECTIVE_POINTS
+        ));
+    }
+}
+
+/// The improvements a developed world starts with on the land around its cities: roads everywhere
+/// (railroads where the owner knows Steam Power), farms on grassland and plains, mines in hills and
+/// mountains.
+fn developed_land(scenario: &scenario::Scenario, defs: &[scenario::CivDef]) -> HashMap<Hex, Vec<Improvement>> {
+    let mut terrain: HashMap<Hex, Terrain> = HashMap::new();
+    for (row, line) in scenario.rows.iter().enumerate() {
+        for (col, code) in line.chars().enumerate() {
+            terrain.insert(scenario::offset_to_hex(col as i32, row as i32), terrain_from(code));
+        }
+    }
+    let mut worked: HashMap<Hex, Vec<Improvement>> = HashMap::new();
+    for def in defs {
+        let rails = def.techs.iter().any(|t| t == Tech::SteamPower.base_name());
+        for city in &def.cities {
+            for hex in hexx::shapes::hexagon(scenario::offset_to_hex(city.col, city.row), 2) {
+                let Some(t) = terrain.get(&hex).copied().filter(|t| *t != Terrain::Water) else { continue };
+                let mut works = vec![Improvement::Road];
+                if rails {
+                    works.push(Improvement::Railroad);
+                }
+                match t {
+                    Terrain::Grassland | Terrain::Plains => works.push(Improvement::Farm),
+                    Terrain::Hills | Terrain::Mountain => works.push(Improvement::Mine),
+                    _ => {}
+                }
+                worked.entry(hex).or_insert(works);
+            }
+        }
+        // A national network: every city linked by road (and rail) to its nearest neighbour and to
+        // the capital, so the country's resources reach all its cities.
+        let road = if rails { vec![Improvement::Road, Improvement::Railroad] } else { vec![Improvement::Road] };
+        let sites: Vec<Hex> = def.cities.iter().map(|c| scenario::offset_to_hex(c.col, c.row)).collect();
+        for (i, from) in sites.iter().enumerate() {
+            let nearest = sites.iter().enumerate().filter(|(j, _)| *j != i).min_by_key(|(_, to)| from.distance_to(**to)).map(|(_, to)| *to);
+            for to in nearest.into_iter().chain(sites.first().copied().filter(|c| c != from)) {
+                for hex in from.line_to(to) {
+                    if terrain.get(&hex).is_some_and(|t| *t != Terrain::Water) {
+                        worked.entry(hex).or_insert_with(|| road.clone());
+                    }
+                }
+            }
+        }
+    }
+    worked
+}
+
+/// The buildings a developed city of `pop` citizens has, of those its people can build.
+fn developed_buildings(pop: u32, coastal: bool, knows: impl Fn(Tech) -> bool) -> Vec<Building> {
+    use Building::*;
+    let tiers: [(u32, &[Building]); 4] = [
+        (1, &[Granary, Temple, Library, Marketplace, Harbor, Supermarket]),
+        (4, &[Courthouse, Aqueduct]),
+        (6, &[University, Bank, Colosseum]),
+        (10, &[Cathedral, Factory, SewerSystem, StockExchange]),
+    ];
+    let mut built: Vec<Building> = Vec::new();
+    for (size, list) in tiers {
+        for b in list.iter().copied().filter(|_| pop >= size) {
+            let ok = b.required_tech().is_none_or(&knows) && (!b.needs_coast() || coastal) && b.required_building().is_none_or(|r| built.contains(&r));
+            if ok {
+                built.push(b);
+            }
+        }
+    }
+    built
 }
 
 /// The share of its trade every city loses to corruption this turn (see
@@ -3410,7 +3528,10 @@ fn process_turn(
     }
     // Civilizations with free land for new cities near their own (at least 3 tiles from any city,
     // within 10 of one of theirs - or 20, for a seafaring people that can ship settlers there).
-    let room: HashSet<u32> = {
+    // In a world already built (The Modern World) nobody founds new cities.
+    let room: HashSet<u32> = if state.developed {
+        HashSet::new()
+    } else {
         let city_spots: Vec<(Hex, u32)> = cities.iter().map(|(c, _, _)| (c.position, c.owner)).collect();
         let free: Vec<Hex> = tiles
             .iter()
@@ -5381,10 +5502,11 @@ fn process_turn(
 
     // The automatic save, every turn.
     saves.send(savegame::SaveRequest { download: false });
-    state.score = Score::calculate(cities.iter().map(|(c, b, _)| (c, b)), &tech);
+    let objectives = state.objectives.clone();
+    state.score = Score::calculate(cities.iter().map(|(c, b, _)| (c, b)), &tech, &objectives);
     history.scores.push((state.turn, PLAYER, state.score.total));
     for civ in civs.players.iter().filter(|c| !c.is_human) {
-        history.scores.push((state.turn, civ.id, rival_score(civ, &cities)));
+        history.scores.push((state.turn, civ.id, rival_score(civ, &cities, &objectives)));
     }
 
     let total_cities = cities.iter().count();
@@ -5432,7 +5554,7 @@ fn process_turn(
         } else if let Some(o) = space.arrived(state.turn) {
             Some(format!("Space race victory for {}.", civ_named(o)))
         } else if state.turn >= state.last_turn {
-            let best = civs.players.iter().filter(|c| !c.is_human).map(|c| (rival_score(c, &cities), c.name.clone())).max_by_key(|(s, _)| *s);
+            let best = civs.players.iter().filter(|c| !c.is_human).map(|c| (rival_score(c, &cities, &objectives), c.name.clone())).max_by_key(|(s, _)| *s);
             best.map(|(s, name)| format!("Score victory for {name} ({s}) at the turn limit."))
         } else {
             None
@@ -5469,7 +5591,7 @@ fn process_turn(
     } else if state.turn >= state.last_turn {
         // Time runs out: the highest score wins.
         let ours = state.score.total;
-        let best_rival = civs.players.iter().filter(|c| !c.is_human).map(|c| (rival_score(c, &cities), c.name.clone())).max_by_key(|(s, _)| *s);
+        let best_rival = civs.players.iter().filter(|c| !c.is_human).map(|c| (rival_score(c, &cities, &objectives), c.name.clone())).max_by_key(|(s, _)| *s);
         state.victory = Some(match best_rival {
             Some((theirs, name)) if theirs > ours => format!("Time is up: {name} lead the world on score ({theirs} to our {ours})."),
             _ => format!("Score Victory! Time is up and we lead the world with {ours} points."),
@@ -5484,7 +5606,7 @@ fn process_turn(
             let holding: HashSet<u32> = cities.iter().map(|(c, _, _)| c.owner).filter(|o| *o != BARBARIANS).collect();
             let voters: Vec<u32> = holding.iter().copied().filter(|o| observer.is_none() || *o != PLAYER).collect();
             let peoples = civs.players.iter().filter(|c| observer.is_none() || c.id != PLAYER).count();
-            let score_of = |id: u32| if id == PLAYER { state.score.total } else { civs.players.iter().find(|c| c.id == id).map(|c| rival_score(c, &cities)).unwrap_or(0) };
+            let score_of = |id: u32| if id == PLAYER { state.score.total } else { civs.players.iter().find(|c| c.id == id).map(|c| rival_score(c, &cities, &objectives)).unwrap_or(0) };
             let rival = voters.iter().copied().filter(|o| *o != un_owner).max_by_key(|o| score_of(*o));
             if let (Some(rival), true) = (rival, holding.contains(&un_owner)) {
                 let (tally, winner) = bevy_civ::diplomacy::un_vote(&voters, peoples, [un_owner, rival], |a, b| diplomacy.get_attitude(a, b));

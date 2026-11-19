@@ -140,6 +140,13 @@ pub fn owner_color(owner: u32) -> Color {
         10 => Color::srgb(0.85, 0.85, 0.9),
         11 => Color::srgb(0.1, 0.4, 0.45),
         12 => Color::srgb(0.55, 0.15, 0.35),
+        // A world of many peoples (The Modern World): further hues around the colour wheel, at
+        // alternating strengths so neighbours in the list stay apart.
+        13..=98 => {
+            let hue = ((owner - 13) as f32 * 137.508) % 360.0;
+            let (saturation, lightness) = if owner % 2 == 0 { (0.55, 0.42) } else { (0.7, 0.6) };
+            Color::hsl(hue, saturation, lightness)
+        }
         _ => Color::srgb(0.32, 0.3, 0.3),
     }
 }

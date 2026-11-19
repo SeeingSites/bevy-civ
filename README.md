@@ -683,7 +683,7 @@ from the start menu (off by default, remembered):
 |------|-----------------------------------|-----------|
 | Age of Revolution | the United States, France, Spain, Prussia, Austria | *The American Revolution* (1775): the colonies and France against Britain, Spain watching. *The Napoleonic Wars* (1805): France and Spain against the Third Coalition (Britain, Austria, Russia); Prussia and the Ottomans neutral |
 | World Wars | Germany, Italy, Russia, the Ottomans | *The Great War* (1914): the Central Powers against the Entente, Italy neutral, the Ottomans allied to Germany. *The Second World War* (1939): Germany against Britain and France, Japan against China, the US and USSR at peace |
-| Modern Nations | the United Kingdom, Canada, Mexico, Brazil, Australia | *The Modern World* (2025): fourteen powers |
+| Modern Nations | the United Kingdom, Canada, Mexico, Brazil, Australia | *The Modern World* (2025): thirty-seven of today's nations on a world already built |
 
 A pack's nations can be led in a New World or on the Whole Earth from their real homelands; they
 join only a game whose player leads them, so the classic line-up never changes. One that shares an
@@ -692,7 +692,21 @@ the Aztecs). Period scenarios start with their alliances (`"alliances"`), wars, 
 (`"government"` per people) and the knowledge of their time; faiths that already exist are not
 announced as new. Scenarios name their pack with `"expansion"`. Packs live in `assets/expansions/`
 and are built with their scenarios by `tools/maps/build.cjs` from `tools/maps/expansions.cjs`
-(`ONLY=revolution,napoleon,greatwar,ww2` rebuilds just those). Leaders are historical up to 1914; the
+(`ONLY=revolution,napoleon,greatwar,ww2` rebuilds just those). **Objectives**: each period scenario names objective cities - the great powers' capitals and the
+war's key places - worth 200 points to whoever holds them (shown at the start and in the score).
+A score at the turn limit then rewards winning the period's war, not sitting it out on empty land.
+
+**The Modern World** is *developed*: 37 nations and some 260 cities on an equal-area world map
+(so India, China, Africa and Europe have as much room per city as the Americas), every city linked
+by roads and railroads to its neighbours and capital, the land around it farmed and mined, and
+its buildings those of its size (granary, temple, library, market, harbour and supermarket; then
+courthouse, aqueduct, university, bank; in great cities factories, sewers and exchanges). The old
+wonders stand where they stand (the Pyramids in Cairo, the Great Wall in Beijing, Michelangelo's in
+Rome; those with no nation here are lost to history), armies, fleets and air forces are in place,
+and nobody needs settlers or workers - in a developed world no one founds new cities. Scenario
+options for this: `"developed"`, `"wonders"` (wonder and city, or null) and `"objectives"`.
+
+Leaders are historical up to 1914; the
 1939 and 2025 scenarios use generic titles and portraits, never real people. Not yet adapted for
 the later starts: ancient wonders can still be built.
 
