@@ -4512,7 +4512,8 @@ fn process_turn(
         let city_count = |owner: u32| city_spots.values().filter(|o| **o == owner).count();
         for civ in civs.players.iter_mut().filter(|c| c.id != PLAYER && !c.is_human) {
             let knows = |t: Option<Tech>| t.is_none_or(|t| civ.tech.researched.contains(&t));
-            let power = |u: UnitType| u.stats().0 + u.stats().1;
+            // A unit's worth: its attack (a gun's bombardment) and defence.
+            let power = |u: UnitType| u.stats().0.max(u.bombard().map_or(0, |(strength, _, _)| strength)) + u.stats().1;
             let mut upgraded = 0;
             let mut candidates: Vec<(Entity, bool, i32)> = units
                 .iter()
