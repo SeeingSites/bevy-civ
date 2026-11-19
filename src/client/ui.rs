@@ -396,6 +396,8 @@ pub enum Command {
     CloseModal,
     SelectCiv(u32),
     PickScenario(usize),
+    /// Switches the Modern Nations expansion on or off.
+    ToggleExpansion,
     PickCiv(usize),
     BackToScenarios,
     QuitToMenu,
@@ -3255,6 +3257,10 @@ pub fn button_actions(
             Command::CloseModal => ui.modal = None,
             Command::SelectCiv(civ) => ui.diplo_target = Some(*civ),
             Command::PickScenario(index) => menu.scenario = Some(*index),
+            Command::ToggleExpansion => {
+                scenario::set_modern_expansion(!scenario::modern_expansion());
+                menu.catalog = scenario::catalog();
+            }
             Command::BackToScenarios => {
                 menu.scenario = None;
                 menu.civ = None;
@@ -3415,6 +3421,18 @@ pub fn rebuild_menu(
                             b.spawn(label(&art.font_body, scenario.blurb.clone(), 15.0, INK));
                         });
                     }
+                    // The Modern Nations expansion: today's great powers as peoples, and their own scenario.
+                    let on = scenario::modern_expansion();
+                    w.spawn(row(8.0)).with_children(|r| {
+                        let (text, tint) = if on { ("Modern Nations expansion: On", GREEN) } else { ("Modern Nations expansion: Off", BRONZE) };
+                        button(r, art, text, Command::ToggleExpansion, tint, 15.0);
+                    });
+                    w.spawn(label(
+                        &art.font_body,
+                        "Adds eight of today's nations (the United States, Canada, Mexico, Brazil, the United Kingdom, Germany, Russia, Australia), each with its own unique unit, as peoples you can lead in a New World, and The Modern World, a game that starts in 2025.",
+                        14.0,
+                        INK_SOFT,
+                    ));
                 }
                 Some(scenario) if menu.civ.is_some() => {
                     // The game's options: difficulty and length.

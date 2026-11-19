@@ -121,6 +121,15 @@ pub enum UnitType {
     Musketeer,
     Sipahi,
     Cossack,
+    // The Modern Nations expansion's peoples.
+    Marine,
+    Panzer,
+    GuardsRifleman,
+    Bandeirante,
+    LightHorse,
+    Mountie,
+    Charro,
+    Commando,
 }
 
 /// What sets a unique unit apart (see [`UnitType::ability`]).
@@ -184,7 +193,7 @@ pub const AIR_RANGE: i32 = 8;
 
 impl UnitType {
     /// Every unit type, in declaration order (also the row order of the sprite atlas).
-    pub const ALL: [UnitType; 69] = [
+    pub const ALL: [UnitType; 77] = [
         UnitType::Settler, UnitType::Worker, UnitType::Warrior, UnitType::Spearman, UnitType::Archer,
         UnitType::Horseman, UnitType::Legion, UnitType::WarChariot, UnitType::Immortal, UnitType::Phalanx,
         UnitType::Catapult, UnitType::Knight, UnitType::Cannon, UnitType::Rifleman, UnitType::Cavalry,
@@ -196,6 +205,7 @@ impl UnitType {
         UnitType::Submarine, UnitType::Engineers, UnitType::RadarArtillery, UnitType::Missionary, UnitType::NuclearMissile,
         UnitType::Transport, UnitType::Carrier, UnitType::Cartel, UnitType::Insurgent,
         UnitType::Praetorian, UnitType::Hoplite, UnitType::Companion, UnitType::Numidian, UnitType::RoyalChariot, UnitType::ImmortalGuard, UnitType::Cataphract, UnitType::GallicSwordsman, UnitType::WarElephant, UnitType::ChuKoNu, UnitType::Samurai, UnitType::Keshik, UnitType::JaguarWarrior, UnitType::Chasqui, UnitType::Mandekalu, UnitType::AskiaRider, UnitType::Conquistador, UnitType::ManOWar, UnitType::Musketeer, UnitType::Sipahi, UnitType::Cossack,
+        UnitType::Marine, UnitType::Panzer, UnitType::GuardsRifleman, UnitType::Bandeirante, UnitType::LightHorse, UnitType::Mountie, UnitType::Charro, UnitType::Commando,
     ];
 
     /// The five kinds of great person.
@@ -229,6 +239,14 @@ impl UnitType {
             Musketeer => Musketman,
             Sipahi => Cavalry,
             Cossack => Cavalry,
+            Marine => Infantry,
+            Panzer => Tank,
+            GuardsRifleman => Rifleman,
+            Bandeirante => Musketman,
+            LightHorse => Cavalry,
+            Mountie => Cavalry,
+            Charro => Cavalry,
+            Commando => Infantry,
             _ => return None,
         })
     }
@@ -258,6 +276,14 @@ impl UnitType {
             Musketeer => Ability::Bastion,
             Sipahi => Ability::Charge,
             Cossack => Ability::Outrider,
+            Marine => Ability::Storm,
+            Panzer => Ability::Charge,
+            GuardsRifleman => Ability::Bastion,
+            Bandeirante => Ability::Outrider,
+            LightHorse => Ability::Charge,
+            Mountie => Ability::Outrider,
+            Charro => Ability::Plunder,
+            Commando => Ability::Outrider,
             _ => return None,
         })
     }
@@ -315,6 +341,14 @@ impl UnitType {
             UnitType::Musketeer => "Musketeer",
             UnitType::Sipahi => "Sipahi",
             UnitType::Cossack => "Cossack",
+            UnitType::Marine => "Marine",
+            UnitType::Panzer => "Panzer",
+            UnitType::GuardsRifleman => "Guards Rifleman",
+            UnitType::Bandeirante => "Bandeirante",
+            UnitType::LightHorse => "Light Horse",
+            UnitType::Mountie => "Mountie",
+            UnitType::Charro => "Charro",
+            UnitType::Commando => "Commando",
             UnitType::WarChariot => "War Chariot",
             UnitType::Settler => "Settler",
             UnitType::Worker => "Worker",
@@ -373,7 +407,7 @@ impl UnitType {
         }
         use crate::tech::Tech;
         match self {
-            UnitType::Praetorian | UnitType::Hoplite | UnitType::Companion | UnitType::Numidian | UnitType::RoyalChariot | UnitType::ImmortalGuard | UnitType::Cataphract | UnitType::GallicSwordsman | UnitType::WarElephant | UnitType::ChuKoNu | UnitType::Samurai | UnitType::Keshik | UnitType::JaguarWarrior | UnitType::Chasqui | UnitType::Mandekalu | UnitType::AskiaRider | UnitType::Conquistador | UnitType::ManOWar | UnitType::Musketeer | UnitType::Sipahi | UnitType::Cossack => self.unique_base().and_then(|b| b.required_tech()),
+            UnitType::Praetorian | UnitType::Hoplite | UnitType::Companion | UnitType::Numidian | UnitType::RoyalChariot | UnitType::ImmortalGuard | UnitType::Cataphract | UnitType::GallicSwordsman | UnitType::WarElephant | UnitType::ChuKoNu | UnitType::Samurai | UnitType::Keshik | UnitType::JaguarWarrior | UnitType::Chasqui | UnitType::Mandekalu | UnitType::AskiaRider | UnitType::Conquistador | UnitType::ManOWar | UnitType::Musketeer | UnitType::Sipahi | UnitType::Cossack | UnitType::Marine | UnitType::Panzer | UnitType::GuardsRifleman | UnitType::Bandeirante | UnitType::LightHorse | UnitType::Mountie | UnitType::Charro | UnitType::Commando => self.unique_base().and_then(|b| b.required_tech()),
             UnitType::Settler | UnitType::Worker | UnitType::Warrior | UnitType::Scout => None,
             UnitType::Longbowman => Some(Tech::Monarchy),
             UnitType::Galleon => Some(Tech::Navigation),
@@ -438,6 +472,14 @@ impl UnitType {
             UnitType::Musketeer => (2, 5, 1),
             UnitType::Sipahi => (8, 3, 3),
             UnitType::Cossack => (6, 3, 4),
+            UnitType::Marine => (8, 10, 1),
+            UnitType::Panzer => (18, 8, 3),
+            UnitType::GuardsRifleman => (4, 8, 1),
+            UnitType::Bandeirante => (3, 4, 2),
+            UnitType::LightHorse => (7, 3, 3),
+            UnitType::Mountie => (6, 4, 3),
+            UnitType::Charro => (6, 3, 3),
+            UnitType::Commando => (7, 9, 2),
             UnitType::Settler => (0, 0, 1),
             UnitType::Worker => (0, 0, 1),
             UnitType::Warrior => (1, 1, 1),
@@ -493,7 +535,7 @@ impl UnitType {
             return base.cost();
         }
         match self {
-            UnitType::Praetorian | UnitType::Hoplite | UnitType::Companion | UnitType::Numidian | UnitType::RoyalChariot | UnitType::ImmortalGuard | UnitType::Cataphract | UnitType::GallicSwordsman | UnitType::WarElephant | UnitType::ChuKoNu | UnitType::Samurai | UnitType::Keshik | UnitType::JaguarWarrior | UnitType::Chasqui | UnitType::Mandekalu | UnitType::AskiaRider | UnitType::Conquistador | UnitType::ManOWar | UnitType::Musketeer | UnitType::Sipahi | UnitType::Cossack => self.unique_base().map_or(0, |b| b.cost()),
+            UnitType::Praetorian | UnitType::Hoplite | UnitType::Companion | UnitType::Numidian | UnitType::RoyalChariot | UnitType::ImmortalGuard | UnitType::Cataphract | UnitType::GallicSwordsman | UnitType::WarElephant | UnitType::ChuKoNu | UnitType::Samurai | UnitType::Keshik | UnitType::JaguarWarrior | UnitType::Chasqui | UnitType::Mandekalu | UnitType::AskiaRider | UnitType::Conquistador | UnitType::ManOWar | UnitType::Musketeer | UnitType::Sipahi | UnitType::Cossack | UnitType::Marine | UnitType::Panzer | UnitType::GuardsRifleman | UnitType::Bandeirante | UnitType::LightHorse | UnitType::Mountie | UnitType::Charro | UnitType::Commando => self.unique_base().map_or(0, |b| b.cost()),
             UnitType::Settler => 30,
             UnitType::Worker => 10,
             UnitType::Warrior => 10,
@@ -546,7 +588,7 @@ impl UnitType {
             return base.color();
         }
         match self {
-            UnitType::Praetorian | UnitType::Hoplite | UnitType::Companion | UnitType::Numidian | UnitType::RoyalChariot | UnitType::ImmortalGuard | UnitType::Cataphract | UnitType::GallicSwordsman | UnitType::WarElephant | UnitType::ChuKoNu | UnitType::Samurai | UnitType::Keshik | UnitType::JaguarWarrior | UnitType::Chasqui | UnitType::Mandekalu | UnitType::AskiaRider | UnitType::Conquistador | UnitType::ManOWar | UnitType::Musketeer | UnitType::Sipahi | UnitType::Cossack => self.unique_base().map_or(Color::WHITE, |b| b.color()),
+            UnitType::Praetorian | UnitType::Hoplite | UnitType::Companion | UnitType::Numidian | UnitType::RoyalChariot | UnitType::ImmortalGuard | UnitType::Cataphract | UnitType::GallicSwordsman | UnitType::WarElephant | UnitType::ChuKoNu | UnitType::Samurai | UnitType::Keshik | UnitType::JaguarWarrior | UnitType::Chasqui | UnitType::Mandekalu | UnitType::AskiaRider | UnitType::Conquistador | UnitType::ManOWar | UnitType::Musketeer | UnitType::Sipahi | UnitType::Cossack | UnitType::Marine | UnitType::Panzer | UnitType::GuardsRifleman | UnitType::Bandeirante | UnitType::LightHorse | UnitType::Mountie | UnitType::Charro | UnitType::Commando => self.unique_base().map_or(Color::WHITE, |b| b.color()),
             UnitType::Settler => Color::srgb(0.9, 0.9, 0.2),
             UnitType::Worker => Color::srgb(0.6, 0.4, 0.2),
             UnitType::Warrior => Color::srgb(0.8, 0.2, 0.2),

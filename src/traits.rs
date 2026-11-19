@@ -163,13 +163,15 @@ pub fn of(name: &str) -> Character {
         "Inca" => ([Agricultural, Industrious], U::Chasqui),
         "Ottomans" => ([Militaristic, Scientific], U::Sipahi),
         "Seleucids" => ([Scientific, Militaristic], U::Cataphract),
-        // Modern nations (their unique units are switched off by the modern theme).
-        "United States" => ([Commercial, Industrious], U::Infantry),
-        "United Kingdom" => ([Commercial, Scientific], U::Infantry),
-        "Germany" => ([Industrious, Scientific], U::Infantry),
-        "Russia" => ([Militaristic, Industrious], U::Infantry),
-        "Brazil" => ([Agricultural, Commercial], U::Infantry),
-        "Australia" => ([Agricultural, Industrious], U::Infantry),
+        // The Modern Nations expansion's peoples.
+        "United States" => ([Commercial, Industrious], U::Marine),
+        "United Kingdom" => ([Commercial, Scientific], U::Commando),
+        "Germany" => ([Industrious, Scientific], U::Panzer),
+        "Russia" => ([Militaristic, Industrious], U::GuardsRifleman),
+        "Brazil" => ([Agricultural, Commercial], U::Bandeirante),
+        "Australia" => ([Agricultural, Industrious], U::LightHorse),
+        "Canada" => ([Agricultural, Scientific], U::Mountie),
+        "Mexico" => ([Religious, Agricultural], U::Charro),
         _ => {
             let seed = key.bytes().fold(7u32, |h, b| h.wrapping_mul(31).wrapping_add(b as u32));
             let first = Trait::ALL[(seed % 6) as usize];
@@ -178,7 +180,7 @@ pub fn of(name: &str) -> Character {
             ([first, second], pool[(seed / 30) as usize % pool.len()])
         }
     };
-    // A theme without unique units (the modern game): every people trains the ordinary units.
+    // A theme without unique units: every people trains the ordinary units.
     let unique = if crate::theme::unique_units() { unique } else { U::Infantry };
     Character { traits, unique }
 }

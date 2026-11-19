@@ -25,7 +25,7 @@ use crate::{EndTurnNow, GameLog, GameState, Observer, PLAYER};
 /// Plays `turns` turns of the scenario whose id (or name) contains `which`, and prints a report.
 /// Returns false if the scenario is unknown.
 pub fn run(which: &str, turns: u32) -> bool {
-    let catalog = scenario::catalog();
+    let catalog = scenario::catalog_with(true);
     let Some(mut scenario) = catalog
         .into_iter()
         .filter(|s| !s.rows.is_empty())

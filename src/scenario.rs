@@ -36,6 +36,23 @@ pub struct Scenario {
     /// of the theme in force.
     #[serde(default = "earth")]
     pub theme: String,
+    /// The expansion the scenario belongs to (e.g. "modern"), if any: listed only while it is on,
+    /// and its peoples then also join the New World's.
+    #[serde(default)]
+    pub expansion: Option<String>,
+}
+
+/// The setting that holds whether the Modern Nations expansion is on.
+const EXPANSION_SETTING: &str = "expansion.modern";
+
+/// Whether the Modern Nations expansion is switched on (off unless the player turned it on).
+pub fn modern_expansion() -> bool {
+    bevy_civ::save::read_setting(EXPANSION_SETTING).as_deref() == Some("on")
+}
+
+/// Switches the Modern Nations expansion on or off, remembered between games.
+pub fn set_modern_expansion(on: bool) {
+    bevy_civ::save::write_setting(EXPANSION_SETTING, if on { "on" } else { "off" });
 }
 
 fn earth() -> String {
@@ -101,10 +118,16 @@ pub fn offset_to_hex(col: i32, row: i32) -> Hex {
 
 /// Everything the start menu offers: a random map first, then the scenarios of the theme in force.
 pub fn catalog() -> Vec<Scenario> {
+    catalog_with(modern_expansion())
+}
+
+/// The start menu's games, with or without the expansions' scenarios and peoples.
+pub fn catalog_with(expansions: bool) -> Vec<Scenario> {
     let theme = bevy_civ::theme::id();
     let all: Vec<Scenario> = BUILT_IN.iter().filter_map(|json| serde_json::from_str::<Scenario>(json).ok()).collect();
     let fallback = all.first().cloned();
-    let built_in: Vec<Scenario> = all.into_iter().filter(|s| bevy_civ::theme::plays(&s.theme)).collect();
+    let built_in: Vec<Scenario> =
+        all.into_iter().filter(|s| bevy_civ::theme::plays(&s.theme) && (expansions || s.expansion.is_none())).collect();
     let mut random = Scenario {
         id: "random".into(),
         name: "New World".into(),
@@ -116,8 +139,22 @@ pub fn catalog() -> Vec<Scenario> {
     };
     // The random map borrows its peoples from the theme's first scenario (Earth's, by default);
     // their homes are chosen when the game starts.
-    if let Some(first) = built_in.first().or(fallback.as_ref()) {
+    let first = built_in.iter().find(|s| s.expansion.is_none()).or(fallback.as_ref());
+    if let Some(first) = first {
         random.civs = first.civs.iter().take(8).cloned().collect();
+    }
+    // An expansion's own peoples (those its scenario adds) join them, starting from nothing like
+    // everyone else.
+    let known: Vec<String> = first.map(|f| f.civs.iter().map(|c| c.name.clone()).collect()).unwrap_or_default();
+    for expansion in built_in.iter().filter(|s| s.expansion.is_some()) {
+        for civ in expansion.civs.iter().filter(|c| !known.contains(&c.name)) {
+            let mut civ = civ.clone();
+            civ.techs.clear();
+            civ.units.clear();
+            civ.cities.truncate(1);
+            civ.gold = random.civs.first().map_or(50, |c| c.gold);
+            random.civs.push(civ);
+        }
     }
     std::iter::once(random).chain(built_in).collect()
 }
@@ -235,4 +272,55 @@ pub fn generate_random(template: &Scenario, player: usize, map_size: usize, peop
         ..template.clone()
     };
     (scenario, 0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use bevy_civ::unit::UnitType;
+
+    #[test]
+    fn the_modern_expansion_adds_its_scenario_and_peoples_only_when_on() {
+        let off = catalog_with(false);
+        assert!(off.iter().all(|s| s.expansion.is_none()));
+        assert_eq!(off[0].civs.len(), 8);
+        let on = catalog_with(true);
+        let modern = on
+            .iter()
+            .find(|s| s.id == "modern")
+            .expect("The Modern World is listed");
+        assert_eq!(modern.expansion.as_deref(), Some("modern"));
+        // Every modern city stands on land.
+        for civ in &modern.civs {
+            for city in &civ.cities {
+                assert_ne!(
+                    modern.rows[city.row as usize].as_bytes()[city.col as usize],
+                    b'~',
+                    "{} {}",
+                    civ.name,
+                    city.name
+                );
+            }
+        }
+        // The New World offers the expansion's peoples too, starting from nothing, with their own units.
+        let random = &on[0];
+        for (name, unique) in [
+            ("Canada", UnitType::Mountie),
+            ("Mexico", UnitType::Charro),
+            ("the United States", UnitType::Marine),
+            ("Germany", UnitType::Panzer),
+        ] {
+            let civ = random
+                .civs
+                .iter()
+                .find(|c| c.name == name)
+                .unwrap_or_else(|| panic!("{name} in the New World"));
+            assert!(
+                civ.techs.is_empty() && civ.units.is_empty() && civ.cities.len() == 1,
+                "{name}"
+            );
+            assert!(civ.city_names.len() >= 6, "{name} has names for its cities");
+            assert_eq!(bevy_civ::traits::of(name).unique_unit(), Some(unique));
+        }
+    }
 }
