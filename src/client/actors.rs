@@ -260,16 +260,36 @@ pub fn update_health_bars(
     }
 }
 
-fn city_frame(population: u32) -> usize {
-    match population {
+/// The city sprite for a city of this size whose people is in `age` (each age is a row of four
+/// sizes, from a village to a metropolis: mud brick, then castles, then brick and chimneys, then
+/// towers of glass).
+fn city_frame(population: u32, age: bevy_civ::tech::Era) -> usize {
+    let size = match population {
         0..=2 => 0,
         3..=5 => 1,
         6..=9 => 2,
         _ => 3,
-    }
+    };
+    age as usize * 4 + size
 }
 
-pub fn attach_city_views(mut commands: Commands, art: Res<Art>, map: Res<MapData>, cities: Query<(Entity, &City), Added<City>>) {
+/// The age each people has entered (barbarians stay ancient).
+fn ages(tech: &bevy_civ::tech::TechState, civs: &bevy_civ::ai::Civilizations) -> HashMap<u32, bevy_civ::tech::Era> {
+    civs.players
+        .iter()
+        .map(|c| (c.id, if c.id == crate::PLAYER { tech.era() } else { c.tech.era() }))
+        .collect()
+}
+
+pub fn attach_city_views(
+    mut commands: Commands,
+    art: Res<Art>,
+    map: Res<MapData>,
+    tech: Res<bevy_civ::tech::TechState>,
+    civs: Res<bevy_civ::ai::Civilizations>,
+    cities: Query<(Entity, &City), Added<City>>,
+) {
+    let ages = ages(&tech, &civs);
     for (entity, city) in &cities {
         let pos = map.layout.hex_to_world_pos(city.position) + CITY_OFFSET;
         commands
@@ -277,7 +297,7 @@ pub fn attach_city_views(mut commands: Commands, art: Res<Art>, map: Res<MapData
             .insert((
                 Sprite {
                     image: art.cities.clone(),
-                    texture_atlas: Some(art.atlas(&art.cities_layout, city_frame(city.population))),
+                    texture_atlas: Some(art.atlas(&art.cities_layout, city_frame(city.population, ages.get(&city.owner).copied().unwrap_or(bevy_civ::tech::Era::Ancient)))),
                     custom_size: Some(Vec2::splat(104.0)),
                     anchor: Anchor::Custom(Vec2::new(0.0, -0.32)),
                     ..default()
@@ -313,15 +333,18 @@ pub fn attach_city_views(mut commands: Commands, art: Res<Art>, map: Res<MapData
 
 pub fn update_city_views(
     fog: Res<FogOfWar>,
+    tech: Res<bevy_civ::tech::TechState>,
+    civs: Res<bevy_civ::ai::Civilizations>,
     mut cities: Query<(&City, &mut Sprite, &mut Visibility, &Children)>,
     mut flags: Query<&mut Sprite, (With<CityFlag>, Without<City>, Without<CityLabelBack>)>,
     mut backs: Query<&mut Sprite, (With<CityLabelBack>, Without<City>, Without<CityFlag>)>,
     mut labels: Query<(&mut Text2d, &mut TextColor), With<CityLabel>>,
 ) {
+    let ages = ages(&tech, &civs);
     for (city, mut sprite, mut visibility, children) in &mut cities {
         *visibility = if fog.explored.contains(&city.position) { Visibility::Inherited } else { Visibility::Hidden };
         if let Some(atlas) = sprite.texture_atlas.as_mut() {
-            atlas.index = city_frame(city.population);
+            atlas.index = city_frame(city.population, ages.get(&city.owner).copied().unwrap_or(bevy_civ::tech::Era::Ancient));
         }
         let text = format!("{} {}", city.population, city.name);
         for child in children.iter() {

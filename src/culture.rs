@@ -15,8 +15,10 @@ use crate::building::Building;
 /// anyone else's - or that one of its cities needs alone ([`CITY_VICTORY_CULTURE`]), as in Civ III.
 pub const VICTORY_CULTURE: u32 = 60_000;
 /// How far ahead of the next civilization a cultural victory takes (in tenths: 20 = twice).
-pub const VICTORY_LEAD_TENTHS: u32 = 20;
+pub const VICTORY_LEAD_TENTHS: u32 = 16;
 pub const CITY_VICTORY_CULTURE: u32 = 15_000;
+/// Cities a people needs for one city's culture to win it the game.
+pub const CITY_VICTORY_MIN_CITIES: usize = 8;
 
 /// Culture a cultural victory takes in a game of `last_turn` turns (60,000 in a 400-turn game).
 pub fn victory_culture(last_turn: u32) -> u32 {
@@ -187,7 +189,10 @@ impl CultureLedger {
     pub fn winner(&self, owners: &[(Hex, u32)], last_turn: u32) -> Option<u32> {
         cultural_winner(&self.totals(owners.iter().copied()), victory_culture(last_turn)).or_else(|| {
             let (_, owner, points) = self.best_city(owners)?;
-            (points >= city_victory_culture(last_turn)).then_some(owner)
+            // One great city wins only for a people of some size and standing, not a city-state.
+            let cities = owners.iter().filter(|(_, o)| *o == owner).count();
+            let total = self.totals(owners.iter().copied()).get(&owner).copied().unwrap_or(0);
+            (points >= city_victory_culture(last_turn) && cities >= CITY_VICTORY_MIN_CITIES && total >= victory_culture(last_turn) / 2).then_some(owner)
         })
     }
 
@@ -247,12 +252,18 @@ mod tests {
         let owners: Vec<(Hex, u32)> = ours.iter().copied().chain([theirs]).collect();
         let totals = ledger.totals(owners.iter().copied());
         assert_eq!(cultural_winner(&totals, threshold), Some(0));
-        // A rival not far enough behind: no win by the total - but a great enough city wins alone.
-        ledger.add(theirs.0, theirs.1, 10_000);
+        // A rival not far enough behind: no win by the total - and one great city of a city-state
+        // does not win alone either.
+        ledger.add(theirs.0, theirs.1, 30_000);
         let totals = ledger.totals(owners.iter().copied());
-        assert_eq!(cultural_winner(&totals, threshold), None, "not twice the next");
-        assert_eq!(ledger.winner(&owners, 400), Some(1), "their great city wins");
-        assert_eq!(ledger.best_city(&owners), Some((theirs.0, 1, 60_000)));
+        assert_eq!(cultural_winner(&totals, threshold), None, "not half again the next");
+        assert_eq!(ledger.winner(&owners, 400), None, "a city-state's great city does not win");
+        assert_eq!(ledger.best_city(&owners), Some((theirs.0, 1, 80_000)));
+        // Ours (ten cities) wins by its best city once that is great enough.
+        ledger.add(ours[0].0, 0, 5_000);
+        let mut shared = owners.clone();
+        shared.retain(|o| o.1 == 0);
+        assert_eq!(ledger.winner(&shared, 400), Some(0), "a great city of a great people wins");
         assert_eq!(CultureLedger::default().winner(&owners, 400), None, "no culture, no winner");
     }
 
@@ -271,7 +282,12 @@ mod tests {
         assert_eq!(ledger.best_city(&owners), Some((city, 2, 300)));
         assert_eq!(ledger.winner(&owners, 400), None, "the conqueror has earned too little there");
         ledger.add(city, 2, 19_700);
-        assert_eq!(ledger.winner(&owners, 400), Some(2), "20,000 earned under its rule");
+        assert_eq!(ledger.winner(&owners, 400), None, "one city is not a great people");
+        // With eight cities and half the culture of a cultural victory, the city wins.
+        let mut realm: Vec<(Hex, u32)> = (0..7).map(|i| (Hex::new(10 + i * 3, 0), 2)).collect();
+        ledger.add(realm[0].0, 2, 10_000);
+        realm.push((city, 2));
+        assert_eq!(ledger.winner(&realm, 400), Some(2), "20,000 earned under its rule");
         // An old save: every city's culture goes to its present owner, once.
         let mut old = CultureLedger::default();
         old.city.insert(city, 5_000);

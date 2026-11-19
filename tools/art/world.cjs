@@ -1,4 +1,4 @@
-// Cities (four sizes), waving flags and combat effects.
+// Cities (four sizes in each of the four ages), waving flags and combat effects.
 const { rng, between, n, nextId, sheet } = require('./lib.cjs');
 
 const OUT = '#231a12';
@@ -30,7 +30,7 @@ function rampart(x1, x2, y, h, wall) {
   );
 }
 
-function cityFrame(col) {
+function medievalCity(col) {
   const r = rng(900 + col * 31);
   const gy = 158;
   const walls = ['#e6d6b4', '#d9c7a0', '#efe2c4'];
@@ -79,6 +79,137 @@ function cityFrame(col) {
   }
   parts.sort((a, b) => a[0] - b[0]);
   return s + wrap(parts.map((p) => p[1]).join(''));
+}
+
+// ---- cities of the other ages -------------------------------------------------------------------
+// Each age draws its own buildings on the same ground: four sizes, from a village to a metropolis.
+
+function ground(col, gy) {
+  return `<ellipse cx="96" cy="${gy + 2}" rx="${52 + col * 9}" ry="${16 + col * 2}" fill="rgba(0,0,0,0.3)"/>` +
+    `<ellipse cx="96" cy="${gy - 2}" rx="${50 + col * 9}" ry="${15 + col * 2}" fill="#b89d6c" stroke="#6f5a3a" stroke-width="2"/>`;
+}
+
+/** A mud-brick house with a flat roof and a dark doorway. */
+function adobe(x, y, w, h, wall) {
+  return `<path d="M${n(x)},${n(y)} v${n(-h)} h${n(w)} v${n(h)} Z" fill="${wall}"/>` +
+    `<path d="M${n(x - 2)},${n(y - h)} h${n(w + 4)} v-4 h${n(-w - 4)} Z" fill="#a8835a"/>` +
+    `<path d="M${n(x + w * 0.62)},${n(y)} v${n(-h)} h${n(w * 0.38)} v${n(h)} Z" fill="rgba(0,0,0,0.16)" stroke="none"/>` +
+    `<path d="M${n(x + w * 0.3)},${n(y)} v${n(-h * 0.5)} h${n(w * 0.22)} v${n(h * 0.5)}" fill="#4a3220" stroke-width="1.3"/>`;
+}
+
+/** A stepped temple (ziggurat) with a shrine on top. */
+function ziggurat(x, y, w, steps, colour) {
+  let s = '';
+  for (let i = 0; i < steps; i++) {
+    const sw = w - i * (w / (steps + 1));
+    s += `<path d="M${n(x - sw / 2)},${n(y - i * 12)} v-12 h${n(sw)} v12 Z" fill="${colour}"/>`;
+  }
+  const top = y - steps * 12;
+  return s + `<path d="M${n(x - 8)},${n(top)} v-12 h16 v12 Z" fill="#e8d9b8"/><path d="M${n(x - 10)},${n(top - 12)} h20 l-10,-8 Z" fill="#c9a24a"/>` +
+    `<path d="M${n(x - 3)},${n(y)} v${-steps * 12}" stroke="rgba(0,0,0,0.25)" stroke-width="3"/>`;
+}
+
+/** A columned temple front. */
+function colonnade(x, y, w, h) {
+  let s = `<path d="M${n(x)},${n(y)} h${n(w)} v-5 h${n(-w)} Z" fill="#e9e0cc"/>`;
+  for (let cx = x + 4; cx < x + w - 2; cx += 8) s += `<path d="M${n(cx)},${n(y - 5)} v${n(-h)} h4 v${n(h)} Z" fill="#f1ead8"/>`;
+  return s + `<path d="M${n(x - 3)},${n(y - h - 5)} h${n(w + 6)} l${n(-(w + 6) / 2)},-12 Z" fill="#e9e0cc"/>`;
+}
+
+function ancientCity(col) {
+  const r = rng(700 + col * 37);
+  const gy = 158;
+  const walls = ['#d8b98a', '#cfae7c', '#e0c497'];
+  const wall = () => walls[Math.floor(r() * walls.length)];
+  const parts = [];
+  const add = (y, svg) => parts.push([y, svg]);
+  const houses = [[[56, -18], [96, -10], [72, -2]], [[48, -24], [110, -22], [64, -8], [100, -6], [82, 2]],
+    [[44, -32], [118, -30], [60, -18], [100, -16], [80, -2], [130, -6]], [[36, -34], [126, -34], [52, -20], [110, -20], [70, -6], [96, -4], [138, -8], [44, -4]]][col];
+  for (const [x, dy] of houses) add(gy + dy, adobe(x, gy + dy, 22 + r() * 8, 14 + r() * 6, wall()));
+  if (col >= 2) add(gy - 40, ziggurat(92, gy - 30, 54 + col * 6, col + 1, '#c9a57a'));
+  if (col === 3) add(gy - 36, colonnade(126, gy - 34, 34, 18));
+  if (col === 1) add(gy - 26, colonnade(80, gy - 24, 26, 14));
+  // A palisade of stakes, then (larger towns) a mud-brick wall.
+  if (col <= 1) add(gy + 4, [40, 48, 56, 136, 144, 152].map((x) => `<path d="M${x},${gy + 6} v-12" stroke="#6b4a2a" stroke-width="4"/>`).join(''));
+  else add(gy + 2, `<path d="M${30 - col * 4},${gy + 8} v-14 H${162 + col * 4} v14 Z" fill="#c4a173"/>` + `<path d="M${30 - col * 4},${gy - 6} ${Array.from({ length: 12 }, () => 'h6 v-4 h6 v4').join(' ')}" fill="none"/>`);
+  parts.sort((a, b) => a[0] - b[0]);
+  return ground(col, gy) + wrap(parts.map((p) => p[1]).join(''));
+}
+
+/** A brick building with a slate roof and rows of windows. */
+function brick(x, y, w, h, wall, floors) {
+  let s = `<path d="M${n(x)},${n(y)} v${n(-h)} h${n(w)} v${n(h)} Z" fill="${wall}"/>` +
+    `<path d="M${n(x - 2)},${n(y - h)} L${n(x + 4)},${n(y - h - 8)} h${n(w - 8)} L${n(x + w + 2)},${n(y - h)} Z" fill="#4a4f58"/>`;
+  for (let f = 0; f < floors; f++) {
+    for (let wx = x + 4; wx < x + w - 4; wx += 8) s += `<rect x="${n(wx)}" y="${n(y - h + 5 + f * 10)}" width="4" height="5" fill="#f2d98a" stroke-width="1"/>`;
+  }
+  return s + `<path d="M${n(x + w * 0.65)},${n(y)} v${n(-h)} h${n(w * 0.35)} v${n(h)} Z" fill="rgba(0,0,0,0.14)" stroke="none"/>`;
+}
+
+/** A factory: a saw-tooth roofed shed and a tall chimney trailing smoke. */
+function factory(x, y, w, chimney) {
+  let s = `<path d="M${n(x)},${n(y)} v-18 l10,-8 v8 l10,-8 v8 l10,-8 v8 h${n(w - 30)} v18 Z" fill="#8a4a36"/>` +
+    `<path d="M${n(x + w - 10)},${n(y - 18)} v${-chimney} h7 v${chimney} Z" fill="#6b3a2a"/>`;
+  const cx = x + w - 6;
+  const top = y - 18 - chimney;
+  s += `<g stroke="none"><circle cx="${n(cx + 3)}" cy="${n(top - 7)}" r="6" fill="rgba(120,115,110,0.75)"/><circle cx="${n(cx + 11)}" cy="${n(top - 15)}" r="8" fill="rgba(140,135,130,0.6)"/><circle cx="${n(cx + 22)}" cy="${n(top - 21)}" r="9" fill="rgba(160,155,150,0.45)"/></g>`;
+  return s;
+}
+
+/** A clock tower. */
+function clockTower(x, y, h) {
+  return `<path d="M${n(x)},${n(y)} v${-h} h14 v${h} Z" fill="#b0886a"/><path d="M${n(x - 2)},${n(y - h)} l9,-14 l9,14 Z" fill="#4a4f58"/>` +
+    `<circle cx="${n(x + 7)}" cy="${n(y - h + 9)}" r="5" fill="#f1ead8" stroke-width="1.5"/><path d="M${n(x + 7)},${n(y - h + 9)} v-3 M${n(x + 7)},${n(y - h + 9)} h2" stroke-width="1.2"/>`;
+}
+
+function industrialCity(col) {
+  const r = rng(500 + col * 41);
+  const gy = 158;
+  const walls = ['#a85a44', '#9a4f3c', '#b86a4e', '#c9b9a0'];
+  const wall = () => walls[Math.floor(r() * walls.length)];
+  const parts = [];
+  const add = (y, svg) => parts.push([y, svg]);
+  const blocks = [[[60, -16, 1], [96, -8, 1]], [[46, -24, 2], [108, -22, 2], [70, -6, 1]],
+    [[40, -32, 2], [116, -30, 3], [62, -16, 2], [96, -14, 2], [80, 0, 1]], [[34, -36, 3], [124, -34, 3], [56, -20, 2], [104, -20, 3], [74, -4, 2], [132, -6, 1]]][col];
+  for (const [x, dy, floors] of blocks) add(gy + dy, brick(x, gy + dy, 26 + r() * 8, 10 + floors * 10, wall(), floors));
+  if (col >= 1) add(gy - 30 - col, factory(col === 1 ? 124 : 128, gy - 26, 40, 22 + col * 8));
+  if (col >= 2) add(gy - 44, clockTower(84, gy - 38, 34 + col * 6));
+  if (col === 3) add(gy - 40, factory(18, gy - 30, 38, 40));
+  parts.sort((a, b) => a[0] - b[0]);
+  return ground(col, gy) + wrap(parts.map((p) => p[1]).join(''));
+}
+
+/** A tower of glass and concrete with a grid of lit windows. */
+function skyscraper(x, y, w, h, glass) {
+  let s = `<path d="M${n(x)},${n(y)} v${n(-h)} h${n(w)} v${n(h)} Z" fill="${glass}"/>`;
+  for (let wy = y - h + 5; wy < y - 4; wy += 7) {
+    for (let wx = x + 3; wx < x + w - 3; wx += 6) s += `<rect x="${n(wx)}" y="${n(wy)}" width="3" height="4" fill="rgba(255,236,170,0.85)" stroke="none"/>`;
+  }
+  return s + `<path d="M${n(x + w * 0.6)},${n(y)} v${n(-h)} h${n(w * 0.4)} v${n(h)} Z" fill="rgba(0,0,0,0.18)" stroke="none"/>` +
+    `<path d="M${n(x + w / 2)},${n(y - h)} v-8" stroke-width="1.5"/>`;
+}
+
+function modernCity(col) {
+  const r = rng(300 + col * 43);
+  const gy = 158;
+  const glass = ['#5f86a8', '#7d9bb5', '#4f6f8f', '#9fb3c4', '#c9ccd1'];
+  const tone = () => glass[Math.floor(r() * glass.length)];
+  const parts = [];
+  const add = (y, svg) => parts.push([y, svg]);
+  const towers = [[[66, -12, 30], [100, -6, 22]], [[50, -22, 44], [104, -20, 56], [76, -4, 30], [124, -4, 24]],
+    [[40, -30, 60], [118, -30, 74], [64, -14, 44], [96, -16, 90], [140, -8, 34], [80, 0, 28]],
+    [[30, -34, 70], [138, -34, 82], [58, -22, 96], [92, -24, 118], [118, -14, 64], [44, -4, 40], [74, 0, 50], [150, -2, 36]]][col];
+  for (const [x, dy, h] of towers) add(gy + dy, skyscraper(x, gy + dy, 18 + r() * 8, h, tone()));
+  // A road ring and a park.
+  add(gy + 6, `<path d="M${40 - col * 4},${gy + 8} Q96,${gy + 22} ${152 + col * 4},${gy + 8}" fill="none" stroke="#5a5a5a" stroke-width="4"/>` +
+    `<ellipse cx="${150 - col * 2}" cy="${gy + 4}" rx="9" ry="4" fill="#4f8a3a"/>`);
+  parts.sort((a, b) => a[0] - b[0]);
+  return ground(col, gy) + wrap(parts.map((p) => p[1]).join(''));
+}
+
+/** A city of size `col` in age `row` (ancient, middle, industrial, modern). */
+function cityFrame(col, row) {
+  return [ancientCity, medievalCity, industrialCity, modernCity][row](col);
 }
 
 function flagFrame(col) {
@@ -137,7 +268,7 @@ function villageFrame() {
 
 module.exports = {
   village: () => sheet({ cols: 1, rows: 1, fw: 128, fh: 128, draw: villageFrame }),
-  cities: () => sheet({ cols: 4, rows: 1, fw: 192, fh: 192, draw: cityFrame }),
+  cities: () => sheet({ cols: 4, rows: 4, fw: 192, fh: 192, draw: cityFrame }),
   flag: () => sheet({ cols: 4, rows: 1, fw: 64, fh: 64, draw: flagFrame }),
   burst: () => sheet({ cols: 6, rows: 1, fw: 128, fh: 128, draw: burstFrame }),
 };
