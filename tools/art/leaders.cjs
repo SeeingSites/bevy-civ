@@ -26,6 +26,11 @@ const gear = {
   sidePart: (c) => () => `<path d="M42,54 q-4,-32 22,-32 q26,0 22,30 q-10,-18 -30,-14 q-8,2 -14,16 Z" fill="${c}"/>`,
   bob: (c) => () => `<path d="M40,72 q-6,-48 24,-48 q30,0 24,48 l-8,0 q2,-26 -16,-30 q-18,4 -16,30 Z" fill="${c}"/>`,
   bun: (c) => () => `<path d="M42,56 q-4,-32 22,-32 q26,0 22,32 q-6,-16 -22,-18 q-16,2 -22,18 Z" fill="${c}"/><circle cx="64" cy="20" r="9" fill="${c}"/>`,
+  // Eighteenth- and nineteenth-century heads: powdered wigs, tricorns, spiked helmets, kepis.
+  wig: (c) => () => `<path d="M40,58 q-4,-34 24,-34 q28,0 24,34 q-6,-14 -24,-16 q-18,2 -24,16 Z" fill="${c}"/><circle cx="40" cy="62" r="6" fill="${c}"/><circle cx="88" cy="62" r="6" fill="${c}"/>`,
+  tricorn: (c) => () => `<circle cx="40" cy="62" r="6" fill="${c}"/><circle cx="88" cy="62" r="6" fill="${c}"/><path d="M28,44 q36,-34 72,0 q-10,-6 -18,0 q-18,-12 -36,0 q-8,-6 -18,0 Z" fill="#22201d"/><path d="M28,44 q36,-34 72,0" fill="none" stroke="${GOLD}" stroke-width="2"/>`,
+  pickelhaube: () => `<path d="M40,48 q0,-26 24,-26 q24,0 24,26 Z" fill="#22201d"/><path d="M60,22 l4,-16 l4,16 Z" fill="${GOLD}"/><path d="M36,48 h56" stroke="#22201d" stroke-width="5"/><circle cx="64" cy="36" r="5" fill="${GOLD}"/>`,
+  kepi: () => `<path d="M42,46 l4,-24 h36 l4,24 Z" fill="#2a2f5a"/><path d="M38,46 h52" stroke="#22201d" stroke-width="6"/><path d="M45,30 h38" stroke="${GOLD}" stroke-width="3"/>`,
   steppeHat: () => `<path d="M40,44 q4,-30 24,-38 q20,8 24,38 Z" fill="#2f6a8f"/><path d="M60,8 h8 v8 h-8 Z" fill="${GOLD}"/><path d="M34,42 q30,-12 60,0 v10 q-30,-10 -60,0 Z" fill="#7a5530"/><path d="M38,44 q26,-8 52,0" fill="none" stroke="#a37a4a" stroke-width="3" stroke-dasharray="3 3"/>`,
   furCrown: () => `<path d="M44,40 q0,-22 20,-22 q20,0 20,22 Z" fill="${GOLD}"/><path d="M38,40 h52 v10 h-52 Z" fill="#5a3d24"/><path d="M62,10 h4 v10 h-4 Z M58,13 h12 v3 h-12 Z" fill="${GOLD}"/>`,
 };
@@ -63,6 +68,15 @@ const LEADERS = [
   ['#3a2a3a', '#c98f62', '#2a2f3a', '#2a6fb0', gear.bob('#22160e'), beard.none, true],
   ['#2a4a3a', '#9a6a44', '#1f2430', '#d9a441', gear.sidePart('#1a120c'), beard.thin('#1a120c'), false],
   ['#4a3a2a', '#e6c3a0', '#30303a', '#4f8a3a', gear.bun('#8a8f98'), beard.none, true],
+  // The expansions' historical leaders: Washington, Frederick, Joseph II, Bismarck, Victor Emmanuel.
+  ['#2a3a5a', '#ecc8a6', '#2a3f7a', '#d9c08a', gear.tricorn('#f1ecdf'), beard.none, false],
+  ['#2a2f4a', '#e6bd98', '#22306a', '#b3261e', gear.tricorn('#c8c4ba'), beard.none, false],
+  ['#5a2a2a', '#ecc8a6', '#f1ecdf', '#b3261e', gear.wig('#e8e2d6'), beard.none, false],
+  ['#3a3a3a', '#e6bd98', '#3a4250', GOLD, gear.pickelhaube, beard.droop('#e8e2d6'), false],
+  ['#2a4a3a', '#e0b088', '#22306a', GOLD, gear.kepi, beard.droop('#3a2414'), false],
+  // Kings of the eighteenth century: George III of Britain (red coat) and Charles of Spain.
+  ['#5a1f2a', '#f0cfb2', '#b3261e', GOLD, gear.wig('#e8e2d6'), beard.none, false],
+  ['#4a2a1a', '#e2b08a', '#6a2a3a', GOLD, gear.wig('#c8c4ba'), beard.none, false],
 ];
 
 function portrait(index) {

@@ -8,7 +8,8 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const { execSync } = require('child_process');
-const scenarios = require('./scenarios.cjs');
+const expansions = require('./expansions.cjs');
+const scenarios = [...require('./scenarios.cjs'), ...expansions.scenarios];
 
 const SOURCE = 'https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_50m_land.geojson';
 
@@ -145,7 +146,14 @@ function terrainAt(lon, lat, col, row) {
   return noise < 0.5 ? 'g' : noise < 0.85 ? 'f' : 'p'; // tropics
 }
 
+const maps = new Map();
 function buildMap(polygons, spec) {
+  const key = JSON.stringify(spec);
+  if (!maps.has(key)) maps.set(key, buildMapUncached(polygons, spec));
+  return maps.get(key);
+}
+
+function buildMapUncached(polygons, spec) {
   const proj = projection(spec);
   const samples = [[0, 0], [-0.28, -0.28], [0.28, -0.28], [-0.28, 0.28], [0.28, 0.28]];
   const grid = [];
@@ -213,21 +221,41 @@ function assemble(def, polygons) {
     return {
       name: civ.name, adjective: civ.adjective, leader: civ.leader, portrait: civ.portrait,
       aggression: civ.aggression, gold: civ.gold || 50, techs: civ.techs || [], city_names: civ.cityNames || [],
-      cities, units,
+      cities, units, ...(civ.government ? { government: civ.government } : {}),
     };
   });
   return {
     id: def.id, name: def.name, blurb: def.blurb, start_year: def.startYear, years_per_turn: def.yearsPerTurn,
     width: proj.cols, height: proj.rows, rows: rows.map((r) => r.join('')), civs, wars: def.wars || [], known: !!def.known,
+    ...(def.alliances ? { alliances: def.alliances } : {}), ...(def.expansion ? { expansion: def.expansion } : {}),
   };
 }
 
 const polygons = loadLand();
 const outDir = path.join(__dirname, '..', '..', 'assets', 'scenarios');
 fs.mkdirSync(outDir, { recursive: true });
+// ONLY=a,b builds just those scenarios (and the expansion packs); hand-tuned files stay as they are.
+const only = process.env.ONLY ? process.env.ONLY.split(',') : null;
 for (const def of scenarios) {
+  if (only && !only.includes(def.id)) continue;
   const scenario = assemble(def, polygons);
   fs.writeFileSync(path.join(outDir, `${def.id}.json`), JSON.stringify(scenario));
   console.log(`${def.id}: ${scenario.width}x${scenario.height}, ${scenario.civs.length} civilizations`);
   if (process.env.SHOW) console.log(scenario.rows.join('\n'));
+}
+
+// Expansion packs: each people's home on the Whole Earth map, placed clear of the Earth peoples
+// (all but the one it replaces) so it can join that game.
+const earth = scenarios.find((s) => s.id === 'earth');
+const packDir = path.join(__dirname, '..', '..', 'assets', 'expansions');
+fs.mkdirSync(packDir, { recursive: true });
+for (const pack of expansions.packs) {
+  const peoples = pack.peoples.map((p) => {
+    const civ = { ...p, cities: [p.home], units: [['Settler', 1, 0], ['Worker', 1, 0], ['Warrior', 1, 0]] };
+    const placed = assemble({ ...earth, civs: [...earth.civs.filter((c) => c.name !== p.replaces), civ] }, polygons).civs.at(-1);
+    return { ...placed, ...(p.replaces ? { replaces: p.replaces } : {}) };
+  });
+  const out = { id: pack.id, name: pack.name, blurb: pack.blurb, peoples };
+  fs.writeFileSync(path.join(packDir, `${pack.id}.json`), JSON.stringify(out, null, 1) + '\n');
+  console.log(`pack ${pack.id}: ${peoples.map((p) => `${p.name} (${p.cities[0].col},${p.cities[0].row})`).join(', ')}`);
 }

@@ -396,8 +396,8 @@ pub enum Command {
     CloseModal,
     SelectCiv(u32),
     PickScenario(usize),
-    /// Switches the Modern Nations expansion on or off.
-    ToggleExpansion,
+    /// Switches an expansion pack on or off.
+    ToggleExpansion(String),
     PickCiv(usize),
     BackToScenarios,
     QuitToMenu,
@@ -848,7 +848,7 @@ const GRAY: Color = Color::srgb(0.62, 0.6, 0.57);
 fn portrait(art: &Art, index: usize, size: f32) -> impl Bundle {
     (
         Node { width: Val::Px(size), height: Val::Px(size), flex_shrink: 0.0, ..default() },
-        ImageNode { image: art.leaders.clone(), texture_atlas: Some(art.atlas(&art.leaders_layout, index.min(21))), ..default() },
+        ImageNode { image: art.leaders.clone(), texture_atlas: Some(art.atlas(&art.leaders_layout, index.min(28))), ..default() },
     )
 }
 
@@ -3257,8 +3257,8 @@ pub fn button_actions(
             Command::CloseModal => ui.modal = None,
             Command::SelectCiv(civ) => ui.diplo_target = Some(*civ),
             Command::PickScenario(index) => menu.scenario = Some(*index),
-            Command::ToggleExpansion => {
-                scenario::set_modern_expansion(!scenario::modern_expansion());
+            Command::ToggleExpansion(id) => {
+                scenario::set_expansion(id, !scenario::expansion_on(id));
                 menu.catalog = scenario::catalog();
             }
             Command::BackToScenarios => {
@@ -3273,8 +3273,10 @@ pub fn button_actions(
             Command::StartGame => {
                 if let (Some(scenario), Some(civ)) = (menu.scenario.and_then(|i| menu.catalog.get(i)), menu.civ) {
                     let last_turn = if menu.last_turn == 0 { crate::LAST_TURN } else { menu.last_turn };
+                    // The packs' other peoples stay out of the game.
+                    let (scenario, civ) = scenario::prepare(scenario, civ);
                     commands.insert_resource(NewGame {
-                        scenario: scenario.clone(),
+                        scenario,
                         civ,
                         difficulty: menu.difficulty,
                         last_turn,
@@ -3421,18 +3423,16 @@ pub fn rebuild_menu(
                             b.spawn(label(&art.font_body, scenario.blurb.clone(), 15.0, INK));
                         });
                     }
-                    // The Modern Nations expansion: today's great powers as peoples, and their own scenario.
-                    let on = scenario::modern_expansion();
-                    w.spawn(row(8.0)).with_children(|r| {
-                        let (text, tint) = if on { ("Modern Nations expansion: On", GREEN) } else { ("Modern Nations expansion: Off", BRONZE) };
-                        button(r, art, text, Command::ToggleExpansion, tint, 15.0);
-                    });
-                    w.spawn(label(
-                        &art.font_body,
-                        "Adds eight of today's nations (the United States, Canada, Mexico, Brazil, the United Kingdom, Germany, Russia, Australia), each with its own unique unit, as peoples you can lead in a New World, and The Modern World, a game that starts in 2025.",
-                        14.0,
-                        INK_SOFT,
-                    ));
+                    // Expansion packs: more nations to lead from the start, and scenarios of their periods.
+                    w.spawn(label(&art.font_title, "Expansion packs", 19.0, INK_SOFT));
+                    for pack in scenario::expansions() {
+                        let on = scenario::expansion_on(&pack.id);
+                        w.spawn(row(8.0)).with_children(|r| {
+                            let (text, tint) = if on { (format!("{}: On", pack.name), GREEN) } else { (format!("{}: Off", pack.name), BRONZE) };
+                            button(r, art, text, Command::ToggleExpansion(pack.id.clone()), tint, 15.0);
+                        });
+                        w.spawn(label(&art.font_body, pack.blurb.clone(), 14.0, INK_SOFT));
+                    }
                 }
                 Some(scenario) if menu.civ.is_some() => {
                     // The game's options: difficulty and length.

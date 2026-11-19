@@ -477,16 +477,19 @@ working directory.
 | France | Musketeer | Musketman | 2/5/1 | Bastion |
 | Ottomans | Sipahi | Cavalry | 8/3/3 | Charge |
 | Muscovy | Cossack | Cavalry | 6/3/4 | Outrider |
-| United States* | Marine | Infantry | 8/10/1 | Storm |
-| Germany* | Panzer | Tank | 18/8/3 | Charge |
-| Russia* | Guards Rifleman | Rifleman | 4/8/1 | Bastion |
+| United States† | Marine | Infantry | 8/10/1 | Storm |
+| Prussia† | Black Hussar | Cavalry | 7/3/3 | Charge |
+| Austria† | Grenzer | Musketman | 3/4/1 | Outrider |
+| Italy† | Bersaglieri | Infantry | 7/9/2 | Outrider |
+| Germany† | Panzer | Tank | 18/8/3 | Charge |
+| Russia† | Guards Rifleman | Rifleman | 4/8/1 | Bastion |
 | Brazil* | Bandeirante | Musketman | 3/4/2 | Outrider |
 | Australia* | Light Horse | Cavalry | 7/3/3 | Charge |
 | Canada* | Mountie | Cavalry | 6/4/3 | Outrider |
 | Mexico* | Charro | Cavalry | 6/3/3 | Plunder |
 | United Kingdom* | Commando | Infantry | 7/9/2 | Outrider |
 
-\* With the Modern Nations expansion (see Themes).
+\* With the Modern Nations pack; † with the Age of Revolution or World Wars pack (see Expansion packs under Themes).
 
 - **Religion**: the first to learn Mysticism, Philosophy, Theology and Printing Press founds the Old
   Gods, the Way of Reason, the One Faith and the Reformed Faith in one of its cities (the holy city).
@@ -660,18 +663,26 @@ Choose one with `?theme=<id>` in the browser or `--theme <id>` natively (also fo
 (`?theme=example`: Earth's maps with Colony Pods, Plasma Troopers, Methane Seas and years counted
 from the Landing).
 
-**The Modern Nations expansion** is switched on from the start menu ("Modern Nations expansion:
-On/Off", off by default and remembered). It adds eight of today's countries as peoples - each with
-traits and a unique unit (see the table above) - that can be led in a New World alongside the
-ancient peoples, starting from nothing like everyone else; and a pre-populated scenario, *The Modern
-World* (`assets/scenarios/modern.json`, `"expansion": "modern"`): thirteen powers - the United
-States, Canada, Mexico, Brazil, the United Kingdom, France, Germany, Russia, Egypt, India, China,
-Japan and Australia - on the Earth map from 2025, one year a turn, knowing everything up to the
-Modern Age and fielding modern troops. Leaders are generic titles (the President, the Prime
-Minister, the Chancellor) with generic portraits, never real people. A scenario names its expansion
-with `"expansion"`; the menu lists it only while that expansion is on, and its peoples that the
-first scenario lacks join the New World. Not yet adapted for the 2025 start: ancient religions are
-still founded early and ancient wonders can still be built.
+**Expansion packs** add nations and scenarios of later periods while the base game - the Whole
+Earth, New World, Rome and Discovery with their peoples - stays as it is. Each pack is switched on
+from the start menu (off by default, remembered):
+
+| Pack | Nations (lead them from 4000 BC) | Scenarios |
+|------|-----------------------------------|-----------|
+| Age of Revolution | the United States, France, Spain, Prussia, Austria | *The American Revolution* (1775): the colonies and France against Britain, Spain watching. *The Napoleonic Wars* (1805): France and Spain against the Third Coalition (Britain, Austria, Russia); Prussia and the Ottomans neutral |
+| World Wars | Germany, Italy, Russia, the Ottomans | *The Great War* (1914): the Central Powers against the Entente, Italy neutral, the Ottomans allied to Germany. *The Second World War* (1939): Germany against Britain and France, Japan against China, the US and USSR at peace |
+| Modern Nations | the United Kingdom, Canada, Mexico, Brazil, Australia | *The Modern World* (2025): thirteen powers |
+
+A pack's nations can be led in a New World or on the Whole Earth from their real homelands; they
+join only a game whose player leads them, so the classic line-up never changes. One that shares an
+ancient people's homeland takes its place (the United Kingdom replaces England, Italy Rome, Mexico
+the Aztecs). Period scenarios start with their alliances (`"alliances"`), wars, governments
+(`"government"` per people) and the knowledge of their time; faiths that already exist are not
+announced as new. Scenarios name their pack with `"expansion"`. Packs live in `assets/expansions/`
+and are built with their scenarios by `tools/maps/build.cjs` from `tools/maps/expansions.cjs`
+(`ONLY=revolution,napoleon,greatwar,ww2` rebuilds just those). Leaders are historical up to 1914; the
+1939 and 2025 scenarios use generic titles and portraits, never real people. Not yet adapted for
+the later starts: ancient wonders can still be built.
 
 Still Earth-only (later stages): the wording of tips, help and many messages, the civilizations'
 traits (keyed by name in `src/traits.rs`), and the rules themselves, which are written against

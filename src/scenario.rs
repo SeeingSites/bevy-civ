@@ -7,10 +7,15 @@ use rand::Rng;
 use serde::Deserialize;
 
 /// Scenario files produced by `tools/maps/build.cjs`.
-const BUILT_IN: [&str; 4] = [
+const BUILT_IN: [&str; 8] = [
     include_str!("../assets/scenarios/earth.json"),
     include_str!("../assets/scenarios/rome.json"),
     include_str!("../assets/scenarios/discovery.json"),
+    // Expansion packs' scenarios (tools/maps/expansions.cjs), oldest first.
+    include_str!("../assets/scenarios/revolution.json"),
+    include_str!("../assets/scenarios/napoleon.json"),
+    include_str!("../assets/scenarios/greatwar.json"),
+    include_str!("../assets/scenarios/ww2.json"),
     include_str!("../assets/scenarios/modern.json"),
 ];
 
@@ -36,23 +41,45 @@ pub struct Scenario {
     /// of the theme in force.
     #[serde(default = "earth")]
     pub theme: String,
-    /// The expansion the scenario belongs to (e.g. "modern"), if any: listed only while it is on,
-    /// and its peoples then also join the New World's.
+    /// The expansion pack the scenario belongs to (e.g. "worldwars"), if any: listed only while
+    /// that pack is on.
     #[serde(default)]
     pub expansion: Option<String>,
+    /// Pairs of civilization names that start allied.
+    #[serde(default)]
+    pub alliances: Vec<(String, String)>,
 }
 
-/// The setting that holds whether the Modern Nations expansion is on.
-const EXPANSION_SETTING: &str = "expansion.modern";
-
-/// Whether the Modern Nations expansion is switched on (off unless the player turned it on).
-pub fn modern_expansion() -> bool {
-    bevy_civ::save::read_setting(EXPANSION_SETTING).as_deref() == Some("on")
+/// An expansion pack (`assets/expansions/`): nations that can be led from 4000 BC, on the Whole
+/// Earth (from the home given as their first city) or in a New World, and scenarios of its period
+/// (those whose `expansion` is its id).
+#[derive(Deserialize, Clone, Default)]
+pub struct Expansion {
+    pub id: String,
+    pub name: String,
+    pub blurb: String,
+    pub peoples: Vec<CivDef>,
 }
 
-/// Switches the Modern Nations expansion on or off, remembered between games.
-pub fn set_modern_expansion(on: bool) {
-    bevy_civ::save::write_setting(EXPANSION_SETTING, if on { "on" } else { "off" });
+/// The expansion packs built into the game, in the order the menu lists them.
+const EXPANSIONS: [&str; 3] = [
+    include_str!("../assets/expansions/revolution.json"),
+    include_str!("../assets/expansions/worldwars.json"),
+    include_str!("../assets/expansions/modern.json"),
+];
+
+pub fn expansions() -> Vec<Expansion> {
+    EXPANSIONS.iter().filter_map(|json| serde_json::from_str(json).ok()).collect()
+}
+
+/// Whether an expansion pack is switched on (off unless the player turned it on).
+pub fn expansion_on(id: &str) -> bool {
+    bevy_civ::save::read_setting(&format!("expansion.{id}")).as_deref() == Some("on")
+}
+
+/// Switches an expansion pack on or off, remembered between games.
+pub fn set_expansion(id: &str, on: bool) {
+    bevy_civ::save::write_setting(&format!("expansion.{id}"), if on { "on" } else { "off" });
 }
 
 fn earth() -> String {
@@ -71,6 +98,15 @@ pub struct CivDef {
     pub city_names: Vec<String>,
     pub cities: Vec<CityDef>,
     pub units: Vec<UnitDef>,
+    /// The government it starts under (by name, e.g. "Monarchy"; Despotism if none).
+    #[serde(default)]
+    pub government: Option<String>,
+    /// An expansion's people: in a game only when the player leads it.
+    #[serde(default)]
+    pub optional: bool,
+    /// The people it takes the place of when it joins the Whole Earth (sharing its homeland).
+    #[serde(default)]
+    pub replaces: Option<String>,
 }
 
 #[derive(Deserialize, Clone, Default)]
@@ -117,17 +153,28 @@ pub fn offset_to_hex(col: i32, row: i32) -> Hex {
 }
 
 /// Everything the start menu offers: a random map first, then the scenarios of the theme in force.
-pub fn catalog() -> Vec<Scenario> {
-    catalog_with(modern_expansion())
+impl CivDef {
+    /// The government it starts under.
+    pub fn starting_government(&self) -> bevy_civ::government::Government {
+        use bevy_civ::government::Government::*;
+        [Monarchy, Republic, Democracy, Communism, Fundamentalism]
+            .into_iter()
+            .find(|g| Some(g.base_name()) == self.government.as_deref())
+            .unwrap_or(Despotism)
+    }
 }
 
-/// The start menu's games, with or without the expansions' scenarios and peoples.
-pub fn catalog_with(expansions: bool) -> Vec<Scenario> {
+pub fn catalog() -> Vec<Scenario> {
+    catalog_with(expansion_on)
+}
+
+/// The start menu's games, with the expansion packs `on` says are switched on.
+pub fn catalog_with(on: impl Fn(&str) -> bool) -> Vec<Scenario> {
     let theme = bevy_civ::theme::id();
     let all: Vec<Scenario> = BUILT_IN.iter().filter_map(|json| serde_json::from_str::<Scenario>(json).ok()).collect();
     let fallback = all.first().cloned();
-    let built_in: Vec<Scenario> =
-        all.into_iter().filter(|s| bevy_civ::theme::plays(&s.theme) && (expansions || s.expansion.is_none())).collect();
+    let mut built_in: Vec<Scenario> =
+        all.into_iter().filter(|s| bevy_civ::theme::plays(&s.theme) && s.expansion.as_deref().is_none_or(&on)).collect();
     let mut random = Scenario {
         id: "random".into(),
         name: "New World".into(),
@@ -139,24 +186,52 @@ pub fn catalog_with(expansions: bool) -> Vec<Scenario> {
     };
     // The random map borrows its peoples from the theme's first scenario (Earth's, by default);
     // their homes are chosen when the game starts.
-    let first = built_in.iter().find(|s| s.expansion.is_none()).or(fallback.as_ref());
-    if let Some(first) = first {
+    if let Some(first) = built_in.iter().find(|s| s.expansion.is_none()).or(fallback.as_ref()) {
         random.civs = first.civs.iter().take(8).cloned().collect();
     }
-    // An expansion's own peoples (those its scenario adds) join them, starting from nothing like
-    // everyone else.
-    let known: Vec<String> = first.map(|f| f.civs.iter().map(|c| c.name.clone()).collect()).unwrap_or_default();
-    for expansion in built_in.iter().filter(|s| s.expansion.is_some()) {
-        for civ in expansion.civs.iter().filter(|c| !known.contains(&c.name)) {
-            let mut civ = civ.clone();
-            civ.techs.clear();
+    // The packs' peoples can be led from the start too: on a New World, and on the Whole Earth
+    // from their homes. They join only a game whose player leads them.
+    if theme == "earth" {
+        let peoples: Vec<CivDef> = expansions()
+            .into_iter()
+            .filter(|pack| on(&pack.id))
+            .flat_map(|pack| pack.peoples)
+            .map(|mut civ| {
+                civ.optional = true;
+                civ
+            })
+            .collect();
+        random.civs.extend(peoples.iter().cloned().map(|mut civ| {
             civ.units.clear();
-            civ.cities.truncate(1);
-            civ.gold = random.civs.first().map_or(50, |c| c.gold);
-            random.civs.push(civ);
+            civ
+        }));
+        if let Some(earth) = built_in.iter_mut().find(|s| s.id == "earth") {
+            earth.civs.extend(peoples);
         }
     }
     std::iter::once(random).chain(built_in).collect()
+}
+
+/// The scenario as played when the player leads `civ`: the packs' other peoples stay out, and a
+/// people that takes another's homeland takes its place. Returns the player's new index.
+pub fn prepare(scenario: &Scenario, civ: usize) -> (Scenario, usize) {
+    let mut scenario = scenario.clone();
+    let chosen = scenario.civs.get(civ).cloned();
+    let replaced = chosen.as_ref().and_then(|c| c.replaces.clone()).filter(|_| !scenario.rows.is_empty());
+    let name = chosen.map(|c| c.name).unwrap_or_default();
+    scenario.civs.retain(|c| c.name == name || (!c.optional && Some(&c.name) != replaced.as_ref()));
+    let index = scenario.civs.iter().position(|c| c.name == name).unwrap_or(0);
+    // Its home is workable land.
+    if let Some(home) = scenario.civs[index].cities.first().filter(|_| scenario.civs[index].optional) {
+        if let Some(row) = scenario.rows.get_mut(home.row as usize) {
+            let mut cells: Vec<char> = row.chars().collect();
+            if let Some(cell) = cells.get_mut(home.col as usize).filter(|c| "mhd".contains(**c)) {
+                *cell = 'p';
+            }
+            *row = cells.into_iter().collect();
+        }
+    }
+    (scenario, index)
 }
 
 fn neighbours(col: i32, row: i32) -> [(i32, i32); 6] {
@@ -280,47 +355,50 @@ mod tests {
     use bevy_civ::unit::UnitType;
 
     #[test]
-    fn the_modern_expansion_adds_its_scenario_and_peoples_only_when_on() {
-        let off = catalog_with(false);
-        assert!(off.iter().all(|s| s.expansion.is_none()));
+    fn expansion_packs_add_their_scenarios_and_peoples_only_when_on() {
+        let off = catalog_with(|_| false);
+        assert!(off.iter().all(|s| s.expansion.is_none() && s.civs.iter().all(|c| !c.optional)));
         assert_eq!(off[0].civs.len(), 8);
-        let on = catalog_with(true);
-        let modern = on
-            .iter()
-            .find(|s| s.id == "modern")
-            .expect("The Modern World is listed");
-        assert_eq!(modern.expansion.as_deref(), Some("modern"));
-        // Every modern city stands on land.
-        for civ in &modern.civs {
-            for city in &civ.cities {
-                assert_ne!(
-                    modern.rows[city.row as usize].as_bytes()[city.col as usize],
-                    b'~',
-                    "{} {}",
-                    civ.name,
-                    city.name
-                );
+        let on = catalog_with(|_| true);
+        for id in ["revolution", "napoleon", "greatwar", "ww2", "modern"] {
+            let scenario = on.iter().find(|s| s.id == id).unwrap_or_else(|| panic!("{id} is listed"));
+            assert!(scenario.expansion.is_some(), "{id}");
+            // Every city stands on land, and every war and alliance names peoples in the game.
+            for civ in &scenario.civs {
+                for city in &civ.cities {
+                    assert_ne!(scenario.rows[city.row as usize].as_bytes()[city.col as usize], b'~', "{id}: {} {}", civ.name, city.name);
+                }
+            }
+            for (a, b) in scenario.wars.iter().chain(&scenario.alliances) {
+                assert!(scenario.civs.iter().any(|c| &c.name == a) && scenario.civs.iter().any(|c| &c.name == b), "{id}: {a} / {b}");
             }
         }
-        // The New World offers the expansion's peoples too, starting from nothing, with their own units.
-        let random = &on[0];
+        // The packs' peoples join the New World and the Whole Earth, with their own units.
+        let earth = on.iter().find(|s| s.id == "earth").unwrap();
         for (name, unique) in [
+            ("the United States", UnitType::Marine),
+            ("Prussia", UnitType::BlackHussar),
+            ("Austria", UnitType::Grenzer),
+            ("Italy", UnitType::Bersaglieri),
+            ("Germany", UnitType::Panzer),
             ("Canada", UnitType::Mountie),
             ("Mexico", UnitType::Charro),
-            ("the United States", UnitType::Marine),
-            ("Germany", UnitType::Panzer),
         ] {
-            let civ = random
-                .civs
-                .iter()
-                .find(|c| c.name == name)
-                .unwrap_or_else(|| panic!("{name} in the New World"));
-            assert!(
-                civ.techs.is_empty() && civ.units.is_empty() && civ.cities.len() == 1,
-                "{name}"
-            );
-            assert!(civ.city_names.len() >= 6, "{name} has names for its cities");
+            assert!(on[0].civs.iter().any(|c| c.name == name && c.optional && c.units.is_empty()), "{name} in the New World");
+            let civ = earth.civs.iter().position(|c| c.name == name).unwrap_or_else(|| panic!("{name} on the Whole Earth"));
+            assert!(earth.civs[civ].city_names.len() >= 6, "{name} has names for its cities");
             assert_eq!(bevy_civ::traits::of(name).unique_unit(), Some(unique));
+            // Leading it brings in no other pack's people; a homeland it shares is its own.
+            let (game, index) = prepare(earth, civ);
+            assert_eq!(game.civs[index].name, name);
+            assert_eq!(game.civs.iter().filter(|c| c.optional).count(), 1);
+            let home = &game.civs[index].cities[0];
+            assert!(game.civs.iter().enumerate().all(|(i, c)| i == index || c.cities.iter().all(|x| (x.col, x.row) != (home.col, home.row))));
         }
+        let italy = earth.civs.iter().position(|c| c.name == "Italy").unwrap();
+        assert!(prepare(earth, italy).0.civs.iter().all(|c| c.name != "Rome"));
+        let rome = earth.civs.iter().position(|c| c.name == "Rome").unwrap();
+        let (game, index) = prepare(earth, rome);
+        assert_eq!((game.civs.len(), index), (11, 0));
     }
 }
