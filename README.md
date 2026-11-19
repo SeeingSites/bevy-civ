@@ -273,8 +273,8 @@ Battles follow the rules of Civilization III:
 Computer players follow the same rules as you and are run by three pieces of code:
 
 - **Armies** (`src/ai.rs`): the best defender in each city is its garrison and stays put (the best
-  two while enemy troops are within 2 tiles); an empty city, or a menaced one with a single
-  defender, is reinforced by the nearest unit; field units strike beatable enemies nearby and march on
+  two while enemy troops are within 2 tiles, and one more in every city of a people down to three
+  cities or fewer); an empty city, or one short of defenders, is reinforced by the nearest unit; field units strike beatable enemies nearby and march on
   enemy cities, but gather outside a defended city until enough of the army has arrived. Workers
   road resources and cities, then farm and mine. Settlers walk clear of existing cities to found
   new ones: each settler heads for the best free site in reach (good land, resources, not too far),

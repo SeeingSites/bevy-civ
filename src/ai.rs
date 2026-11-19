@@ -195,6 +195,8 @@ pub const SIEGE_MAX: f32 = 8.0;
 pub const CAUTIOUS_ODDS: f64 = 0.5;
 /// A city with enemy troops this close keeps two defenders instead of one.
 pub const MENACE_RANGE: i32 = 2;
+/// A people with this many cities or fewer keeps one more defender in each.
+pub const LAST_STAND_CITIES: usize = 3;
 
 /// One land unit seen by the siege planner: where, whose, what it is, how many men (an army counts
 /// every member) and the hit points they have left.
@@ -384,7 +386,16 @@ pub fn process_ai_turn(
         .filter(|(p, o)| *o != 0 && fighters.iter().any(|f| f.attacks() && hostile(*o, f.owner) && f.at.distance_to(*p) <= MENACE_RANGE))
         .map(|(p, _)| *p)
         .collect();
-    let keep = |city: &Hex| if menaced.contains(city) { 2 } else { 1 };
+    // A people down to its last few cities turtles: a defender more in each.
+    let mut city_counts: HashMap<u32, usize> = HashMap::new();
+    for (_, owner) in city_positions {
+        *city_counts.entry(*owner).or_default() += 1;
+    }
+    let owner_of: HashMap<Hex, u32> = city_positions.iter().copied().collect();
+    let keep = |city: &Hex| {
+        let last_stand = owner_of.get(city).and_then(|o| city_counts.get(o)).is_some_and(|n| *n <= LAST_STAND_CITIES);
+        1 + usize::from(menaced.contains(city)) + usize::from(last_stand)
+    };
     // The best defenders standing in each city are its garrison and stay there.
     let mut holders: HashMap<Hex, Vec<(Entity, f32)>> = HashMap::new();
     let mut field_armies: HashMap<u32, usize> = HashMap::new();
@@ -1106,11 +1117,14 @@ mod tests {
         let (mut world, worker) = world_with_worker(Terrain::Plains);
         world.despawn(worker);
         let phalanx = soldier(&mut world, UnitType::Phalanx, 1, 0);
+        // This people has a single city: it keeps a second defender there.
+        let spearman = soldier(&mut world, UnitType::Spearman, 1, 0);
         let warrior = soldier(&mut world, UnitType::Warrior, 1, 0);
         world.run_system_once(war_phase).unwrap();
         let held = world.get::<Unit>(phalanx).unwrap();
         assert_eq!(held.position, Hex::ZERO);
         assert!(held.fortified, "the stronger defender holds the city");
+        assert!(world.get::<Unit>(spearman).unwrap().fortified, "and the next one, in a people's last cities");
         // The enemy city is undefended, so a single unit is enough to march on it.
         assert_eq!(world.get::<Unit>(warrior).unwrap().position, Hex::new(1, 0));
     }
@@ -1156,21 +1170,27 @@ mod tests {
     }
 
     #[test]
-    fn a_menaced_city_keeps_two_defenders() {
+    fn menaced_and_last_cities_keep_more_defenders() {
         let (mut world, worker) = world_with_worker(Terrain::Plains);
         world.despawn(worker);
         let phalanx = soldier(&mut world, UnitType::Phalanx, 1, 0);
         let spearman = soldier(&mut world, UnitType::Spearman, 1, 0);
         let warrior = soldier(&mut world, UnitType::Warrior, 1, 0);
+        let archer = soldier(&mut world, UnitType::Archer, 1, 0);
         let legion = soldier(&mut world, UnitType::Legion, 0, 2); // an enemy two tiles away
         world.run_system_once(war_phase).unwrap();
-        assert!(world.get::<Unit>(phalanx).unwrap().fortified && world.get::<Unit>(spearman).unwrap().fortified, "the two best defenders hold the city");
-        assert!(!world.get::<Unit>(warrior).unwrap().fortified, "the third takes the field");
-        // With the enemy gone, one defender is enough.
+        // Menaced, and its people's last city: three hold it.
+        for held in [phalanx, spearman, warrior] {
+            assert!(world.get::<Unit>(held).unwrap().fortified, "the three best defenders hold the city");
+        }
+        assert!(!world.get::<Unit>(archer).unwrap().fortified, "the fourth takes the field");
+        // With the enemy gone, one defender is enough - but this people has a single city left, so
+        // it keeps two in any case.
         world.despawn(legion);
         world.get_mut::<Unit>(spearman).unwrap().movement_left = 1;
+        world.get_mut::<Unit>(warrior).unwrap().movement_left = 1;
         world.run_system_once(war_phase).unwrap();
-        assert!(!world.get::<Unit>(spearman).unwrap().fortified);
+        assert!(world.get::<Unit>(spearman).unwrap().fortified && !world.get::<Unit>(warrior).unwrap().fortified);
     }
 
     #[test]

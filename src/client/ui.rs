@@ -1130,7 +1130,7 @@ pub fn rebuild_panels(
                     c.spawn(label(&art.font_body, format!("{} unit  {}", owner_name(unit.owner, &civs), status), 14.0, owner_color(unit.owner).mix(&Color::WHITE, 0.55)));
                     c.spawn(row(12.0)).with_children(|s| {
                         match unit.unit_type.bombard() {
-                            Some((b, r, f)) if unit.unit_type.bombard_only() => stat(s, art, icon::ATTACK, format!("B{b} r{r} x{f}"), CREAM),
+                            Some((b, _, _)) if unit.unit_type.bombard_only() => stat(s, art, icon::ATTACK, format!("B{b}"), CREAM),
                             _ => stat(s, art, icon::ATTACK, attack.to_string(), CREAM),
                         }
                         stat(s, art, icon::DEFENSE, defense.to_string(), CREAM);
