@@ -1,0 +1,234 @@
+{
+ "id": "modern",
+ "name": "Modern Nations",
+ "blurb": "The United Kingdom, Canada, Mexico, Brazil and Australia as peoples to lead from 4000 BC, and The Modern World, a game that starts in 2025.",
+ "peoples": [
+  {
+   "name": "the United Kingdom",
+   "adjective": "British",
+   "leader": "The Prime Minister",
+   "portrait": 20,
+   "aggression": 0.45,
+   "gold": 50,
+   "techs": [],
+   "city_names": [
+    "Manchester",
+    "Birmingham",
+    "Glasgow",
+    "Edinburgh",
+    "Liverpool",
+    "Cardiff",
+    "Belfast",
+    "Leeds"
+   ],
+   "cities": [
+    {
+     "name": "London",
+     "col": 42,
+     "row": 10,
+     "pop": 1,
+     "capital": true
+    }
+   ],
+   "units": [
+    {
+     "type": "Settler",
+     "col": 42,
+     "row": 11
+    },
+    {
+     "type": "Worker",
+     "col": 41,
+     "row": 9
+    },
+    {
+     "type": "Warrior",
+     "col": 43,
+     "row": 9
+    }
+   ],
+   "replaces": "England"
+  },
+  {
+   "name": "Canada",
+   "adjective": "Canadian",
+   "leader": "The Prime Minister",
+   "portrait": 21,
+   "aggression": 0.3,
+   "gold": 50,
+   "techs": [],
+   "city_names": [
+    "Toronto",
+    "Montreal",
+    "Vancouver",
+    "Calgary",
+    "Edmonton",
+    "Winnipeg",
+    "Quebec City",
+    "Halifax"
+   ],
+   "cities": [
+    {
+     "name": "Ottawa",
+     "col": 23,
+     "row": 11,
+     "pop": 1,
+     "capital": true
+    }
+   ],
+   "units": [
+    {
+     "type": "Settler",
+     "col": 23,
+     "row": 10
+    },
+    {
+     "type": "Worker",
+     "col": 23,
+     "row": 12
+    },
+    {
+     "type": "Warrior",
+     "col": 22,
+     "row": 11
+    }
+   ]
+  },
+  {
+   "name": "Mexico",
+   "adjective": "Mexican",
+   "leader": "The President",
+   "portrait": 18,
+   "aggression": 0.4,
+   "gold": 50,
+   "techs": [],
+   "city_names": [
+    "Guadalajara",
+    "Monterrey",
+    "Puebla",
+    "Tijuana",
+    "Mérida",
+    "León",
+    "Veracruz",
+    "Oaxaca"
+   ],
+   "cities": [
+    {
+     "name": "Mexico City",
+     "col": 17,
+     "row": 18,
+     "pop": 1,
+     "capital": true
+    }
+   ],
+   "units": [
+    {
+     "type": "Settler",
+     "col": 17,
+     "row": 17
+    },
+    {
+     "type": "Worker",
+     "col": 16,
+     "row": 18
+    },
+    {
+     "type": "Warrior",
+     "col": 16,
+     "row": 19
+    }
+   ],
+   "replaces": "the Aztecs"
+  },
+  {
+   "name": "Brazil",
+   "adjective": "Brazilian",
+   "leader": "The President",
+   "portrait": 19,
+   "aggression": 0.4,
+   "gold": 50,
+   "techs": [],
+   "city_names": [
+    "São Paulo",
+    "Rio de Janeiro",
+    "Salvador",
+    "Fortaleza",
+    "Belo Horizonte",
+    "Manaus",
+    "Recife",
+    "Porto Alegre"
+   ],
+   "cities": [
+    {
+     "name": "Brasília",
+     "col": 30,
+     "row": 26,
+     "pop": 1,
+     "capital": true
+    }
+   ],
+   "units": [
+    {
+     "type": "Settler",
+     "col": 30,
+     "row": 25
+    },
+    {
+     "type": "Worker",
+     "col": 30,
+     "row": 27
+    },
+    {
+     "type": "Warrior",
+     "col": 29,
+     "row": 25
+    }
+   ]
+  },
+  {
+   "name": "Australia",
+   "adjective": "Australian",
+   "leader": "The Prime Minister",
+   "portrait": 20,
+   "aggression": 0.35,
+   "gold": 50,
+   "techs": [],
+   "city_names": [
+    "Sydney",
+    "Melbourne",
+    "Brisbane",
+    "Perth",
+    "Adelaide",
+    "Hobart",
+    "Darwin",
+    "Cairns"
+   ],
+   "cities": [
+    {
+     "name": "Canberra",
+     "col": 79,
+     "row": 31,
+     "pop": 1,
+     "capital": true
+    }
+   ],
+   "units": [
+    {
+     "type": "Settler",
+     "col": 79,
+     "row": 30
+    },
+    {
+     "type": "Worker",
+     "col": 78,
+     "row": 31
+    },
+    {
+     "type": "Warrior",
+     "col": 78,
+     "row": 32
+    }
+   ]
+  }
+ ]
+}

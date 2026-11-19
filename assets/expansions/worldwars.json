@@ -1,0 +1,188 @@
+{
+ "id": "worldwars",
+ "name": "World Wars",
+ "blurb": "Germany, Italy, Russia and the Ottomans as peoples to lead from 4000 BC, and two scenarios: The Great War (1914) and The Second World War (1939).",
+ "peoples": [
+  {
+   "name": "Germany",
+   "adjective": "German",
+   "leader": "Bismarck",
+   "portrait": 25,
+   "aggression": 0.65,
+   "gold": 50,
+   "techs": [],
+   "city_names": [
+    "Hamburg",
+    "Munich",
+    "Cologne",
+    "Frankfurt",
+    "Leipzig",
+    "Dresden",
+    "Stuttgart",
+    "Bremen"
+   ],
+   "cities": [
+    {
+     "name": "Berlin",
+     "col": 45,
+     "row": 9,
+     "pop": 1,
+     "capital": true
+    }
+   ],
+   "units": [
+    {
+     "type": "Settler",
+     "col": 45,
+     "row": 8
+    },
+    {
+     "type": "Worker",
+     "col": 45,
+     "row": 10
+    },
+    {
+     "type": "Warrior",
+     "col": 44,
+     "row": 9
+    }
+   ]
+  },
+  {
+   "name": "Italy",
+   "adjective": "Italian",
+   "leader": "Victor Emmanuel",
+   "portrait": 26,
+   "aggression": 0.5,
+   "gold": 50,
+   "techs": [],
+   "city_names": [
+    "Milan",
+    "Naples",
+    "Turin",
+    "Florence",
+    "Venice",
+    "Genoa",
+    "Palermo",
+    "Bologna"
+   ],
+   "cities": [
+    {
+     "name": "Rome",
+     "col": 45,
+     "row": 12,
+     "pop": 1,
+     "capital": true
+    }
+   ],
+   "units": [
+    {
+     "type": "Settler",
+     "col": 45,
+     "row": 11
+    },
+    {
+     "type": "Worker",
+     "col": 44,
+     "row": 12
+    },
+    {
+     "type": "Warrior",
+     "col": 44,
+     "row": 13
+    }
+   ],
+   "replaces": "Rome"
+  },
+  {
+   "name": "Russia",
+   "adjective": "Russian",
+   "leader": "Peter",
+   "portrait": 16,
+   "aggression": 0.6,
+   "gold": 50,
+   "techs": [],
+   "city_names": [
+    "Saint Petersburg",
+    "Kiev",
+    "Kazan",
+    "Novgorod",
+    "Smolensk",
+    "Odessa",
+    "Tula",
+    "Novosibirsk"
+   ],
+   "cities": [
+    {
+     "name": "Moscow",
+     "col": 51,
+     "row": 8,
+     "pop": 1,
+     "capital": true
+    }
+   ],
+   "units": [
+    {
+     "type": "Settler",
+     "col": 51,
+     "row": 7
+    },
+    {
+     "type": "Worker",
+     "col": 51,
+     "row": 9
+    },
+    {
+     "type": "Warrior",
+     "col": 50,
+     "row": 8
+    }
+   ]
+  },
+  {
+   "name": "the Ottomans",
+   "adjective": "Ottoman",
+   "leader": "Suleiman",
+   "portrait": 15,
+   "aggression": 0.7,
+   "gold": 50,
+   "techs": [],
+   "city_names": [
+    "Constantinople",
+    "Edirne",
+    "Ankara",
+    "Smyrna",
+    "Konya",
+    "Trebizond",
+    "Damascus",
+    "Aleppo"
+   ],
+   "cities": [
+    {
+     "name": "Bursa",
+     "col": 49,
+     "row": 14,
+     "pop": 1,
+     "capital": true
+    }
+   ],
+   "units": [
+    {
+     "type": "Settler",
+     "col": 49,
+     "row": 13
+    },
+    {
+     "type": "Worker",
+     "col": 50,
+     "row": 14
+    },
+    {
+     "type": "Warrior",
+     "col": 49,
+     "row": 14
+    }
+   ]
+  }
+ ]
+}

@@ -1,0 +1,232 @@
+{
+ "id": "revolution",
+ "name": "Age of Revolution",
+ "blurb": "The United States, France, Spain, Prussia and Austria as peoples to lead from 4000 BC, and two scenarios: The American Revolution (1775) and The Napoleonic Wars (1805).",
+ "peoples": [
+  {
+   "name": "the United States",
+   "adjective": "American",
+   "leader": "Washington",
+   "portrait": 22,
+   "aggression": 0.5,
+   "gold": 50,
+   "techs": [],
+   "city_names": [
+    "Boston",
+    "New York",
+    "Charleston",
+    "Baltimore",
+    "Richmond",
+    "Pittsburgh",
+    "Chicago",
+    "New Orleans"
+   ],
+   "cities": [
+    {
+     "name": "Philadelphia",
+     "col": 23,
+     "row": 13,
+     "pop": 1,
+     "capital": true
+    }
+   ],
+   "units": [
+    {
+     "type": "Settler",
+     "col": 23,
+     "row": 12
+    },
+    {
+     "type": "Worker",
+     "col": 22,
+     "row": 13
+    },
+    {
+     "type": "Warrior",
+     "col": 22,
+     "row": 14
+    }
+   ]
+  },
+  {
+   "name": "France",
+   "adjective": "French",
+   "leader": "Napoleon",
+   "portrait": 14,
+   "aggression": 0.6,
+   "gold": 50,
+   "techs": [],
+   "city_names": [
+    "Lyon",
+    "Marseille",
+    "Bordeaux",
+    "Toulouse",
+    "Rouen",
+    "Nantes",
+    "Strasbourg",
+    "Lille"
+   ],
+   "cities": [
+    {
+     "name": "Paris",
+     "col": 42,
+     "row": 12,
+     "pop": 1,
+     "capital": true
+    }
+   ],
+   "units": [
+    {
+     "type": "Settler",
+     "col": 42,
+     "row": 11
+    },
+    {
+     "type": "Worker",
+     "col": 42,
+     "row": 13
+    },
+    {
+     "type": "Warrior",
+     "col": 41,
+     "row": 12
+    }
+   ]
+  },
+  {
+   "name": "Spain",
+   "adjective": "Spanish",
+   "leader": "Isabella",
+   "portrait": 13,
+   "aggression": 0.55,
+   "gold": 50,
+   "techs": [],
+   "city_names": [
+    "Seville",
+    "Barcelona",
+    "Toledo",
+    "Valencia",
+    "Cadiz",
+    "Granada",
+    "Zaragoza",
+    "Bilbao"
+   ],
+   "cities": [
+    {
+     "name": "Madrid",
+     "col": 41,
+     "row": 13,
+     "pop": 1,
+     "capital": true
+    }
+   ],
+   "units": [
+    {
+     "type": "Settler",
+     "col": 41,
+     "row": 12
+    },
+    {
+     "type": "Worker",
+     "col": 41,
+     "row": 14
+    },
+    {
+     "type": "Warrior",
+     "col": 40,
+     "row": 13
+    }
+   ]
+  },
+  {
+   "name": "Prussia",
+   "adjective": "Prussian",
+   "leader": "Frederick",
+   "portrait": 23,
+   "aggression": 0.65,
+   "gold": 50,
+   "techs": [],
+   "city_names": [
+    "Königsberg",
+    "Breslau",
+    "Magdeburg",
+    "Potsdam",
+    "Danzig",
+    "Stettin",
+    "Cologne",
+    "Halle"
+   ],
+   "cities": [
+    {
+     "name": "Berlin",
+     "col": 45,
+     "row": 9,
+     "pop": 1,
+     "capital": true
+    }
+   ],
+   "units": [
+    {
+     "type": "Settler",
+     "col": 45,
+     "row": 8
+    },
+    {
+     "type": "Worker",
+     "col": 45,
+     "row": 10
+    },
+    {
+     "type": "Warrior",
+     "col": 44,
+     "row": 9
+    }
+   ]
+  },
+  {
+   "name": "Austria",
+   "adjective": "Austrian",
+   "leader": "Joseph",
+   "portrait": 24,
+   "aggression": 0.45,
+   "gold": 50,
+   "techs": [],
+   "city_names": [
+    "Prague",
+    "Budapest",
+    "Graz",
+    "Innsbruck",
+    "Salzburg",
+    "Linz",
+    "Trieste",
+    "Brno"
+   ],
+   "cities": [
+    {
+     "name": "Vienna",
+     "col": 46,
+     "row": 11,
+     "pop": 1,
+     "capital": true
+    }
+   ],
+   "units": [
+    {
+     "type": "Settler",
+     "col": 46,
+     "row": 10
+    },
+    {
+     "type": "Worker",
+     "col": 46,
+     "row": 12
+    },
+    {
+     "type": "Warrior",
+     "col": 45,
+     "row": 10
+    }
+   ]
+  }
+ ]
+}

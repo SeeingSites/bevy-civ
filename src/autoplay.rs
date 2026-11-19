@@ -25,7 +25,7 @@ use crate::{EndTurnNow, GameLog, GameState, Observer, PLAYER};
 /// Plays `turns` turns of the scenario whose id (or name) contains `which`, and prints a report.
 /// Returns false if the scenario is unknown.
 pub fn run(which: &str, turns: u32) -> bool {
-    let catalog = scenario::catalog_with(true);
+    let catalog = scenario::catalog_with(|_| true);
     let Some(mut scenario) = catalog
         .into_iter()
         .filter(|s| !s.rows.is_empty())
@@ -34,6 +34,8 @@ pub fn run(which: &str, turns: u32) -> bool {
         eprintln!("No scenario matches '{which}'.");
         return false;
     };
+    // The packs' optional peoples stay out, as when a player leads one of the scenario's own.
+    scenario.civs.retain(|c| !c.optional);
     // An empty seat for the player, so that every real civilization is played by the computer.
     scenario.civs.insert(0, CivDef { name: "the Observers".into(), adjective: "Observer".into(), leader: "Nobody".into(), ..Default::default() });
     println!("Autoplay: {} for up to {turns} turns, {} civilizations.", scenario.name, scenario.civs.len() - 1);

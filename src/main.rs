@@ -990,7 +990,7 @@ fn setup_world(
             adjective: def.adjective.clone(),
             portrait: def.portrait,
             city_names: def.city_names.clone(),
-            government: bevy_civ::government::Government::Despotism,
+            government: def.starting_government(),
             anarchy: 0,
             pending_government: None,
             eliminated: false,
@@ -1043,6 +1043,12 @@ fn setup_world(
             foreign.since.insert((a.min(b), a.max(b)), 1);
         }
     }
+    for (a, b) in &scenario.alliances {
+        if let (Some(a), Some(b)) = (id_of(a), id_of(b)) {
+            diplomacy.set_treaty(a, b, Treaty::Alliance);
+            foreign.since.insert((a.min(b), a.max(b)), 1);
+        }
+    }
 
     if scenario.known {
         foreign.met = (1..defs.len() as u32).collect();
@@ -1053,6 +1059,7 @@ fn setup_world(
         start_year: scenario.start_year,
         years_per_turn: scenario.years_per_turn,
         title: defs[0].name.trim_start_matches("the ").to_string(),
+        government: defs[0].starting_government(),
         difficulty: new_game.difficulty,
         last_turn: new_game.last_turn,
         ..default()
@@ -5549,7 +5556,9 @@ pub fn religion_turn(
         own.sort_by_key(|c| (religions.of(c.0).is_some(), !c.3, std::cmp::Reverse(c.4)));
         let Some(site) = own.first() else { continue };
         religions.found(faith, site.0);
-        if founder == PLAYER {
+        // Faiths a game starts with (a later period's scenario) are history, not news.
+        if fresh && state.turn <= 1 {
+        } else if founder == PLAYER {
             log.push(format!(
                 "We have founded {} in {}! It will spread to nearby cities; Missionaries carry it further. Cities that share our capital's faith are calmer.",
                 faith.name(),

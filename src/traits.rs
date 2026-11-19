@@ -172,6 +172,12 @@ pub fn of(name: &str) -> Character {
         "Australia" => ([Agricultural, Industrious], U::LightHorse),
         "Canada" => ([Agricultural, Scientific], U::Mountie),
         "Mexico" => ([Religious, Agricultural], U::Charro),
+        // The Age of Revolution and World Wars expansions' peoples, and their names in other periods.
+        "Prussia" => ([Militaristic, Scientific], U::BlackHussar),
+        "Austria" | "Austria-Hungary" => ([Commercial, Religious], U::Grenzer),
+        "Italy" => ([Religious, Commercial], U::Bersaglieri),
+        "Great Britain" => ([Commercial, Scientific], U::ManOWar),
+        "Soviet Union" => ([Militaristic, Industrious], U::GuardsRifleman),
         _ => {
             let seed = key.bytes().fold(7u32, |h, b| h.wrapping_mul(31).wrapping_add(b as u32));
             let first = Trait::ALL[(seed % 6) as usize];
