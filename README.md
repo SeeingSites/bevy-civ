@@ -330,7 +330,7 @@ Computer players follow the same rules as you and are run by three pieces of cod
 - **N** or the **Next Unit** button — go to the next unit without skipping this one
 - **H** — fortify (or put a non-military unit to sleep) so it is no longer asked for orders
 - **Enter** or the **End Turn** button — end the turn now
-- **B** — settler founds a city
+- **B** — settler founds a city; a gun, warship or bomber bombards
 - **F / M / R / X** — worker builds Farm / Mine / Road (Railroad on a road, with Steam Power) /
   clears terrain or cleans pollution; **K** — automate the worker
 - **Shift-click** — move the whole stack (or switch on *Move together* in the unit panel)

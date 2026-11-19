@@ -228,9 +228,10 @@ impl Fighter {
 
 /// Whether `attackers` gathered before a city can take its `garrison`, which defends on `ground`
 /// (the city's land, size and walls, dug in), once the `guns` in range have bombarded it. Every
-/// attack meets the garrison's best defender against that attacker. A blow lands with chance p = attack / (attack + defence), and an attacker
-/// that fights to the end deals about p / (1 - p) blows for each it takes: so every hit point of
-/// the garrison costs about (1 - p) / p of an attacker's.
+/// attack meets the garrison's best defender against that attacker. A blow lands with chance
+/// p = attack / (attack + defence), and an attacker that fights to the end deals about p / (1 - p)
+/// blows for each it takes: so every hit point of the garrison costs about (1 - p) / p of an
+/// attacker's.
 pub fn siege_ready(attackers: &[&Fighter], guns: &[&Fighter], garrison: &[&Fighter], ground: &Ground, aggression: f32) -> bool {
     let men: f32 = attackers.iter().map(|f| f.men as f32).sum();
     if men < 1.0 {

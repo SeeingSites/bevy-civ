@@ -1915,6 +1915,9 @@ fn apply_actions(
         dirty.ui = true;
         dirty.map = true;
         let selected_unit = selection.unit.filter(|e| units.get(*e).is_ok_and(|u| u.owner == PLAYER));
+        // B founds a city with a settler and bombards with a gun, warship or bomber, as in Civ III.
+        let bombards = selected_unit.and_then(|e| units.get(e).ok()).is_some_and(|u| u.unit_type.can_bombard());
+        let action = if matches!(action, Action::FoundCity) && bombards { &Action::Bombard } else { action };
         // Anything a unit does besides moving cannot be taken back with Undo.
         if matches!(
             action,
