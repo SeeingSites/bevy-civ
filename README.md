@@ -52,7 +52,7 @@ Turn-based, Civilization-style empire building on a hex map, playable in the bro
 - Advisors (science, foreign, trade, empire: government, cities, military, score) and an encyclopedia
 - Saved games: automatic every turn, and as files that anyone can load
 - Sound effects (can be switched off)
-- Headless game simulator for balance evaluation
+- Headless games between computer players (`--autoplay` for one, `--balance` for a batch of win rates)
 
 ## Maps and scenarios
 The start menu offers four games; in each you choose which people to lead.
@@ -747,8 +747,17 @@ workflow runs all three scenarios to 400 turns on demand. Across recent batches 
 games (six per scenario), the space race, culture and diplomacy each win a share, mostly between
 turns 250 and 380; a few games go to the turn limit and are decided on score.
 
+## Balance
+`cargo run --release --no-default-features --features full --bin bevy-civ -- --balance [games] [turns] [directory]`
+plays many New World games between computer players under the real rules, and writes each people's
+win share, the kind of victory and the turn the game ended. See [docs/BALANCE.md](docs/BALANCE.md).
+`--shuffle` gives every people the same chance of a seat and randomises who moves first. A two-game
+smoke is `scripts/balance-smoke.sh`: it reports win share against a 45-55% fair band and does not
+treat an imbalance as a failure.
+
 ## Simulator
-Standalone pure-Rust simulator (no Bevy dependency):
+A standalone dice model with no Bevy dependency and none of the game's rules. It is not a balance
+result; use [Balance](#balance) for that.
 
 ```bash
 cd simulate && cargo run -- --games 100 --max-turns 120
@@ -756,7 +765,9 @@ cd simulate && cargo run -- --games 100 --max-turns 120
 
 ### CI
 The Game Simulator workflow (`.github/workflows/simulate.yml`) runs on demand: Actions, Game
-Simulator, Run workflow (choose how many games and turns).
+Simulator, Run workflow (choose how many games and turns). The Balance harness workflow
+(`.github/workflows/balance.yml`) runs a short real-rules smoke the same way. The fair-band report
+does not fail that job.
 
 ## Running (native)
 ```bash

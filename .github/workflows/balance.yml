@@ -1,0 +1,50 @@
+name: Balance harness
+
+# A short smoke of headless games under the real rules. On demand: a full balance batch is too
+# long for every push, and pull requests are not built here. The fair-band report is informational.
+# This job fails only when the harness itself does not run or does not write its report.
+on:
+  workflow_dispatch:
+    inputs:
+      games:
+        description: "Games in the smoke batch"
+        required: false
+        default: "2"
+      turns:
+        description: "Turn limit"
+        required: false
+        default: "40"
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-balance-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-balance-
+
+      - name: Smoke batch
+        env:
+          BALANCE_GAMES: ${{ github.event.inputs.games || '2' }}
+          BALANCE_TURNS: ${{ github.event.inputs.turns || '40' }}
+        run: scripts/balance-smoke.sh
+
+      - name: Upload summary
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: balance-smoke
+          path: balance-smoke
+          if-no-files-found: ignore

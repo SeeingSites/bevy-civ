@@ -32,6 +32,7 @@ use bevy_civ::trade::TradeRoutes;
 use bevy_civ::unit::{spawn_unit, Unit, UnitType};
 
 mod autoplay;
+mod balance;
 mod client;
 mod foreign;
 mod governor;
@@ -831,6 +832,16 @@ fn main() {
     let theme = chosen_theme(&args).unwrap_or_else(|| "earth".into());
     if !bevy_civ::theme::activate_built_in(&theme) {
         bevy_civ::theme::activate_built_in("earth");
+    }
+    // `--balance [games] [turns] [directory]`: many headless New World games, with win rates.
+    if args.iter().any(|a| a == "--balance") {
+        match balance::options_from(&args) {
+            Ok(opts) => std::process::exit(if balance::run(&opts) { 0 } else { 1 }),
+            Err(e) => {
+                eprintln!("{e}");
+                std::process::exit(1);
+            }
+        }
     }
     // `--autoplay [scenario] [turns]`: a whole game between computer players, without a window.
     if let Some(i) = args.iter().position(|a| a == "--autoplay") {
