@@ -219,6 +219,56 @@ pub fn scroll_panels(
     }
 }
 
+/// The space kept at the end of a scrolling panel, in place of its bottom padding (see
+/// [`pad_scroll_ends`]): its height.
+#[derive(Component)]
+pub struct ScrollTail(pub f32);
+
+/// Bevy stops a panel's scrolling where its content ends, counting the panel's top padding but not
+/// its bottom padding - so the last line or button of a long window stayed out of reach (on a phone
+/// especially). Every panel that scrolls up and down has its bottom padding moved into a spacer at the
+/// end of its content: it looks the same, and the whole of its content can be scrolled into view.
+pub fn pad_scroll_ends(
+    mut commands: Commands,
+    mut panels: Query<(Entity, &mut Node, Option<&Children>), (With<Scrollable>, Without<ScrollTail>)>,
+    tails: Query<&ScrollTail>,
+) {
+    for (panel, mut node, children) in &mut panels {
+        if node.overflow.y != OverflowAxis::Scroll {
+            continue;
+        }
+        let children: Vec<Entity> = children.map(|c| c.iter().copied().collect()).unwrap_or_default();
+        // The padding to keep: the panel's own (taken over the first time), or what its spacer holds.
+        let held = children.iter().find_map(|c| tails.get(*c).ok()).map(|t| t.0);
+        let bottom = match node.padding.bottom {
+            Val::Px(p) if p > 0.0 => p,
+            _ => match held {
+                Some(h) => h,
+                None => continue,
+            },
+        };
+        if node.padding.bottom != Val::Px(0.0) {
+            node.padding.bottom = Val::Px(0.0);
+        }
+        if children.last().is_some_and(|last| tails.contains(*last)) {
+            continue;
+        }
+        // Content was added after the spacer (or there is none yet): one spacer, at the end. The gap
+        // between rows would come before it too, so it takes that back.
+        for child in children.iter().filter(|c| tails.contains(**c)) {
+            commands.entity(*child).despawn_recursive();
+        }
+        let gap = if let Val::Px(g) = node.row_gap { g } else { 0.0 };
+        let tail = commands
+            .spawn((
+                ScrollTail(bottom),
+                Node { height: Val::Px(bottom), min_height: Val::Px(bottom), flex_shrink: 0.0, margin: UiRect::top(Val::Px(-gap)), ..default() },
+            ))
+            .id();
+        commands.entity(panel).add_child(tail);
+    }
+}
+
 /// Whether the pointer (or finger) is over a scrollable panel, so the map should not pan or zoom.
 pub fn over_scrollable(panels: &Query<&bevy::ui::RelativeCursorPosition, With<Scrollable>>) -> bool {
     panels.iter().any(|c| c.mouse_over())
@@ -370,7 +420,7 @@ impl Plugin for LayoutPlugin {
             .add_event::<Activated>()
             .add_systems(Update, (activate_buttons, scroll_panels).chain().in_set(LayoutInput))
             .add_systems(PreUpdate, fit_canvas)
-            .add_systems(PostUpdate, (classify_screen, measure_docks, place_docks).chain().before(bevy::ui::UiSystem::Layout));
+            .add_systems(PostUpdate, (pad_scroll_ends, classify_screen, measure_docks, place_docks).chain().before(bevy::ui::UiSystem::Layout));
     }
 }
 
