@@ -1,5 +1,7 @@
 target/
 /dist
+/balance-out/
+/balance-smoke/
 /node_modules
 .wrangler
 **/*.rs.bk
