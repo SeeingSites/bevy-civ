@@ -20,7 +20,7 @@ use crate::{GameState, Selection, PLAYER};
 const SETTING: &str = "tips.json";
 
 /// (id, title, text)
-const TIPS: [(&str, &str, &str); 21] = [
+const TIPS: [(&str, &str, &str); 23] = [
     ("welcome", "Welcome", "Your people await your orders. Click (or tap) one of your units to select it, then a tile to send it there. End Turn (Enter) passes play to the other peoples. New to this kind of game? Help (F1) opens How to play, a short guide to your first turns."),
     ("end_turn", "Ending the turn", "Every unit has its orders. Tap End Turn (bottom right, or Enter) and the other peoples take their turns; then a new turn begins and your units can move again."),
     ("unit", "Moving units", "Tap or click a tile to send the unit there; with a mouse, point at a tile first to see the route and how many turns it takes. Far destinations become standing orders. Fortify (H) keeps a unit in place so it is not asked again."),
@@ -41,6 +41,8 @@ const TIPS: [(&str, &str, &str); 21] = [
     ("grow", "Growing cities", "A city grows when its food store fills: work food-rich tiles and build farms. Bigger cities work more tiles, but past a few citizens they need temples or luxuries to stay content."),
     ("score", "How to win", "There are six ways to win: conquer everyone, hold two in five of the world's cities, reach Alpha Centauri first, lead the world in culture, win the United Nations vote, or have the best score on the last turn. Open Empire (Y) to see how everyone stands."),
     ("defend", "Guard your cities", "A city with no troops inside falls to the first enemy that walks in. Keep at least one defender in each city - Spearmen and Phalanxes early, then Pikemen and Musketmen - and fortify it (H)."),
+    ("gold", "Spend your gold", "Gold piling up does nothing by itself. In a city's panel, Buy now finishes its current project at once - an Aqueduct, a Library, a Settler or a defender where it is needed. Gold also buys peace, technology and alliances in Diplomacy (E), and upgrades old units (in a city)."),
+    ("full_land", "No room to settle?", "When no good site is left within reach, a Settler can Join City (J) to add two citizens to a city, or board a ship to found a city on new land. Workers then make the most of the land you have."),
     ("save", "Saving", "The game saves itself every turn (Continue on the start menu). Game, then Save to a file (F2), gives you a file you can keep or send to a friend to load."),
 ];
 
@@ -141,6 +143,8 @@ pub fn queue_tips(
         "diplomat" => selected == Some(UnitType::Diplomat),
         "war" => diplomacy.treaties.iter().any(|((a, b), t)| (*a == PLAYER || *b == PLAYER) && *t == Treaty::War),
         "save" => state.turn >= 10,
+        "gold" => state.turn >= 10 && state.gold >= 150,
+        "full_land" => selected == Some(UnitType::Settler) && state.turn >= 20,
         _ => false,
     };
     if let Some((id, _, _)) = TIPS.iter().find(|(id, _, _)| !tips.shown.contains(id) && due(id)) {

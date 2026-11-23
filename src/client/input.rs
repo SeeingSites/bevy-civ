@@ -39,6 +39,7 @@ pub fn pointer_input(
     mut camera: Query<(&Camera, &GlobalTransform, &mut Transform, &mut OrthographicProjection), With<Camera2d>>,
     ui: Res<UiState>,
     scrollables: Query<&bevy::ui::RelativeCursorPosition, With<super::layout::Scrollable>>,
+    fog: Res<bevy_civ::fog::FogOfWar>,
 ) {
     let Ok(window) = windows.get_single() else { return };
     // The wheel over a panel or window scrolls it (see `ui::scroll_panels`), not the map.
@@ -119,7 +120,8 @@ pub fn pointer_input(
                 pointer.dragging = false;
             }
             pointer.last = cursor;
-            hovered.0 = if over_ui { None } else { to_hex(cursor).filter(|h| map.cells.contains(h)) };
+            // Unexplored darkness has nothing to point at (an outline there looked like an empty box).
+            hovered.0 = if over_ui { None } else { to_hex(cursor).filter(|h| map.cells.contains(h) && fog.explored.contains(h)) };
         } else {
             hovered.0 = None;
         }
@@ -144,9 +146,17 @@ pub fn pointer_input(
     if keys.any_pressed([KeyCode::KeyA, KeyCode::ArrowLeft]) { key_pan.x -= 1.0; }
     if keys.any_pressed([KeyCode::KeyD, KeyCode::ArrowRight]) { key_pan.x += 1.0; }
 
-    // Glide to a newly selected unit unless the player is steering the camera.
+    // Glide to a newly selected unit unless the player is steering the camera - and only when it is
+    // near the edge of the view or off it: a camera that moved on every selection made the next
+    // click land somewhere else.
     if let Some(Focus(hex)) = focus.read().last() {
-        pointer.glide = Some(map.layout.hex_to_world_pos(*hex));
+        let target = map.layout.hex_to_world_pos(*hex);
+        let here = cam_transform.translation.truncate();
+        let half = Vec2::new(window.width(), window.height()) * 0.5 * projection.scale;
+        let offset = (target - here).abs();
+        if offset.x > half.x * 0.6 || offset.y > half.y * 0.6 {
+            pointer.glide = Some(target);
+        }
     }
     if pan != Vec2::ZERO || key_pan != Vec2::ZERO {
         pointer.glide = None;
@@ -183,7 +193,7 @@ pub fn keyboard_input(
         (KeyCode::KeyK, Action::Automate),
         (KeyCode::KeyC, Action::Explore),
         (KeyCode::KeyH, Action::Fortify),
-        (KeyCode::Enter, Action::EndTurn),
+        (KeyCode::Enter, Action::EndTurnKey),
         (KeyCode::KeyF, Action::Build(Improvement::Farm)),
         (KeyCode::KeyM, Action::Build(Improvement::Mine)),
         (KeyCode::KeyR, Action::Build(Improvement::Road)),

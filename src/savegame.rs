@@ -298,7 +298,7 @@ pub fn restore_world(
     log.push(format!("Game loaded: turn {}.", game.state.turn));
     commands.insert_resource(log);
     commands.insert_resource(Dirty { map: true, ui: true });
-    commands.insert_resource(Cycle { advance: true, force: false });
+    commands.insert_resource(Cycle { advance: true, force: false, confirm_end: None });
     commands.remove_resource::<PendingLoad>();
 }
 

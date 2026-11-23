@@ -478,6 +478,8 @@ pub struct Trail(pub Vec<Hex>);
 #[derive(Event, Clone, Debug, PartialEq)]
 pub enum Action {
     EndTurn,
+    /// Enter: ends the turn - asking first (a second Enter) while units still await orders.
+    EndTurnKey,
     /// Space bar: skip the selected unit, move on to the next one, or end the turn when none is left.
     SkipOrEnd,
     /// Jump to the next unit that still needs orders without skipping the current one.
@@ -696,6 +698,8 @@ pub struct Cycle {
     pub advance: bool,
     /// Move on even if the selected unit could still act.
     pub force: bool,
+    /// The turn on which Enter was pressed once with units still waiting: a second press ends it.
+    pub confirm_end: Option<u32>,
 }
 
 /// A player unit that still expects orders this turn.
@@ -963,7 +967,7 @@ pub fn init_game(app: &mut App) {
         .init_resource::<SpaceRace>()
         .init_resource::<Foreign>()
         .init_resource::<Supplies>()
-        .insert_resource(Cycle { advance: true, force: false })
+        .insert_resource(Cycle { advance: true, force: false, confirm_end: None })
         .init_resource::<WorldWonders>()
         .init_resource::<GreatPeople>()
         .init_resource::<combat::BattleTally>()
@@ -1391,7 +1395,7 @@ fn cleanup_world(
     commands.insert_resource(GoldenAges::default());
     commands.insert_resource(JustCaptured::default());
     commands.insert_resource(Rivers::default());
-    commands.insert_resource(Cycle { advance: true, force: false });
+    commands.insert_resource(Cycle { advance: true, force: false, confirm_end: None });
     commands.insert_resource(Dirty { map: true, ui: true });
 }
 
@@ -2388,6 +2392,16 @@ fn apply_actions(
         match action {
             Action::EndTurn => {
                 end_turn.send(EndTurnRequest);
+            }
+            Action::EndTurnKey => {
+                let waiting = units.iter().filter(|u| needs_orders(u)).count();
+                if waiting > 0 && cycle.confirm_end != Some(state.turn) {
+                    cycle.confirm_end = Some(state.turn);
+                    let them = if waiting == 1 { "1 unit still awaits".to_string() } else { format!("{waiting} units still await") };
+                    log.push(format!("{them} orders. Press Enter again to end the turn anyway (or Space to go through them)."));
+                } else {
+                    end_turn.send(EndTurnRequest);
+                }
             }
             Action::NextUnit => {
                 selection.city = None;
@@ -6351,7 +6365,7 @@ mod tests {
             .init_resource::<FogOfWar>()
             .init_resource::<Civilizations>()
             .init_resource::<GameLog>()
-            .insert_resource(Cycle { advance: true, force: false })
+            .insert_resource(Cycle { advance: true, force: false, confirm_end: None })
             .init_resource::<Supplies>()
             .init_resource::<WorldWonders>()
             .init_resource::<GreatPeople>()
