@@ -159,6 +159,9 @@ pub fn run(which: &str, turns: u32) -> bool {
         println!("No winner after {} turns.", state.turn);
     }
     println!("Took {:.1}s ({:.0} ms a turn).", started.elapsed().as_secs_f32(), started.elapsed().as_millis() as f32 / state.turn.max(1) as f32);
+    if let Some(report) = crate::prof::report() {
+        println!("{report}");
+    }
     true
 }
 

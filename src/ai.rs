@@ -4,7 +4,7 @@ use crate::unit::{Unit, UnitType};
 use crate::terrain::{HexTile, Improvement, Terrain};
 use std::collections::HashMap;
 use crate::tech::{Tech, TechState};
-use crate::pathfinding::{find_path, find_route, land_step, road_network, zoc_blocks, StepCost, Travel};
+use crate::pathfinding::{find_path, find_path_on, find_route_on, land_step, road_network, zoc_blocks, StepCost, Travel};
 use crate::unit::{Domain, AIR_RANGE};
 use rand::Rng;
 use crate::cargo::Berth;
@@ -453,7 +453,7 @@ pub fn process_ai_turn(
                 .filter(|(pos, other, strength)| *other == owner && *strength > 0.0 && is_land(*pos))
                 .map(|(pos, _, _)| *pos)
                 .min_by_key(|pos| here.distance_to(*pos));
-            if let Some(path) = army.filter(|a| *a != here).and_then(|a| find_route(here, a, land.iter().copied(), &roads, crate::pathfinding::land_travel(unit.unit_type.is_wheeled(), false))) {
+            if let Some(path) = army.filter(|a| *a != here).and_then(|a| find_route_on(here, a, &terrain_at, &roads, crate::pathfinding::land_travel(unit.unit_type.is_wheeled(), false))) {
                 for next in path.into_iter().skip(1) {
                     if !unit.can_move() || occupied.get(&next).is_some_and(|(other, _)| *other != owner) {
                         break;
@@ -484,7 +484,7 @@ pub fn process_ai_turn(
                 if let Some((goal, port)) = overseas.and_then(|g| port_for(owner, here, g).map(|p| (g, p))) {
                     requests.push((entity, owner, goal, port));
                     if here != port {
-                        if let Some(path) = find_route(here, port, land.iter().copied(), &roads, Travel::Land) {
+                        if let Some(path) = find_route_on(here, port, &terrain_at, &roads, Travel::Land) {
                             for next in path.into_iter().skip(1) {
                                 if !unit.can_move() || occupied.get(&next).is_some_and(|(o, _)| *o != owner) {
                                     break;
@@ -501,7 +501,7 @@ pub fn process_ai_turn(
             let settle_here = is_land(here) && !crowded(here) && target.is_none_or(|t| t == here || site_value(here) * 4 >= site_value(t) * 4 - 6);
             if !settle_here {
                 if let Some(target) = target {
-                    if let Some(path) = find_route(here, target, land.iter().copied(), &roads, Travel::Land) {
+                    if let Some(path) = find_route_on(here, target, &terrain_at, &roads, Travel::Land) {
                         for next in path.into_iter().skip(1) {
                             if !unit.can_move() || occupied.get(&next).is_some_and(|(o, _)| *o != owner) {
                                 break;
@@ -549,7 +549,7 @@ pub fn process_ai_turn(
             let nearest = jobs.iter().copied().enumerate().min_by_key(|(index, h)| (here.distance_to(*h), *index));
             if let Some((index, target)) = nearest {
                 jobs.remove(index);
-                let step = find_path(here, target, land.iter().copied(), Travel::Land).and_then(|path| path.get(1).copied());
+                let step = find_path_on(here, target, &terrain_at, Travel::Land).and_then(|path| path.get(1).copied());
                 if let Some(next) = step.filter(|n| !occupied.get(n).is_some_and(|(other, _)| *other != owner)) {
                     unit.position = next;
                     unit.movement_left = 0;
@@ -570,7 +570,7 @@ pub fn process_ai_turn(
                     .min_by_key(|h| (here.distance_to(*h), h.x, h.y));
                 if let Some(target) = target {
                     rail_claimed.insert(target);
-                    let step = find_route(here, target, land.iter().copied(), &roads, Travel::Land).and_then(|path| path.get(1).copied());
+                    let step = find_route_on(here, target, &terrain_at, &roads, Travel::Land).and_then(|path| path.get(1).copied());
                     if let Some(next) = step.filter(|n| !occupied.get(n).is_some_and(|(other, _)| *other != owner)) {
                         unit.position = next;
                         unit.end_move();
@@ -643,7 +643,7 @@ pub fn process_ai_turn(
             let base = if flying { airfields.iter().copied().min_by_key(|p| here.distance_to(*p)) } else { ports.iter().copied().min_by_key(|p| here.distance_to(*p)) };
             let travel = if flying { Travel::Air } else { Travel::Sea(&ports) };
             let Some(target) = prey.or(base.filter(|b| flying && *b != here)) else { continue };
-            if let Some(path) = find_path(here, target, land.iter().copied(), travel) {
+            if let Some(path) = find_path_on(here, target, &terrain_at, travel) {
                 for next in path.into_iter().skip(1) {
                     if !unit.can_move() {
                         break;
@@ -720,7 +720,7 @@ pub fn process_ai_turn(
             if let Some((goal, port)) = overseas.and_then(|g| port_for(owner, here, g).map(|p| (g, p))) {
                 requests.push((entity, owner, goal, port));
                 if here != port {
-                    if let Some(path) = find_route(here, port, land.iter().copied(), &roads, crate::pathfinding::land_travel(unit.unit_type.is_wheeled(), false)) {
+                    if let Some(path) = find_route_on(here, port, &terrain_at, &roads, crate::pathfinding::land_travel(unit.unit_type.is_wheeled(), false)) {
                         for next in path.into_iter().skip(1) {
                             if !unit.can_move() || occupied.get(&next).is_some_and(|(o, _)| *o != owner) {
                                 break;
@@ -776,7 +776,7 @@ pub fn process_ai_turn(
             let enemy_armies = enemy_armies_of.entry(owner).or_insert_with(|| {
                 unit_snapshots.iter().filter(|(_, other, strength)| *strength > 0.0 && hostile(owner, *other)).map(|(pos, _, _)| *pos).collect()
             });
-            if let Some(path) = find_route(here, target, land.iter().copied(), &roads, travel) {
+            if let Some(path) = find_route_on(here, target, &terrain_at, &roads, travel) {
                 for next in path.into_iter().skip(1) {
                     if !unit.can_move() || (unit.unit_type.ability() != Some(crate::unit::Ability::Outrider) && zoc_blocks(unit.position, next, enemy_armies)) {
                         break;

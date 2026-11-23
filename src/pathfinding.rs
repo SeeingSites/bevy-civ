@@ -158,6 +158,11 @@ pub fn find_path(
     find_route(start, end, tiles, &HashMap::new(), travel)
 }
 
+/// [`find_path`] over a terrain table built once (callers that search many times a turn).
+pub fn find_path_on(start: Hex, end: Hex, tiles: &HashMap<Hex, Terrain>, travel: Travel) -> Option<Vec<Hex>> {
+    find_route_on(start, end, tiles, &HashMap::new(), travel)
+}
+
 /// Like [`find_path`], but troops on foot prefer roads and railroads, which they travel faster.
 pub fn find_route(
     start: Hex,
@@ -167,6 +172,12 @@ pub fn find_route(
     travel: Travel,
 ) -> Option<Vec<Hex>> {
     let tile_map: HashMap<Hex, Terrain> = tiles.collect();
+    find_route_on(start, end, &tile_map, roads, travel)
+}
+
+/// [`find_route`] over a terrain table built once: building it is most of the cost of a short
+/// search on a large map, so callers that search for many units a turn build it once.
+pub fn find_route_on(start: Hex, end: Hex, tile_map: &HashMap<Hex, Terrain>, roads: &HashMap<Hex, Road>, travel: Travel) -> Option<Vec<Hex>> {
     // Costs are in sixths of a move so that road (2) and rail (1) steps stay at least as dear as the
     // straight-line estimate the search uses, which keeps the routes it finds the shortest.
     const SCALE: u32 = 6;
