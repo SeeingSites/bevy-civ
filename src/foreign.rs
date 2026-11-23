@@ -392,8 +392,17 @@ pub fn player_act(ctx: &mut Ctx, civ: u32, act: DiploAct) {
             }
         }
         DiploAct::Peace => {
-            if !at_war {
-                "There is no war between us to end.".into()
+            if treaty == Treaty::Peace || treaty == Treaty::Alliance {
+                "We are already at peace.".into()
+            } else if !at_war {
+                // No treaty yet: a formal peace between peoples who are not at war.
+                if attitude >= -10 {
+                    set_treaty(ctx, PLAYER, civ, Treaty::Peace);
+                    ctx.log.push(format!("A peace treaty is signed with {name}."));
+                    "Let there be peace between our peoples.".into()
+                } else {
+                    "We do not trust you enough to bind ourselves to you. Improve relations first (gifts, trade).".into()
+                }
             } else if age < 5 {
                 "The blood is not yet dry. Ask again later.".into()
             } else if theirs > ours * 1.5 && attitude < -20 {

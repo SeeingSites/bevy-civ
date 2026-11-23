@@ -21,7 +21,7 @@ use rand::Rng;
 use bevy_civ::diplomacy::{Diplomacy, Happiness, Treaty};
 use bevy_civ::fog::FogOfWar;
 use bevy_civ::government::Government;
-use bevy_civ::pathfinding::{find_path, find_route, land_step, road_network, turns_along, Road, StepCost, Travel};
+use bevy_civ::pathfinding::{find_route, land_step, road_network, turns_along, Road, StepCost, Travel};
 use bevy_civ::unit::{Domain, AIR_RANGE};
 use bevy_civ::cargo::{self, Berth};
 use bevy_civ::score::Score;
@@ -32,6 +32,86 @@ use bevy_civ::trade::TradeRoutes;
 use bevy_civ::unit::{spawn_unit, Unit, UnitType};
 
 mod autoplay;
+
+/// Time spent in each part of a turn, for finding what is slow: on when `BEVY_CIV_PROFILE` is set
+/// (native builds only), reported by `--autoplay`. `mark(label)` charges the time since the last
+/// mark to `label`.
+pub mod prof {
+    use std::sync::{Mutex, OnceLock};
+    use std::time::{Duration, Instant};
+
+    static STATE: Mutex<(Option<Instant>, Vec<(&'static str, Duration)>)> = Mutex::new((None, Vec::new()));
+
+    fn enabled() -> bool {
+        static ON: OnceLock<bool> = OnceLock::new();
+        *ON.get_or_init(|| !cfg!(target_arch = "wasm32") && std::env::var("BEVY_CIV_PROFILE").is_ok())
+    }
+
+    pub fn mark(label: &'static str) {
+        if !enabled() {
+            return;
+        }
+        let now = Instant::now();
+        let Ok(mut state) = STATE.lock() else { return };
+        if let Some(last) = state.0 {
+            let spent = now - last;
+            match state.1.iter_mut().find(|(l, _)| *l == label) {
+                Some((_, total)) => *total += spent,
+                None => state.1.push((label, spent)),
+            }
+        }
+        state.0 = Some(now);
+    }
+
+    /// In the browser: how long each turn took to process, written to the console (for measuring the
+    /// web build, where `Instant` is not available).
+    #[cfg(target_arch = "wasm32")]
+    mod web {
+        use std::cell::Cell;
+        use wasm_bindgen::prelude::*;
+        #[wasm_bindgen]
+        extern "C" {
+            #[wasm_bindgen(js_namespace = performance)]
+            fn now() -> f64;
+            #[wasm_bindgen(js_namespace = console)]
+            fn log(text: &str);
+        }
+        thread_local!(static STARTED: Cell<f64> = const { Cell::new(0.0) });
+        pub fn start() {
+            STARTED.with(|s| s.set(now()));
+        }
+        pub fn finish(turn: u32) {
+            let took = STARTED.with(|s| now() - s.get());
+            log(&format!("bevy-civ: turn {turn} processed in {took:.0} ms"));
+        }
+    }
+
+    pub fn turn_started() {
+        #[cfg(target_arch = "wasm32")]
+        web::start();
+    }
+
+    pub fn turn_finished(_turn: u32) {
+        #[cfg(target_arch = "wasm32")]
+        web::finish(_turn);
+    }
+
+    /// The parts of a turn, slowest first, with their share of the time.
+    pub fn report() -> Option<String> {
+        if !enabled() {
+            return None;
+        }
+        let state = STATE.lock().ok()?;
+        let total: Duration = state.1.iter().map(|(_, d)| *d).sum();
+        let mut parts = state.1.clone();
+        parts.sort_by(|a, b| b.1.cmp(&a.1));
+        let lines: Vec<String> = parts
+            .iter()
+            .map(|(l, d)| format!("  {:>7.2}s {:>5.1}%  {l}", d.as_secs_f64(), 100.0 * d.as_secs_f64() / total.as_secs_f64().max(1e-9)))
+            .collect();
+        Some(format!("--- time by part of the turn ({:.2}s in all):\n{}", total.as_secs_f64(), lines.join("\n")))
+    }
+}
 mod balance;
 mod client;
 mod foreign;
@@ -431,6 +511,8 @@ pub struct Trail(pub Vec<Hex>);
 #[derive(Event, Clone, Debug, PartialEq)]
 pub enum Action {
     EndTurn,
+    /// Enter: ends the turn - asking first (a second Enter) while units still await orders.
+    EndTurnKey,
     /// Space bar: skip the selected unit, move on to the next one, or end the turn when none is left.
     SkipOrEnd,
     /// Jump to the next unit that still needs orders without skipping the current one.
@@ -649,6 +731,8 @@ pub struct Cycle {
     pub advance: bool,
     /// Move on even if the selected unit could still act.
     pub force: bool,
+    /// The turn on which Enter was pressed once with units still waiting: a second press ends it.
+    pub confirm_end: Option<u32>,
 }
 
 /// A player unit that still expects orders this turn.
@@ -916,7 +1000,7 @@ pub fn init_game(app: &mut App) {
         .init_resource::<SpaceRace>()
         .init_resource::<Foreign>()
         .init_resource::<Supplies>()
-        .insert_resource(Cycle { advance: true, force: false })
+        .insert_resource(Cycle { advance: true, force: false, confirm_end: None })
         .init_resource::<WorldWonders>()
         .init_resource::<GreatPeople>()
         .init_resource::<combat::BattleTally>()
@@ -1053,6 +1137,17 @@ fn setup_world(
             let harbour = coastal && bevy_civ::tiles::sustainable(wanted, centre, foods(false)) < wanted;
             let pop = bevy_civ::tiles::sustainable(wanted, centre, foods(harbour));
             let entity = spawn_city(&mut commands, hex, city.name.clone(), pop, owner, city.capital);
+            // The first project is the stoutest defender this people can train (a city of 2025 does
+            // not start on a Warrior).
+            let first = {
+                let known: HashSet<Tech> = def.techs.iter().filter_map(|t| Tech::ALL.into_iter().find(|x| x.base_name() == t)).collect();
+                bevy_civ::unit::plain_defender(|t| known.contains(&t))
+            };
+            commands.queue(move |world: &mut World| {
+                if let Some(mut city) = world.get_mut::<City>(entity) {
+                    city.production_queue = Some(ProductionItem::Unit(first));
+                }
+            });
             let mut buildings = if scenario.developed {
                 let known: HashSet<Tech> = def.techs.iter().filter_map(|t| Tech::ALL.into_iter().find(|x| x.base_name() == t)).collect();
                 developed_buildings(pop, coastal, |t| known.contains(&t))
@@ -1081,7 +1176,15 @@ fn setup_world(
         for unit in &def.units {
             let Some(kind) = UnitType::ALL.into_iter().find(|u| u.base_name() == unit.kind) else { continue };
             let hex = scenario::offset_to_hex(unit.col, unit.row);
-            spawn_unit(&mut commands, hex, kind, owner);
+            let spawned = spawn_unit(&mut commands, hex, kind, owner);
+            // A developed world's forces are in place: dug in, not each asking for orders.
+            if scenario.developed && kind.is_military() {
+                commands.queue(move |world: &mut World| {
+                    if let Some(mut unit) = world.get_mut::<Unit>(spawned) {
+                        unit.fortified = true;
+                    }
+                });
+            }
             if owner == PLAYER {
                 fog.reveal(hex, 2);
             }
@@ -1129,6 +1232,11 @@ fn setup_world(
         last_turn: new_game.last_turn,
         ..default()
     };
+    // A developed world's cities have buildings to keep: start with taxes that pay for them, and a
+    // little luxury for its great cities (computer players set their own).
+    if scenario.developed {
+        state.set_rates(bevy_civ::economy::Rates { science: 30, luxury: 10 });
+    }
 
     if let Ok((mut transform, mut projection)) = camera.get_single_mut() {
         let home = defs[0].cities.first().map(|c| map.layout.hex_to_world_pos(scenario::offset_to_hex(c.col, c.row))).unwrap_or(Vec2::ZERO);
@@ -1344,7 +1452,7 @@ fn cleanup_world(
     commands.insert_resource(GoldenAges::default());
     commands.insert_resource(JustCaptured::default());
     commands.insert_resource(Rivers::default());
-    commands.insert_resource(Cycle { advance: true, force: false });
+    commands.insert_resource(Cycle { advance: true, force: false, confirm_end: None });
     commands.insert_resource(Dirty { map: true, ui: true });
 }
 
@@ -2048,17 +2156,24 @@ fn auto_explore(
     others: Query<&Unit, Without<Exploring>>,
     cities: Query<&City>,
     tiles: Query<&HexTile>,
-    (map, diplomacy): (Res<MapData>, Res<Diplomacy>),
+    (map, diplomacy, supplies): (Res<MapData>, Res<Diplomacy>, Res<Supplies>),
     mut fog: ResMut<FogOfWar>,
     (mut log, mut dirty): (ResMut<GameLog>, ResMut<Dirty>),
     mut commands: Commands,
 ) {
     let new_turn = std::mem::replace(&mut *last_turn, state.turn) != state.turn;
+    // Explorers keep out of the lands of peoples we are at peace with and have no right of passage
+    // from: walking in only brought demands to withdraw, turn after turn.
+    let closed = |h: &Hex| {
+        supplies.territory.get(h).is_some_and(|(owner, _)| {
+            *owner != PLAYER && *owner != BARBARIANS && diplomacy.get_treaty(PLAYER, *owner) != Treaty::War && !diplomacy.has_passage(PLAYER, *owner)
+        })
+    };
     if (!new_turn && fresh.is_empty()) || explorers.is_empty() || state.victory.is_some() {
         return;
     }
     let ports: HashSet<Hex> = cities.iter().filter(|c| c.owner == PLAYER).map(|c| c.position).collect();
-    let land: Vec<(Hex, Terrain)> = tiles.iter().map(|t| (t.coord, t.terrain)).collect();
+    let land: Vec<(Hex, Terrain)> = tiles.iter().map(|t| (t.coord, t.terrain)).filter(|(h, _)| !closed(h)).collect();
     let roads = road_network(tiles.iter(), cities.iter().map(|c| c.position));
     let foreign: HashSet<Hex> = others.iter().filter(|u| u.owner != PLAYER).map(|u| u.position).collect();
     let enemy_armies: HashSet<Hex> = others
@@ -2084,7 +2199,7 @@ fn auto_explore(
                 .explored
                 .iter()
                 .copied()
-                .filter(|h| *h != from && map.water.contains(h) == sea && !foreign.contains(h) && !claimed.iter().any(|c| c.distance_to(*h) <= 2))
+                .filter(|h| *h != from && map.water.contains(h) == sea && !foreign.contains(h) && !closed(h) && !claimed.iter().any(|c| c.distance_to(*h) <= 2))
                 .filter(|h| h.all_neighbors().iter().any(|n| map.cells.contains(n) && !fog.explored.contains(n)))
                 .collect();
             frontier.sort_by_key(|h| (from.distance_to(*h), h.x, h.y));
@@ -2341,6 +2456,16 @@ fn apply_actions(
         match action {
             Action::EndTurn => {
                 end_turn.send(EndTurnRequest);
+            }
+            Action::EndTurnKey => {
+                let waiting = units.iter().filter(|u| needs_orders(u)).count();
+                if waiting > 0 && cycle.confirm_end != Some(state.turn) {
+                    cycle.confirm_end = Some(state.turn);
+                    let them = if waiting == 1 { "1 unit still awaits".to_string() } else { format!("{waiting} units still await") };
+                    log.push(format!("{them} orders. Press Enter again to end the turn anyway (or Space to go through them)."));
+                } else {
+                    end_turn.send(EndTurnRequest);
+                }
             }
             Action::NextUnit => {
                 selection.city = None;
@@ -3436,7 +3561,11 @@ fn apply_actions(
                     if tech.goal.is_some_and(|g| !tech.path_to(g).contains(target)) {
                         tech.goal = None;
                     }
-                    log.push(format!("Our scholars turn to {}.", target.name()));
+                    log.push(if tech.progress > 0 {
+                        format!("Our scholars turn to {} - the {} beakers already gathered carry over.", target.name(), tech.progress)
+                    } else {
+                        format!("Our scholars turn to {}.", target.name())
+                    });
                 }
             }
             Action::ResearchGoal(goal) => {
@@ -3490,6 +3619,8 @@ fn process_turn(
     if actions.read().count() == 0 || state.victory.is_some() {
         return;
     }
+    prof::mark("other systems, between turns");
+    prof::turn_started();
     dirty.map = true;
     dirty.ui = true;
     state.turn += 1;
@@ -3545,6 +3676,12 @@ fn process_turn(
     for (_, unit) in units.iter().filter(|(_, u)| matches!(u.unit_type, UnitType::Caravan | UnitType::Diplomat | UnitType::Missionary)) {
         *envoy_counts.entry((unit.owner, unit.unit_type)).or_default() += 1;
     }
+    // Those already in production count too, or every city would start one the same few turns.
+    for (city, _, _) in cities.iter() {
+        if let Some(ProductionItem::Unit(kind @ (UnitType::Caravan | UnitType::Diplomat | UnitType::Missionary))) = &city.production_queue {
+            *envoy_counts.entry((city.owner, *kind)).or_default() += 1;
+        }
+    }
     // Civilizations with free land for new cities near their own (at least 3 tiles from any city,
     // within 10 of one of theirs - or 20, for a seafaring people that can ship settlers there).
     // In a world already built (The Modern World) nobody founds new cities.
@@ -3586,6 +3723,7 @@ fn process_turn(
         .collect();
     let mut rng = rand::thread_rng();
     let gov = state.government;
+    prof::mark("setup: research, wonders, routes");
     // Each civilization lives under its own government. Computer players adopt the best they know.
     let mut governments: HashMap<u32, Government> = HashMap::from([(PLAYER, state.government)]);
     for civ in civs.players.iter_mut().filter(|c| !c.is_human) {
@@ -3660,6 +3798,7 @@ fn process_turn(
         .iter()
         .map(|c| (c.id, if c.id == PLAYER { state.rates() } else { c.rates.fit(governments.get(&c.id).copied().unwrap_or_default()) }))
         .collect();
+    prof::mark("governments, corruption");
     // Each people's accounts this turn; what its cities would raise at a 100% tax rate, its gold
     // that does not depend on the rates, and its cities in disorder (for computer players' rates).
     let mut accounts: HashMap<u32, bevy_civ::economy::Ledger> = HashMap::new();
@@ -3698,6 +3837,9 @@ fn process_turn(
     let mut settler_counts: HashMap<u32, usize> = HashMap::new();
     for (_, unit) in units.iter().filter(|(_, u)| u.unit_type == UnitType::Settler) {
         *settler_counts.entry(unit.owner).or_default() += 1;
+    }
+    for (city, _, _) in cities.iter().filter(|(c, _, _)| c.production_queue == Some(ProductionItem::Unit(UnitType::Settler))) {
+        *settler_counts.entry(city.owner).or_default() += 1;
     }
     // Where every army stands, who is at war, and how much road work each computer player has left.
     let armies: Vec<(Hex, u32)> = units.iter().filter(|(_, u)| u.unit_type.is_army()).map(|(_, u)| (u.position, u.owner)).collect();
@@ -3749,6 +3891,7 @@ fn process_turn(
     }
     let war_turns = state.war_turns.clone();
 
+    prof::mark("accounts, traits");
     // The troubles of the modern city (see `bevy_civ::troubles`): who knows enough to have them,
     // and where drugs are rife (smugglers carry them across borders, unless a crackdown was agreed).
     let knows_tech = |owner: u32, t: Tech| if owner == PLAYER { tech.researched.contains(&t) } else { civs.players.iter().any(|c| c.id == owner && c.tech.researched.contains(&t)) };
@@ -3777,6 +3920,7 @@ fn process_turn(
     let media_age: HashSet<u32> = civs.players.iter().map(|c| c.id).filter(|o| knows_tech(*o, Tech::Electronics)).collect();
     let mut uprisings: Vec<(Hex, u32, UnitType, String)> = Vec::new();
 
+    prof::mark("modern troubles prep");
     for (mut city, mut buildings, mut happiness) in &mut cities {
         let mine = city.owner == PLAYER;
         if mine {
@@ -4303,6 +4447,7 @@ fn process_turn(
                 match &next {
                     ProductionItem::Unit(UnitType::Worker | UnitType::Engineers) => *worker_counts.entry(owner).or_default() += 1,
                     ProductionItem::Unit(UnitType::Settler) => *settler_counts.entry(owner).or_default() += 1,
+                    ProductionItem::Unit(UnitType::Caravan) => *envoy_counts.entry((owner, UnitType::Caravan)).or_default() += 1,
                     ProductionItem::Unit(u) if u.is_ferry() => *ferry_counts.entry(owner).or_default() += 1,
                     ProductionItem::Unit(u) if u.domain() == Domain::Sea => *navy_sizes.entry(owner).or_default() += 1,
                     ProductionItem::Unit(u) if u.domain() == Domain::Air => *air_sizes.entry(owner).or_default() += 1,
@@ -4373,6 +4518,7 @@ fn process_turn(
         }
     }
 
+    prof::mark("city loop");
     // Migration: every few turns, citizens leave troubled cities for better ones nearby that welcome
     // them - at home, or abroad in peoples that know Industrialization.
     if state.turn % bevy_civ::troubles::MIGRATION_EVERY == 0 {
@@ -4485,6 +4631,7 @@ fn process_turn(
     let military = units.iter().filter(|(_, u)| u.owner == PLAYER && u.unit_type.is_military()).count() as u32;
     state.unit_support = if military > free_support { (military - free_support) as i32 * gov.unit_upkeep_food() as i32 } else { 0 };
     total_gold -= state.unit_support;
+    prof::mark("migration, AI governments");
     // Buildings cost their upkeep (not in anarchy, when no taxes come in).
     if gov != Government::Anarchy {
         total_gold -= accounts.get(&PLAYER).map_or(0, |a| a.upkeep) as i32;
@@ -4700,6 +4847,7 @@ fn process_turn(
 
     let city_owners: Vec<(Hex, u32)> = cities.iter().map(|(c, _, _)| (c.position, c.owner)).collect();
 
+    prof::mark("upkeep, armies, Leonardo");
     // --- Computer players and barbarians move, attack and capture -----------------------------
     // Barbarians fight everyone; civilizations fight those they are at war with.
     // A flat table of who is at war (ids are small), as the AI asks this for every pair of units.
@@ -4721,7 +4869,7 @@ fn process_turn(
     // connected, and from each capital to cities that are cut off from it.
     let mut road_jobs: HashMap<u32, Vec<Hex>> = HashMap::new();
     {
-        let land: Vec<(Hex, Terrain)> = tiles.iter().map(|t| (t.coord, t.terrain)).collect();
+        let land: HashMap<Hex, Terrain> = tiles.iter().map(|t| (t.coord, t.terrain)).collect();
         let done: HashSet<Hex> = tiles.iter().filter(|t| t.has_road()).map(|t| t.coord).chain(city_owners.iter().map(|(p, _)| *p)).collect();
         let mut routes: Vec<(u32, Hex, Hex)> = supplies
             .unconnected
@@ -4739,7 +4887,7 @@ fn process_turn(
                 .into_iter()
                 .filter(|p| p.distance_to(*city) <= 14 && (supplies.linked.contains(p) || coastal(p)))
                 .take(4)
-                .find(|p| find_path(*p, *city, land.iter().copied(), Travel::Land).is_some());
+                .find(|p| bevy_civ::pathfinding::find_path_on(*p, *city, &land, Travel::Land).is_some());
             if let Some(hub) = reachable {
                 routes.push((*owner, hub, *city));
             }
@@ -4747,7 +4895,7 @@ fn process_turn(
         // Nearest goals first, so short useful roads are finished before long ones.
         routes.sort_by_key(|(_, from, to)| from.distance_to(*to));
         for (owner, from, to) in routes {
-            if let Some(route) = find_path(from, to, land.iter().copied(), Travel::Land) {
+            if let Some(route) = bevy_civ::pathfinding::find_path_on(from, to, &land, Travel::Land) {
                 let jobs = road_jobs.entry(owner).or_default();
                 for step in route {
                     if !done.contains(&step) && !jobs.contains(&step) {
@@ -4792,6 +4940,7 @@ fn process_turn(
     let civ_name = |owner: u32| names.get(&owner).cloned().unwrap_or_else(|| bevy_civ::theme::term("barbarian", "Barbarian").to_string());
 
     let mut dead: HashSet<Entity> = HashSet::new();
+    prof::mark("AI moves (process_ai_turn)");
     // Guns fire first, softening up what the troops then storm.
     let mut attacks = attacks;
     attacks.sort_by_key(|a| !a.bombard);
@@ -5050,6 +5199,7 @@ fn process_turn(
             city.production_queue = Some(ProductionItem::Unit(fallback_unit.get(&new_owner).copied().unwrap_or(UnitType::Warrior)));
         }
     }
+    prof::mark("attacks, captures");
     // Computer players keep their armies modern: troops in their cities are re-equipped while the
     // treasury allows (keeping a reserve), and when the army is at its size limit the weakest unit
     // that can no longer be upgraded is stood down to make room for something better.
@@ -5228,14 +5378,24 @@ fn process_turn(
             }
         }
     }
+    prof::mark("upgrades, warming, sentries, nukes");
     // --- Computer players' caravans and diplomats --------------------------------------------
     {
-        let land: Vec<(Hex, Terrain)> = tiles.iter().map(|t| (t.coord, t.terrain)).collect();
+        // The land, and who stands where, looked up once for every envoy's route (not per step).
+        let land: HashMap<Hex, Terrain> = tiles.iter().map(|t| (t.coord, t.terrain)).collect();
+        let standing: HashMap<Hex, Vec<u32>> = units.iter().filter(|(e, _)| !dead.contains(e)).fold(HashMap::new(), |mut m, (_, u)| {
+            m.entry(u.position).or_insert_with(Vec::new).push(u.owner);
+            m
+        });
         let city_info: Vec<(Hex, u32, u32, String, bool)> = cities
             .iter()
             .map(|(c, b, _)| (c.position, c.owner, c.population, c.name.clone(), b.has(Building::Walls) || wonders.walls_everywhere(c.owner)))
             .collect();
         let roads = road_network(tiles.iter(), city_info.iter().map(|c| c.0));
+        // Envoys walk: they only make for cities on their own landmass (a search for one overseas
+        // would cross the whole continent each turn and fail).
+        let continent = bevy_civ::ai::continents(&land.iter().filter(|(_, t)| **t != Terrain::Water).map(|(h, _)| *h).collect());
+        let same_land = |a: Hex, b: Hex| continent.get(&a).is_some_and(|x| continent.get(&b) == Some(x));
         let sites: Vec<(Hex, u32)> = cities
             .iter()
             .filter(|(c, _, _)| matches!(&c.production_queue, Some(ProductionItem::Building(b)) if b.is_wonder()))
@@ -5257,7 +5417,7 @@ fn process_turn(
             let goal: Option<Hex> = match kind {
                 UnitType::Caravan => sites
                     .iter()
-                    .filter(|(_, o)| *o == owner)
+                    .filter(|(at, o)| *o == owner && same_land(*at, here))
                     .map(|(at, _)| *at)
                     .min_by_key(|at| at.distance_to(here))
                     .or_else(|| {
@@ -5265,7 +5425,7 @@ fn process_turn(
                         let pop = city_info.iter().find(|c| c.0 == home).map(|c| c.2).unwrap_or(1);
                         city_info
                             .iter()
-                            .filter(|c| (c.1 == owner || at_peace(c.1)) && trade.refusal(home, c.0, owner, c.1).is_none())
+                            .filter(|c| (c.1 == owner || at_peace(c.1)) && same_land(c.0, here) && trade.refusal(home, c.0, owner, c.1).is_none())
                             .max_by_key(|c| (bevy_civ::trade::route_yield(home.distance_to(c.0), pop, c.2, c.1 != owner).0, -c.0.distance_to(here)))
                             .map(|c| c.0)
                     }),
@@ -5273,14 +5433,14 @@ fn process_turn(
                 UnitType::Missionary => faith.and_then(|f| {
                     city_info
                         .iter()
-                        .filter(|c| c.1 == owner && religions.of(c.0) != Some(f))
+                        .filter(|c| c.1 == owner && religions.of(c.0) != Some(f) && same_land(c.0, here))
                         .min_by_key(|c| c.0.distance_to(here))
-                        .or_else(|| city_info.iter().filter(|c| c.1 != owner && at_peace(c.1) && religions.of(c.0).is_none()).min_by_key(|c| c.0.distance_to(here)))
+                        .or_else(|| city_info.iter().filter(|c| c.1 != owner && at_peace(c.1) && religions.of(c.0).is_none() && same_land(c.0, here)).min_by_key(|c| c.0.distance_to(here)))
                         .map(|c| c.0)
                 }),
                 _ => city_info
                     .iter()
-                    .filter(|c| c.1 != owner && c.1 != BARBARIANS && diplomacy.get_treaty(owner, c.1) != Treaty::Alliance)
+                    .filter(|c| c.1 != owner && c.1 != BARBARIANS && diplomacy.get_treaty(owner, c.1) != Treaty::Alliance && same_land(c.0, here))
                     .min_by_key(|c| (diplomacy.get_treaty(owner, c.1) != Treaty::War, c.0.distance_to(here)))
                     .map(|c| c.0),
             };
@@ -5288,10 +5448,10 @@ fn process_turn(
             let foreign_goal = city_info.iter().any(|c| c.0 == goal && c.1 != owner);
             let arrived = if foreign_goal { here.distance_to(goal) <= 1 } else { here == goal };
             if !arrived {
-                if let Some(route) = find_route(here, goal, land.iter().copied(), &roads, Travel::Land) {
+                if let Some(route) = bevy_civ::pathfinding::find_route_on(here, goal, &land, &roads, Travel::Land) {
                     let stop = if foreign_goal { route.len().saturating_sub(1) } else { route.len() };
                     // Never into a tile someone else holds.
-                    let blocked = route.iter().skip(1).position(|h| units.iter().any(|(e, u)| !dead.contains(&e) && u.position == *h && u.owner != owner)).map(|i| i + 1);
+                    let blocked = route.iter().skip(1).position(|h| standing.get(h).is_some_and(|owners| owners.iter().any(|o| *o != owner))).map(|i| i + 1);
                     let stop = blocked.map_or(stop, |b| b.min(stop));
                     if let Ok((_, mut unit)) = units.get_mut(entity) {
                         let mut trail = Vec::new();
@@ -5441,6 +5601,7 @@ fn process_turn(
     // Troops standing in someone else's lands: theirs in ours, and ours in theirs.
     foreign.trespass.clear();
     foreign.our_trespass.clear();
+    prof::mark("caravans, diplomats");
     for (_, unit) in units.iter().filter(|(e, u)| !dead.contains(e) && u.unit_type.is_military() && u.carrier.is_none()) {
         let Some(&(land_owner, _)) = supplies.territory.get(&unit.position) else { continue };
         if land_owner == PLAYER && unit.owner != PLAYER && unit.owner != BARBARIANS {
@@ -5664,6 +5825,8 @@ fn process_turn(
             }
         }
     }
+    prof::turn_finished(state.turn);
+    prof::mark("victory checks, UN, history");
 }
 
 /// Moves the selection on to the next unit that needs orders and points the camera at it.
@@ -5740,6 +5903,7 @@ pub fn religion_turn(
     mut diplomacy: ResMut<Diplomacy>,
     mut log: ResMut<GameLog>,
 ) {
+    prof::mark("victory checks, UN, history");
     if *last == state.turn || state.victory.is_some() {
         return;
     }
@@ -6005,6 +6169,7 @@ pub fn work_tiles(
     mut cities: Query<(&mut City, &CityBuildings, Option<&Happiness>)>,
     (changed_tiles, changed_units): (Query<(), Changed<HexTile>>, Query<(), Changed<Unit>>),
 ) {
+    prof::mark("supplies (trade network)");
     // Each people's government (and golden age) changes what its land gives.
     let land_rule = |owner: u32| -> (Government, bool) {
         let gov = if owner == PLAYER { state.government } else { civs.players.iter().find(|c| c.id == owner).map_or(Government::Despotism, |c| c.government) };
@@ -6110,6 +6275,7 @@ pub fn nuclear_strikes(
     mut state: ResMut<GameState>,
     mut commands: Commands,
 ) {
+    prof::mark("work tiles");
     let name_of = |id: u32| if id == PLAYER { "We".to_string() } else { civs.players.iter().find(|c| c.id == id).map(|c| capitalised(&c.name)).unwrap_or_else(|| "Someone".into()) };
     let mut rng = rand::thread_rng();
     for strike in strikes.read() {
@@ -6184,6 +6350,7 @@ fn refresh_supplies(
     culture: Res<CultureLedger>,
     mut supplies: ResMut<Supplies>,
 ) {
+    prof::mark("religion, villages");
     if !(dirty.map || foreign.is_changed() || tech.is_changed() || culture.is_changed()) {
         return;
     }
@@ -6278,7 +6445,7 @@ mod tests {
             .init_resource::<FogOfWar>()
             .init_resource::<Civilizations>()
             .init_resource::<GameLog>()
-            .insert_resource(Cycle { advance: true, force: false })
+            .insert_resource(Cycle { advance: true, force: false, confirm_end: None })
             .init_resource::<Supplies>()
             .init_resource::<WorldWonders>()
             .init_resource::<GreatPeople>()
@@ -6439,6 +6606,7 @@ mod tests {
             .init_resource::<GameState>()
             .init_resource::<FogOfWar>()
             .init_resource::<Diplomacy>()
+            .init_resource::<Supplies>()
             .init_resource::<GameLog>()
             .insert_resource(Dirty { map: false, ui: false })
             .add_systems(Update, auto_explore);
