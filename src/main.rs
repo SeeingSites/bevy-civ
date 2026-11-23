@@ -1137,6 +1137,17 @@ fn setup_world(
             let harbour = coastal && bevy_civ::tiles::sustainable(wanted, centre, foods(false)) < wanted;
             let pop = bevy_civ::tiles::sustainable(wanted, centre, foods(harbour));
             let entity = spawn_city(&mut commands, hex, city.name.clone(), pop, owner, city.capital);
+            // The first project is the stoutest defender this people can train (a city of 2025 does
+            // not start on a Warrior).
+            let first = {
+                let known: HashSet<Tech> = def.techs.iter().filter_map(|t| Tech::ALL.into_iter().find(|x| x.base_name() == t)).collect();
+                bevy_civ::unit::plain_defender(|t| known.contains(&t))
+            };
+            commands.queue(move |world: &mut World| {
+                if let Some(mut city) = world.get_mut::<City>(entity) {
+                    city.production_queue = Some(ProductionItem::Unit(first));
+                }
+            });
             let mut buildings = if scenario.developed {
                 let known: HashSet<Tech> = def.techs.iter().filter_map(|t| Tech::ALL.into_iter().find(|x| x.base_name() == t)).collect();
                 developed_buildings(pop, coastal, |t| known.contains(&t))
