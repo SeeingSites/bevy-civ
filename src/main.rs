@@ -1165,7 +1165,15 @@ fn setup_world(
         for unit in &def.units {
             let Some(kind) = UnitType::ALL.into_iter().find(|u| u.base_name() == unit.kind) else { continue };
             let hex = scenario::offset_to_hex(unit.col, unit.row);
-            spawn_unit(&mut commands, hex, kind, owner);
+            let spawned = spawn_unit(&mut commands, hex, kind, owner);
+            // A developed world's forces are in place: dug in, not each asking for orders.
+            if scenario.developed && kind.is_military() {
+                commands.queue(move |world: &mut World| {
+                    if let Some(mut unit) = world.get_mut::<Unit>(spawned) {
+                        unit.fortified = true;
+                    }
+                });
+            }
             if owner == PLAYER {
                 fog.reveal(hex, 2);
             }
@@ -1213,6 +1221,11 @@ fn setup_world(
         last_turn: new_game.last_turn,
         ..default()
     };
+    // A developed world's cities have buildings to keep: start with taxes that pay for them, and a
+    // little luxury for its great cities (computer players set their own).
+    if scenario.developed {
+        state.set_rates(bevy_civ::economy::Rates { science: 30, luxury: 10 });
+    }
 
     if let Ok((mut transform, mut projection)) = camera.get_single_mut() {
         let home = defs[0].cities.first().map(|c| map.layout.hex_to_world_pos(scenario::offset_to_hex(c.col, c.row))).unwrap_or(Vec2::ZERO);
