@@ -59,6 +59,11 @@ pub struct Scenario {
     /// Wonders already standing, by the city they stand in (or none: lost to history).
     #[serde(default)]
     pub wonders: Vec<(String, Option<String>)>,
+    /// Draws the world from this seed: a New World's land and homes, and every map's resources and
+    /// villages. The same seed builds the same world (how the game then goes still varies). None:
+    /// a fresh world each time.
+    #[serde(default)]
+    pub seed: Option<u64>,
 }
 
 /// An expansion pack (`assets/expansions/`): nations that can be led from 4000 BC, on the Whole
@@ -250,6 +255,16 @@ fn neighbours(col: i32, row: i32) -> [(i32, i32); 6] {
     [(col, row - 1), (col, row + 1), (col - 1, row - 1 + odd), (col - 1, row + odd), (col + 1, row - 1 + odd), (col + 1, row + odd)]
 }
 
+/// The random numbers a world is drawn from: seeded when the scenario has a seed (`stream` keeps the
+/// map's and the resources' draws apart), fresh otherwise.
+pub fn world_rng(seed: Option<u64>, stream: u64) -> rand::rngs::StdRng {
+    use rand::SeedableRng;
+    match seed {
+        Some(seed) => rand::rngs::StdRng::seed_from_u64(seed.wrapping_mul(0x9E37_79B9_7F4A_7C15) ^ stream),
+        None => rand::rngs::StdRng::from_entropy(),
+    }
+}
+
 /// Fills in a random map and start positions for the "New World" scenario.
 /// `player` is kept among the civilizations that take part; its new index is returned.
 pub fn generate_random(template: &Scenario, player: usize, map_size: usize, peoples: usize) -> (Scenario, usize) {
@@ -257,7 +272,7 @@ pub fn generate_random(template: &Scenario, player: usize, map_size: usize, peop
     #[allow(non_snake_case)]
     let (COLS, ROWS) = (cols, rows);
     let civs_wanted = peoples.clamp(2, template.civs.len().max(2));
-    let mut rng = rand::thread_rng();
+    let mut rng = world_rng(template.seed, 0);
     let mut waves = |freq: f32| -> Vec<(f32, f32, f32, f32)> {
         (0..5)
             .map(|i| {

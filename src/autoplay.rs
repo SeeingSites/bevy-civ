@@ -22,6 +22,12 @@ use bevy_civ::unit::Unit;
 use crate::scenario::{self, CivDef, NewGame};
 use crate::{EndTurnNow, GameLog, GameState, Observer, PLAYER};
 
+/// The systems that play a turn without a window: what `--autoplay` and `--balance` both run, so a
+/// headless game is the same game as one on screen.
+pub fn add_turn_systems(app: &mut App) {
+    app.add_systems(Update, (crate::stow_cargo, crate::process_turn, crate::religion_turn, crate::visit_villages, crate::refresh_supplies, crate::work_tiles, crate::nuclear_strikes).chain());
+}
+
 /// Plays `turns` turns of the scenario whose id (or name) contains `which`, and prints a report.
 /// Returns false if the scenario is unknown.
 pub fn run(which: &str, turns: u32) -> bool {
@@ -44,7 +50,7 @@ pub fn run(which: &str, turns: u32) -> bool {
     app.add_plugins(MinimalPlugins);
     crate::init_game(&mut app);
     app.insert_resource(Observer);
-    app.add_systems(Update, (crate::stow_cargo, crate::process_turn, crate::religion_turn, crate::visit_villages, crate::refresh_supplies, crate::work_tiles, crate::nuclear_strikes).chain());
+    add_turn_systems(&mut app);
     app.insert_resource(NewGame { scenario, civ: 0, difficulty: crate::Difficulty::Regent, last_turn: turns.max(1), map_size: 1, peoples: scenario::DEFAULT_PEOPLES });
     if let Err(e) = app.world_mut().run_system_once(crate::setup_world) {
         eprintln!("The world could not be set up: {e}");

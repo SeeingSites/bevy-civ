@@ -50,6 +50,12 @@ pub struct Options {
     from: u32,
     peoples: Option<usize>,
     map_size: Option<usize>,
+    /// Game `i` draws its world from `seed + i`: the same command builds the same worlds.
+    seed: Option<u64>,
+    /// The expansion packs' peoples join the New World's.
+    expansions: bool,
+    /// Play this scenario (by id) instead of New Worlds.
+    scenario: Option<String>,
 }
 
 #[derive(Clone, serde::Serialize)]
@@ -105,7 +111,11 @@ pub fn options_from(args: &[String]) -> Result<Options, String> {
     if !args.iter().any(|a| a == "--balance") {
         return Err(usage().into());
     }
-    let mut shuffle = false;
+    // Seats are shuffled unless asked otherwise: a fixed seat makes one people move first in every game.
+    let mut shuffle = true;
+    let mut seed = None;
+    let mut expansions = false;
+    let mut scenario_id = None;
     let mut peoples = None;
     let mut map_size = None;
     let mut from = 0u32;
@@ -114,6 +124,18 @@ pub fn options_from(args: &[String]) -> Result<Options, String> {
         let next = args.get(i + 1).map(String::as_str);
         match args[i].as_str() {
             "--shuffle" => shuffle = true,
+            "--fixed-seats" => shuffle = false,
+            "--expansions" => expansions = true,
+            "--seed" => {
+                let value = next.ok_or_else(|| flag_needs("--seed", "a number"))?;
+                seed = Some(value.parse::<u64>().map_err(|_| format!("--seed needs a whole number, not {value}"))?);
+                i += 1;
+            }
+            "--scenario" => {
+                let value = next.ok_or_else(|| flag_needs("--scenario", "a scenario id (earth, rome, discovery, napoleon, ww2...)"))?;
+                scenario_id = Some(value.to_string());
+                i += 1;
+            }
             "--peoples" => {
                 let value = next.ok_or_else(|| flag_needs("--peoples", "a number of peoples"))?;
                 let n: usize = value
@@ -158,13 +180,13 @@ pub fn options_from(args: &[String]) -> Result<Options, String> {
         if args[j].starts_with("--") {
             if !matches!(
                 args[j].as_str(),
-                "--shuffle" | "--peoples" | "--size" | "--from" | "--theme"
+                "--shuffle" | "--fixed-seats" | "--expansions" | "--peoples" | "--size" | "--from" | "--theme" | "--seed" | "--scenario"
             ) {
                 return Err(format!("unknown option {}\n{}", args[j], usage()));
             }
             if matches!(
                 args[j].as_str(),
-                "--peoples" | "--size" | "--from" | "--theme"
+                "--peoples" | "--size" | "--from" | "--theme" | "--seed" | "--scenario"
             ) {
                 j += 1;
             }
@@ -208,11 +230,14 @@ pub fn options_from(args: &[String]) -> Result<Options, String> {
         from,
         peoples,
         map_size,
+        seed,
+        expansions,
+        scenario: scenario_id,
     })
 }
 
 fn usage() -> &'static str {
-    "bevy-civ --balance [games] [turns] [directory] [--shuffle] [--peoples N] [--size small|normal|large] [--from N]"
+    "bevy-civ --balance [games] [turns] [directory] [--fixed-seats] [--peoples N] [--size small|normal|large] [--from N] [--seed N] [--expansions] [--scenario ID]"
 }
 
 fn flag_needs(flag: &str, what: &str) -> String {
@@ -462,6 +487,15 @@ fn pct(value: f64) -> String {
 }
 
 fn layout_phrase(opts: &Options) -> String {
+    if let Some(id) = &opts.scenario {
+        return format!("scenario {id}");
+    }
+    let extra = if opts.expansions { ", with the expansion peoples" } else { "" };
+    let seed = opts.seed.map(|s| format!(", worlds from seed {s}")).unwrap_or_default();
+    format!("{}{extra}{seed}", layout_only(opts))
+}
+
+fn layout_only(opts: &Options) -> String {
     match (opts.map_size, opts.peoples) {
         (Some(i), Some(n)) => format!("{}, {n} peoples", scenario::MAP_SIZES[i].0),
         (Some(i), None) => format!("{}, peoples rotate", scenario::MAP_SIZES[i].0),
@@ -509,7 +543,7 @@ fn text_report(opts: &Options, games: &[GameResult]) -> String {
     }
     lines.push(second);
     lines.push(format!("Win share ({FAIR_BAND}):"));
-    lines.push("  people             wins      share      fair    band".into());
+    lines.push("  people                 wins      share      fair    band".into());
     for civ in shares(games) {
         let band = if civ.band == "none" {
             "none".into()
@@ -522,7 +556,7 @@ fn text_report(opts: &Options, games: &[GameResult]) -> String {
             )
         };
         lines.push(format!(
-            "  {:<16} {:>3} of {:<3} {:>7}   {:>7}   {band}",
+            "  {:<20} {:>3} of {:<3} {:>7}   {:>7}   {band}",
             civ.name,
             civ.wins,
             civ.decided,
@@ -627,45 +661,56 @@ fn play(index: u32, opts: &Options) -> Result<GameResult, String> {
     let started = Instant::now();
     let (map_size, wanted) = schedule(index, opts);
     let map_size = map_size.min(scenario::MAP_SIZES.len() - 1);
-    let mut template = scenario::catalog_with(|_| false)
-        .into_iter()
-        .find(|s| s.id == "random")
-        .ok_or("The New World scenario is missing.")?;
-    template.civs.retain(|c| !c.optional);
-    if template.civs.is_empty() {
-        return Err("The New World has no peoples.".into());
-    }
     let mut rng = rand::thread_rng();
-    let player = guaranteed_player(opts.shuffle, template.civs.len(), &mut rng);
-    let (mut scenario, _) = scenario::generate_random(&template, player, map_size, wanted);
-    // Shuffling after the homes are chosen separates who moves first from who was placed first.
-    seat_order(&mut scenario.civs, opts.shuffle, &mut rng);
-    let seated = scenario.civs.len();
-    let cap = template.civs.len();
-    let expected = wanted.min(cap).max(2.min(cap));
-    if seated != expected {
-        eprintln!("game {index}: seated {seated} peoples (asked for {expected})");
-    }
+    let seed = opts.seed.map(|s| s.wrapping_add(index as u64));
+    let (mut scenario, seated) = if let Some(id) = &opts.scenario {
+        // A fixed scenario: its own peoples and map; only the move order is shuffled.
+        let mut scenario = scenario::catalog_with(|_| true)
+            .into_iter()
+            .find(|s| &s.id == id && !s.rows.is_empty())
+            .ok_or_else(|| format!("No scenario has the id {id}."))?;
+        scenario.civs.retain(|c| !c.optional);
+        scenario.seed = seed;
+        seat_order(&mut scenario.civs, opts.shuffle, &mut rng);
+        let seated = scenario.civs.len();
+        (scenario, seated)
+    } else {
+        let mut template = scenario::catalog_with(|_| opts.expansions)
+            .into_iter()
+            .find(|s| s.id == "random")
+            .ok_or("The New World scenario is missing.")?;
+        // The packs' peoples (with --expansions) are ordinary candidates here.
+        for civ in &mut template.civs {
+            civ.optional = false;
+        }
+        if template.civs.is_empty() {
+            return Err("The New World has no peoples.".into());
+        }
+        template.seed = seed;
+        let player = match seed {
+            // The same seed seats the same peoples.
+            Some(s) if opts.shuffle => (s % template.civs.len() as u64) as usize,
+            _ => guaranteed_player(opts.shuffle, template.civs.len(), &mut rng),
+        };
+        let (mut scenario, _) = scenario::generate_random(&template, player, map_size, wanted);
+        // Shuffling after the homes are chosen separates who moves first from who was placed first.
+        seat_order(&mut scenario.civs, opts.shuffle, &mut rng);
+        let seated = scenario.civs.len();
+        let cap = template.civs.len();
+        let expected = wanted.min(cap).max(2.min(cap));
+        if seated != expected {
+            eprintln!("game {index}: seated {seated} peoples (asked for {expected})");
+        }
+        (scenario, seated)
+    };
     scenario.civs.insert(0, observer());
 
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     crate::init_game(&mut app);
     app.insert_resource(Observer);
-    // The same chain as `--autoplay`, so the balance run is a real game.
-    app.add_systems(
-        Update,
-        (
-            crate::stow_cargo,
-            crate::process_turn,
-            crate::religion_turn,
-            crate::visit_villages,
-            crate::refresh_supplies,
-            crate::work_tiles,
-            crate::nuclear_strikes,
-        )
-            .chain(),
-    );
+    // The same turn systems as `--autoplay`, so the balance run is a real game.
+    crate::autoplay::add_turn_systems(&mut app);
     app.insert_resource(NewGame {
         scenario,
         civ: 0,
@@ -736,7 +781,7 @@ fn play(index: u32, opts: &Options) -> Result<GameResult, String> {
 
     Ok(GameResult {
         game: index,
-        map: scenario::MAP_SIZES[map_size].0.to_string(),
+        map: opts.scenario.clone().unwrap_or_else(|| scenario::MAP_SIZES[map_size].0.to_string()),
         peoples: seated,
         shuffled: opts.shuffle,
         end_turn,
@@ -764,7 +809,12 @@ mod tests {
         assert_eq!(only.games, 1);
         assert_eq!(only.turns, crate::LAST_TURN);
         assert_eq!(only.out, "balance-out");
-        assert!(!only.shuffle);
+        assert!(only.shuffle, "seats are shuffled unless asked otherwise");
+        assert_eq!((only.seed, only.expansions, only.scenario.as_deref()), (None, false, None));
+        let fixed = options_from(&args(&["bevy-civ", "--balance", "3", "--fixed-seats", "--seed", "7", "--expansions", "--scenario", "ww2", "100"])).unwrap();
+        assert!(!fixed.shuffle);
+        assert_eq!((fixed.games, fixed.turns, fixed.seed, fixed.expansions, fixed.scenario.as_deref()), (3, 100, Some(7), true, Some("ww2")));
+        assert!(options_from(&args(&["bevy-civ", "--balance", "--seed", "x"])).is_err());
         assert_eq!(only.from, 0);
         assert_eq!(only.peoples, None);
         assert_eq!(only.map_size, None);
@@ -795,6 +845,20 @@ mod tests {
         assert_eq!(mixed.map_size, Some(0));
         assert!(options_from(&args(&["bevy-civ", "--balance", "--nope"])).is_err());
         assert!(options_from(&args(&["bevy-civ", "--balance", "0"])).is_err());
+    }
+
+    #[test]
+    fn a_seed_draws_the_same_world_again() {
+        let mut template = scenario::catalog_with(|_| false).into_iter().find(|s| s.id == "random").unwrap();
+        template.seed = Some(42);
+        let (a, _) = scenario::generate_random(&template, 2, 0, 5);
+        let (b, _) = scenario::generate_random(&template, 2, 0, 5);
+        assert_eq!(a.rows, b.rows, "same land");
+        let homes = |s: &scenario::Scenario| s.civs.iter().map(|c| (c.name.clone(), c.cities[0].col, c.cities[0].row)).collect::<Vec<_>>();
+        assert_eq!(homes(&a), homes(&b), "same peoples in the same homes");
+        template.seed = Some(43);
+        let (c, _) = scenario::generate_random(&template, 2, 0, 5);
+        assert_ne!(a.rows, c.rows, "another seed, another world");
     }
 
     #[test]
