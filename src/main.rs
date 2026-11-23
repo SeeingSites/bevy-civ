@@ -63,6 +63,39 @@ pub mod prof {
         state.0 = Some(now);
     }
 
+    /// In the browser: how long each turn took to process, written to the console (for measuring the
+    /// web build, where `Instant` is not available).
+    #[cfg(target_arch = "wasm32")]
+    mod web {
+        use std::cell::Cell;
+        use wasm_bindgen::prelude::*;
+        #[wasm_bindgen]
+        extern "C" {
+            #[wasm_bindgen(js_namespace = performance)]
+            fn now() -> f64;
+            #[wasm_bindgen(js_namespace = console)]
+            fn log(text: &str);
+        }
+        thread_local!(static STARTED: Cell<f64> = const { Cell::new(0.0) });
+        pub fn start() {
+            STARTED.with(|s| s.set(now()));
+        }
+        pub fn finish(turn: u32) {
+            let took = STARTED.with(|s| now() - s.get());
+            log(&format!("bevy-civ: turn {turn} processed in {took:.0} ms"));
+        }
+    }
+
+    pub fn turn_started() {
+        #[cfg(target_arch = "wasm32")]
+        web::start();
+    }
+
+    pub fn turn_finished(_turn: u32) {
+        #[cfg(target_arch = "wasm32")]
+        web::finish(_turn);
+    }
+
     /// The parts of a turn, slowest first, with their share of the time.
     pub fn report() -> Option<String> {
         if !enabled() {
@@ -2099,17 +2132,24 @@ fn auto_explore(
     others: Query<&Unit, Without<Exploring>>,
     cities: Query<&City>,
     tiles: Query<&HexTile>,
-    (map, diplomacy): (Res<MapData>, Res<Diplomacy>),
+    (map, diplomacy, supplies): (Res<MapData>, Res<Diplomacy>, Res<Supplies>),
     mut fog: ResMut<FogOfWar>,
     (mut log, mut dirty): (ResMut<GameLog>, ResMut<Dirty>),
     mut commands: Commands,
 ) {
     let new_turn = std::mem::replace(&mut *last_turn, state.turn) != state.turn;
+    // Explorers keep out of the lands of peoples we are at peace with and have no right of passage
+    // from: walking in only brought demands to withdraw, turn after turn.
+    let closed = |h: &Hex| {
+        supplies.territory.get(h).is_some_and(|(owner, _)| {
+            *owner != PLAYER && *owner != BARBARIANS && diplomacy.get_treaty(PLAYER, *owner) != Treaty::War && !diplomacy.has_passage(PLAYER, *owner)
+        })
+    };
     if (!new_turn && fresh.is_empty()) || explorers.is_empty() || state.victory.is_some() {
         return;
     }
     let ports: HashSet<Hex> = cities.iter().filter(|c| c.owner == PLAYER).map(|c| c.position).collect();
-    let land: Vec<(Hex, Terrain)> = tiles.iter().map(|t| (t.coord, t.terrain)).collect();
+    let land: Vec<(Hex, Terrain)> = tiles.iter().map(|t| (t.coord, t.terrain)).filter(|(h, _)| !closed(h)).collect();
     let roads = road_network(tiles.iter(), cities.iter().map(|c| c.position));
     let foreign: HashSet<Hex> = others.iter().filter(|u| u.owner != PLAYER).map(|u| u.position).collect();
     let enemy_armies: HashSet<Hex> = others
@@ -2135,7 +2175,7 @@ fn auto_explore(
                 .explored
                 .iter()
                 .copied()
-                .filter(|h| *h != from && map.water.contains(h) == sea && !foreign.contains(h) && !claimed.iter().any(|c| c.distance_to(*h) <= 2))
+                .filter(|h| *h != from && map.water.contains(h) == sea && !foreign.contains(h) && !closed(h) && !claimed.iter().any(|c| c.distance_to(*h) <= 2))
                 .filter(|h| h.all_neighbors().iter().any(|n| map.cells.contains(n) && !fog.explored.contains(n)))
                 .collect();
             frontier.sort_by_key(|h| (from.distance_to(*h), h.x, h.y));
@@ -3497,7 +3537,11 @@ fn apply_actions(
                     if tech.goal.is_some_and(|g| !tech.path_to(g).contains(target)) {
                         tech.goal = None;
                     }
-                    log.push(format!("Our scholars turn to {}.", target.name()));
+                    log.push(if tech.progress > 0 {
+                        format!("Our scholars turn to {} - the {} beakers already gathered carry over.", target.name(), tech.progress)
+                    } else {
+                        format!("Our scholars turn to {}.", target.name())
+                    });
                 }
             }
             Action::ResearchGoal(goal) => {
@@ -3552,6 +3596,7 @@ fn process_turn(
         return;
     }
     prof::mark("other systems, between turns");
+    prof::turn_started();
     dirty.map = true;
     dirty.ui = true;
     state.turn += 1;
@@ -3606,6 +3651,12 @@ fn process_turn(
     let mut envoy_counts: HashMap<(u32, UnitType), usize> = HashMap::new();
     for (_, unit) in units.iter().filter(|(_, u)| matches!(u.unit_type, UnitType::Caravan | UnitType::Diplomat | UnitType::Missionary)) {
         *envoy_counts.entry((unit.owner, unit.unit_type)).or_default() += 1;
+    }
+    // Those already in production count too, or every city would start one the same few turns.
+    for (city, _, _) in cities.iter() {
+        if let Some(ProductionItem::Unit(kind @ (UnitType::Caravan | UnitType::Diplomat | UnitType::Missionary))) = &city.production_queue {
+            *envoy_counts.entry((city.owner, *kind)).or_default() += 1;
+        }
     }
     // Civilizations with free land for new cities near their own (at least 3 tiles from any city,
     // within 10 of one of theirs - or 20, for a seafaring people that can ship settlers there).
@@ -3762,6 +3813,9 @@ fn process_turn(
     let mut settler_counts: HashMap<u32, usize> = HashMap::new();
     for (_, unit) in units.iter().filter(|(_, u)| u.unit_type == UnitType::Settler) {
         *settler_counts.entry(unit.owner).or_default() += 1;
+    }
+    for (city, _, _) in cities.iter().filter(|(c, _, _)| c.production_queue == Some(ProductionItem::Unit(UnitType::Settler))) {
+        *settler_counts.entry(city.owner).or_default() += 1;
     }
     // Where every army stands, who is at war, and how much road work each computer player has left.
     let armies: Vec<(Hex, u32)> = units.iter().filter(|(_, u)| u.unit_type.is_army()).map(|(_, u)| (u.position, u.owner)).collect();
@@ -4369,6 +4423,7 @@ fn process_turn(
                 match &next {
                     ProductionItem::Unit(UnitType::Worker | UnitType::Engineers) => *worker_counts.entry(owner).or_default() += 1,
                     ProductionItem::Unit(UnitType::Settler) => *settler_counts.entry(owner).or_default() += 1,
+                    ProductionItem::Unit(UnitType::Caravan) => *envoy_counts.entry((owner, UnitType::Caravan)).or_default() += 1,
                     ProductionItem::Unit(u) if u.is_ferry() => *ferry_counts.entry(owner).or_default() += 1,
                     ProductionItem::Unit(u) if u.domain() == Domain::Sea => *navy_sizes.entry(owner).or_default() += 1,
                     ProductionItem::Unit(u) if u.domain() == Domain::Air => *air_sizes.entry(owner).or_default() += 1,
@@ -5746,6 +5801,7 @@ fn process_turn(
             }
         }
     }
+    prof::turn_finished(state.turn);
     prof::mark("victory checks, UN, history");
 }
 
@@ -6526,6 +6582,7 @@ mod tests {
             .init_resource::<GameState>()
             .init_resource::<FogOfWar>()
             .init_resource::<Diplomacy>()
+            .init_resource::<Supplies>()
             .init_resource::<GameLog>()
             .insert_resource(Dirty { map: false, ui: false })
             .add_systems(Update, auto_explore);

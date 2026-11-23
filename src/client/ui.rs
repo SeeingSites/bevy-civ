@@ -3251,6 +3251,11 @@ pub fn button_actions(
                 }
             }
             Command::Game(action) => {
+                // A city opened from a window's list (Empire, Cities) takes the screen: the window
+                // closes rather than sitting under the city panel, catching clicks and Escape.
+                if matches!(action, Action::SelectCity(_)) {
+                    ui.modal = None;
+                }
                 if *action == Action::Surrender {
                     ui.confirm_surrender = false;
                     ui.modal = None;
@@ -3654,12 +3659,21 @@ pub fn minimap_click(
 /// Keeps the turn buttons in step with how many units still wait for orders.
 pub fn update_turn_buttons(
     units: Query<&Unit>,
+    cities: Query<(&City, &Happiness)>,
     mut label: Query<&mut Text, With<NextUnitLabel>>,
     mut end: Query<(&Interaction, &mut ButtonTint, &mut ImageNode), With<EndTurnButton>>,
 ) {
     let waiting = units.iter().filter(|u| crate::needs_orders(u)).count();
     if let Ok(mut text) = label.get_single_mut() {
-        let value = if waiting == 0 { "All units have orders".to_string() } else { format!("Next Unit ({waiting} waiting)") };
+        // A city in disorder produces nothing: the turn buttons say so, where the player looks
+        // every turn (it was only in the city panel and the message log).
+        let rioting: Vec<&str> = cities.iter().filter(|(c, h)| c.owner == PLAYER && h.in_disorder()).map(|(c, _)| c.name.as_str()).collect();
+        let unrest = match rioting.as_slice() {
+            [] => String::new(),
+            [one] => format!("Disorder in {one}! "),
+            many => format!("Disorder in {} cities! ", many.len()),
+        };
+        let value = if waiting == 0 { format!("{unrest}All units have orders") } else { format!("{unrest}Next Unit ({waiting} waiting)") };
         if text.0 != value {
             text.0 = value;
         }

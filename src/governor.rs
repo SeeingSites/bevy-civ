@@ -240,7 +240,8 @@ pub fn choose(city: &CityView, civ: &CivView, supplies: &Supplies, rng: &mut imp
         (Building::Walls, city.threatened || civ.at_war),
         (Building::Temple, city.population >= bevy_civ::diplomacy::BASE_CONTENT),
         (Building::Aqueduct, near_limit && city.water_limit <= first_limit),
-        (Building::Granary, city.population < 8 && spare),
+        // A granary pays once a city has grown a little (not in a hamlet of one or two).
+        (Building::Granary, (3..8).contains(&city.population) && spare),
         (Building::Barracks, civ.at_war && city.population >= 8 && spare),
         (Building::Courthouse, city.corruption >= 20 && city.trade >= 4),
         (Building::Marketplace, city.trade >= 6),
