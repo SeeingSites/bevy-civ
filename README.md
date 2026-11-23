@@ -457,10 +457,10 @@ working directory.
 | People | Unique unit | In place of | A/D/M | Ability |
 |---|---|---|---|---|
 | Rome | Praetorian | Legion | 4/2/1 | Storm |
-| Greece | Hoplite | Phalanx | 1/4/1 | Shield wall |
+| Greece | Hoplite | Phalanx | 1/5/1 | Shield wall |
 | Macedon | Companion Cavalry | Horseman | 3/1/2 | Charge |
 | Carthage | Numidian Rider | Horseman | 2/2/3 | Plunder |
-| Egypt | Royal Chariot | War Chariot | 3/1/2 | Charge |
+| Egypt | Royal Chariot | War Chariot | 2/2/2 | Charge |
 | Persia | Immortal Guard | Immortal | 4/3/1 | Storm |
 | Seleucids | Cataphract | Knight | 5/3/2 | Charge |
 | Gauls | Gallic Swordsman | Legion | 3/2/2 | Plunder |
@@ -553,7 +553,8 @@ working directory.
   city (corruption and the state religion follow it). A people with no city and no settler left
   is out of the game: its troops disband and it leaves diplomacy. Scores count citizens (2),
   technologies (10) and wonders (50) the same way for everyone. Holding two in five of the world's
-  cities (at least five; half of them in a world that began with fewer than eight peoples) for 10
+  cities (at least five; more in a world that began with few peoples: half among six to eight, three in
+  five among four or five, two thirds among three) for 10
   turns in a row, from turn 150, wins by domination; everyone is
   warned when a people first reaches it. A people down to three cities or fewer makes a **last
   stand**: its cities' defenders get +50%, so nobody is wiped out in a stroke. A scenario's peoples
@@ -751,9 +752,10 @@ turns 250 and 380; a few games go to the turn limit and are decided on score.
 `cargo run --release --no-default-features --features full --bin bevy-civ -- --balance [games] [turns] [directory]`
 plays many New World games between computer players under the real rules, and writes each people's
 win share, the kind of victory and the turn the game ended. See [docs/BALANCE.md](docs/BALANCE.md).
-`--shuffle` gives every people the same chance of a seat and randomises who moves first. A two-game
-smoke is `scripts/balance-smoke.sh`: it reports win share against a 45-55% fair band and does not
-treat an imbalance as a failure.
+Seats are shuffled (every people the same chance of a seat and of moving first; `--fixed-seats`
+turns that off), `--seed N` rebuilds the same worlds, `--expansions` adds the packs' peoples and
+`--scenario ID` measures a fixed scenario. A two-game smoke is `scripts/balance-smoke.sh`: it
+reports win share against a 45-55% fair band and does not treat an imbalance as a failure.
 
 ## Simulator
 A standalone dice model with no Bevy dependency and none of the game's rules. It is not a balance

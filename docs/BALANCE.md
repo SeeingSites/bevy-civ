@@ -22,9 +22,19 @@ cargo run --release --no-default-features --features full --bin bevy-civ -- --ba
 
 Flags, anywhere on the command line:
 
-- `--shuffle` — every people has the same chance of a seat, and the seated peoples are shuffled, so
-  who moves first is not always the theme's first people. Without it, that people (Rome, on Earth)
-  is in every game and moves first, as when a player leads them.
+- Seats are shuffled by default: every people has the same chance of a seat, and the seated peoples
+  are shuffled, so who moves first is not always the theme's first people. `--fixed-seats` turns
+  that off: the theme's first people (Rome, on Earth) is then in every game and moves first, as when
+  a player leads them. (`--shuffle` is still accepted.)
+- `--seed N` — game `i` draws its world from seed `N + i`: the same land, homes, peoples, resources
+  and villages each time the command is run, so two versions of the rules can be compared on the
+  same worlds. Play still varies from run to run (the turns themselves are not seeded), so compare
+  batches, not single games.
+- `--expansions` — the expansion packs' peoples (the United States, Germany, Canada and the rest)
+  join the New World's candidates.
+- `--scenario ID` — play a fixed scenario (`earth`, `rome`, `discovery`, `revolution`, `napoleon`,
+  `greatwar`, `ww2`, `modern`) instead of New Worlds: its own map and peoples, with the move order
+  shuffled.
 - `--peoples N` — seat this many peoples (at least 2, and at most the peoples the theme has: 8 on
   Earth). Without it, games rotate through the start menu's choices, 3, then 5, then 8.
 - `--size small|normal|large` — fix the map. Without it, the three sizes take turns, and the people
@@ -36,8 +46,7 @@ Difficulty is Regent, so every computer player produces shields and science at t
 The human seat is an empty observer and does not play. `--theme` chooses the peoples, as it does
 for a real game (Earth when it is left out).
 
-Each game draws a new map. The same command does not replay the same worlds: the generator uses
-the process's random number generator. A full game is a few seconds in a release build. A sample
+Each game draws a new map, unless `--seed` is given, which rebuilds the same worlds. A full game is a few seconds in a release build. A sample
 large enough to judge a people is hundreds of games at the 400-turn limit. A short limit ends on
 score and only checks that the harness runs.
 
@@ -79,7 +88,7 @@ when a game cannot be set up or the report cannot be written.
 scripts/balance-smoke.sh [directory]
 ```
 
-Two games, 40 turns, a small map, 3 peoples, seats shuffled. It checks that the three files were
+Two games, 40 turns, a small map, 3 peoples, seats shuffled (the default). It checks that the three files were
 written. It does not fail when a win rate sits outside the band. `BALANCE_GAMES` and
 `BALANCE_TURNS` change the length.
 
@@ -90,6 +99,17 @@ Balance harness, Run workflow). It does not run on pull requests.
 
 The repository does not pin a Rust version. Continuous integration installs the stable channel.
 The lockfile (`image` 0.25, `uuid` 1.29) does not build on Rust 1.85. Use a current stable.
+
+## Findings
+
+The first full batches (60 seeded New World games each, 400 turns) found domination winning 43% of
+games, and 14 of 20 among three peoples: half the cities is only one and a half times an equal
+share. Domination now needs a share that grows as the world gets smaller - two in five beyond eight
+peoples, half among six to eight, three in five among four or five, two thirds among three - still
+held 10 turns from turn 150. Egypt's Royal Chariot (2/2/2, was 3/1/2) no longer decides early wars,
+and Greece's Hoplite holds better (1/5/1). Over the next 120 games: space 34%, culture 23%, score
+18%, domination 16%, diplomacy 9%; every people won between 0.67 and 1.33 times its equal share,
+within the noise of a sample this size.
 
 ## What does not change
 

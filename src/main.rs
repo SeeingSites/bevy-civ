@@ -987,7 +987,8 @@ fn setup_world(
     defs.swap(0, player);
 
     let layout = HexLayout::flat().with_hex_size(client::map::HEX_SIZE);
-    let mut rng = rand::thread_rng();
+    // Resources, rivers and villages: from the scenario's seed when it has one (the same world again).
+    let mut rng = scenario::world_rng(scenario.seed, 1);
     let mut map = MapData { layout, cells: HashSet::new(), water: HashSet::new(), terrain: HashMap::new(), min: Vec2::splat(f32::MAX), max: Vec2::splat(f32::MIN) };
     // A developed world: the land around every city already worked (see `developed_land`).
     let worked: HashMap<Hex, Vec<Improvement>> = if scenario.developed { developed_land(&scenario, &defs) } else { HashMap::new() };
@@ -5944,14 +5945,23 @@ pub const SCENARIO_GOVERNMENT_TURNS: u32 = 50;
 /// Turns a dominating share must be held, and the earliest turn it can win.
 pub const DOMINATION_HOLD: u32 = 10;
 pub const DOMINATION_EARLIEST: u32 = 150;
-/// A world of fewer peoples than this is dominated only by holding half its cities.
+/// A world of this many peoples or fewer is dominated only by holding half its cities (or more).
 pub const SMALL_WORLD_PEOPLES: usize = 8;
 
 /// Whether holding `held` of the world's `total` cities dominates a world that began with
-/// `peoples` peoples: two in five of them, or half in a small world (where two in five comes too
-/// easily).
+/// `peoples` peoples: two in five of them in a large world; half among six to eight peoples, three
+/// in five among four or five, two thirds among three or fewer (where a third is an equal share).
 pub fn dominates(held: usize, total: usize, peoples: usize) -> bool {
-    held >= 5 && if peoples < SMALL_WORLD_PEOPLES { held * 2 >= total } else { held * 5 >= total * DOMINATION_FIFTHS }
+    held >= 5
+        && if peoples <= 3 {
+            held * 3 >= total * 2
+        } else if peoples <= 5 {
+            held * 5 >= total * 3
+        } else if peoples <= SMALL_WORLD_PEOPLES {
+            held * 2 >= total
+        } else {
+            held * 5 >= total * DOMINATION_FIFTHS
+        }
 }
 
 /// Puts every city's working citizens on tiles of its area: the player's own choices are kept (and

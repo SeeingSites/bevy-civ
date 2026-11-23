@@ -467,10 +467,10 @@ impl UnitType {
     pub fn stats(&self) -> (u32, u32, u32) {
         match self {
             UnitType::Praetorian => (4, 2, 1),
-            UnitType::Hoplite => (1, 4, 1),
+            UnitType::Hoplite => (1, 5, 1),
             UnitType::Companion => (3, 1, 2),
             UnitType::Numidian => (2, 2, 3),
-            UnitType::RoyalChariot => (3, 1, 2),
+            UnitType::RoyalChariot => (2, 2, 2),
             UnitType::ImmortalGuard => (4, 3, 1),
             UnitType::Cataphract => (5, 3, 2),
             UnitType::GallicSwordsman => (3, 2, 2),
