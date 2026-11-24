@@ -111,6 +111,16 @@ and Greece's Hoplite holds better (1/5/1). Over the next 120 games: space 34%, c
 18%, domination 16%, diplomacy 9%; every people won between 0.67 and 1.33 times its equal share,
 within the noise of a sample this size.
 
+The Modern World's nations now know what 2025 knows (computers, jets, rockets, the atom for the
+great powers), not the techs of a century earlier. That left only Plastics and Superconductors
+between them and a starship, and great scientists, which completed research outright, bridged even
+that by turn 13: every game ended in space by turn 50. The scenario's `research_cost` (300) makes
+research four times dearer, stretches the 40-turn research limit to match, and where research is
+dearer a great scientist pays one ordinary discovery's worth. 16 games: mean end turn 105 (was 95
+with the old techs); the United States wins 13 (it did 6 of 12 before, with lucky great
+scientists), China 3. In 1775 the United States wins 13-14 of 16 with or without the Iroquois'
+Republic.
+
 ## What does not change
 
 Without `--balance` the game is unchanged. The harness does not retune combat, victory or the AI,

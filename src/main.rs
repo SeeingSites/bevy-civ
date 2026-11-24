@@ -1100,7 +1100,7 @@ fn setup_world(
             name: def.name.clone(),
             is_human: id == 0,
             gold: def.gold,
-            tech: TechState::knowing(&def.techs),
+            tech: TechState::knowing(&def.techs).costing(scenario.research_cost),
             aggression: def.aggression,
             leader: def.leader.clone(),
             adjective: def.adjective.clone(),
@@ -1113,7 +1113,7 @@ fn setup_world(
             rates: Default::default(),
         })
         .collect();
-    *tech = TechState::knowing(&defs[0].techs);
+    *tech = TechState::knowing(&defs[0].techs).costing(scenario.research_cost);
 
     // Every starting city's land: the tiles within two of it that are nearer to it than to any other.
     let sites: Vec<Hex> = defs.iter().flat_map(|d| d.cities.iter().map(|c| scenario::offset_to_hex(c.col, c.row))).collect();
@@ -2678,12 +2678,16 @@ fn apply_actions(
                 let city_here = cities.iter().find(|c| c.position == here).map(|c| (c.owner, c.name.clone()));
                 let own_city = city_here.as_ref().filter(|(o, _)| *o == PLAYER).map(|(_, n)| n.clone());
                 let used = match kind {
-                    UnitType::GreatScientist => match tech.discover() {
-                        Some(learned) => {
+                    UnitType::GreatScientist => match (tech.current, tech.discover()) {
+                        (_, Some(learned)) => {
                             log.push(format!("Your Great Scientist's discovery: {}!", learned.name()));
                             true
                         }
-                        None => {
+                        (Some(studying), None) => {
+                            log.push(format!("Your Great Scientist brings {} closer: the frontier of science is slow going.", studying.name()));
+                            true
+                        }
+                        (None, None) => {
                             log.push("Choose something to research first (Q); the Great Scientist will complete it.");
                             false
                         }
