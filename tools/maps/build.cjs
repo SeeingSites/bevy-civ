@@ -243,7 +243,7 @@ function assemble(def, polygons) {
     id: def.id, name: def.name, blurb: def.blurb, start_year: def.startYear, years_per_turn: def.yearsPerTurn,
     width: proj.cols, height: proj.rows, rows: rows.map((r) => r.join('')), civs, wars: def.wars || [], known: !!def.known,
     ...(def.alliances ? { alliances: def.alliances } : {}), ...(def.expansion ? { expansion: def.expansion } : {}),
-    ...(def.objectives ? { objectives: def.objectives } : {}), ...(def.developed ? { developed: true } : {}), ...(def.wonders ? { wonders: def.wonders } : {}),
+    ...(def.objectives ? { objectives: def.objectives } : {}), ...(def.developed ? { developed: true } : {}), ...(def.wonders ? { wonders: def.wonders } : {}), ...(def.researchCost ? { research_cost: def.researchCost } : {}),
   };
 }
 

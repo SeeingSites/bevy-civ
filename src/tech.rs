@@ -29,6 +29,10 @@ pub struct TechState {
     /// The latest era this people has been told it entered (None until first looked at).
     #[serde(default)]
     pub era_seen: Option<Era>,
+    /// Percent added to every technology's cost: a scenario set where the frontier of science
+    /// is hard going (see `Scenario::research_cost`).
+    #[serde(default)]
+    pub extra_cost: u32,
 }
 
 /// The four ages of history. A people enters an age with its first discovery there, and may study
@@ -338,11 +342,23 @@ impl Default for TechState {
             discount: HashMap::new(),
             turns_on: 0,
             era_seen: None,
+            extra_cost: 0,
         }
     }
 }
 
 impl TechState {
+    /// The most turns a discovery takes ([`MAX_RESEARCH_TURNS`], longer where research is dearer).
+    pub fn max_turns(&self) -> u32 {
+        MAX_RESEARCH_TURNS * (100 + self.extra_cost) / 100
+    }
+
+    /// This state, with every technology `percent` dearer.
+    pub fn costing(mut self, percent: u32) -> Self {
+        self.extra_cost = percent;
+        self
+    }
+
     /// A fresh state that already knows the named technologies.
     pub fn knowing(names: &[String]) -> Self {
         let mut state = Self { current: None, ..Self::default() };
@@ -370,7 +386,7 @@ impl TechState {
             0..=45 => 1,
             _ => 2,
         };
-        let full = tech.cost() * era * (2 + self.researched.len() as u32) / 2;
+        let full = tech.cost() * era * (2 + self.researched.len() as u32) / 2 * (100 + self.extra_cost) / 100;
         full * (100 - self.discount.get(&tech).copied().unwrap_or(0).min(MAX_DIFFUSION)) / 100
     }
 
@@ -466,9 +482,18 @@ impl TechState {
         self.path_to(goal).iter().map(|t| self.cost_of(*t)).sum::<u32>().saturating_sub(self.progress)
     }
 
-    /// A great scientist's discovery: the current research is completed at once. Returns what was learned.
+    /// A great scientist's discovery: the work of an ordinary discovery, which completes the current
+    /// research at once - unless research is dearer here (see `extra_cost`), when it pays only that
+    /// share. Returns what was learned, if anything.
     pub fn discover(&mut self) -> Option<Tech> {
         let current = self.current?;
+        if self.extra_cost > 0 {
+            let cost = self.cost_of(current);
+            self.progress += cost * 100 / (100 + self.extra_cost);
+            if self.progress < cost {
+                return None;
+            }
+        }
         self.researched.insert(current);
         self.progress = 0;
         self.turns_on = 0;
@@ -483,7 +508,7 @@ impl TechState {
         let left = self.cost_of(current).saturating_sub(self.progress);
         let by_beakers = if self.science_per_turn == 0 { u32::MAX } else { left.div_ceil(self.science_per_turn) };
         let least = MIN_RESEARCH_TURNS.saturating_sub(self.turns_on).max(1);
-        let most = MAX_RESEARCH_TURNS.saturating_sub(self.turns_on).max(1);
+        let most = self.max_turns().saturating_sub(self.turns_on).max(1);
         Some(by_beakers.max(least).min(most))
     }
 
@@ -494,7 +519,7 @@ impl TechState {
         self.progress += self.science_per_turn;
         self.turns_on += 1;
         let paid = self.progress >= self.cost_of(current) && self.turns_on >= MIN_RESEARCH_TURNS;
-        if paid || self.turns_on >= MAX_RESEARCH_TURNS {
+        if paid || self.turns_on >= self.max_turns() {
             self.researched.insert(current);
             self.progress = 0;
             self.turns_on = 0;
@@ -510,6 +535,19 @@ impl TechState {
 #[cfg(test)]
 mod tree_tests {
     use super::*;
+
+    #[test]
+    fn where_research_is_dearer_a_great_scientist_pays_only_an_ordinary_discovery() {
+        let mut usual = TechState::knowing(&[]);
+        let studying = usual.current;
+        assert_eq!(usual.discover(), studying);
+        let mut dear = TechState::knowing(&[]).costing(300);
+        let studying = dear.current;
+        assert_eq!(dear.discover(), None);
+        assert_eq!(dear.progress, dear.cost_of(studying.unwrap()) / 4);
+        assert_eq!((dear.discover(), dear.discover(), dear.discover()), (None, None, studying));
+        assert_eq!(dear.max_turns(), MAX_RESEARCH_TURNS * 4);
+    }
 
     #[test]
     fn research_follows_the_path_to_a_goal() {

@@ -18,7 +18,9 @@ const PREREQ = {
   'Astronomy': ['Mysticism', 'Mathematics'], 'Chivalry': ['Monarchy', 'Horseback Riding'], 'Navigation': ['Seafaring', 'Astronomy'],
   'Theory of Gravity': ['Astronomy', 'Printing Press'], 'Medicine': ['Philosophy', 'Currency'], 'Steel': ['Electricity', 'Industrialization'],
   'Electronics': ['Electricity', 'Engineering'], 'Flight': ['Refining', 'Theory of Gravity'], 'Advanced Flight': ['Flight', 'Electronics'],
-  'Mass Production': ['Motorized Transport', 'Economics'],
+  'Mass Production': ['Motorized Transport', 'Economics'], 'Rocketry': ['Computers', 'Advanced Flight'], 'Space Flight': ['Rocketry'],
+  'Plastics': ['Space Flight', 'Refining'], 'Ecology': ['Computers', 'Sanitation'], 'Nuclear Fission': ['Electronics', 'Mass Production'],
+  'Genetic Engineering': ['Medicine', 'Computers'],
 };
 const BASICS = ['Pottery', 'Animal Husbandry', 'Mining', 'Bronze Working', 'Masonry', 'Alphabet', 'The Wheel'];
 /** Every technology needed for `newest`, and those. */
@@ -97,7 +99,13 @@ const packs = [
 // (`developed`), the old wonders standing where they stand, armies in place - and no settlers or
 // workers needed. Leaders are titles, never real people. [name, adjective, leader, government,
 // size ('great' | 'power' | 'state'), aggression, cities [name, lon, lat, population]].
-const MODERN_TECHS = knowing('Steel', 'Motorized Transport', 'Electricity', 'Refining', 'Sanitation', 'Communism', 'Fundamentalism', 'Flight', 'Electronics', 'Economics', 'Democracy', 'Theology', 'Medicine', 'Navigation', 'Theory of Gravity', 'Chivalry', 'The Republic', 'Replaceable Parts');
+// 2025: the information age everywhere - computers, jet flight, mass production, biotech.
+const MODERN_TECHS = knowing('Mass Production', 'Advanced Flight', 'Computers', 'Ecology', 'Genetic Engineering', 'Steel', 'Motorized Transport', 'Electricity', 'Refining', 'Sanitation', 'Communism', 'Fundamentalism', 'Flight', 'Electronics', 'Economics', 'Democracy', 'Theology', 'Medicine', 'Navigation', 'Theory of Gravity', 'Chivalry', 'The Republic', 'Replaceable Parts');
+// The great powers reach space and split the atom; a few other nations have the bomb and missiles.
+// Nobody yet has the materials (Plastics) for a starship's components: today's main battle tanks
+// are the game's Tanks, and Modern Armor is still to come.
+const SPACE_POWER = ['Rocketry', 'Space Flight', 'Nuclear Fission'];
+const NUCLEAR = { 'Pakistan': ['Rocketry', 'Nuclear Fission'] };
 // Equal-area, so India, China, Africa and Europe have as much room per city as the Americas.
 const MODERN_MAP = { ...EARTH, cols: 170, equalArea: true };
 const NATIONS = [
@@ -145,18 +153,18 @@ const PORTRAIT = { 'The President': 18, 'The Prime Minister': 20, 'The Chancello
 // navy (carriers, destroyers, submarines) and - for the nine nuclear powers - missiles. Land forces
 // and aircraft stand in the capital, ships in the first port; every city also keeps a garrison.
 const FORCES = {
-  'the United States': { ModernArmor: 4, MechInfantry: 6, RadarArtillery: 2, Fighter: 6, Bomber: 3, Carrier: 6, Destroyer: 6, Submarine: 4, Transport: 2, NuclearMissile: 3 },
-  'Russia': { ModernArmor: 3, Tank: 4, MechInfantry: 4, RadarArtillery: 2, Artillery: 2, Fighter: 4, Bomber: 3, Carrier: 1, Destroyer: 2, Submarine: 4, NuclearMissile: 3 },
-  'China': { ModernArmor: 3, Tank: 3, MechInfantry: 5, RadarArtillery: 2, Fighter: 5, Bomber: 2, Carrier: 2, Destroyer: 5, Submarine: 4, Transport: 1, NuclearMissile: 2 },
+  'the United States': { Tank: 4, MechInfantry: 6, RadarArtillery: 2, Fighter: 6, Bomber: 3, Carrier: 6, Destroyer: 6, Submarine: 4, Transport: 2, NuclearMissile: 3 },
+  'Russia': { Tank: 7, MechInfantry: 4, RadarArtillery: 2, Artillery: 2, Fighter: 4, Bomber: 3, Carrier: 1, Destroyer: 2, Submarine: 4, NuclearMissile: 3 },
+  'China': { Tank: 6, MechInfantry: 5, RadarArtillery: 2, Fighter: 5, Bomber: 2, Carrier: 2, Destroyer: 5, Submarine: 4, Transport: 1, NuclearMissile: 2 },
   'India': { Tank: 4, MechInfantry: 3, Artillery: 2, Fighter: 4, Carrier: 2, Destroyer: 3, Submarine: 2, NuclearMissile: 1 },
-  'the United Kingdom': { ModernArmor: 1, MechInfantry: 2, Fighter: 2, Carrier: 2, Destroyer: 3, Submarine: 2, NuclearMissile: 1 },
-  'France': { ModernArmor: 1, MechInfantry: 2, Artillery: 1, Fighter: 3, Carrier: 1, Destroyer: 3, Submarine: 2, NuclearMissile: 1 },
+  'the United Kingdom': { Tank: 1, MechInfantry: 2, Fighter: 2, Carrier: 2, Destroyer: 3, Submarine: 2, NuclearMissile: 1 },
+  'France': { Tank: 1, MechInfantry: 2, Artillery: 1, Fighter: 3, Carrier: 1, Destroyer: 3, Submarine: 2, NuclearMissile: 1 },
   'Pakistan': { Tank: 2, Artillery: 2, MechInfantry: 1, Fighter: 2, Destroyer: 1, Submarine: 1, NuclearMissile: 1 },
   'Japan': { Tank: 2, MechInfantry: 2, Fighter: 3, Carrier: 1, Destroyer: 4, Submarine: 2 },
   'South Korea': { Tank: 3, MechInfantry: 2, Artillery: 2, Fighter: 2, Destroyer: 2, Submarine: 1 },
   'Turkey': { Tank: 3, MechInfantry: 2, Artillery: 1, Fighter: 2, Destroyer: 2, Submarine: 1 },
   'Italy': { Tank: 1, MechInfantry: 1, Fighter: 2, Carrier: 1, Destroyer: 2, Submarine: 1 },
-  'Germany': { ModernArmor: 1, MechInfantry: 2, Artillery: 1, Fighter: 2, Destroyer: 2, Submarine: 1 },
+  'Germany': { Tank: 1, MechInfantry: 2, Artillery: 1, Fighter: 2, Destroyer: 2, Submarine: 1 },
   'Iran': { Tank: 2, Artillery: 2, Fighter: 1, Submarine: 1 },
   'Egypt': { Tank: 3, MechInfantry: 1, Artillery: 1, Fighter: 2, Destroyer: 1, Submarine: 1 },
   'Brazil': { Tank: 1, MechInfantry: 1, Fighter: 1, Destroyer: 2, Submarine: 1 },
@@ -188,10 +196,13 @@ const modernWorld = {
   name: 'The Modern World',
   blurb: '2025. Thirty-seven nations share a crowded, fully built planet: no frontier left to settle, only industry, alliances and the race to the stars to decide who leads the century. Part of the Modern Nations expansion.',
   startYear: 2025, yearsPerTurn: 1, known: true, developed: true, map: MODERN_MAP,
+  // Nations that start knowing almost everything would race through what is left in a few decades:
+  // the frontier of science is slow going, and the stars a century off.
+  researchCost: 300,
   civs: NATIONS.map(([name, adjective, leader, government, size, aggression, cities]) => ({
     name, adjective, leader, portrait: PORTRAIT[leader] ?? 18, aggression, government,
     gold: size === 'great' ? 450 : size === 'power' ? 400 : 250,
-    techs: government === 'Communism' ? [...MODERN_TECHS, 'Communism'] : MODERN_TECHS,
+    techs: knowing(...MODERN_TECHS, ...(size === 'great' ? SPACE_POWER : NUCLEAR[name] || []), ...(government === 'Communism' ? ['Communism'] : [])),
     cities, units: modernUnits(name, cities),
     cityNames: [],
   })),
@@ -240,7 +251,7 @@ const scenarios = [
         cities: [['Madrid', -3.7, 40.4, 7], ['Cadiz', -6.3, 36.5, 4], ['Havana', -82.4, 23.1, 4], ['New Orleans', -90.1, 30.0, 2], ['Veracruz', -96.1, 19.2, 3], ['St. Augustine', -81.3, 29.9, 2]],
         units: [['Musketman', 2, 0], ['Cavalry', 1, 0], ['Frigate', 1, 1], ['Galleon', 1, 1], ['Musketman', 2, 2], ['Frigate', 1, 2], ['Musketman', 1, 3], ['Musketman', 1, 4], ['Worker', 1, 0]],
         cityNames: ['Seville', 'Barcelona', 'San Juan', 'Santo Domingo', 'Pensacola', 'Campeche'] },
-      { name: 'the Iroquois', adjective: 'Iroquois', leader: 'Joseph Brant', portrait: 9, aggression: 0.55, gold: 20, government: 'Monarchy', techs: FIRST_NATIONS,
+      { name: 'the Iroquois', adjective: 'Iroquois', leader: 'Joseph Brant', portrait: 9, aggression: 0.55, gold: 20, government: 'Republic', techs: [...FIRST_NATIONS, 'The Republic'],
         cities: [['Onondaga', -76.1, 43.0, 3], ['Seneca Castle', -77.6, 42.7, 2]],
         units: [['Horseman', 2, 0], ['Archer', 2, 0], ['Spearman', 1, 1]],
         cityNames: ['Oneida', 'Cayuga', 'Tuscarora', 'Niagara', 'Oswego'] },

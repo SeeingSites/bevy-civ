@@ -64,6 +64,10 @@ pub struct Scenario {
     /// a fresh world each time.
     #[serde(default)]
     pub seed: Option<u64>,
+    /// Percent added to the cost of research: a world that starts deep in the tech tree would
+    /// otherwise race through the little that is left of it.
+    #[serde(default)]
+    pub research_cost: u32,
 }
 
 /// An expansion pack (`assets/expansions/`): nations that can be led from 4000 BC, on the Whole
@@ -379,6 +383,68 @@ pub fn generate_random(template: &Scenario, player: usize, map_size: usize, peop
 mod tests {
     use super::*;
     use bevy_civ::unit::UnitType;
+
+    /// Everything a scenario puts on the map belongs to its age: each people knows the techs behind
+    /// its units, wonders and government, and the techs those rest on.
+    #[test]
+    fn scenarios_hold_nothing_beyond_their_age() {
+        use bevy_civ::building::Building;
+        use bevy_civ::tech::Tech;
+        let mut faults = Vec::new();
+        let catalog = catalog_with(|_| true);
+        let peoples = catalog.iter().map(|s| (s.id.clone(), s.civs.clone())).chain(expansions().into_iter().map(|e| (format!("pack {}", e.id), e.peoples)));
+        for (id, civs) in peoples {
+            for civ in &civs {
+                let known: Vec<Tech> = Tech::ALL.into_iter().filter(|t| civ.techs.iter().any(|n| n == t.base_name())).collect();
+                for name in &civ.techs {
+                    if !known.iter().any(|t| t.base_name() == name) {
+                        faults.push(format!("{id}: {}: unknown tech {name}", civ.name));
+                    }
+                }
+                for t in &known {
+                    for pre in t.prerequisites() {
+                        if !known.contains(&pre) {
+                            faults.push(format!("{id}: {} knows {t:?} but not {pre:?}", civ.name));
+                        }
+                    }
+                }
+                for unit in &civ.units {
+                    match UnitType::ALL.into_iter().find(|u| u.base_name() == unit.kind) {
+                        None => faults.push(format!("{id}: {}: unknown unit {}", civ.name, unit.kind)),
+                        Some(u) => {
+                            if let Some(t) = u.required_tech().filter(|t| !known.contains(t)) {
+                                faults.push(format!("{id}: {} has {u:?} without {t:?}", civ.name));
+                            }
+                            if !u.is_trainable() && !u.is_great_person() {
+                                faults.push(format!("{id}: {} starts with untrainable {u:?}", civ.name));
+                            }
+                        }
+                    }
+                }
+                let government = civ.government.as_deref().and_then(|g| bevy_civ::government::Government::CHOICES.into_iter().find(|x| x.base_name() == g));
+                if let Some(t) = government.and_then(|g| g.required_tech()).filter(|t| !known.contains(t)) {
+                    faults.push(format!("{id}: {} rules by {government:?} without {t:?}", civ.name));
+                }
+            }
+        }
+        for scenario in &catalog {
+            for (wonder, at) in &scenario.wonders {
+                let Some(w) = Building::ALL.into_iter().find(|b| b.is_wonder() && b.base_name() == wonder) else {
+                    faults.push(format!("{}: unknown wonder {wonder}", scenario.id));
+                    continue;
+                };
+                let Some(at) = at else { continue };
+                let Some(owner) = scenario.civs.iter().find(|c| c.cities.iter().any(|c| &c.name == at)) else {
+                    faults.push(format!("{}: {wonder} stands in {at}, no city", scenario.id));
+                    continue;
+                };
+                if let Some(t) = w.required_tech().filter(|t| !owner.techs.iter().any(|n| n == t.base_name())) {
+                    faults.push(format!("{}: {wonder} in {at} without {t:?}", scenario.id));
+                }
+            }
+        }
+        assert!(faults.is_empty(), "{} anachronisms:\n{}", faults.len(), faults.join("\n"));
+    }
 
     #[test]
     fn expansion_packs_add_their_scenarios_and_peoples_only_when_on() {
