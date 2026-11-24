@@ -1054,7 +1054,8 @@ pub fn army_capacity(sun_tzu: bool) -> usize {
 pub fn plain_defender(knows: impl Fn(crate::tech::Tech) -> bool) -> UnitType {
     UnitType::ALL
         .into_iter()
-        .filter(|u| u.is_army() && u.unique_base().is_none() && !u.bombard_only() && u.required_resources().is_empty() && u.required_tech().is_none_or(&knows))
+        // Only what a city may order (never raiders or great people), of its people's age.
+        .filter(|u| u.is_trainable() && u.is_army() && !u.bombard_only() && u.required_resources().is_empty() && u.required_tech().is_none_or(&knows))
         .max_by_key(|u| (u.stats().1, std::cmp::Reverse(u.cost())))
         .unwrap_or(UnitType::Warrior)
 }
@@ -1114,6 +1115,15 @@ pub fn join_army(leader: &mut Unit, members: &[Unit]) {
 #[cfg(test)]
 mod army_tests {
     use super::*;
+
+    #[test]
+    fn a_city_falls_back_on_a_defender_of_its_age_never_a_raider() {
+        use crate::tech::Tech;
+        assert_eq!(plain_defender(|_| false), UnitType::Warrior);
+        for unit in [plain_defender(|_| false), plain_defender(|t| t == Tech::BronzeWorking), plain_defender(|_| true)] {
+            assert!(unit.is_trainable() && !unit.is_raider(), "{unit:?}");
+        }
+    }
 
     #[test]
     fn upgrades_skip_a_step_the_city_cannot_equip() {
