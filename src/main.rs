@@ -4211,6 +4211,9 @@ fn process_turn(
             needs_orders = true;
             match completed {
                 ProductionItem::Unit(ordered) => {
+                    // Something no city may train (a raider - an older game could have ordered one)
+                    // becomes the people's stoutest defender.
+                    let ordered = if ordered.is_trainable() { ordered } else { fallback_unit.get(&city.owner).copied().unwrap_or(UnitType::Warrior) };
                     // A people's unique unit takes the place of the ordinary one it stands in for.
                     let ut = character.map(|c| c.unique).filter(|u| u.unique_base() == Some(ordered)).unwrap_or(ordered);
                     // Keep computer players from flooding the map.
