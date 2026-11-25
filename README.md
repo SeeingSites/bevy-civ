@@ -600,6 +600,9 @@ working directory.
 - **Pillage and fortresses**: troops on improved enemy land (at war) press P to wreck the railroad,
   fortress, mine, farm or road there, for 5 gold; computer troops raid your land too. Workers build
   a Fortress (O, needs Construction) in the field: troops in it defend 50% harder.
+- **Mutual protection**: as under Civilization III's pacts, when a computer player attacks another
+  without a just cause, the victim's other allies (unless also allied to the attacker) stand by it and
+  declare war three times in four; your allies answer for you as before.
 - **Right of passage**: ask a people at peace for one (Diplomacy); your units and theirs may then
   share tiles and pass through each other. Walking into the units or an empty city of a people at
   peace is refused (declare war first). An alliance includes passage; war ends it.
