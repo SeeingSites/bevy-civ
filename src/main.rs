@@ -464,6 +464,9 @@ pub struct WorldEvent {
     #[serde(default)]
     pub peace: Vec<(u32, u32)>,
     pub message: String,
+    /// Troops landed: whose, what, where.
+    #[serde(default)]
+    pub units: Vec<(u32, UnitType, Hex)>,
 }
 
 impl Default for GameState {
@@ -1307,7 +1310,22 @@ fn setup_world(
                 let pairs = |list: &[(String, String)]| -> Vec<(u32, u32)> {
                     list.iter().filter_map(|(a, b)| Some((defs.iter().position(|d| &d.name == a)? as u32, defs.iter().position(|d| &d.name == b)? as u32))).collect()
                 };
-                WorldEvent { turn: scenario.turn_of(e.year, e.month), wars: pairs(&e.wars), alliances: pairs(&e.alliances), peace: pairs(&e.peace), message: e.message.clone() }
+                WorldEvent {
+                    turn: scenario.turn_of(e.year, e.month),
+                    wars: pairs(&e.wars),
+                    alliances: pairs(&e.alliances),
+                    peace: pairs(&e.peace),
+                    message: e.message.clone(),
+                    units: e
+                        .units
+                        .iter()
+                        .filter_map(|u| {
+                            let owner = defs.iter().position(|d| d.name == u.owner)? as u32;
+                            let kind = UnitType::ALL.into_iter().find(|k| k.base_name() == u.kind)?;
+                            Some((owner, kind, scenario::offset_to_hex(u.col, u.row)))
+                        })
+                        .collect(),
+                }
             })
             .collect(),
         months_per_turn: scenario.months_per_turn,
@@ -3764,6 +3782,15 @@ fn process_turn(
             diplomacy.set_treaty(*a, *b, Treaty::War);
             foreign.since.insert((*a.min(b), *a.max(b)), state.turn);
         }
+        // Troops history lands: on their tile, or the nearest land beside it that no other people holds.
+        for (owner, kind, at) in event.units.iter().copied().filter(|(o, _, _)| alive(*o)) {
+            let held_by_other = |h: Hex| units.iter().any(|(_, u)| u.position == h && u.owner != owner);
+            let land = |h: Hex| map.cells.contains(&h) && !map.water.contains(&h);
+            let spot = std::iter::once(at).chain(hexx::shapes::hexagon(at, 3).filter(|h| *h != at)).find(|h| land(*h) && !held_by_other(*h));
+            if let Some(spot) = spot {
+                spawn_unit(&mut commands, spot, kind, owner);
+            }
+        }
         if !event.message.is_empty() {
             log.push(event.message.clone());
         }
@@ -5071,7 +5098,8 @@ fn process_turn(
     let dying: HashSet<u32> = city_counts.iter().filter(|(o, n)| **o != PLAYER && **o != BARBARIANS && **n <= 3).map(|(o, _)| *o).collect();
     let must_fall: Vec<Hex> = cities
         .iter()
-        .filter(|(c, _, _)| (c.is_capital && space.ships.get(&c.owner).is_some_and(|s| s.arrives.is_some())) || dying.contains(&c.owner))
+        // In a war fought month by month, its objective cities are what the war is fought for.
+        .filter(|(c, _, _)| (c.is_capital && space.ships.get(&c.owner).is_some_and(|s| s.arrives.is_some())) || dying.contains(&c.owner) || (state.fixed_end && state.months_per_turn > 0 && state.objectives.contains(&c.name)))
         .map(|(c, _, _)| c.position)
         .collect();
     // What a defender stands on, tile by tile: the land, a river, a fortress, and a city's size and walls.

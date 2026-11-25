@@ -714,14 +714,14 @@ pub fn process_ai_turn(
         let urgent = |pos: &Hex| must_fall.contains(pos);
         let enemy_city = city_positions
             .iter()
-            .filter(|(pos, other)| here.distance_to(*pos) <= if urgent(pos) { 3 * city_range } else { city_range } && hostile(owner, *other) && same_land(*pos, here))
+            .filter(|(pos, other)| here.distance_to(*pos) <= if urgent(pos) { 6 * city_range } else { city_range } && hostile(owner, *other) && same_land(*pos, here))
             .min_by_key(|(pos, _)| (!urgent(pos), here.distance_to(*pos)))
             .map(|(pos, _)| *pos);
         // Nothing to fight on this landmass: an enemy city overseas is reached by ship.
         if relief.is_none() && enemy_unit.is_none() && enemy_city.is_none() && can_sail && is_land(here) {
             let overseas = city_positions
                 .iter()
-                .filter(|(pos, other)| hostile(owner, *other) && *other != 99 && here.distance_to(*pos) <= if urgent(pos) { 4 * city_range } else { 2 * city_range + 6 } && !same_land(*pos, here))
+                .filter(|(pos, other)| hostile(owner, *other) && *other != 99 && here.distance_to(*pos) <= if urgent(pos) { 8 * city_range } else { 2 * city_range + 6 } && !same_land(*pos, here))
                 .min_by_key(|(pos, _)| (!urgent(pos), here.distance_to(*pos), pos.x, pos.y))
                 .map(|(pos, _)| *pos);
             if let Some((goal, port)) = overseas.and_then(|g| port_for(owner, here, g).map(|p| (g, p))) {
