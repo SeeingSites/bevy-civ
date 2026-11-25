@@ -669,7 +669,8 @@ impl Rivers {
         let height = |t: Terrain| match t {
             Terrain::Water => 0,
             Terrain::Grassland | Terrain::Plains | Terrain::Desert => 1,
-            Terrain::Forest => 2,
+            Terrain::Forest | Terrain::Jungle => 2,
+            Terrain::Tundra | Terrain::Marsh => 1,
             Terrain::Hills => 3,
             Terrain::Mountain => 4,
         };
@@ -1071,6 +1072,9 @@ fn terrain_from(code: char) -> Terrain {
         'f' => Terrain::Forest,
         'h' => Terrain::Hills,
         'm' => Terrain::Mountain,
+        't' => Terrain::Tundra,
+        'j' => Terrain::Jungle,
+        's' => Terrain::Marsh,
         _ => Terrain::Water,
     }
 }
@@ -1694,6 +1698,9 @@ fn handle_map_click(
         // Where each kind of unit may go.
         let refusal = match domain {
             Domain::Sea if enemy.is_none() && !map.water.contains(&hex) && !ports.contains(&hex) => Some("Ships can only enter water and your own coastal cities."),
+            Domain::Sea if unit.unit_type.coastal() && map.water.contains(&hex) && !hex.all_neighbors().iter().any(|n| map.cells.contains(n) && !map.water.contains(n)) => {
+                Some("Galleys keep to the coast: they cannot sail out of sight of land (Galleons and Frigates can).")
+            }
             Domain::Air if !airfields.iter().any(|p| p.distance_to(hex) <= AIR_RANGE) => Some("That is beyond the range of our airfields (our cities and carriers)."),
             Domain::Land if boarding && cargo::ship_with_room(&berths, PLAYER, hex, unit.unit_type).is_none() => {
                 Some("Troops cross the sea aboard ships: move them onto a ship of ours with room (a Galley, Galleon, Frigate or Transport), or board one in port.")
@@ -1981,6 +1988,7 @@ pub fn spy_target(here: Hex, cities: impl Iterator<Item = (Hex, u32)>) -> Option
 /// aboard ships, so their routes keep to the land (a route may end on a ship's tile, to board it).
 fn player_travel(unit: UnitType, ports: &HashSet<Hex>) -> Travel<'_> {
     match unit.domain() {
+        Domain::Sea if unit.coastal() => Travel::Coast(ports),
         Domain::Sea => Travel::Sea(ports),
         Domain::Air => Travel::Air,
         Domain::Land => bevy_civ::pathfinding::land_travel(unit.is_wheeled(), false),
@@ -2291,7 +2299,7 @@ fn automate_workers(
     mut workers: Query<(Entity, &mut Unit), With<Automated>>,
     tiles: Query<&HexTile>,
     cities: Query<&City>,
-    (map, tech, supplies): (Res<MapData>, Res<TechState>, Res<Supplies>),
+    (map, tech, supplies, rivers): (Res<MapData>, Res<TechState>, Res<Supplies>, Res<Rivers>),
     mut fog: ResMut<FogOfWar>,
     mut commands: Commands,
 ) {
@@ -2302,6 +2310,9 @@ fn automate_workers(
     let roads = road_network(tiles.iter(), city_tiles.iter().copied());
     let land: Vec<(Hex, Terrain)> = tiles.iter().map(|t| (t.coord, t.terrain)).collect();
     let steam = tech.researched.contains(&Tech::SteamPower);
+    let farms: HashSet<Hex> = tiles.iter().filter(|t| t.improvements.contains(&Improvement::Farm)).map(|t| t.coord).collect();
+    let electricity = tech.researched.contains(&Tech::Electricity);
+    let watered = |at: Hex| bevy_civ::tiles::irrigable(at, |h| rivers.tiles.contains(&h), |h| map.water.contains(&h) || farms.contains(&h) || city_tiles.contains(&h), electricity);
     // The job a tile needs, if any, with its urgency (lower is sooner).
     let job = |tile: &HexTile| -> Option<(u8, Improvement)> {
         let ours = supplies.territory.get(&tile.coord).is_some_and(|(o, _)| *o == PLAYER);
@@ -2316,7 +2327,7 @@ fn automate_workers(
         }
         match tile.terrain {
             Terrain::Hills | Terrain::Mountain if !tile.improvements.contains(&Improvement::Mine) => return Some((2, Improvement::Mine)),
-            Terrain::Grassland | Terrain::Plains if !tile.improvements.contains(&Improvement::Farm) => return Some((3, Improvement::Farm)),
+            Terrain::Grassland | Terrain::Plains if !tile.improvements.contains(&Improvement::Farm) && watered(tile.coord) => return Some((3, Improvement::Farm)),
             // A road on flat land brings trade.
             Terrain::Grassland | Terrain::Plains | Terrain::Desert if !tile.has_road() => return Some((4, Improvement::Road)),
             _ => {}
@@ -2406,6 +2417,9 @@ fn defending_as(unit: UnitType, at: Hex, map: &MapData) -> UnitType {
 fn may_enter(unit: UnitType, tile: Hex, map: &MapData, own_cities: &HashSet<Hex>) -> bool {
     match unit.domain() {
         Domain::Land => true,
+        Domain::Sea if unit.coastal() => {
+            (map.water.contains(&tile) && tile.all_neighbors().iter().any(|n| map.cells.contains(n) && !map.water.contains(n))) || own_cities.contains(&tile)
+        }
         Domain::Sea => map.water.contains(&tile) || own_cities.contains(&tile),
         Domain::Air => false,
     }
@@ -3187,6 +3201,23 @@ fn apply_actions(
                     log.push("That cannot be built here.");
                     continue;
                 }
+                if *improvement == Improvement::Farm {
+                    if !tile.terrain.farmland() {
+                        log.push(format!("{} cannot be farmed{}.", tile.terrain.name(), if tile.terrain.can_transform_to().is_some() { " until it is cleared (T)" } else { "" }));
+                        continue;
+                    }
+                    let farmed = |h: Hex| tiles.iter().any(|t| t.coord == h && t.improvements.contains(&Improvement::Farm));
+                    let watered = bevy_civ::tiles::irrigable(
+                        tile.coord,
+                        |h| rivers.tiles.contains(&h),
+                        |h| map.water.contains(&h) || farmed(h) || cities.iter().any(|c| c.position == h),
+                        tech.researched.contains(&Tech::Electricity),
+                    );
+                    if !watered {
+                        log.push("A farm needs fresh water: a river here or beside it, or the sea, a lake, a city or another farm beside it (Electricity brings water anywhere).");
+                        continue;
+                    }
+                }
                 if *improvement == Improvement::Fortress {
                     if !tech.researched.contains(&Tech::Construction) {
                         log.push("Fortresses need Construction.");
@@ -3221,7 +3252,7 @@ fn apply_actions(
                         map.terrain.insert(tile.coord, tile.terrain);
                         unit.end_move();
                         cycle.advance = true;
-                        log.push("The land is cleared into plains.");
+                        log.push(format!("The land is cleared into {}.", tile.terrain.name().to_lowercase()));
                     } else {
                         log.push("This terrain cannot be transformed.");
                     }

@@ -394,16 +394,25 @@ pub fn generate_random(template: &Scenario, player: usize, map_size: usize, peop
             let edge = ((col.min(COLS - 1 - col) as f32 / 5.0).min(row.min(ROWS - 1 - row) as f32 / 4.0)).min(1.0);
             let h = sample(&height, x, y) + rng.gen_range(-0.04..0.04) - (1.0 - edge) * 0.45;
             let m = sample(&moisture, x, y) + rng.gen_range(-0.05..0.05);
+            // Distance from the equator: 0 at the middle row, 1 at the map's edge.
+            let lat = (row as f32 - (ROWS - 1) as f32 / 2.0).abs() / ((ROWS - 1) as f32 / 2.0);
             grid[row as usize][col as usize] = if h < 0.42 {
                 '~'
             } else if h > 0.8 {
                 'm'
             } else if h > 0.69 {
                 'h'
+            } else if lat > 0.84 {
+                // Civilization III's tundra near the poles.
+                't'
+            } else if h < 0.47 && m > 0.6 {
+                // Wet lowland by the sea: marsh.
+                's'
             } else if m < 0.3 {
                 'd'
             } else if m > 0.62 {
-                'f'
+                // Jungle in the wet tropics, forest elsewhere.
+                if lat < 0.32 { 'j' } else { 'f' }
             } else if m > 0.46 {
                 'g'
             } else {

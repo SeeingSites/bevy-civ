@@ -595,9 +595,16 @@ pub fn process_ai_turn(
             // flat land once it is farmed (a road brings trade on grassland, plains and desert).
             let on_city = city_positions.iter().any(|(p, _)| *p == here);
             if let Some((terrain, farm, mine, road)) = features.get(&here).copied().filter(|_| owns(here, owner) && !on_city) {
+                let electricity = civs.players.iter().any(|c| c.id == owner && c.tech.researched.contains(&Tech::Electricity));
+                let watered = crate::tiles::irrigable(
+                    here,
+                    |h| ground_at(h).river,
+                    |h| matches!(terrain_at.get(&h), Some(Terrain::Water)) || features.get(&h).is_some_and(|f| f.1) || city_positions.iter().any(|(p, _)| *p == h),
+                    electricity,
+                );
                 let job = match terrain {
                     Terrain::Hills | Terrain::Mountain if !mine => Some(Improvement::Mine),
-                    Terrain::Grassland | Terrain::Plains if !farm => Some(Improvement::Farm),
+                    Terrain::Grassland | Terrain::Plains if !farm && watered => Some(Improvement::Farm),
                     Terrain::Grassland | Terrain::Plains | Terrain::Desert if !road => Some(Improvement::Road),
                     _ => None,
                 };
@@ -641,7 +648,7 @@ pub fn process_ai_turn(
                 .min_by_key(|(pos, _, _)| here.distance_to(*pos))
                 .map(|(pos, _, _)| *pos);
             let base = if flying { airfields.iter().copied().min_by_key(|p| here.distance_to(*p)) } else { ports.iter().copied().min_by_key(|p| here.distance_to(*p)) };
-            let travel = if flying { Travel::Air } else { Travel::Sea(&ports) };
+            let travel = if flying { Travel::Air } else if unit.unit_type.coastal() { Travel::Coast(&ports) } else { Travel::Sea(&ports) };
             let Some(target) = prey.or(base.filter(|b| flying && *b != here)) else { continue };
             if let Some(path) = find_path_on(here, target, &terrain_at, travel) {
                 for next in path.into_iter().skip(1) {
@@ -962,7 +969,8 @@ fn sail(
 ) {
     let Ok((_, mut unit)) = units.get_mut(ship) else { return };
     let owner = unit.owner;
-    let Some(path) = find_path(unit.position, dest, land.iter().copied(), Travel::Sea(ports)) else { return };
+    let travel = if unit.unit_type.coastal() { Travel::Coast(ports) } else { Travel::Sea(ports) };
+    let Some(path) = find_path(unit.position, dest, land.iter().copied(), travel) else { return };
     for next in path.into_iter().skip(1) {
         if !unit.can_move() || occupied.get(&next).is_some_and(|(o, _)| *o != owner) || !(water.contains(&next) || ports.contains(&next)) {
             break;

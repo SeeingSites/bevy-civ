@@ -97,7 +97,7 @@ fn load_art(mut commands: Commands, assets: Res<AssetServer>, mut layouts: ResMu
     let mut grid = |w: u32, h: u32, cols: u32, rows: u32| layouts.add(TextureAtlasLayout::from_grid(UVec2::new(w, h), cols, rows, None, None));
     commands.insert_resource(Art {
         terrain: assets.load(format!("{}/terrain.png", bevy_civ::theme::sprites())),
-        terrain_layout: grid(192, 224, 8, 7),
+        terrain_layout: grid(192, 224, 8, 10),
         overlays: assets.load(format!("{}/overlays.png", bevy_civ::theme::sprites())),
         overlays_layout: grid(192, 168, 13, 1),
         resources: assets.load(format!("{}/resources.png", bevy_civ::theme::sprites())),

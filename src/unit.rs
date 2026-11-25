@@ -650,6 +650,12 @@ impl UnitType {
         }
     }
 
+    /// A ship that must keep in sight of land (Civilization III's galley): it sails only on water
+    /// beside the shore.
+    pub fn coastal(&self) -> bool {
+        self.unique_base().unwrap_or(*self) == UnitType::Galley
+    }
+
     pub fn domain(&self) -> Domain {
         if let Some(base) = self.unique_base() {
             return base.domain();

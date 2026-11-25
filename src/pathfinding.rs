@@ -118,6 +118,8 @@ pub fn terrain_cost(terrain: Terrain) -> Option<u32> {
         Terrain::Forest => Some(2),
         Terrain::Hills => Some(2),
         Terrain::Mountain => Some(3),
+        Terrain::Tundra => Some(1),
+        Terrain::Jungle | Terrain::Marsh => Some(2),
     }
 }
 
@@ -130,6 +132,8 @@ pub enum Travel<'a> {
     Amphibious,
     /// A ship: water, plus the given ports (the owner's coastal cities).
     Sea(&'a std::collections::HashSet<Hex>),
+    /// A ship that must keep in sight of land (a galley): water beside land, plus the ports.
+    Coast(&'a std::collections::HashSet<Hex>),
     /// An aircraft: anywhere on the map.
     Air,
     /// On wheels (chariots, siege guns): like on foot, but forest and mountains only along a road;
@@ -202,6 +206,10 @@ pub fn find_route_on(start: Hex, end: Hex, tile_map: &HashMap<Hex, Terrain>, roa
             Travel::Land => terrain_cost(terrain).map(|c| c * SCALE),
             Travel::Amphibious => if terrain == Terrain::Water { Some(3 * SCALE) } else { terrain_cost(terrain).map(|c| c * SCALE) },
             Travel::Sea(ports) => (terrain == Terrain::Water || ports.contains(&to) || to == end).then_some(SCALE),
+            Travel::Coast(ports) => {
+                let inshore = terrain == Terrain::Water && to.all_neighbors().iter().any(|n| tile_map.get(n).is_some_and(|t| *t != Terrain::Water));
+                (inshore || ports.contains(&to) || to == end).then_some(SCALE)
+            }
             Travel::Air => Some(SCALE),
             Travel::Wheels { .. } if matches!(terrain, Terrain::Forest | Terrain::Mountain) => None,
             Travel::Wheels { boats } => {
@@ -269,6 +277,23 @@ pub fn turns_along(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn galleys_keep_to_the_coast() {
+        // A strait of open sea between two shores: a galley hugs the coast, a galleon crosses.
+        let mut map: HashMap<Hex, Terrain> = hexx::shapes::hexagon(Hex::ZERO, 6).map(|h| (h, Terrain::Water)).collect();
+        for h in hexx::shapes::hexagon(Hex::new(-6, 0), 1) {
+            map.insert(h, Terrain::Plains);
+        }
+        for h in hexx::shapes::hexagon(Hex::new(6, 0), 1) {
+            map.insert(h, Terrain::Plains);
+        }
+        let ports = std::collections::HashSet::new();
+        let (from, to) = (Hex::new(-4, 0), Hex::new(4, 0));
+        assert!(find_path_on(from, to, &map, Travel::Sea(&ports)).is_some(), "a galleon crosses open sea");
+        assert!(find_path_on(from, to, &map, Travel::Coast(&ports)).is_none(), "a galley may not leave the shore");
+        assert!(find_path_on(Hex::new(-5, 2), Hex::new(-4, 1), &map, Travel::Coast(&ports)).is_some(), "but sails along it");
+    }
 
     fn moves(n: u32) -> Budget {
         Budget { moves: n, road_credit: 0, debt: 0 }
