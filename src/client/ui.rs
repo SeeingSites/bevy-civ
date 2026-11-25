@@ -836,8 +836,7 @@ fn stat(parent: &mut ChildBuilder, art: &Art, index: usize, text: impl Into<Stri
 }
 
 pub fn year_label(state: &GameState) -> String {
-    let year = state.start_year + (state.turn as i32 - 1) * state.years_per_turn;
-    bevy_civ::theme::year(year)
+    bevy_civ::theme::year(bevy_civ::theme::game_year(state.start_year, state.years_per_turn, state.turn, state.last_turn))
 }
 
 fn good_icon(art: &Art, good: Good, size: f32) -> impl Bundle {

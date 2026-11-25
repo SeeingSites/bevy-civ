@@ -422,7 +422,7 @@ impl Default for GameState {
             nuclear_strikes: Vec::new(),
             score: Score::default(),
             start_year: -4000,
-            years_per_turn: 40,
+            years_per_turn: 0,
             title: String::new(),
             anarchy_turns: 0,
             pending_government: None,

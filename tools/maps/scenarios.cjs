@@ -16,7 +16,7 @@ module.exports = [
     name: 'The Whole Earth',
     blurb: 'Eleven peoples begin in their historical homelands in 4000 BC. Settle, explore and outlast them all on a map of the real world.',
     startYear: -4000,
-    yearsPerTurn: 40,
+    yearsPerTurn: 0, // Civilization III's calendar: 4000 BC to 2050 AD on the last turn
     map: EARTH,
     civs: [
       { name: 'Rome', adjective: 'Roman', leader: 'Caesar', portrait: 0, aggression: 0.7, cities: [['Rome', 12.5, 41.9]], units: start, cityNames: ['Capua', 'Ravenna', 'Mediolanum', 'Neapolis', 'Arretium', 'Brundisium'] },
