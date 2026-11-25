@@ -134,6 +134,19 @@ pub enum UnitType {
     BlackHussar,
     Grenzer,
     Bersaglieri,
+    // Civilization III's units added later (after the unique units, so the art keeps its rows).
+    /// Theology's holy knight.
+    Crusader,
+    /// Chivalry's men-at-arms.
+    MedievalInfantry,
+    /// Engineering's siege engine, between the catapult and the cannon.
+    Trebuchet,
+    /// Astronomy's ocean-going ship, between the galley and the galleon.
+    Caravel,
+    JetFighter,
+    StealthBomber,
+    AegisCruiser,
+    NuclearSubmarine,
 }
 
 /// What sets a unique unit apart (see [`UnitType::ability`]).
@@ -197,7 +210,7 @@ pub const AIR_RANGE: i32 = 8;
 
 impl UnitType {
     /// Every unit type, in declaration order (also the row order of the sprite atlas).
-    pub const ALL: [UnitType; 80] = [
+    pub const ALL: [UnitType; 88] = [
         UnitType::Settler, UnitType::Worker, UnitType::Warrior, UnitType::Spearman, UnitType::Archer,
         UnitType::Horseman, UnitType::Legion, UnitType::WarChariot, UnitType::Immortal, UnitType::Phalanx,
         UnitType::Catapult, UnitType::Knight, UnitType::Cannon, UnitType::Rifleman, UnitType::Cavalry,
@@ -211,6 +224,7 @@ impl UnitType {
         UnitType::Praetorian, UnitType::Hoplite, UnitType::Companion, UnitType::Numidian, UnitType::RoyalChariot, UnitType::ImmortalGuard, UnitType::Cataphract, UnitType::GallicSwordsman, UnitType::WarElephant, UnitType::ChuKoNu, UnitType::Samurai, UnitType::Keshik, UnitType::JaguarWarrior, UnitType::Chasqui, UnitType::Mandekalu, UnitType::AskiaRider, UnitType::Conquistador, UnitType::ManOWar, UnitType::Musketeer, UnitType::Sipahi, UnitType::Cossack,
         UnitType::Marine, UnitType::Panzer, UnitType::GuardsRifleman, UnitType::Bandeirante, UnitType::LightHorse, UnitType::Mountie, UnitType::Charro, UnitType::Commando,
         UnitType::BlackHussar, UnitType::Grenzer, UnitType::Bersaglieri,
+        UnitType::Crusader, UnitType::MedievalInfantry, UnitType::Trebuchet, UnitType::Caravel, UnitType::JetFighter, UnitType::StealthBomber, UnitType::AegisCruiser, UnitType::NuclearSubmarine,
     ];
 
     /// The five kinds of great person.
@@ -331,6 +345,14 @@ impl UnitType {
     /// The name in the default (Earth) theme.
     pub fn base_name(&self) -> &'static str {
         match self {
+            UnitType::Crusader => "Crusader",
+            UnitType::MedievalInfantry => "Medieval Infantry",
+            UnitType::Trebuchet => "Trebuchet",
+            UnitType::Caravel => "Caravel",
+            UnitType::JetFighter => "Jet Fighter",
+            UnitType::StealthBomber => "Stealth Bomber",
+            UnitType::AegisCruiser => "AEGIS Cruiser",
+            UnitType::NuclearSubmarine => "Nuclear Submarine",
             UnitType::Praetorian => "Praetorian",
             UnitType::Hoplite => "Hoplite",
             UnitType::Companion => "Companion Cavalry",
@@ -425,6 +447,13 @@ impl UnitType {
             UnitType::Praetorian | UnitType::Hoplite | UnitType::Companion | UnitType::Numidian | UnitType::RoyalChariot | UnitType::ImmortalGuard | UnitType::Cataphract | UnitType::GallicSwordsman | UnitType::WarElephant | UnitType::ChuKoNu | UnitType::Samurai | UnitType::Keshik | UnitType::Chasqui | UnitType::Mandekalu | UnitType::AskiaRider | UnitType::Conquistador | UnitType::ManOWar | UnitType::Musketeer | UnitType::Sipahi | UnitType::Cossack | UnitType::Marine | UnitType::Panzer | UnitType::GuardsRifleman | UnitType::Bandeirante | UnitType::LightHorse | UnitType::Mountie | UnitType::Charro | UnitType::Commando | UnitType::BlackHussar | UnitType::Grenzer | UnitType::Bersaglieri => self.unique_base().and_then(|b| b.required_tech()),
             UnitType::Settler | UnitType::Worker | UnitType::Warrior | UnitType::Scout => None,
             UnitType::Longbowman => Some(Tech::Monarchy),
+            UnitType::Crusader => Some(Tech::Theology),
+            UnitType::MedievalInfantry => Some(Tech::Chivalry),
+            UnitType::Trebuchet => Some(Tech::Engineering),
+            UnitType::Caravel => Some(Tech::Astronomy),
+            UnitType::JetFighter | UnitType::AegisCruiser => Some(Tech::Rocketry),
+            UnitType::StealthBomber => Some(Tech::Superconductors),
+            UnitType::NuclearSubmarine => Some(Tech::NuclearFission),
             UnitType::Galleon => Some(Tech::Navigation),
             UnitType::Submarine => Some(Tech::Electronics),
             UnitType::Engineers => Some(Tech::SteamPower),
@@ -544,6 +573,14 @@ impl UnitType {
             UnitType::Battleship => (12, 10, 5),
             UnitType::Fighter => (6, 5, 8),
             UnitType::Bomber => (12, 2, 8),
+            UnitType::Crusader => (5, 3, 1),
+            UnitType::MedievalInfantry => (4, 2, 1),
+            UnitType::Trebuchet => (0, 1, 1),
+            UnitType::Caravel => (1, 2, 4),
+            UnitType::JetFighter => (8, 8, 10),
+            UnitType::StealthBomber => (18, 5, 12),
+            UnitType::AegisCruiser => (8, 10, 6),
+            UnitType::NuclearSubmarine => (14, 4, 6),
             UnitType::GreatGeneral | UnitType::GreatMerchant | UnitType::GreatScientist | UnitType::GreatArtist | UnitType::GreatEngineer => (0, 0, 2),
         }
     }
@@ -597,6 +634,14 @@ impl UnitType {
             UnitType::Battleship => 160,
             UnitType::Fighter => 90,
             UnitType::Bomber => 110,
+            UnitType::Crusader => 40,
+            UnitType::MedievalInfantry => 30,
+            UnitType::Trebuchet => 30,
+            UnitType::Caravel => 40,
+            UnitType::JetFighter => 120,
+            UnitType::StealthBomber => 160,
+            UnitType::AegisCruiser => 130,
+            UnitType::NuclearSubmarine => 130,
             // Never trained; this is only their value as a prize.
             UnitType::GreatGeneral | UnitType::GreatMerchant | UnitType::GreatScientist | UnitType::GreatArtist | UnitType::GreatEngineer => 200,
         }
@@ -645,7 +690,12 @@ impl UnitType {
             UnitType::Caravan => Color::srgb(0.9, 0.7, 0.4),
             UnitType::Galley | UnitType::Frigate => Color::srgb(0.6, 0.45, 0.3),
             UnitType::Ironclad | UnitType::Destroyer | UnitType::Battleship => Color::srgb(0.5, 0.52, 0.56),
-            UnitType::Fighter | UnitType::Bomber => Color::srgb(0.55, 0.6, 0.5),
+            UnitType::Fighter | UnitType::Bomber | UnitType::JetFighter | UnitType::StealthBomber => Color::srgb(0.55, 0.6, 0.5),
+            UnitType::Crusader => Color::srgb(0.9, 0.88, 0.84),
+            UnitType::MedievalInfantry => Color::srgb(0.5, 0.45, 0.42),
+            UnitType::Trebuchet => Color::srgb(0.5, 0.33, 0.15),
+            UnitType::Caravel => Color::srgb(0.62, 0.47, 0.3),
+            UnitType::AegisCruiser | UnitType::NuclearSubmarine => Color::srgb(0.42, 0.46, 0.5),
             UnitType::GreatGeneral | UnitType::GreatMerchant | UnitType::GreatScientist | UnitType::GreatArtist | UnitType::GreatEngineer => Color::srgb(0.95, 0.82, 0.35),
         }
     }
@@ -662,7 +712,8 @@ impl UnitType {
         }
         match self {
             UnitType::Galley | UnitType::Galleon | UnitType::Frigate | UnitType::Ironclad | UnitType::Destroyer | UnitType::Battleship | UnitType::Submarine | UnitType::Transport | UnitType::Carrier => Domain::Sea,
-            UnitType::Fighter | UnitType::Bomber => Domain::Air,
+            UnitType::Caravel | UnitType::AegisCruiser | UnitType::NuclearSubmarine => Domain::Sea,
+            UnitType::Fighter | UnitType::Bomber | UnitType::JetFighter | UnitType::StealthBomber => Domain::Air,
             _ => Domain::Land,
         }
     }
@@ -673,12 +724,22 @@ impl UnitType {
         attack / (attack + defence).max(1.0)
     }
 
+    /// A fighter: intercepts bombers near it.
+    pub fn is_interceptor(&self) -> bool {
+        matches!(self, UnitType::Fighter | UnitType::JetFighter)
+    }
+
+    /// A bomber: may be met by enemy fighters.
+    pub fn is_bomber(&self) -> bool {
+        matches!(self, UnitType::Bomber | UnitType::StealthBomber)
+    }
+
     /// Wheeled: keeps to open ground unless a road leads through forest or mountains.
     pub fn is_wheeled(&self) -> bool {
         if let Some(base) = self.unique_base() {
             return base.is_wheeled();
         }
-        matches!(self, UnitType::WarChariot | UnitType::Catapult | UnitType::Cannon | UnitType::Artillery | UnitType::RadarArtillery)
+        matches!(self, UnitType::WarChariot | UnitType::Catapult | UnitType::Trebuchet | UnitType::Cannon | UnitType::Artillery | UnitType::RadarArtillery)
     }
 
     /// A military unit that fights on the ground: the only kind that holds or takes cities.
@@ -720,6 +781,7 @@ impl UnitType {
         match self {
             UnitType::Galley | UnitType::Frigate => 2,
             UnitType::Galleon => 4,
+            UnitType::Caravel => 3,
             UnitType::Transport => 8,
             UnitType::Carrier => 4,
             _ => 0,
@@ -743,7 +805,7 @@ impl UnitType {
         if let Some(base) = self.unique_base() {
             return base.is_ferry();
         }
-        matches!(self, UnitType::Galley | UnitType::Galleon | UnitType::Transport)
+        matches!(self, UnitType::Galley | UnitType::Caravel | UnitType::Galleon | UnitType::Transport)
     }
 
     /// Strategic resources a city must have access to before it can train this unit.
@@ -756,7 +818,10 @@ impl UnitType {
         }
         match self {
             UnitType::Horseman | UnitType::WarChariot => &[Resource::Horses],
-            UnitType::Legion | UnitType::Immortal | UnitType::Artillery => &[Resource::Iron],
+            UnitType::Legion | UnitType::Immortal | UnitType::Artillery | UnitType::MedievalInfantry => &[Resource::Iron],
+            UnitType::Crusader => &[Resource::Horses],
+            UnitType::JetFighter | UnitType::StealthBomber | UnitType::AegisCruiser => &[Resource::Oil, Resource::Aluminum],
+            UnitType::NuclearSubmarine => &[Resource::Uranium],
             UnitType::Knight => &[Resource::Horses, Resource::Iron],
             UnitType::Cannon => &[Resource::Iron, Resource::Saltpeter],
             UnitType::Pikeman => &[Resource::Iron],
@@ -781,7 +846,7 @@ impl UnitType {
         if let Some(base) = self.unique_base() {
             return base.is_mounted();
         }
-        matches!(self, UnitType::Horseman | UnitType::WarChariot | UnitType::Knight | UnitType::Cavalry)
+        matches!(self, UnitType::Horseman | UnitType::WarChariot | UnitType::Knight | UnitType::Cavalry | UnitType::Crusader)
     }
 
     /// Defends at double strength against mounted attackers.
@@ -810,11 +875,17 @@ impl UnitType {
             Archer => Longbowman,
             Longbowman => Musketman,
             Artillery => RadarArtillery,
-            Galley => Galleon,
+            Galley => Caravel,
+            Caravel => Galleon,
             Galleon => Transport,
             Spearman => Phalanx,
             Phalanx => Pikeman,
-            Pikeman | Legion | Immortal => Musketman,
+            Legion | Immortal => MedievalInfantry,
+            Pikeman | MedievalInfantry => Musketman,
+            Crusader => Cavalry,
+            Fighter => JetFighter,
+            Bomber => StealthBomber,
+            Submarine => NuclearSubmarine,
             Musketman => Rifleman,
             Rifleman => Infantry,
             Infantry => MechInfantry,
@@ -822,7 +893,8 @@ impl UnitType {
             Horseman | WarChariot => Knight,
             Knight => Cavalry,
             Cavalry => Tank,
-            Catapult => Cannon,
+            Catapult => Trebuchet,
+            Trebuchet => Cannon,
             Cannon => Artillery,
             Frigate => Ironclad,
             Ironclad => Destroyer,
@@ -860,6 +932,9 @@ impl UnitType {
         }
         match self {
             UnitType::Catapult => Some((4, 1, 1)),
+            UnitType::Trebuchet => Some((6, 1, 1)),
+            UnitType::StealthBomber => Some((16, 1, 3)),
+            UnitType::AegisCruiser => Some((6, 1, 1)),
             UnitType::Cannon => Some((8, 1, 1)),
             UnitType::Artillery => Some((12, 2, 2)),
             UnitType::RadarArtillery => Some((16, 2, 3)),
@@ -1125,6 +1200,22 @@ pub fn join_army(leader: &mut Unit, members: &[Unit]) {
 #[cfg(test)]
 mod army_tests {
     use super::*;
+
+    #[test]
+    fn civ_threes_later_units_fill_their_upgrade_lines() {
+        use UnitType::*;
+        assert_eq!((Galley.upgrades_to(), Caravel.upgrades_to()), (Some(Caravel), Some(Galleon)));
+        assert_eq!((Catapult.upgrades_to(), Trebuchet.upgrades_to()), (Some(Trebuchet), Some(Cannon)));
+        assert_eq!((Legion.upgrades_to(), MedievalInfantry.upgrades_to()), (Some(MedievalInfantry), Some(Musketman)));
+        assert_eq!((Fighter.upgrades_to(), Bomber.upgrades_to(), Submarine.upgrades_to()), (Some(JetFighter), Some(StealthBomber), Some(NuclearSubmarine)));
+        assert!(Crusader.is_mounted() && Caravel.is_ferry() && !Caravel.coastal());
+        assert!(JetFighter.is_interceptor() && StealthBomber.is_bomber() && StealthBomber.domain() == Domain::Air);
+        // A stealth bomber is harder to shoot down than a bomber.
+        assert!(UnitType::interception_odds(Fighter, StealthBomber) < UnitType::interception_odds(Fighter, Bomber));
+        for u in [Crusader, MedievalInfantry, Trebuchet, Caravel, JetFighter, StealthBomber, AegisCruiser, NuclearSubmarine] {
+            assert!(u.is_trainable() && u.required_tech().is_some() && u.cost() > 0, "{u:?}");
+        }
+    }
 
     #[test]
     fn a_city_falls_back_on_a_defender_of_its_age_never_a_raider() {

@@ -1597,10 +1597,10 @@ fn handle_map_click(
         let vitals: HashMap<Entity, (u32, u8, bool)> = units.iter().map(|(e, u)| (e, (u.hp, u.level, u.fortified))).collect();
         let members_of: HashMap<Entity, u32> = units.iter().map(|(e, u)| (e, u.members())).collect();
         // Enemy fighters that have not flown this turn, ready to intercept our bombers.
-        let fighters_ready: Vec<(Entity, Hex, u32)> = units
+        let fighters_ready: Vec<(Entity, Hex, u32, UnitType)> = units
             .iter()
-            .filter(|(_, u)| u.unit_type == UnitType::Fighter && u.owner != PLAYER && u.movement_left > 0)
-            .map(|(e, u)| (e, u.position, u.owner))
+            .filter(|(_, u)| u.unit_type.is_interceptor() && u.owner != PLAYER && u.movement_left > 0)
+            .map(|(e, u)| (e, u.position, u.owner, u.unit_type))
             .collect();
         let city_here = cities.iter().find(|(_, c)| c.position == hex).map(|(e, c)| (e, c.owner));
         let own_here: Vec<Entity> =
@@ -1767,16 +1767,16 @@ fn handle_map_click(
             } else if adjacent && unit.can_move() && unit.unit_type.is_military() {
                 unit.spend(StepCost::Full);
                 // A bomber may be met by an enemy fighter within three tiles of the target.
-                if unit.unit_type == UnitType::Bomber {
+                if unit.unit_type.is_bomber() {
                     let hostile = |o: u32| o == BARBARIANS || o == enemy_owner || diplomacy.get_treaty(PLAYER, o) == Treaty::War;
-                    if let Some((fighter, _, _)) = fighters_ready.iter().find(|(_, at, o)| hostile(*o) && at.distance_to(hex) <= 3) {
-                        let fighter = *fighter;
+                    if let Some((fighter, _, _, fighter_kind)) = fighters_ready.iter().find(|(_, at, o, _)| hostile(*o) && at.distance_to(hex) <= 3) {
+                        let (fighter, fighter_kind) = (*fighter, *fighter_kind);
                         commands.queue(move |world: &mut World| {
                             if let Some(mut f) = world.get_mut::<Unit>(fighter) {
                                 f.end_move();
                             }
                         });
-                        if rand::thread_rng().gen_bool(UnitType::interception_odds(UnitType::Fighter, UnitType::Bomber)) {
+                        if rand::thread_rng().gen_bool(UnitType::interception_odds(fighter_kind, unit.unit_type)) {
                             log.push("Enemy fighters intercept our bomber and shoot it down!");
                             commands.entity(selected).try_despawn_recursive();
                             selection.unit = None;
@@ -5128,17 +5128,17 @@ fn process_turn(
         }
         // A bomber may be met by a fighter of the defender (or of anyone at war with the attacker)
         // within three tiles of the target that has not flown this turn.
-        if a_type == UnitType::Bomber {
+        if a_type.is_bomber() {
             let interceptor = units
                 .iter()
-                .filter(|(e, u)| !dead.contains(e) && u.unit_type == UnitType::Fighter && u.movement_left > 0 && u.position.distance_to(attack.target) <= 3)
+                .filter(|(e, u)| !dead.contains(e) && u.unit_type.is_interceptor() && u.movement_left > 0 && u.position.distance_to(attack.target) <= 3)
                 .find(|(_, u)| u.owner == d_owner || (u.owner != a_owner && (a_owner == BARBARIANS || diplomacy.get_treaty(a_owner, u.owner) == Treaty::War)))
-                .map(|(e, u)| (e, u.owner));
-            if let Some((fighter, fighter_owner)) = interceptor {
+                .map(|(e, u)| (e, u.owner, u.unit_type));
+            if let Some((fighter, fighter_owner, fighter_kind)) = interceptor {
                 if let Ok((_, mut f)) = units.get_mut(fighter) {
                     f.end_move();
                 }
-                if rng.gen_bool(UnitType::interception_odds(UnitType::Fighter, UnitType::Bomber)) {
+                if rng.gen_bool(UnitType::interception_odds(fighter_kind, a_type)) {
                     dead.insert(attack.attacker);
                     commands.entity(attack.attacker).try_despawn_recursive();
                     if fighter_owner == PLAYER {
