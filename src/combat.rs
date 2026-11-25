@@ -119,7 +119,8 @@ pub fn terrain_bonus(terrain: Terrain) -> f32 {
     match terrain {
         Terrain::Mountain => 1.0,
         Terrain::Hills => 0.5,
-        Terrain::Forest => 0.25,
+        Terrain::Forest | Terrain::Jungle => 0.25,
+        Terrain::Marsh => 0.2,
         _ => 0.1,
     }
 }

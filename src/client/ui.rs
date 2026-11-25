@@ -3572,6 +3572,9 @@ fn minimap_color(terrain: Terrain) -> [u8; 3] {
         Terrain::Forest => [44, 104, 52],
         Terrain::Hills => [128, 140, 74],
         Terrain::Mountain => [150, 146, 140],
+        Terrain::Tundra => [170, 176, 160],
+        Terrain::Jungle => [30, 92, 40],
+        Terrain::Marsh => [86, 118, 92],
     }
 }
 

@@ -85,6 +85,8 @@ for computer players too, whose workers also lay railroads over their roads once
 Power (after any roads their network still needs). Ships and aircraft ignore both.
 
 Land units cross water only aboard ships: a Galley or Frigate holds 2, a Galleon 4, a Transport 8.
+As Civilization III's galley, a Galley keeps in sight of land - it sails only on water beside the
+shore - so the open ocean waits for the Galleon and Frigate.
 Troops board a ship with room (from the shore or in port), sail with it, and go ashore onto land next
 to it; boarding and landing end the move.
 
@@ -522,14 +524,19 @@ working directory.
 - **Resistance**: a captured city produces nothing for 1 turn plus 1 per 3 citizens (up to 6); a
   garrison of two settles it twice as fast.
 - **Working the land**: every tile yields food, shields and trade - grassland 2/0/0, plains 1/1/0,
-  desert 0/1/0, hills 1/0/0, mountains 0/1/0, forest 1/2/0, ocean 1/0/2 - plus farms (+1 food),
+  desert 0/1/0, hills 1/0/0, mountains 0/1/0, forest 1/2/0, ocean 1/0/2, and as in Civilization III
+  tundra (near the poles), jungle (the wet tropics) and marsh (the great wetlands) 1/0/0 - plus farms (+1 food),
   mines (+2 shields on hills and mountains, +1 elsewhere), roads (+1 trade on flat land), railroads
   (+1 shield), resources and rivers (+1 trade); a Harbor adds a food to worked ocean tiles. The
   government changes it: under Despotism and Anarchy a tile giving 3 or more of anything gives one
   less; a Republic or Democracy adds a trade to tiles that already give some. A city of three or
   more with nobody unhappy and at least half its people happy celebrates its ruler: under
   Despotism its tiles escape the penalty, under Monarchy or Communism they earn a republic's extra
-  trade (luxury is the way to it). Workers farm and
+  trade (luxury is the way to it). As in Civilization III a farm needs fresh water - a river on or
+  beside the tile, or the sea, a lake, a city or another farm beside it - until Electricity brings
+  water anywhere; tundra, jungle and marsh cannot be farmed, but a worker clears jungle and marsh
+  into grassland (T), as it clears forest, desert and hills into plains. Jungle and marsh cost two
+  moves and give cover (+25% and +20% defence). Workers farm and
   mine, then road the farmed flat land. Each working citizen works one tile of its city's area and
   every citizen eats 2 food; the city's own tile is worked for free with a bonus. A city grows when
   its food box fills: 20 food as a town (up to size 6), 40 as a city (to 12), 60 as a metropolis;

@@ -93,6 +93,18 @@ const DESERTS = [
   [-16, 34, 17, 30.5], [34, 59, 13, 31], [50, 66, 31, 44], [67, 75, 24, 30], [76, 111, 37, 46],
   [116, 142, -30, -19], [12, 25, -29, -18], [-72, -68, -28, -16], [-117, -103, 26, 36], [-70, -64, -48, -38],
 ];
+// The great wetlands, as Civilization III's marsh: [lon0, lon1, lat0, lat1].
+const MARSHES = [
+  [29, 33, 6, 10], // the Sudd
+  [-58.5, -55, -20, -16], // the Pantanal
+  [-81.6, -80.2, 25.1, 26.9], // the Everglades
+  [88, 90.5, 21.4, 22.6], // the Sundarbans
+  [24, 30, 51.2, 52.6], // the Pripet Marshes
+  [45.5, 48, 30.4, 32.2], // the Mesopotamian Marshes
+  [21.8, 23.6, -20.2, -18.4], // the Okavango
+  [-90, -80.5, 51.5, 56], // the Hudson Bay Lowlands
+  [66, 80, 57.5, 62], // the West Siberian bogs
+];
 const JUNGLES = [[-76, -48, -13, 5], [8, 29, -5, 5], [-12, 9, 4, 8.5], [93, 152, -10, 19], [-92, -77, 7, 18], [72, 78, 8, 20]];
 // [points along the crest, reach in degrees, terrain at the crest]
 const RANGES = [
@@ -146,9 +158,10 @@ function terrainAt(lon, lat, col, row) {
     if (d < reach && noise < 0.7) return 'h';
   }
   if (DESERTS.some((b) => inBox(lon, lat, b))) return noise < 0.88 ? 'd' : 'p';
-  if (JUNGLES.some((b) => inBox(lon, lat, b))) return noise < 0.8 ? 'f' : 'g';
+  if (MARSHES.some((b) => inBox(lon, lat, b))) return noise < 0.75 ? 's' : 'g';
+  if (JUNGLES.some((b) => inBox(lon, lat, b))) return noise < 0.8 ? 'j' : 'g';
   const a = Math.abs(lat);
-  if (a > 67) return noise < 0.5 ? 'h' : 'p'; // tundra
+  if (a > 67) return noise < 0.3 ? 'h' : 't'; // tundra
   if (a > 52) return noise < 0.68 ? 'f' : noise < 0.85 ? 'p' : 'g'; // taiga
   if (a > 32) return noise < 0.45 ? 'g' : noise < 0.72 ? 'p' : noise < 0.94 ? 'f' : 'h'; // temperate
   if (a > 12) return noise < 0.55 ? 'p' : noise < 0.85 ? 'g' : noise < 0.95 ? 'f' : 'h'; // savanna

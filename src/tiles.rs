@@ -12,6 +12,13 @@ use crate::terrain::{Improvement, Resource, ResourceKind, Terrain};
 /// Food, shields and gold.
 pub type Yield = (u32, u32, u32);
 
+/// Civilization III's irrigation: a farm needs fresh water - a river on or beside the tile, or the
+/// sea, a lake, a city or another farm beside it - until Electricity carries water anywhere.
+/// `river` and `source` say what is at a tile.
+pub fn irrigable(at: hexx::Hex, river: impl Fn(hexx::Hex) -> bool, source: impl Fn(hexx::Hex) -> bool, electricity: bool) -> bool {
+    electricity || river(at) || at.all_neighbors().into_iter().any(|n| river(n) || source(n))
+}
+
 /// Food each citizen eats a turn.
 pub const FOOD_PER_CITIZEN: u32 = 2;
 
@@ -28,8 +35,9 @@ pub fn tile_yield(terrain: Terrain, improvements: &[Improvement], resource: Opti
         Terrain::Hills => (1, 0, 0),
         Terrain::Mountain => (0, 1, 0),
         Terrain::Forest => (1, 2, 0),
+        Terrain::Tundra | Terrain::Jungle | Terrain::Marsh => (1, 0, 0),
     };
-    let farmland = matches!(terrain, Terrain::Grassland | Terrain::Plains | Terrain::Desert | Terrain::Hills);
+    let farmland = terrain.farmland();
     if improvements.contains(&Improvement::Farm) && farmland {
         food += 1;
     }
@@ -203,6 +211,25 @@ pub fn total(candidates: &[(Hex, Yield)], worked: &[Hex], centre: Yield) -> Yiel
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn farms_need_fresh_water_until_electricity() {
+        use hexx::Hex;
+        let river = |h: Hex| h == Hex::new(5, 0);
+        let source = |h: Hex| h == Hex::new(-5, 0);
+        assert!(irrigable(Hex::new(5, 0), river, source, false), "on a river");
+        assert!(irrigable(Hex::new(4, 0), river, source, false), "beside a river");
+        assert!(irrigable(Hex::new(-4, 0), river, source, false), "beside the sea, a city or a farm");
+        assert!(!irrigable(Hex::ZERO, river, source, false), "dry land");
+        assert!(irrigable(Hex::ZERO, river, source, true), "Electricity brings water anywhere");
+        // Tundra, jungle and marsh feed a little and cannot be farmed; jungle and marsh can be cleared.
+        for t in [Terrain::Tundra, Terrain::Jungle, Terrain::Marsh] {
+            assert_eq!(tile_yield(t, &[Improvement::Farm], None, false), (1, 0, 0), "{t:?}");
+            assert!(!t.farmland());
+        }
+        assert_eq!(Terrain::Jungle.can_transform_to(), Some(Terrain::Grassland));
+        assert_eq!(Terrain::Marsh.can_transform_to(), Some(Terrain::Grassland));
+    }
 
     #[test]
     fn improvements_resources_and_rivers_add_to_the_land() {

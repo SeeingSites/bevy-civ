@@ -58,6 +58,9 @@ fn terrain_row(terrain: Terrain) -> usize {
         Terrain::Hills => 4,
         Terrain::Mountain => 5,
         Terrain::Water => 6,
+        Terrain::Tundra => 7,
+        Terrain::Jungle => 8,
+        Terrain::Marsh => 9,
     }
 }
 

@@ -110,7 +110,7 @@ function peak(x, y, w, h, r) {
   );
 }
 
-const TERRAIN_ROWS = ['grassland', 'plains', 'desert', 'forest', 'hills', 'mountain', 'water'];
+const TERRAIN_ROWS = ['grassland', 'plains', 'desert', 'forest', 'hills', 'mountain', 'water', 'tundra', 'jungle', 'marsh'];
 
 function terrainFrame(col, row) {
   const kind = TERRAIN_ROWS[row];
@@ -133,6 +133,64 @@ function terrainFrame(col, row) {
       waves += `<path d="M${n(x - len + dx)},${n(y + 4)} q${n(len / 2)},-5 ${n(len)},0 t${n(len)},0" stroke="rgba(10,40,90,${n(op * 0.5)})" stroke-width="2"/>`;
     }
     return g.svg + waves + '</g>' + `<polygon points="${hexPoints(CX, CY, R - 1)}" fill="none" stroke="rgba(8,30,70,0.2)" stroke-width="2.5"/>`;
+  }
+
+  if (kind === 'tundra') {
+    // Cold, grey-green ground: lichen, low shrubs and lingering snow.
+    const g = ground({ base: '#9fa592', dark: [96, 104, 88], light: [214, 220, 206], seed });
+    let snow = `<g clip-path="url(#${g.clip})">`;
+    for (let i = 0; i < 6; i++) {
+      const [x, y] = inHex(r, 18);
+      snow += `<ellipse cx="${n(x)}" cy="${n(y)}" rx="${n(between(r, 9, 20))}" ry="${n(between(r, 4, 8))}" fill="rgba(246,250,255,0.75)"/>`;
+    }
+    snow += '</g>';
+    let stones = '';
+    for (let i = 0; i < 4; i++) {
+      const [x, y] = inHex(r, 24);
+      stones += `<ellipse cx="${n(x)}" cy="${n(y)}" rx="5" ry="3.4" fill="#7d8078" stroke="#55584f" stroke-width="1"/>`;
+    }
+    return g.svg + snow + tufts(r, 18, ['#6f7d5c', '#8f9a74', '#a78f62'], g.clip) + stones + rim();
+  }
+
+  if (kind === 'jungle') {
+    // Dense, dark broadleaf canopy with palms.
+    const g = ground({ base: '#2f6a2c', dark: [14, 54, 20], light: [90, 150, 60], seed });
+    const trees = [];
+    for (let i = 0; i < 22; i++) {
+      const [x, y] = inHex(r, 18);
+      trees.push([x, y + 6, between(r, 0.85, 1.2)]);
+    }
+    trees.sort((a, b) => a[1] - b[1]);
+    const palm = (x, y, sc) => {
+      let out = `<ellipse cx="${n(x + 4 * sc)}" cy="${n(y + 1)}" rx="${n(12 * sc)}" ry="${n(4 * sc)}" fill="rgba(5,20,5,0.4)"/>`;
+      out += `<path d="M${n(x)},${n(y)} q${n(2 * sc)},${n(-10 * sc)} 0,${n(-20 * sc)}" stroke="#6b4a26" stroke-width="${n(3 * sc)}" fill="none"/>`;
+      for (const a of [-150, -110, -70, -30, 10]) {
+        const rad = (a * Math.PI) / 180;
+        out += `<path d="M${n(x)},${n(y - 20 * sc)} q${n(Math.cos(rad) * 8 * sc)},${n(Math.sin(rad) * 8 * sc - 4)} ${n(Math.cos(rad) * 15 * sc)},${n(Math.sin(rad) * 10 * sc + 4)}" stroke="${pick(r, ['#2f8a3a', '#3fa048', '#24702e'])}" stroke-width="${n(4 * sc)}" fill="none" stroke-linecap="round"/>`;
+      }
+      return out;
+    };
+    return g.svg + tufts(r, 14, ['#1f5a22', '#3c8a34'], g.clip) + rim() + trees.map((t, i) => (i % 3 === 0 ? palm(t[0], t[1], t[2]) : tree(t[0], t[1], t[2] * 1.05, 'leafy', r))).join('');
+  }
+
+  if (kind === 'marsh') {
+    // Wet ground: pools of still water among reeds.
+    const g = ground({ base: '#5f7d5a', dark: [44, 70, 48], light: [140, 170, 120], seed });
+    let pools = `<g clip-path="url(#${g.clip})">`;
+    for (let i = 0; i < 7; i++) {
+      const [x, y] = inHex(r, 16);
+      const w = between(r, 10, 22);
+      pools += `<ellipse cx="${n(x)}" cy="${n(y)}" rx="${n(w)}" ry="${n(w * 0.42)}" fill="#3f6f8a" stroke="#2c4f3a" stroke-width="1.5"/><ellipse cx="${n(x - w * 0.3)}" cy="${n(y - 2)}" rx="${n(w * 0.35)}" ry="${n(w * 0.12)}" fill="rgba(200,230,245,0.45)"/>`;
+    }
+    pools += '</g>';
+    let reeds = '<g stroke-linecap="round" fill="none">';
+    for (let i = 0; i < 16; i++) {
+      const [x, y] = inHex(r, 14);
+      const h = between(r, 10, 16);
+      reeds += `<path d="M${n(x)},${n(y)} v${n(-h)} M${n(x + 3)},${n(y)} q1,${n(-h * 0.6)} 4,${n(-h * 0.9)} M${n(x - 3)},${n(y)} q-1,${n(-h * 0.6)} -4,${n(-h * 0.8)}" stroke="${pick(r, ['#6e8a3a', '#8aa04a', '#5a7030'])}" stroke-width="2"/><ellipse cx="${n(x)}" cy="${n(y - h - 2)}" rx="1.8" ry="4" fill="#6a4a2a"/>`;
+    }
+    reeds += '</g>';
+    return g.svg + pools + tufts(r, 10, ['#4f6e3a', '#7f9a55'], g.clip) + reeds + rim();
   }
 
   if (kind === 'grassland') {

@@ -19,6 +19,12 @@ pub enum Terrain {
     Hills,
     Mountain,
     Forest,
+    /// Cold land near the poles (Civilization III): poor food, no farms.
+    Tundra,
+    /// Wet tropical forest: slow going and good cover; cleared, it becomes grassland.
+    Jungle,
+    /// Wetland: slow going; drained, it becomes grassland.
+    Marsh,
 }
 
 #[derive(Clone, Copy, PartialEq, Debug, serde::Serialize, serde::Deserialize)]
@@ -83,6 +89,9 @@ impl Terrain {
             Terrain::Hills => "Hills",
             Terrain::Mountain => "Mountains",
             Terrain::Forest => "Forest",
+            Terrain::Tundra => "Tundra",
+            Terrain::Jungle => "Jungle",
+            Terrain::Marsh => "Marsh",
         }
     }
 
@@ -95,17 +104,26 @@ impl Terrain {
             Terrain::Hills => Color::srgb(0.55, 0.45, 0.25),
             Terrain::Mountain => Color::srgb(0.45, 0.45, 0.45),
             Terrain::Forest => Color::srgb(0.15, 0.45, 0.2),
+            Terrain::Tundra => Color::srgb(0.62, 0.66, 0.6),
+            Terrain::Jungle => Color::srgb(0.1, 0.38, 0.14),
+            Terrain::Marsh => Color::srgb(0.34, 0.46, 0.36),
         }
     }
 
-    pub fn food(&self) -> u32 { match self { Terrain::Grassland => 2, Terrain::Plains => 1, Terrain::Forest => 1, _ => 0 } }
+    pub fn food(&self) -> u32 { match self { Terrain::Grassland => 2, Terrain::Plains | Terrain::Forest | Terrain::Tundra | Terrain::Jungle | Terrain::Marsh => 1, _ => 0 } }
     pub fn production(&self) -> u32 { match self { Terrain::Hills => 2, Terrain::Mountain => 1, Terrain::Forest => 1, Terrain::Plains => 1, _ => 0 } }
+
+    /// Land that can be farmed (given fresh water: see `tiles::irrigable`).
+    pub fn farmland(&self) -> bool {
+        matches!(self, Terrain::Grassland | Terrain::Plains | Terrain::Desert | Terrain::Hills)
+    }
 
     pub fn can_transform_to(&self) -> Option<Terrain> {
         match self {
             Terrain::Forest => Some(Terrain::Plains),
             Terrain::Desert => Some(Terrain::Plains),
             Terrain::Hills => Some(Terrain::Plains),
+            Terrain::Jungle | Terrain::Marsh => Some(Terrain::Grassland),
             _ => None,
         }
     }
@@ -297,6 +315,9 @@ pub fn random_resource(rng: &mut impl Rng, terrain: Terrain) -> Option<Resource>
         Terrain::Forest => (14, &[Rubber, Furs, Silk, Spices, Dyes, Coal, Furs, Spices]),
         Terrain::Hills => (17, &[Iron, Coal, Saltpeter, Wine, Incense, Gems, Gold, Iron, Coal]),
         Terrain::Mountain => (17, &[Iron, Gold, Gems, Coal, Iron]),
+        Terrain::Tundra => (14, &[Furs, Oil, Furs]),
+        Terrain::Jungle => (16, &[Rubber, Gems, Spices, Ivory, Dyes, Silk]),
+        Terrain::Marsh => (12, &[Oil, Dyes, Spices]),
     };
     (rng.gen_range(0..100) < chance).then(|| options[rng.gen_range(0..options.len())])
 }
