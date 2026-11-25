@@ -259,8 +259,32 @@ function assemble(def, polygons) {
     ...(def.objectives ? { objectives: def.objectives } : {}), ...(def.developed ? { developed: true } : {}), ...(def.wonders ? { wonders: def.wonders } : {}), ...(def.researchCost ? { research_cost: def.researchCost } : {}),
     ...(def.endYear !== undefined ? { end_year: def.endYear } : {}), ...(def.endMonth ? { end_month: def.endMonth } : {}),
     ...(def.monthsPerTurn ? { months_per_turn: def.monthsPerTurn } : {}), ...(def.startMonth ? { start_month: def.startMonth } : {}),
-    ...(def.techCeiling ? { tech_ceiling: def.techCeiling } : {}), ...(def.events ? { events: def.events } : {}),
+    ...(def.techCeiling ? { tech_ceiling: def.techCeiling } : {}), ...(def.events ? { events: def.events.map(landed) } : {}),
   };
+
+  // An event's landings - [people, unit, count, lon, lat] - become units on the nearest land.
+  function landed(event) {
+    if (!event.landings) return event;
+    const { landings, ...rest } = event;
+    const units = [];
+    for (const [owner, type, count, lon, lat] of landings) {
+      const start = proj.toCell(lon, lat);
+      const seen = new Set([start.join()]);
+      const queue = [start];
+      let cell = null;
+      while (queue.length && !cell) {
+        const c = queue.shift();
+        if (land(...c)) cell = c;
+        for (const n of neighbours(...c)) {
+          if (n[0] < 0 || n[1] < 0 || n[0] >= proj.cols || n[1] >= proj.rows || seen.has(n.join())) continue;
+          seen.add(n.join());
+          queue.push(n);
+        }
+      }
+      for (let i = 0; i < count; i++) units.push({ owner, type, col: cell[0], row: cell[1] });
+    }
+    return { ...rest, units };
+  }
 }
 
 const polygons = loadLand();

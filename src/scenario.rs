@@ -109,6 +109,19 @@ pub struct ScenarioEvent {
     /// The news, as the world hears it.
     #[serde(default)]
     pub message: String,
+    /// Troops history lands on its date (an invasion, an offensive).
+    #[serde(default)]
+    pub units: Vec<EventUnit>,
+}
+
+/// A unit a scenario event brings: whose, what, and where.
+#[derive(Deserialize, Clone, Default, Debug)]
+pub struct EventUnit {
+    pub owner: String,
+    #[serde(rename = "type")]
+    pub kind: String,
+    pub col: i32,
+    pub row: i32,
 }
 
 impl Scenario {
@@ -527,6 +540,12 @@ mod tests {
                 assert!(turn > 1 && turn <= last, "{}: {} falls on turn {turn}", s.id, e.message);
                 for (a, b) in e.wars.iter().chain(&e.alliances).chain(&e.peace) {
                     assert!(s.civs.iter().any(|c| &c.name == a) && s.civs.iter().any(|c| &c.name == b), "{}: {a} / {b}", s.id);
+                }
+                // Landings name a people of the scenario and a unit it may field, on its land.
+                for u in &e.units {
+                    assert!(s.civs.iter().any(|c| c.name == u.owner), "{}: {}", s.id, u.owner);
+                    assert!(UnitType::ALL.into_iter().any(|k| k.base_name() == u.kind), "{}: {}", s.id, u.kind);
+                    assert_ne!(s.rows[u.row as usize].as_bytes()[u.col as usize], b'~', "{}: a landing at sea", s.id);
                 }
             }
         }

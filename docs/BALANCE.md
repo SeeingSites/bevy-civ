@@ -137,6 +137,13 @@ the stars. A voter now backs a candidate only with goodwill of 20 (was 10). 16 g
 Earth - culture 6, space 5, score 3, diplomacy 2; New World - culture 5, space 5, domination 3,
 score 3; Modern World (12) - space 9, diplomacy 2, culture 1.
 
+In the four wars fought month by month, computer players now march and sail for the objective cities
+(from six times as far over land, eight by sea), and the 1939 scenario lands history's armies
+(Stalingrad, Sicily, Normandy, Bagration, Leyte). 48 games each: 1914 - Central Powers 22, Entente
+26; 1775 - Britain 12, the American side 36; 1805 - France 15, the Coalition 32, the Ottomans 1;
+Rise of Rome (unchanged rules) - Rome 14, Carthage 11, Macedon 11, the Gauls 11, the Seleucids 1.
+1939 stays the Axis's in most AI games (13 of 16; the Allies now liberate Paris now and then).
+
 ## What does not change
 
 Without `--balance` the game is unchanged. The harness does not retune combat, victory or the AI,

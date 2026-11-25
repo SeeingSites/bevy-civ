@@ -69,7 +69,9 @@ and the Second World War (September 1939 to August 1945) go month by month. Rese
 edge of each scenario's age - no starships in Caesar's day - and history arrives on its date: Italy
 and the Ottomans enter the Great War and Russia leaves it at Brest-Litovsk; the Soviet Union, the
 United States, Mexico and Brazil join the Allies; Spain joins France against Britain in 1779; the
-coalitions against Napoleon rise and fall. Only conquest wins early. At the end, the side - a people
+coalitions against Napoleon rise and fall; and history lands its armies - the Red Army at
+Stalingrad, the Allies in Sicily, Normandy and Leyte, Operation Bagration. In the four wars the
+objective cities are what the computer players march and sail for. Only conquest wins early. At the end, the side - a people
 and its allies - that has gained most among the scenario's objective cities wins; if nobody has
 gained, the stronger side has held (as the Entente did). The Modern World stays open-ended.
 
