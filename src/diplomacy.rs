@@ -27,7 +27,7 @@ pub fn sprawl_unhappiness(cities: u32) -> u32 {
 }
 
 /// Goodwill a voter needs towards a candidate to back it at the United Nations.
-pub const UN_GOODWILL: i32 = 10;
+pub const UN_GOODWILL: i32 = 20;
 
 /// Votes a Secretary-General needs: a majority of all the members.
 pub fn un_votes_needed(members: usize, peoples: usize) -> usize {

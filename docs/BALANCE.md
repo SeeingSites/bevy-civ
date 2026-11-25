@@ -130,6 +130,13 @@ Coalition 12, France 4; 1775 - the American side 15; 1914 - the Entente 16 (no o
 hands: a stalemate, as on the Western Front); 1939 - the Axis 13, the Allies 3 (Germany takes Paris
 and often London, and the Allies' AI seldom strikes back across the sea - a known weakness).
 
+After the Civilization III parity work (calendar, tundra and jungle, irrigation, new resources,
+governments, buildings and units) the Whole Earth ended in a diplomatic victory in 5 to 8 of every
+12 games: slower growth on poorer land left the United Nations voting longer before anyone reached
+the stars. A voter now backs a candidate only with goodwill of 20 (was 10). 16 games each: Whole
+Earth - culture 6, space 5, score 3, diplomacy 2; New World - culture 5, space 5, domination 3,
+score 3; Modern World (12) - space 9, diplomacy 2, culture 1.
+
 ## What does not change
 
 Without `--balance` the game is unchanged. The harness does not retune combat, victory or the AI,
