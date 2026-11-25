@@ -153,6 +153,9 @@ pub const BETRAYAL_REPUTATION: i32 = 15;
 pub const JUSTIFIED_REPUTATION: i32 = 3;
 /// Chance an ally of the victim joins a war that has a just cause (an unjust one, always).
 pub const ALLY_JOINS_JUSTIFIED: f64 = 0.4;
+/// Chance a computer player's ally (not also the attacker's) joins a war of aggression against it,
+/// as under Civilization III's mutual protection pact.
+pub const ALLY_DEFENDS: f64 = 0.75;
 /// Extra chance each turn of war between two computer players when one holds a grievance.
 pub const GRIEVANCE_WAR: f64 = 0.03;
 
@@ -1013,6 +1016,27 @@ pub fn turn(ctx: &mut Ctx, fog: &FogOfWar, supplies: &Supplies, units: &[(Hex, u
                         match cause {
                             Some(g) => ctx.log.push(format!("{} declare war on {victim_name}, who {}.", crate::capitalised(attacker_name), g.wrong.describe())),
                             None => ctx.log.push(format!("{} and {} are now at war.", a.1, b.1)),
+                        }
+                    }
+                    // Its allies stand by the victim of an unprovoked attack (Civilization III's mutual
+                    // protection): each other computer ally not also allied to the attacker joins in.
+                    if cause.is_none() {
+                        let defenders: Vec<(u32, String)> = ctx
+                            .civs
+                            .players
+                            .iter()
+                            .filter(|c| !c.is_human && !c.eliminated && c.id != attacker && c.id != victim && !ctx.foreign.gone.contains(&c.id))
+                            .filter(|c| ctx.diplomacy.get_treaty(c.id, victim) == Treaty::Alliance)
+                            .filter(|c| !matches!(ctx.diplomacy.get_treaty(c.id, attacker), Treaty::Alliance | Treaty::War))
+                            .map(|c| (c.id, c.name.clone()))
+                            .collect();
+                        for (ally, ally_name) in defenders {
+                            if rng.gen_bool(ALLY_DEFENDS) {
+                                set_treaty(ctx, ally, attacker, Treaty::War);
+                                if known {
+                                    ctx.log.push(format!("{} stand by their ally {victim_name} and declare war on {attacker_name}.", crate::capitalised(&ally_name)));
+                                }
+                            }
                         }
                     }
                     // An attack on our ally is a wrong done to us too.
