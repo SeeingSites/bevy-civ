@@ -10,6 +10,12 @@ pub enum Government {
     Democracy,
     Communism,
     Fundamentalism,
+    /// Civilization III (Conquests): a warrior people's rule - cheap armies, no forced labour.
+    Tribalism,
+    /// Civilization III (Conquests): lords and vassals - the cheapest armies, little war weariness.
+    Feudalism,
+    /// Civilization III (Conquests): the war state of the industrial age.
+    Fascism,
 }
 
 impl Government {
@@ -19,6 +25,7 @@ impl Government {
         match self {
             Government::Democracy => (turns / 8).min(3),
             Government::Republic => (turns / 12).min(2),
+            Government::Feudalism => (turns / 16).min(1),
             _ => 0,
         }
     }
@@ -37,6 +44,9 @@ impl Government {
             Government::Democracy => "Democracy",
             Government::Communism => "Communism",
             Government::Fundamentalism => "Fundamentalism",
+            Government::Tribalism => "Tribalism",
+            Government::Feudalism => "Feudalism",
+            Government::Fascism => "Fascism",
         }
     }
 
@@ -61,6 +71,7 @@ impl Government {
             Government::Democracy => 0,
             Government::Communism => 3,
             Government::Fundamentalism => 4,
+            Government::Tribalism | Government::Feudalism | Government::Fascism => 5,
         }
     }
 
@@ -74,6 +85,9 @@ impl Government {
             Government::Communism => 0.4,
             Government::Republic | Government::Fundamentalism => 0.35,
             Government::Democracy => 0.2,
+            Government::Tribalism => 0.55,
+            Government::Feudalism => 0.45,
+            Government::Fascism => 0.3,
         }
     }
 
@@ -87,8 +101,9 @@ impl Government {
     pub fn rate_cap(&self) -> u32 {
         match self {
             Government::Anarchy => 0,
-            Government::Despotism => 60,
-            Government::Monarchy => 70,
+            Government::Despotism | Government::Tribalism => 60,
+            Government::Monarchy | Government::Feudalism => 70,
+            Government::Fascism => 80,
             Government::Communism | Government::Republic | Government::Fundamentalism => 80,
             Government::Democracy => 90,
         }
@@ -101,7 +116,7 @@ impl Government {
 
     /// Despotism and Anarchy take one from any tile that would give 3 or more food, shields or trade.
     pub fn tile_penalty(&self) -> bool {
-        matches!(self, Government::Anarchy | Government::Despotism)
+        matches!(self, Government::Anarchy | Government::Despotism | Government::Tribalism)
     }
 
     /// A Republic or Democracy adds a trade to every worked tile that already brings some.
@@ -115,14 +130,24 @@ impl Government {
             Government::Republic | Government::Democracy => 2,
             Government::Communism => 1,
             Government::Fundamentalism => 0,
+            Government::Tribalism | Government::Feudalism | Government::Fascism => 1,
         }
     }
 }
 
 impl Government {
     /// Every government a civilization can choose (not Anarchy).
-    pub const CHOICES: [Government; 6] =
-        [Government::Despotism, Government::Monarchy, Government::Republic, Government::Democracy, Government::Communism, Government::Fundamentalism];
+    pub const CHOICES: [Government; 9] = [
+        Government::Despotism,
+        Government::Tribalism,
+        Government::Monarchy,
+        Government::Feudalism,
+        Government::Republic,
+        Government::Democracy,
+        Government::Communism,
+        Government::Fascism,
+        Government::Fundamentalism,
+    ];
 
     /// Turns of anarchy a revolution costs.
     pub const REVOLUTION_TURNS: u32 = 2;
@@ -137,6 +162,10 @@ impl Government {
             Government::Democracy => Some(Tech::Democracy),
             Government::Communism => Some(Tech::Communism),
             Government::Fundamentalism => Some(Tech::Fundamentalism),
+            Government::Tribalism => Some(Tech::BronzeWorking),
+            Government::Feudalism => Some(Tech::Chivalry),
+            // The industrial war state, of Steel's arsenals.
+            Government::Fascism => Some(Tech::Steel),
         }
     }
 
@@ -147,8 +176,8 @@ impl Government {
     /// Military units in a city that each keep one unhappy citizen in line.
     pub fn martial_law(&self) -> u32 {
         match self {
-            Government::Anarchy | Government::Despotism | Government::Monarchy => 3,
-            Government::Communism => 4,
+            Government::Anarchy | Government::Despotism | Government::Monarchy | Government::Tribalism | Government::Feudalism => 3,
+            Government::Communism | Government::Fascism => 4,
             _ => 0,
         }
     }
@@ -156,11 +185,11 @@ impl Government {
     /// Despotism and Communism let a city rush its project by working citizens to death.
     /// Citizens can be drafted into the army (once Gunpowder is known).
     pub fn allows_draft(&self) -> bool {
-        matches!(self, Government::Monarchy | Government::Communism | Government::Fundamentalism | Government::Republic)
+        matches!(self, Government::Monarchy | Government::Communism | Government::Fundamentalism | Government::Republic | Government::Tribalism | Government::Feudalism | Government::Fascism)
     }
 
     pub fn allows_forced_labour(&self) -> bool {
-        matches!(self, Government::Despotism | Government::Communism)
+        matches!(self, Government::Despotism | Government::Communism | Government::Fascism)
     }
 
     /// Extra content citizens in every city.
@@ -181,15 +210,18 @@ impl Government {
             Government::Democracy => "+1 trade on tiles with trade; least corruption; rates up to 90%; war weariness",
             Government::Communism => "Corruption the same near and far; rates up to 80%; strong martial law; forced labour",
             Government::Fundamentalism => "+3 content everywhere, cheap armies; science halved; rates up to 80%",
+            Government::Tribalism => "Rich tiles give one less; 5 units a city free; less corruption than despotism; rates up to 60%; martial law",
+            Government::Feudalism => "5 units a city free; moderate corruption; rates up to 70%; martial law; little war weariness",
+            Government::Fascism => "5 units a city free; low corruption; rates up to 80%; strong martial law; forced labour; no war weariness",
         }
     }
 
     /// The government a computer player prefers among those it knows.
     pub fn preferred(tech: &crate::tech::TechState, aggression: f32) -> Government {
         let order: &[Government] = if aggression > 0.6 {
-            &[Government::Fundamentalism, Government::Communism, Government::Monarchy, Government::Republic, Government::Despotism]
+            &[Government::Fascism, Government::Fundamentalism, Government::Communism, Government::Feudalism, Government::Monarchy, Government::Republic, Government::Tribalism, Government::Despotism]
         } else {
-            &[Government::Democracy, Government::Republic, Government::Communism, Government::Monarchy, Government::Despotism]
+            &[Government::Democracy, Government::Republic, Government::Communism, Government::Monarchy, Government::Feudalism, Government::Despotism]
         };
         order.iter().copied().find(|g| g.available(tech)).unwrap_or(Government::Despotism)
     }
