@@ -121,6 +121,15 @@ with the old techs); the United States wins 13 (it did 6 of 12 before, with luck
 scientists), China 3. In 1775 the United States wins 13-14 of 16 with or without the Iroquois'
 Republic.
 
+Scenarios of history used to run open-ended, so 280 BC Rome launched starships around AD 390 and
+the 1939 war ended in a space race in 2180. They now end on their date (month by month for the
+four wars), study nothing past their age, and are won by objective cities, with history's entries
+into the war on their dates. 16 games each: Rise of Rome - Rome 7, the Gauls 5, Carthage 3, Macedon
+1; Age of Discovery - China 7, the Inca 4, Muscovy 3, Spain 1, India 1; Napoleonic Wars - the
+Coalition 12, France 4; 1775 - the American side 15; 1914 - the Entente 16 (no objective changes
+hands: a stalemate, as on the Western Front); 1939 - the Axis 13, the Allies 3 (Germany takes Paris
+and often London, and the Allies' AI seldom strikes back across the sea - a known weakness).
+
 ## What does not change
 
 Without `--balance` the game is unchanged. The harness does not retune combat, victory or the AI,

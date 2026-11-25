@@ -33,6 +33,9 @@ pub struct TechState {
     /// is hard going (see `Scenario::research_cost`).
     #[serde(default)]
     pub extra_cost: u32,
+    /// The technologies that may be studied at all (a scenario's age); None: every one.
+    #[serde(default)]
+    pub ceiling: Option<HashSet<Tech>>,
 }
 
 /// The four ages of history. A people enters an age with its first discovery there, and may study
@@ -343,6 +346,7 @@ impl Default for TechState {
             turns_on: 0,
             era_seen: None,
             extra_cost: 0,
+            ceiling: None,
         }
     }
 }
@@ -351,6 +355,15 @@ impl TechState {
     /// The most turns a discovery takes ([`MAX_RESEARCH_TURNS`], longer where research is dearer).
     pub fn max_turns(&self) -> u32 {
         MAX_RESEARCH_TURNS * (100 + self.extra_cost) / 100
+    }
+
+    /// This state, studying only `allowed` (None: everything).
+    pub fn capped(mut self, allowed: Option<HashSet<Tech>>) -> Self {
+        self.ceiling = allowed;
+        if self.current.is_some_and(|t| !self.can_research(t)) {
+            self.current = Tech::ALL.into_iter().find(|t| self.can_research(*t));
+        }
+        self
     }
 
     /// This state, with every technology `percent` dearer.
@@ -404,6 +417,7 @@ impl TechState {
         !self.researched.contains(&tech)
             && tech.prerequisites().iter().all(|p| self.researched.contains(p))
             && self.era_open(tech.era())
+            && self.ceiling.as_ref().is_none_or(|c| c.contains(&tech))
     }
 
     /// The latest age this people has entered: the age of its most advanced discovery.

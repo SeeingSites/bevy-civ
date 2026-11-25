@@ -836,7 +836,16 @@ fn stat(parent: &mut ChildBuilder, art: &Art, index: usize, text: impl Into<Stri
 }
 
 pub fn year_label(state: &GameState) -> String {
-    bevy_civ::theme::year(bevy_civ::theme::game_year(state.start_year, state.years_per_turn, state.turn, state.last_turn))
+    date_of(state, state.turn)
+}
+
+/// The date of `turn` in this game: a month in a war fought month by month, else a year.
+pub fn date_of(state: &GameState, turn: u32) -> String {
+    if state.months_per_turn > 0 {
+        bevy_civ::theme::month_date(state.start_year, state.start_month, state.months_per_turn, turn)
+    } else {
+        bevy_civ::theme::year(bevy_civ::theme::game_year(state.start_year, state.years_per_turn, turn, state.last_turn))
+    }
 }
 
 fn good_icon(art: &Art, good: Good, size: f32) -> impl Bundle {
