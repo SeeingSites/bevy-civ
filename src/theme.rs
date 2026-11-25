@@ -199,6 +199,15 @@ pub fn game_year(start: i32, years_per_turn: i32, turn: u32, last_turn: u32) -> 
     if year == 0 { 1 } else { year }
 }
 
+const MONTHS: [&str; 12] = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+
+/// The date of `turn` in a world counted in months: "September 1939".
+pub fn month_date(start_year: i32, start_month: u32, months_per_turn: u32, turn: u32) -> String {
+    let months = (start_year * 12 + start_month.clamp(1, 12) as i32 - 1) + (turn as i32 - 1) * months_per_turn as i32;
+    let y = months.div_euclid(12);
+    format!("{} {}", MONTHS[months.rem_euclid(12) as usize], if y > 0 { y.to_string() } else { year(y) })
+}
+
 /// A year as the theme in force writes it.
 pub fn year(year: i32) -> String {
     match active() {

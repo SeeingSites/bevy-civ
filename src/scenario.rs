@@ -68,6 +68,98 @@ pub struct Scenario {
     /// otherwise race through the little that is left of it.
     #[serde(default)]
     pub research_cost: u32,
+    /// A scenario of history (as Civilization III's Conquests): it ends on this date, research stops
+    /// at `tech_ceiling`, and if nobody has conquered the world by then its objective cities decide
+    /// the winner (see `objectives`). None: an open game, ending on the length the player chose.
+    #[serde(default)]
+    pub end_year: Option<i32>,
+    /// The month (1-12) of `end_year` the scenario ends in.
+    #[serde(default)]
+    pub end_month: Option<u32>,
+    /// Turns of months, not years: a war fought month by month. 0: `years_per_turn` years a turn.
+    #[serde(default)]
+    pub months_per_turn: u32,
+    /// The month (1-12) the scenario begins in, with `months_per_turn`.
+    #[serde(default)]
+    pub start_month: Option<u32>,
+    /// The most advanced technologies of the age: nobody may study anything that does not lead to one
+    /// of these (or that nobody knew at the start). Empty: no limit.
+    #[serde(default)]
+    pub tech_ceiling: Vec<String>,
+    /// What history brings on its date: peoples entering the war, alliances made.
+    #[serde(default)]
+    pub events: Vec<ScenarioEvent>,
+}
+
+/// A turn of history in a scenario (as Civilization III's scenario events).
+#[derive(Deserialize, Clone, Default, Debug)]
+pub struct ScenarioEvent {
+    pub year: i32,
+    #[serde(default)]
+    pub month: Option<u32>,
+    /// Pairs of peoples who go to war.
+    #[serde(default)]
+    pub wars: Vec<(String, String)>,
+    /// Pairs of peoples who become allies (making peace if they were at war).
+    #[serde(default)]
+    pub alliances: Vec<(String, String)>,
+    /// Pairs of peoples who make peace (ending any alliance against each other).
+    #[serde(default)]
+    pub peace: Vec<(String, String)>,
+    /// The news, as the world hears it.
+    #[serde(default)]
+    pub message: String,
+}
+
+impl Scenario {
+    /// The turn a date falls on (the turn that begins on or after it).
+    pub fn turn_of(&self, year: i32, month: Option<u32>) -> u32 {
+        let turns = if self.months_per_turn > 0 {
+            let start = self.start_year * 12 + self.start_month.unwrap_or(1) as i32 - 1;
+            let at = year * 12 + month.unwrap_or(1) as i32 - 1;
+            (at - start + self.months_per_turn as i32 - 1).div_euclid(self.months_per_turn as i32)
+        } else {
+            let step = self.years_per_turn.max(1);
+            (year - self.start_year + step - 1).div_euclid(step)
+        };
+        turns.max(0) as u32 + 1
+    }
+
+    /// The last turn of a scenario of history, if it has a fixed end.
+    pub fn fixed_last_turn(&self) -> Option<u32> {
+        let end = self.end_year?;
+        let turns = if self.months_per_turn > 0 {
+            let start = self.start_year * 12 + self.start_month.unwrap_or(1) as i32 - 1;
+            let end = end * 12 + self.end_month.unwrap_or(12) as i32 - 1;
+            (end - start) / self.months_per_turn as i32
+        } else {
+            (end - self.start_year) / self.years_per_turn.max(1)
+        };
+        Some(turns.max(1) as u32 + 1)
+    }
+
+    /// Every technology a people may know in this scenario: what any of its peoples knew at the
+    /// start, the ceiling, and everything they rest on. None: no limit.
+    pub fn allowed_techs(&self) -> Option<std::collections::HashSet<bevy_civ::tech::Tech>> {
+        use bevy_civ::tech::Tech;
+        if self.tech_ceiling.is_empty() {
+            return None;
+        }
+        let mut allowed = std::collections::HashSet::new();
+        let mut stack: Vec<Tech> = self
+            .civs
+            .iter()
+            .flat_map(|c| c.techs.iter())
+            .chain(self.tech_ceiling.iter())
+            .filter_map(|n| Tech::ALL.into_iter().find(|t| t.base_name() == n))
+            .collect();
+        while let Some(t) = stack.pop() {
+            if allowed.insert(t) {
+                stack.extend(t.prerequisites());
+            }
+        }
+        Some(allowed)
+    }
 }
 
 /// An expansion pack (`assets/expansions/`): nations that can be led from 4000 BC, on the Whole
@@ -384,6 +476,47 @@ pub fn generate_random(template: &Scenario, player: usize, map_size: usize, peop
 mod tests {
     use super::*;
     use bevy_civ::unit::UnitType;
+
+    /// Scenarios of history end near their history, study nothing beyond their age, and are
+    /// decided by objective cities that stand on their map.
+    #[test]
+    fn scenarios_of_history_end_on_their_date_within_their_age() {
+        use bevy_civ::tech::Tech;
+        let catalog = catalog_with(|_| true);
+        let ends: Vec<(&str, u32)> = vec![("rome", 148), ("discovery", 105), ("revolution", 102), ("napoleon", 118), ("greatwar", 52), ("ww2", 72)];
+        for (id, last) in ends {
+            let s = catalog.iter().find(|s| s.id == id).unwrap_or_else(|| panic!("{id}"));
+            assert_eq!(s.fixed_last_turn(), Some(last), "{id}");
+            let allowed = s.allowed_techs().unwrap_or_else(|| panic!("{id} has a ceiling"));
+            assert!(!allowed.contains(&Tech::SpaceFlight) && !allowed.contains(&Tech::Computers), "{id}: no space race, no United Nations");
+            for civ in &s.civs {
+                assert!(civ.techs.iter().all(|n| allowed.iter().any(|t| t.base_name() == n)), "{id}: {} knows only what is allowed", civ.name);
+            }
+            assert!(!s.objectives.is_empty(), "{id} has objectives");
+            for o in &s.objectives {
+                assert!(s.civs.iter().any(|c| c.cities.iter().any(|c| &c.name == o)), "{id}: objective {o} is a city");
+            }
+        }
+        // The open worlds have no end date and no ceiling.
+        for id in ["earth", "modern"] {
+            let s = catalog.iter().find(|s| s.id == id).unwrap();
+            assert_eq!((s.fixed_last_turn(), s.allowed_techs().is_none()), (None, true), "{id}");
+        }
+        assert_eq!(bevy_civ::theme::month_date(1939, 9, 1, 72), "August 1945");
+        // History's events name the scenario's peoples and fall within it.
+        for s in catalog.iter().filter(|s| !s.events.is_empty()) {
+            let last = s.fixed_last_turn().unwrap_or(u32::MAX);
+            for e in &s.events {
+                let turn = s.turn_of(e.year, e.month);
+                assert!(turn > 1 && turn <= last, "{}: {} falls on turn {turn}", s.id, e.message);
+                for (a, b) in e.wars.iter().chain(&e.alliances).chain(&e.peace) {
+                    assert!(s.civs.iter().any(|c| &c.name == a) && s.civs.iter().any(|c| &c.name == b), "{}: {a} / {b}", s.id);
+                }
+            }
+        }
+        let ww2 = catalog.iter().find(|s| s.id == "ww2").unwrap();
+        assert_eq!(ww2.turn_of(1941, Some(12)), 28, "Pearl Harbor");
+    }
 
     /// Everything a scenario puts on the map belongs to its age: each people knows the techs behind
     /// its units, wonders and government, and the techs those rest on.

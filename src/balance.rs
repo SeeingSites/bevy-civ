@@ -296,6 +296,7 @@ fn victory_kind(outcome: &str) -> &'static str {
         ("Space race", "Space"),
         ("Diplomatic", "Diplomatic"),
         ("Score", "Score"),
+        ("Objectives", "Objectives"),
     ];
     if outcome.is_empty() {
         return "None";

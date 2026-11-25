@@ -320,6 +320,21 @@ pub struct GameState {
     /// The scenario's objective cities: each is worth points to whoever holds it.
     #[serde(default)]
     pub objectives: Vec<String>,
+    /// Who held each objective city when the scenario began (see `Scenario::end_year`).
+    #[serde(default)]
+    pub objective_start: Vec<(String, u32)>,
+    /// A scenario of history with a fixed end: only conquest wins early, and at the end the
+    /// objective cities decide (no space race, culture, United Nations or domination).
+    #[serde(default)]
+    pub fixed_end: bool,
+    /// History still to come in a scenario (see `Scenario::events`).
+    #[serde(default)]
+    pub events: Vec<WorldEvent>,
+    /// Months a turn (0: years; see `Scenario::months_per_turn`), from `start_month`.
+    #[serde(default)]
+    pub months_per_turn: u32,
+    #[serde(default)]
+    pub start_month: u32,
     /// A world already built (see `Scenario::developed`): no frontier left to settle.
     #[serde(default)]
     pub developed: bool,
@@ -408,6 +423,17 @@ fn welcome_by_default() -> bool {
     true
 }
 
+/// A scenario event, its peoples resolved: on `turn`, these pairs go to war or ally.
+#[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
+pub struct WorldEvent {
+    pub turn: u32,
+    pub wars: Vec<(u32, u32)>,
+    pub alliances: Vec<(u32, u32)>,
+    #[serde(default)]
+    pub peace: Vec<(u32, u32)>,
+    pub message: String,
+}
+
 impl Default for GameState {
     fn default() -> Self {
         Self {
@@ -418,6 +444,11 @@ impl Default for GameState {
             victory: None,
             dominance: (0, 0),
             objectives: Vec::new(),
+            objective_start: Vec::new(),
+            fixed_end: false,
+            events: Vec::new(),
+            months_per_turn: 0,
+            start_month: 1,
             developed: false,
             nuclear_strikes: Vec::new(),
             score: Score::default(),
@@ -1100,7 +1131,7 @@ fn setup_world(
             name: def.name.clone(),
             is_human: id == 0,
             gold: def.gold,
-            tech: TechState::knowing(&def.techs).costing(scenario.research_cost),
+            tech: TechState::knowing(&def.techs).costing(scenario.research_cost).capped(scenario.allowed_techs()),
             aggression: def.aggression,
             leader: def.leader.clone(),
             adjective: def.adjective.clone(),
@@ -1113,7 +1144,7 @@ fn setup_world(
             rates: Default::default(),
         })
         .collect();
-    *tech = TechState::knowing(&defs[0].techs).costing(scenario.research_cost);
+    *tech = TechState::knowing(&defs[0].techs).costing(scenario.research_cost).capped(scenario.allowed_techs());
 
     // Every starting city's land: the tiles within two of it that are nearer to it than to any other.
     let sites: Vec<Hex> = defs.iter().flat_map(|d| d.cities.iter().map(|c| scenario::offset_to_hex(c.col, c.row))).collect();
@@ -1227,9 +1258,27 @@ fn setup_world(
         title: defs[0].name.trim_start_matches("the ").to_string(),
         government: defs[0].starting_government(),
         objectives: scenario.objectives.clone(),
+        objective_start: defs
+            .iter()
+            .enumerate()
+            .flat_map(|(id, d)| d.cities.iter().filter(|c| scenario.objectives.contains(&c.name)).map(move |c| (c.name.clone(), id as u32)))
+            .collect(),
+        fixed_end: scenario.end_year.is_some(),
+        events: scenario
+            .events
+            .iter()
+            .map(|e| {
+                let pairs = |list: &[(String, String)]| -> Vec<(u32, u32)> {
+                    list.iter().filter_map(|(a, b)| Some((defs.iter().position(|d| &d.name == a)? as u32, defs.iter().position(|d| &d.name == b)? as u32))).collect()
+                };
+                WorldEvent { turn: scenario.turn_of(e.year, e.month), wars: pairs(&e.wars), alliances: pairs(&e.alliances), peace: pairs(&e.peace), message: e.message.clone() }
+            })
+            .collect(),
+        months_per_turn: scenario.months_per_turn,
+        start_month: scenario.start_month.unwrap_or(1),
         developed: scenario.developed,
         difficulty: new_game.difficulty,
-        last_turn: new_game.last_turn,
+        last_turn: scenario.fixed_last_turn().unwrap_or(new_game.last_turn),
         ..default()
     };
     // A developed world's cities have buildings to keep: start with taxes that pay for them, and a
@@ -3631,6 +3680,30 @@ fn process_turn(
     state.drafted.clear();
     state.sold.clear();
     log.turn = state.turn;
+
+    // History on its date: peoples enter the war, alliances are made.
+    let due: Vec<WorldEvent> = state.events.iter().filter(|e| e.turn == state.turn).cloned().collect();
+    for event in due {
+        let alive = |id: u32| id == PLAYER || civs.players.iter().any(|c| c.id == id && !c.eliminated);
+        for (a, b) in event.alliances.iter().filter(|(a, b)| alive(*a) && alive(*b)) {
+            diplomacy.set_treaty(*a, *b, Treaty::Alliance);
+            foreign.since.insert((*a.min(b), *a.max(b)), state.turn);
+            foreign.met.extend([*a, *b].into_iter().filter(|p| *p != PLAYER));
+        }
+        let peace: Vec<(u32, u32)> = event.peace.iter().copied().filter(|(a, b)| alive(*a) && alive(*b) && diplomacy.get_treaty(*a, *b) == Treaty::War).collect();
+        for (a, b) in &peace {
+            diplomacy.set_treaty(*a, *b, Treaty::Peace);
+            foreign.since.insert((*a.min(b), *a.max(b)), state.turn);
+        }
+        let wars: Vec<(u32, u32)> = event.wars.iter().copied().filter(|(a, b)| alive(*a) && alive(*b) && diplomacy.get_treaty(*a, *b) != Treaty::War).collect();
+        for (a, b) in &wars {
+            diplomacy.set_treaty(*a, *b, Treaty::War);
+            foreign.since.insert((*a.min(b), *a.max(b)), state.turn);
+        }
+        if !event.message.is_empty() {
+            log.push(event.message.clone());
+        }
+    }
     spies.tick();
     golden.tick();
     // Knowledge spreads: a technology is cheaper to study the more of the other peoples know it -
@@ -5734,8 +5807,26 @@ fn process_turn(
             None => state.dominance = (0, 0),
         }
     }
-    let (dominance, turn_now) = (state.dominance, state.turn);
-    let dominant = |o: u32| dominance.0 == o && dominance.1 >= DOMINATION_HOLD && turn_now >= DOMINATION_EARLIEST;
+    let (dominance, turn_now, fixed_end) = (state.dominance, state.turn, state.fixed_end);
+    // A scenario of history is won by conquest, or at its end by its objective cities.
+    let dominant = |o: u32| !fixed_end && dominance.0 == o && dominance.1 >= DOMINATION_HOLD && turn_now >= DOMINATION_EARLIEST;
+    // At the end of a scenario of history: the side (with its allies) that has gained most in
+    // objective cities, the people that led it, and the side - best first.
+    let objective_result = (fixed_end && state.turn >= state.last_turn && !state.objective_start.is_empty()).then(|| {
+        let now: Vec<(String, u32)> = cities.iter().filter(|(c, _, _)| state.objectives.contains(&c.name)).map(|(c, _, _)| (c.name.clone(), c.owner)).collect();
+        let mut peoples: Vec<u32> = civs.players.iter().filter(|c| !c.eliminated && (observer.is_none() || c.id != PLAYER)).map(|c| c.id).collect();
+        if observer.is_none() && !peoples.contains(&PLAYER) {
+            peoples.push(PLAYER);
+        }
+        let standing = bevy_civ::score::objective_standing(&state.objective_start, &now, &peoples, |a, b| diplomacy.get_treaty(a, b) == bevy_civ::diplomacy::Treaty::Alliance);
+        let score_of = |id: u32| if id == PLAYER && observer.is_none() { state.score.total } else { civs.players.iter().find(|c| c.id == id).map(|c| rival_score(c, &cities, &objectives)).unwrap_or(0) };
+        // Equal gains - a stalemate: the side with the greater strength (all its peoples' scores)
+        // has held, as the coalition did in 1918.
+        let best_gain = standing.first().map(|(_, g)| *g).unwrap_or(0);
+        let (side, gain) = standing.iter().filter(|(_, g)| *g == best_gain).max_by_key(|(s, _)| s.iter().map(|&p| score_of(p)).sum::<u32>()).cloned().unwrap_or_default();
+        let lead = side.iter().copied().max_by_key(|&p| (bevy_civ::score::objective_gain(&state.objective_start, &now, p), score_of(p))).unwrap_or(PLAYER);
+        (lead, side, gain, now.len())
+    });
     if observer.is_some() {
         // Nobody plays: any civilization can win by conquest or domination too.
         let mut held: HashMap<u32, usize> = HashMap::new();
@@ -5743,7 +5834,7 @@ fn process_turn(
             *held.entry(city.owner).or_default() += 1;
         }
         let leader = held.iter().max_by_key(|(_, n)| **n).map(|(o, n)| (*o, *n));
-        let culture_winner = culture.winner(&cities.iter().filter(|(c, _, _)| c.owner != BARBARIANS).map(|(c, _, _)| (c.position, c.owner)).collect::<Vec<_>>(), state.last_turn);
+        let culture_winner = culture.winner(&cities.iter().filter(|(c, _, _)| c.owner != BARBARIANS).map(|(c, _, _)| (c.position, c.owner)).collect::<Vec<_>>(), state.last_turn).filter(|_| !fixed_end);
         state.victory = if held.len() == 1 {
             leader.map(|(o, _)| format!("Conquest victory for {}.", civ_named(o)))
         } else if let Some((o, n)) = leader.filter(|(o, _)| dominant(*o)) {
@@ -5752,6 +5843,10 @@ fn process_turn(
             Some(format!("Cultural victory for {}.", civ_named(o)))
         } else if let Some(o) = space.arrived(state.turn) {
             Some(format!("Space race victory for {}.", civ_named(o)))
+        } else if let Some((lead, side, gain, _)) = &objective_result {
+            let allies: Vec<String> = side.iter().filter(|p| *p != lead).map(|p| civ_named(*p)).collect();
+            let with = if allies.is_empty() { String::new() } else { format!("; allied: {}", allies.join(", ")) };
+            Some(format!("Objectives victory for {} ({gain:+} objective cities{with}).", civ_named(*lead)))
         } else if state.turn >= state.last_turn {
             let best = civs.players.iter().filter(|c| !c.is_human).map(|c| (rival_score(c, &cities, &objectives), c.name.clone())).max_by_key(|(s, _)| *s);
             best.map(|(s, name)| format!("Score victory for {name} ({s}) at the turn limit."))
@@ -5773,7 +5868,7 @@ fn process_turn(
         state.victory = Some("Conquest Victory!".into());
     } else if dominant(PLAYER) {
         state.victory = Some("Domination Victory!".into());
-    } else if let Some(winner) = culture.winner(&cities.iter().filter(|(c, _, _)| c.owner != BARBARIANS).map(|(c, _, _)| (c.position, c.owner)).collect::<Vec<_>>(), state.last_turn) {
+    } else if let Some(winner) = culture.winner(&cities.iter().filter(|(c, _, _)| c.owner != BARBARIANS).map(|(c, _, _)| (c.position, c.owner)).collect::<Vec<_>>(), state.last_turn).filter(|_| !fixed_end) {
         state.victory = Some(if winner == PLAYER {
             "Cultural Victory! Our civilization is the envy of the world.".to_string()
         } else {
@@ -5786,6 +5881,13 @@ fn process_turn(
         } else {
             let name = civs.players.iter().find(|c| c.id == winner).map(|c| c.name.clone()).unwrap_or_default();
             format!("Defeat: {name} reached Alpha Centauri first.")
+        });
+    } else if let Some((lead, side, gain, held)) = &objective_result {
+        let names: Vec<String> = side.iter().map(|p| if *p == PLAYER { "us".to_string() } else { civ_named(*p) }).collect();
+        state.victory = Some(if side.contains(&PLAYER) {
+            format!("Objectives Victory! The war is over, and our side ({}) has gained most among the {held} objective cities ({gain:+}).", names.join(", "))
+        } else {
+            format!("Defeat: the war is over, and {}'s side ({}) has gained most among the objective cities ({gain:+}).", civ_named(*lead), names.join(", "))
         });
     } else if state.turn >= state.last_turn {
         // Time runs out: the highest score wins.
@@ -5800,7 +5902,7 @@ fn process_turn(
     // The United Nations: every 10 turns once it stands, a vote for Secretary-General between its
     // owner and the highest-scoring other people. A majority of the voters - and of all the peoples the
     // world began with - wins the game.
-    if state.victory.is_none() && state.turn % 10 == 0 {
+    if state.victory.is_none() && !state.fixed_end && state.turn % 10 == 0 {
         if let Some(&(un_owner, _)) = wonders.built.get(&Building::UnitedNations) {
             let holding: HashSet<u32> = cities.iter().map(|(c, _, _)| c.owner).filter(|o| *o != BARBARIANS).collect();
             let voters: Vec<u32> = holding.iter().copied().filter(|o| observer.is_none() || *o != PLAYER).collect();

@@ -107,7 +107,7 @@ pub fn run_replay(
     if let Ok(mut text) = label.get_single_mut() {
         let year = state
             .as_ref()
-            .map(|s| bevy_civ::theme::year(bevy_civ::theme::game_year(s.start_year, s.years_per_turn, view.turn, s.last_turn)))
+            .map(|s| super::ui::date_of(s, view.turn))
             .unwrap_or_default();
         text.0 = format!("Turn {} of {last} ({year})", view.turn);
     }

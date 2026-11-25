@@ -232,8 +232,12 @@ const scenarios = [
   {
     id: 'revolution', expansion: 'revolution',
     name: 'The American Revolution',
-    blurb: '1775. Thirteen colonies have taken up arms against the British crown, and the Iroquois fight on Britain\'s side. France is the colonies\' ally; Spain watches from Havana and Madrid.',
+    blurb: '1775. Thirteen colonies have taken up arms against the British crown, and the Iroquois fight on Britain\'s side. France is the colonies\' ally; Spain watches from Havana and Madrid. Month by month to September 1783: the side that has gained most of the objective cities by then wins.',
     startYear: 1775, yearsPerTurn: 1, known: true, map: ATLANTIC,
+    // Month by month from Lexington to the Treaty of Paris.
+    monthsPerTurn: 1, startMonth: 4, endYear: 1783, endMonth: 9,
+    events: [{"year": 1779, "month": 6, "wars": [["Spain", "Great Britain"]], "alliances": [["Spain", "France"]], "message": "June 1779: Spain enters the war as France's ally."}],
+    techCeiling: ['Economics', 'Theory of Gravity', 'Democracy', 'Medicine', 'Theology', 'Navigation', 'Chivalry', 'Gunpowder', 'Banking'],
     civs: [
       { name: 'the United States', adjective: 'American', leader: 'Washington', portrait: 22, aggression: 0.5, gold: 40, government: 'Republic', techs: REVOLUTION,
         cities: [['Philadelphia', -75.2, 40.0, 5], ['Boston', -71.1, 42.4, 4], ['New York', -74.0, 40.7, 4], ['Williamsburg', -76.7, 37.3, 3], ['Charleston', -79.9, 32.8, 3]],
@@ -263,8 +267,12 @@ const scenarios = [
   {
     id: 'napoleon', expansion: 'revolution',
     name: 'The Napoleonic Wars',
-    blurb: '1805. Napoleon has crowned himself Emperor. Britain, Austria and Russia stand together in the Third Coalition; Spain marches with France, Prussia and the Ottomans wait.',
+    blurb: '1805. Napoleon has crowned himself Emperor. Britain, Austria and Russia stand together in the Third Coalition; Spain marches with France, Prussia and the Ottomans wait. Month by month to June 1815: the side that has gained most of the objective cities by then wins.',
     startYear: 1805, yearsPerTurn: 1, known: true, map: EUROPE,
+    // Month by month from Ulm to Waterloo.
+    monthsPerTurn: 1, startMonth: 9, endYear: 1815, endMonth: 6,
+    events: [{"year": 1805, "month": 12, "peace": [["France", "Austria"]], "message": "December 1805: after Austerlitz, Austria makes peace at Pressburg."}, {"year": 1806, "month": 10, "wars": [["Prussia", "France"]], "alliances": [["Prussia", "Great Britain"], ["Prussia", "Russia"]], "message": "October 1806: Prussia joins the Fourth Coalition against France."}, {"year": 1807, "month": 7, "peace": [["France", "Russia"], ["France", "Prussia"]], "message": "July 1807: the Treaties of Tilsit - Russia and Prussia make peace with Napoleon."}, {"year": 1808, "month": 5, "peace": [["Spain", "Great Britain"]], "wars": [["Spain", "France"]], "alliances": [["Spain", "Great Britain"]], "message": "May 1808: Spain rises against the French and allies with Britain."}, {"year": 1809, "month": 4, "wars": [["Austria", "France"]], "message": "April 1809: Austria goes to war with France again."}, {"year": 1809, "month": 10, "peace": [["Austria", "France"]], "message": "October 1809: Austria makes peace at Schönbrunn."}, {"year": 1812, "month": 6, "wars": [["France", "Russia"]], "message": "June 1812: Napoleon invades Russia."}, {"year": 1813, "month": 3, "wars": [["Prussia", "France"]], "alliances": [["Prussia", "Russia"], ["Prussia", "Great Britain"]], "message": "March 1813: Prussia joins the Sixth Coalition."}, {"year": 1813, "month": 8, "wars": [["Austria", "France"]], "alliances": [["Austria", "Russia"], ["Austria", "Great Britain"], ["Austria", "Prussia"]], "message": "August 1813: Austria joins the Coalition."}],
+    techCeiling: ['Economics', 'Theory of Gravity', 'Democracy', 'Medicine', 'Theology', 'Navigation', 'Chivalry', 'Gunpowder', 'Banking', 'Steam Power'],
     civs: [
       { name: 'France', adjective: 'French', leader: 'Napoleon', portrait: 14, aggression: 0.7, gold: 120, government: 'Monarchy', techs: REVOLUTION,
         cities: [['Paris', 2.3, 48.9, 8], ['Lyon', 4.8, 45.8, 4], ['Marseille', 5.4, 43.3, 3], ['Bordeaux', -0.6, 44.8, 4], ['Brest', -4.5, 48.4, 3], ['Brussels', 4.35, 50.85, 4], ['Amsterdam', 4.9, 52.4, 4], ['Milan', 9.2, 45.5, 4]],
@@ -303,8 +311,12 @@ const scenarios = [
   {
     id: 'greatwar', expansion: 'worldwars',
     name: 'The Great War',
-    blurb: '1914. The Central Powers - Germany and Austria-Hungary - face France, Russia and Britain across Europe. Italy is neutral; the Ottomans lean towards Berlin.',
+    blurb: '1914. The Central Powers - Germany and Austria-Hungary - face France, Russia and Britain across Europe. Italy is neutral; the Ottomans lean towards Berlin. Month by month to November 1918: the side that has gained most of the objective cities by then wins.',
     startYear: 1914, yearsPerTurn: 1, known: true, map: GREAT_WAR_MAP,
+    // Month by month from the guns of August to the Armistice.
+    monthsPerTurn: 1, startMonth: 8, endYear: 1918, endMonth: 11,
+    events: [{"year": 1914, "month": 11, "wars": [["the Ottomans", "Russia"], ["the Ottomans", "the United Kingdom"], ["the Ottomans", "France"]], "message": "November 1914: the Ottoman Empire enters the war on the side of the Central Powers."}, {"year": 1915, "month": 5, "wars": [["Italy", "Austria-Hungary"]], "alliances": [["Italy", "France"], ["Italy", "the United Kingdom"], ["Italy", "Russia"]], "message": "May 1915: Italy joins the Entente and declares war on Austria-Hungary."}, {"year": 1916, "month": 8, "wars": [["Italy", "Germany"]], "message": "August 1916: Italy declares war on Germany."}, {"year": 1918, "month": 3, "peace": [["Russia", "Germany"], ["Russia", "Austria-Hungary"], ["Russia", "the Ottomans"]], "message": "March 1918: revolutionary Russia makes peace with the Central Powers at Brest-Litovsk."}],
+    techCeiling: ['Flight', 'Motorized Transport', 'Electronics', 'Sanitation', 'Steel', 'Communism', 'Fundamentalism'],
     civs: [
       { name: 'Germany', adjective: 'German', leader: 'Wilhelm', portrait: 25, aggression: 0.8, gold: 400, government: 'Monarchy', techs: GREAT_WAR,
         cities: [['Berlin', 13.4, 52.5, 10], ['Hamburg', 10.0, 53.55, 7], ['Munich', 11.6, 48.1, 6], ['Cologne', 6.95, 50.94, 7], ['Königsberg', 20.5, 54.7, 4], ['Breslau', 17.0, 51.1, 5], ['Strasbourg', 7.75, 48.6, 4]],
@@ -342,8 +354,12 @@ const scenarios = [
   {
     id: 'ww2', expansion: 'worldwars',
     name: 'The Second World War',
-    blurb: '1939. Germany has invaded its neighbour, and Britain, her Commonwealth and France have declared war; Japan is at war in China. Italy and Japan are Germany\'s allies. The United States, the Soviet Union and Latin America are, for now, at peace.',
+    blurb: '1939. Germany has invaded its neighbour, and Britain, her Commonwealth and France have declared war; Japan is at war in China. Italy and Japan are Germany\'s allies. The United States, the Soviet Union and Latin America are, for now, at peace. Month by month to August 1945: the side that has gained most of the objective cities by then wins.',
     startYear: 1939, yearsPerTurn: 1, known: true, map: WORLD,
+    // Month by month from the invasion of Poland to the surrender of Japan.
+    monthsPerTurn: 1, startMonth: 9, endYear: 1945, endMonth: 8,
+    events: [{"year": 1940, "month": 6, "wars": [["Italy", "the United Kingdom"], ["Italy", "France"]], "message": "June 1940: Italy enters the war against Britain and France."}, {"year": 1941, "month": 6, "wars": [["Germany", "the Soviet Union"], ["Italy", "the Soviet Union"]], "alliances": [["the Soviet Union", "the United Kingdom"]], "message": "June 1941: Germany invades the Soviet Union, which joins Britain against the Axis."}, {"year": 1941, "month": 12, "wars": [["Japan", "the United States"], ["Japan", "the United Kingdom"], ["Germany", "the United States"], ["Italy", "the United States"]], "alliances": [["the United States", "the United Kingdom"], ["the United States", "the Soviet Union"], ["the United States", "China"], ["the United Kingdom", "China"]], "message": "December 1941: Japan strikes at Pearl Harbor and the British Far East; the United States enters the war, and the Allies stand together."}, {"year": 1942, "month": 5, "wars": [["Mexico", "Germany"], ["Mexico", "Italy"], ["Mexico", "Japan"]], "alliances": [["Mexico", "the United States"]], "message": "May 1942: Mexico declares war on the Axis."}, {"year": 1942, "month": 8, "wars": [["Brazil", "Germany"], ["Brazil", "Italy"]], "alliances": [["Brazil", "the United States"]], "message": "August 1942: Brazil joins the Allies."}],
+    techCeiling: ['Nuclear Fission', 'Electronics', 'Advanced Flight', 'Mass Production', 'Communism', 'Fundamentalism'],
     civs: [
       { name: 'Germany', adjective: 'German', leader: 'The Chancellor', portrait: 18, aggression: 0.85, gold: 550, government: 'Fundamentalism', techs: WORLD_WAR,
         cities: [['Berlin', 13.4, 52.5, 12], ['Munich', 11.6, 48.1, 8], ['Hamburg', 10.0, 53.55, 8], ['Vienna', 16.4, 48.2, 8], ['Königsberg', 20.5, 54.7, 5], ['Cologne', 6.95, 50.94, 8]],

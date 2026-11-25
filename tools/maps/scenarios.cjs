@@ -35,8 +35,13 @@ module.exports = [
   {
     id: 'rome',
     name: 'The Rise of Rome',
-    blurb: '280 BC. The Republic has united central Italy, but Carthage rules the sea, the heirs of Alexander hold the east and the Gauls press from the north.',
+    blurb: '280 BC. The Republic has united central Italy, but Carthage rules the sea, the heirs of Alexander hold the east and the Gauls press from the north. To AD 14: whoever has gained most of the great capitals by then wins.',
     startYear: -280,
+    // As Civilization III's Rise of Rome: the classical world to the death of Augustus, its knowledge
+    // classical, its winner whoever has taken most of the great cities.
+    endYear: 14,
+    techCeiling: ['Construction', 'Monarchy', 'The Republic', 'Philosophy', 'Currency', 'Mathematics', 'Seafaring', 'Horseback Riding'],
+    objectives: ['Rome', 'Carthage', 'Pella', 'Athens', 'Alexandria', 'Antioch', 'Bibracte'],
     known: true,
     yearsPerTurn: 2,
     map: { lon0: -11, lon1: 47, latTop: 51, latBottom: 26.5, cols: 62, landThreshold: 3 },
@@ -70,8 +75,12 @@ module.exports = [
   {
     id: 'discovery',
     name: 'The Age of Discovery',
-    blurb: '1492. Gunpowder empires crowd the Old World while the Aztec and Inca realms flourish, unknown, across the ocean.',
+    blurb: '1492. Gunpowder empires crowd the Old World while the Aztec and Inca realms flourish, unknown, across the ocean. To 1700: whoever has gained most of the great capitals - Tenochtitlan and Cusco among them - wins.',
     startYear: 1492,
+    // As Civilization III's Age of Discovery: two centuries of sail and gunpowder.
+    endYear: 1700,
+    techCeiling: ['Economics', 'Theory of Gravity', 'Democracy', 'Medicine', 'Theology', 'Navigation', 'Chivalry', 'Gunpowder', 'Banking'],
+    objectives: ['Madrid', 'London', 'Paris', 'Constantinople', 'Moscow', 'Beijing', 'Delhi', 'Tenochtitlan', 'Cusco'],
     yearsPerTurn: 2,
     map: EARTH,
     civs: [
