@@ -616,6 +616,12 @@ working directory.
   everywhere); and the **Offshore Platform** (Computers: +1 shield on worked ocean tiles),
   **Manufacturing Plant** (Computers, needs a Factory: +25% shields) and **Civil Defense**
   (Electronics: a nuclear strike costs a quarter of the city, not half).
+- **Civilization III's later units**: the **Crusader** (Theology, 5/3/1, Horses), **Medieval Infantry**
+  (Chivalry, 4/2/1, Iron: Legions and Immortals upgrade to it), the **Trebuchet** (Engineering, bombards
+  6 - between the Catapult and the Cannon), the **Caravel** (Astronomy: crosses the ocean with 3
+  aboard, between the Galley and the Galleon), the **Jet Fighter** (Rocketry), **AEGIS Cruiser**
+  (Rocketry), **Nuclear Submarine** (Nuclear Fission, Uranium) and **Stealth Bomber** (Superconductors,
+  hard to intercept). Jet fighters intercept as fighters do.
 - **More units**: Scout (explorer, 2 moves), Longbowman (Monarchy), Knight (Chivalry), Galleon
   (Navigation), Submarine (Electronics), Engineers (Steam Power: workers that move 2 and finish jobs
   in 2 turns), Radar Artillery (Rocketry). Battleship needs Steel, Fighter Flight, Bomber Advanced

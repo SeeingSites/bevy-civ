@@ -626,6 +626,35 @@ UNIQUE_BASES.forEach((base, i) => {
   UNITS.push((f) => draw(f) + crest(UNIQUE_COLOURS[i]));
 });
 
+// ---- Civilization III's later units (after the unique units: order matches UnitType) ----------
+// Each is its forerunner's figure with an emblem in a round badge (unique units wear a gold crest).
+const badge = (inner) =>
+  wrap(`<circle cx="18" cy="18" r="13" fill="#f4efe2"/>`) + `<g transform="translate(18 18)">${inner}</g>`;
+const row = (unitIndex) => (unitIndex >= 19 ? unitIndex + 1 : unitIndex); // the boat row shifts later rows
+const LATER = [
+  // Crusader: a knight under the red cross
+  [11, badge(`<path d="M-3,-9 h6 v6 h6 v6 h-6 v6 h-6 v-6 h-6 v-6 h6 Z" fill="#c8281c"/>`)],
+  // Medieval Infantry: a swordsman with a kite shield
+  [6, badge(`<path d="M-7,-8 h14 q0,12 -7,18 q-7,-6 -7,-18 Z" fill="#6c7480" stroke="#22262b" stroke-width="1.5"/><path d="M0,-8 v18 M-7,-2 h14" stroke="#d9c7a0" stroke-width="2"/>`)],
+  // Trebuchet: a catapult with a counterweight
+  [10, badge(`<path d="M-8,8 L8,-8" stroke="#6b4424" stroke-width="3"/><rect x="-11" y="4" width="8" height="7" fill="#55595e" stroke="#22262b" stroke-width="1.2"/><circle cx="8" cy="-8" r="3" fill="#8a8a8a"/>`)],
+  // Caravel: a smaller ocean ship, lateen-rigged
+  [38, badge(`<path d="M-9,4 h18 l-4,5 h-10 Z" fill="#8b5a2b"/><path d="M0,4 V-9 L8,2 Z" fill="#efe6d0" stroke="#5a3a1a" stroke-width="1.2"/>`)],
+  // Jet Fighter: a swept-wing jet
+  [24, badge(`<path d="M-10,2 L10,0 L-10,-2 Z M-2,0 L-8,-8 L-4,0 L-8,8 Z" fill="#5a6470" stroke="#22262b" stroke-width="1.2"/>`)],
+  // Stealth Bomber: a dark flying wing
+  [25, badge(`<path d="M-11,4 L0,-7 L11,4 L6,2 L3,5 L0,2 L-3,5 L-6,2 Z" fill="#1d1f24"/>`), 'stealth'],
+  // AEGIS Cruiser: a destroyer with a radar array
+  [22, badge(`<rect x="-6" y="-8" width="12" height="12" fill="#5a6470" stroke="#22262b" stroke-width="1.2"/><path d="M-3,-5 h6 v6 h-6 Z" fill="#9fd8ff"/><path d="M-9,8 h18" stroke="#22262b" stroke-width="2"/>`)],
+  // Nuclear Submarine: a submarine with the trefoil
+  [39, badge(`<circle r="9" fill="#f2d23c"/><circle r="2.2" fill="#1d1a0c"/><path d="M0,0 L-4.5,-7.8 A9,9 0 0 1 4.5,-7.8 Z M0,0 L9,0 A9,9 0 0 1 4.5,7.8 Z M0,0 L-4.5,7.8 A9,9 0 0 1 -9,0 Z" fill="#1d1a0c" transform="scale(0.85)"/>`)],
+];
+const DARKEN = `<filter id="stealthy"><feColorMatrix type="matrix" values="0.35 0 0 0 0.03  0 0.35 0 0 0.03  0 0 0.38 0 0.05  0 0 0 1 0"/></filter>`;
+LATER.forEach(([base, emblem, look]) => {
+  const draw = UNITS[row(base)];
+  UNITS.push((f) => (look === 'stealth' ? `<defs>${DARKEN}</defs><g filter="url(#stealthy)">${draw(f)}</g>` : draw(f)) + emblem);
+});
+
 /** A great person: a figure standing in a softly pulsing golden aura. */
 function greatPerson(f, o) {
   const glow = [0.28, 0.36, 0.28, 0.2][f];

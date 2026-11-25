@@ -168,7 +168,7 @@ pub fn choose(city: &CityView, civ: &CivView, supplies: &Supplies, rng: &mut imp
     }
     // Troops or settlers waiting in port and no ship to carry them: a coastal city builds one.
     if city.coastal && civ.ferry_wanted > 0 && civ.ferries < civ.ferry_wanted.div_ceil(6).min(3) {
-        let ferry = [UnitType::Transport, UnitType::Galleon, UnitType::Galley].into_iter().find(|u| can_train(*u, city, civ, supplies));
+        let ferry = [UnitType::Transport, UnitType::Galleon, UnitType::Caravel, UnitType::Galley].into_iter().find(|u| can_train(*u, city, civ, supplies));
         if let Some(ferry) = ferry {
             return unit(ferry);
         }
