@@ -53,6 +53,8 @@ pub const WONDER_CULTURE: u32 = 4;
 pub fn building_culture(building: Building) -> u32 {
     match building {
         Building::Temple | Building::Colosseum | Building::ResearchLab | Building::ForbiddenPalace => 2,
+        // Civilization III's national wonders earn culture as a great building does.
+        Building::IronWorks | Building::WallStreet | Building::MilitaryAcademy | Building::BattlefieldMedicine => 2,
         Building::Library | Building::Cathedral => 3,
         Building::University => 4,
         b if b.is_wonder() => WONDER_CULTURE,

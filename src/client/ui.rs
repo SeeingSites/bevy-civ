@@ -1453,7 +1453,7 @@ pub fn rebuild_panels(
         node.display = if city.is_some() { Display::Flex } else { Display::None };
         // Folded to the title bar (see `UiState::city_peek`), the sheet is no taller than that.
         node.max_height = if peek { Val::Px(64.0) } else { Val::Auto };
-        let has_forbidden_palace = cities.iter().any(|(c, b, _)| c.owner == PLAYER && b.has(Building::ForbiddenPalace));
+        let national: Vec<Building> = cities.iter().filter(|(c, _, _)| c.owner == PLAYER).flat_map(|(_, b, _)| b.buildings.iter().copied().filter(|b| b.one_per_people())).collect();
         commands.entity(root).despawn_descendants().with_children(|p| {
             let Some((city, buildings, happiness)) = city else { return };
             let mine = city.owner == PLAYER;
@@ -1695,7 +1695,7 @@ pub fn rebuild_panels(
                         .filter(|b| !b.is_spaceship_part() || (buildings.has(Building::Factory) && space.wants(PLAYER, *b, true)))
                         .filter(|b| b.required_wonder().is_none_or(|w| wonders.built.contains_key(&w)))
                         .filter(|b| b.required_building().is_none_or(|r| buildings.has(r)))
-                        .filter(|b| !(b.one_per_people() && has_forbidden_palace))
+                        .filter(|b| !(b.one_per_people() && national.contains(b)))
                         .map(|b| {
                             let upkeep = bevy_civ::economy::upkeep(b);
                             let mut effect = if upkeep > 0 { format!("{}; upkeep {upkeep} gold", b.effect()) } else { b.effect().to_string() };

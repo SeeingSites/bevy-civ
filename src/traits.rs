@@ -86,6 +86,7 @@ pub fn of_wonder(wonder: Building) -> &'static [Trait] {
         B::CureForCancer => &[Agricultural, Scientific],
         B::Manhattan => &[Militaristic, Scientific],
         B::UnitedNations => &[Commercial, Religious],
+        B::WomensSuffrage => &[Industrious, Religious],
         _ => &[],
     }
 }

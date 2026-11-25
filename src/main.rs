@@ -3892,6 +3892,11 @@ fn process_turn(
     for (city, _, _) in cities.iter().filter(|(c, b, _)| c.is_capital || b.has(Building::ForbiddenPalace)) {
         seats.entry(city.owner).or_default().push(city.position);
     }
+    // The national wonders each people has (one of each per people).
+    let mut nationals: HashMap<u32, Vec<Building>> = HashMap::new();
+    for (city, buildings, _) in cities.iter() {
+        nationals.entry(city.owner).or_default().extend(buildings.buildings.iter().copied().filter(|b| b.one_per_people()));
+    }
     // The share of every city's trade lost to corruption (by distance to its palace and the number
     // of cities nearer, under its people's government).
     let corruption_of = corruption_rates(
@@ -4133,7 +4138,8 @@ fn process_turn(
                 // An empty city drops everything for a defender, and pays to hurry it when in danger.
                 let already = matches!(&city.production_queue, Some(ProductionItem::Unit(u)) if u.is_army());
                 if !already {
-                    let civ_view = governor::CivView { tech: &civ.tech, aggression: civ.aggression, cities: 1, workers: 1, settlers: 1, military: 0, navy: 0, air: 0, road_work: 0, cut_off: 0, at_war: true, wonders_taken: &wonders_taken, caravans: 1, diplomats: 1, missionaries: 1, faith_to_spread: false, wonder_elsewhere: false, space_parts: &[], room_to_expand: false, forbidden_palace: true, ferries: 1, ferry_wanted: 0, thrifty: true };
+                    let national_all: Vec<Building> = Building::ALL.into_iter().filter(|b| b.one_per_people()).collect();
+                    let civ_view = governor::CivView { tech: &civ.tech, aggression: civ.aggression, cities: 1, workers: 1, settlers: 1, military: 0, navy: 0, air: 0, road_work: 0, cut_off: 0, at_war: true, wonders_taken: &wonders_taken, caravans: 1, diplomats: 1, missionaries: 1, faith_to_spread: false, wonder_elsewhere: false, space_parts: &[], room_to_expand: false, national: &national_all, ferries: 1, ferry_wanted: 0, thrifty: true };
                     city.production_queue = Some(ProductionItem::Unit(governor::best_defender(&view, &civ_view, &supplies)));
                 }
                 let remaining = city.shields_left();
@@ -4196,7 +4202,8 @@ fn process_turn(
         let joy = supply::luxury_happiness(supplies.luxuries(city.position), has_market) + books.luxury / 2;
         // A long war wears on a republic or democracy (a Police Station halves it in its city).
         let weary = gov.war_weariness(war_turns.get(&owner).copied().unwrap_or(0));
-        let weary = if buildings.has(Building::PoliceStation) { weary / 2 } else { weary };
+        // Women's Suffrage acts as a Police Station in every city of its owner.
+        let weary = if buildings.has(Building::PoliceStation) || wonders.owns(owner, Building::WomensSuffrage) { weary / 2 } else { weary };
         let sprawl = bevy_civ::diplomacy::sprawl_unhappiness(empire_sizes.get(&owner).copied().unwrap_or(1));
         let gm_distrusted = buildings.has(Building::GmFarms) && !buildings.has(Building::FoodSafety);
         let troubled = bevy_civ::troubles::unhappiness(city.narcotics, city.scandal, gm_distrusted);
@@ -4338,10 +4345,15 @@ fn process_turn(
                         }
                         // Barracks train veterans.
                         let veteran = if ut.domain() == Domain::Air { buildings.has(Building::Airport) } else { buildings.has(Building::Barracks) || wonders.owns(city.owner, Building::SunTzu) };
-                        if ut.is_military() && veteran {
+                        // A Military Academy trains its city's troops one level higher still.
+                        let academy = ut.is_military() && ut.domain() != Domain::Air && buildings.has(Building::MilitaryAcademy);
+                        let levels = u8::from(ut.is_military() && veteran) + u8::from(academy);
+                        if levels > 0 {
                             commands.queue(move |world: &mut World| {
                                 if let Some(mut unit) = world.get_mut::<Unit>(trained) {
-                                    unit.promote();
+                                    for _ in 0..levels {
+                                        unit.promote();
+                                    }
                                 }
                             });
                         }
@@ -4544,7 +4556,7 @@ fn process_turn(
                     wonder_elsewhere: wonder_sites.iter().any(|(at, o)| *o == owner && *at != city.position),
                     space_parts: &space_wanted.get(&owner).cloned().unwrap_or_default(),
                     room_to_expand: room.contains(&owner),
-                    forbidden_palace: seats.get(&owner).is_some_and(|s| s.len() > 1),
+                    national: nationals.get(&owner).map(Vec::as_slice).unwrap_or(&[]),
                     ferries: ferry_counts.get(&owner).copied().unwrap_or(0),
                     ferry_wanted: ferries.wanted.get(&owner).copied().unwrap_or(0),
                     // Upkeep already leaves little for science (a computer player), or the treasury
@@ -4574,6 +4586,8 @@ fn process_turn(
             let held = finance.entry(owner).or_default();
             held.0 += u32::from(buildings.has(Building::Bank));
             held.1 += u32::from(buildings.has(Building::StockExchange));
+            // Wall Street raises the cap by 10 gold, as five banks would.
+            held.0 += 5 * u32::from(buildings.has(Building::WallStreet));
         }
         // Science and taxes come in unless the city stands idle; its upkeep is owed all the same.
         if owner != BARBARIANS {
@@ -4878,6 +4892,8 @@ fn process_turn(
         }
     }
     let home_cities: HashSet<(Hex, u32)> = cities.iter().map(|(c, _, _)| (c.position, c.owner)).collect();
+    // Battlefield Medicine: its people's troops heal faster in the field.
+    let medics: HashSet<u32> = cities.iter().filter(|(_, b, _)| b.has(Building::BattlefieldMedicine)).map(|(c, _, _)| c.owner).collect();
     for (_, mut unit) in &mut units {
         if let Some(done) = unit.process_build() {
             if let Some(mut tile) = tiles.iter_mut().find(|t| t.coord == unit.position) {
@@ -4897,7 +4913,7 @@ fn process_turn(
         // Wounds heal while a unit rests: fully in one of its own cities, a hit point a turn elsewhere.
         if unit.hp < unit.max_hp() && (unit.can_move() || unit.fortified) {
             let home = home_cities.contains(&(unit.position, unit.owner));
-            unit.hp = if home { unit.max_hp() } else { unit.hp + 1 };
+            unit.hp = if home { unit.max_hp() } else { (unit.hp + 1 + u32::from(medics.contains(&unit.owner))).min(unit.max_hp()) };
         }
         if unit.build_turns_left.is_none() {
             let moves = moves_per_turn(unit.unit_type, unit.position, &map, wonders.sea_moves(unit.owner)).min(unit.troop_moves());
@@ -6341,14 +6357,15 @@ pub fn work_tiles(
         // A Harbor makes every worked ocean tile one food richer, and the Colossus one gold.
         let harbor = buildings.has(Building::Harbor);
         let colossus = buildings.has(Building::Colossus) && !Building::Colossus.obsoleted_by().is_some_and(|t| knows(owner, t));
-        // GM Farms make every farmed tile one food richer.
+        // GM Farms make every farmed tile one food richer; an Offshore Platform every ocean tile a shield.
         let engineered = buildings.has(Building::GmFarms);
+        let platform = buildings.has(Building::OffshorePlatform);
         let raw_yield = |owner: u32, hex: Hex| {
             yield_for(owner, hex).map(|y| {
                 let tile = tile_at.get(&hex);
                 let water = tile.is_some_and(|t| t.terrain == Terrain::Water);
                 let farmed = engineered && tile.is_some_and(|t| t.improvements.contains(&Improvement::Farm));
-                (y.0 + u32::from(harbor && water) + u32::from(farmed), y.1, y.2 + u32::from(colossus && water))
+                (y.0 + u32::from(harbor && water) + u32::from(farmed), y.1 + u32::from(platform && water), y.2 + u32::from(colossus && water))
             })
         };
         let (gov, golden_age) = land_rule(owner);
@@ -6440,7 +6457,8 @@ pub fn nuclear_strikes(
                 commands.entity(entity).try_despawn_recursive();
             }
             if let Some((mut city, mut buildings)) = cities.iter_mut().find(|(c, _)| c.position == hex) {
-                city.population = (city.population / 2).max(1);
+                // Civil Defense saves half of those who would die.
+                city.population = if buildings.has(Building::CivilDefense) { city.population - city.population / 4 } else { city.population / 2 }.max(1);
                 city.food_storage = 0;
                 for _ in 0..2 {
                     let ordinary: Vec<usize> = buildings.buildings.iter().enumerate().filter(|(_, b)| !b.is_wonder()).map(|(i, _)| i).collect();
