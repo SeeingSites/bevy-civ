@@ -446,6 +446,11 @@ pub fn generate_random(template: &Scenario, player: usize, map_size: usize, peop
     let mut sites: Vec<(i32, i32)> = (0..ROWS)
         .flat_map(|row| (0..COLS).map(move |col| (col, row)))
         .filter(|(col, row)| land(&grid, *col, *row) && neighbours(*col, *row).iter().filter(|(c, r)| land(&grid, *c, *r)).count() >= 5)
+        // Nobody starts on the polar tundra or hemmed in by it.
+        .filter(|(col, row)| {
+            let tundra = |c: i32, r: i32| land(&grid, c, r) && grid[r as usize][c as usize] == 't';
+            !tundra(*col, *row) && neighbours(*col, *row).iter().filter(|(c, r)| tundra(*c, *r)).count() <= 1
+        })
         .collect();
     sites.shuffle(&mut rng);
     let mut homes: Vec<(i32, i32)> = sites.first().copied().into_iter().collect();
@@ -551,6 +556,21 @@ mod tests {
         }
         let ww2 = catalog.iter().find(|s| s.id == "ww2").unwrap();
         assert_eq!(ww2.turn_of(1941, Some(12)), 28, "Pearl Harbor");
+    }
+
+    #[test]
+    fn nobody_starts_on_the_polar_tundra() {
+        let template = catalog_with(|_| false).remove(0);
+        for size in 0..MAP_SIZES.len() {
+            let (world, _) = generate_random(&template, 0, size, 8);
+            let at = |col: i32, row: i32| world.rows.get(row as usize).and_then(|r| r.as_bytes().get(col as usize)).copied();
+            for civ in &world.civs {
+                let Some(home) = civ.units.first() else { continue };
+                assert_ne!(at(home.col, home.row), Some(b't'), "{} starts on tundra", civ.name);
+                let tundra = neighbours(home.col, home.row).iter().filter(|(c, r)| at(*c, *r) == Some(b't')).count();
+                assert!(tundra <= 1, "{} starts hemmed in by tundra", civ.name);
+            }
+        }
     }
 
     /// Everything a scenario puts on the map belongs to its age: each people knows the techs behind
