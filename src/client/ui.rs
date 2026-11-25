@@ -387,6 +387,8 @@ pub struct MenuState {
     /// New World options (None until chosen: normal size, five peoples).
     pub map_size: Option<usize>,
     pub peoples: Option<usize>,
+    /// Barbarian level (None until chosen: Restless).
+    pub barbarians: Option<u8>,
 }
 
 #[derive(Clone)]
@@ -438,6 +440,7 @@ pub enum Command {
     PickLength(u32),
     PickMapSize(usize),
     PickPeoples(usize),
+    PickBarbarians(u8),
     StartGame,
     BackToPeoples,
 }
@@ -3288,6 +3291,7 @@ pub fn button_actions(
             Command::PickLength(turns) => menu.last_turn = *turns,
             Command::PickMapSize(size) => menu.map_size = Some(*size),
             Command::PickPeoples(n) => menu.peoples = Some(*n),
+            Command::PickBarbarians(level) => menu.barbarians = Some(*level),
             Command::StartGame => {
                 if let (Some(scenario), Some(civ)) = (menu.scenario.and_then(|i| menu.catalog.get(i)), menu.civ) {
                     let last_turn = if menu.last_turn == 0 { crate::LAST_TURN } else { menu.last_turn };
@@ -3300,6 +3304,7 @@ pub fn button_actions(
                         last_turn,
                         map_size: menu.map_size.unwrap_or(1),
                         peoples: menu.peoples.unwrap_or(default_peoples()),
+                        barbarians: menu.barbarians.unwrap_or(bevy_civ::barbarians::DEFAULT_LEVEL),
                     });
                     menu.civ = None;
                     next.set(AppState::Playing);
@@ -3488,13 +3493,23 @@ pub fn rebuild_menu(
                         }
                     });
                     w.spawn(label(&art.font_body, "If nobody has won by the last turn, the highest score wins.", 14.0, INK_SOFT));
+                    w.spawn(label(&art.font_title, "Barbarians", 17.0, INK_SOFT));
+                    w.spawn(row(6.0)).with_children(|r| {
+                        let chosen = menu.barbarians.unwrap_or(bevy_civ::barbarians::DEFAULT_LEVEL);
+                        for (level, name) in bevy_civ::barbarians::LEVELS.iter().enumerate() {
+                            let tint = if chosen as usize == level { GREEN } else { BRONZE };
+                            button(r, art, *name, Command::PickBarbarians(level as u8), tint, 14.0);
+                        }
+                    });
                     // A New World can be made smaller or larger, with fewer or more peoples.
                     if scenario.rows.is_empty() {
                         let size = menu.map_size.unwrap_or(1);
                         let peoples = menu.peoples.unwrap_or(default_peoples());
                         w.spawn(label(&art.font_title, "World", 17.0, INK_SOFT));
                         w.spawn(row(6.0)).with_children(|r| {
-                            for (i, (name, cols, rows)) in crate::scenario::MAP_SIZES.iter().enumerate() {
+                            let mut sizes: Vec<(usize, &(&str, i32, i32))> = crate::scenario::MAP_SIZES.iter().enumerate().collect();
+                            sizes.sort_by_key(|(_, (_, cols, rows))| cols * rows);
+                            for (i, (name, cols, rows)) in sizes {
                                 let tint = if size == i { GREEN } else { BRONZE };
                                 button(r, art, format!("{name} ({cols}x{rows})"), Command::PickMapSize(i), tint, 14.0);
                             }

@@ -396,8 +396,12 @@ cities are brought up before the turn ends.
 
 ## Starting a game
 Choose a world and your people, then the difficulty and the length of the game. Difficulty sets how
-fast the computer players build and learn (from 0.6x on Chieftain to 1.4x on Emperor); on Chieftain
-and Warlord your citizens are also easier to please. Games last 200, 300 or 400 turns; if nobody
+fast the computer players build and learn (from 0.6x on Chieftain to 1.4x on Emperor, and on to
+Civilization III's Demigod, Deity and Sid at 1.6x, 1.8x and 2x); on Chieftain and Warlord your
+citizens are also easier to please, on Demigod and Deity one more in each city is unhappy, on Sid
+two. Barbarians can be set as in Civilization III: none, roaming (a band every 14 turns), restless
+(every 8, the default) or raging (every 5, in larger bands). A New World can be Tiny, Small,
+Normal, Large or Huge, with 3, 5, 8 or 11 peoples. Games last 200, 300 or 400 turns; if nobody
 has won by the last turn, the highest score wins. The Whole Earth and New Worlds keep Civilization
 III's calendar, from 4000 BC to 2050 AD on the last turn: turns of about 70 years at first in a
 400-turn game, shortening as history quickens to a year or two at the end (scenarios keep their own

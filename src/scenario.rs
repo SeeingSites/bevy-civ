@@ -250,12 +250,19 @@ pub struct NewGame {
     /// For the New World: the map's size (0 small, 1 normal, 2 large) and how many peoples share it.
     pub map_size: usize,
     pub peoples: usize,
+    /// How often barbarians rise (see `bevy_civ::barbarians::LEVELS`).
+    pub barbarians: u8,
 }
 
 /// The New World's map sizes: (name, columns, rows).
-pub const MAP_SIZES: [(&str, i32, i32); 3] = [("Small", 34, 22), ("Normal", 44, 28), ("Large", 56, 36)];
+/// Civilization III's Tiny and Huge come after the first three, so saved choices keep their meaning;
+/// the menu lists them by area.
+pub const MAP_SIZES: [(&str, i32, i32); 5] = [("Small", 34, 22), ("Normal", 44, 28), ("Large", 56, 36), ("Tiny", 26, 17), ("Huge", 70, 44)];
+/// The sizes and people counts the balance harness cycles through (the original three of each).
+pub const STANDARD_MAP_SIZES: usize = 3;
+pub const STANDARD_PEOPLE_CHOICES: [usize; 3] = [3, 5, 8];
 /// How many peoples a New World may hold.
-pub const PEOPLE_CHOICES: [usize; 3] = [3, 5, 8];
+pub const PEOPLE_CHOICES: [usize; 4] = [3, 5, 8, 11];
 pub const DEFAULT_PEOPLES: usize = 5;
 
 /// Map cell (column, row; row 0 is the northern edge) to its hex. Odd columns sit half a row lower.
@@ -300,7 +307,7 @@ pub fn catalog_with(on: impl Fn(&str) -> bool) -> Vec<Scenario> {
     // The random map borrows its peoples from the theme's first scenario (Earth's, by default);
     // their homes are chosen when the game starts.
     if let Some(first) = built_in.iter().find(|s| s.expansion.is_none()).or(fallback.as_ref()) {
-        random.civs = first.civs.iter().take(8).cloned().collect();
+        random.civs = first.civs.iter().take(PEOPLE_CHOICES[PEOPLE_CHOICES.len() - 1]).cloned().collect();
     }
     // The packs' peoples can be led from the start too: on a New World, and on the Whole Earth
     // from their homes. They join only a game whose player leads them.
@@ -593,7 +600,8 @@ mod tests {
     fn expansion_packs_add_their_scenarios_and_peoples_only_when_on() {
         let off = catalog_with(|_| false);
         assert!(off.iter().all(|s| s.expansion.is_none() && s.civs.iter().all(|c| !c.optional)));
-        assert_eq!(off[0].civs.len(), 8);
+        // A New World draws on all eleven of the Whole Earth's peoples (up to 11 a game).
+        assert_eq!(off[0].civs.len(), 11);
         let on = catalog_with(|_| true);
         for id in ["revolution", "napoleon", "greatwar", "ww2", "modern"] {
             let scenario = on.iter().find(|s| s.id == id).unwrap_or_else(|| panic!("{id} is listed"));
