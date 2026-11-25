@@ -169,6 +169,36 @@ pub fn term(key: &str, default: &'static str) -> &'static str {
     active().and_then(|t| t.terms.get(key)).map(String::as_str).unwrap_or(default)
 }
 
+/// Civilization III's calendar: turns of 50 years at first, shortening as history quickens, to 1
+/// year a turn at the end - 540 turns from 4000 BC to 2050 AD. (turns, years a turn)
+pub const AGES_CALENDAR: [(u32, i32); 8] = [(25, 50), (25, 40), (40, 25), (50, 20), (100, 10), (100, 5), (100, 2), (100, 1)];
+/// The year the ages calendar ends on the last turn.
+pub const AGES_END: i32 = 2050;
+
+/// The year of `turn` (1 is the first). A world that counts `years_per_turn` years a turn does so
+/// from `start`; one with 0 follows [`AGES_CALENDAR`] from 4000 BC, squeezed or stretched so that
+/// the game's `last_turn` falls in 2050 AD.
+pub fn game_year(start: i32, years_per_turn: i32, turn: u32, last_turn: u32) -> i32 {
+    if years_per_turn != 0 {
+        return start + (turn as i32 - 1) * years_per_turn;
+    }
+    let total: u32 = AGES_CALENDAR.iter().map(|(n, _)| n).sum();
+    let mut left = (turn.saturating_sub(1)) as f64 * total as f64 / last_turn.saturating_sub(1).max(1) as f64;
+    let mut year = start as f64;
+    for (turns, step) in AGES_CALENDAR {
+        let here = left.min(turns as f64);
+        year += here * step as f64;
+        left -= here;
+        if left <= 0.0 {
+            break;
+        }
+    }
+    let year = year.round() as i32;
+    // Whole decades while turns are long; there is no year 0.
+    let year = if year < 1000 { (year as f64 / 5.0).round() as i32 * 5 } else { year };
+    if year == 0 { 1 } else { year }
+}
+
 /// A year as the theme in force writes it.
 pub fn year(year: i32) -> String {
     match active() {
@@ -180,6 +210,30 @@ pub fn year(year: i32) -> String {
 /// The folder under `assets/` that sprite sheets come from.
 pub fn sprites() -> &'static str {
     active().and_then(|t| t.sprites.as_deref()).unwrap_or("sprites")
+}
+
+#[cfg(test)]
+mod calendar_tests {
+    use super::*;
+
+    #[test]
+    fn the_ages_calendar_runs_from_4000_bc_to_2050_ad_whatever_the_length() {
+        for last in [200, 300, 400, 540] {
+            assert_eq!(game_year(-4000, 0, 1, last), -4000);
+            assert_eq!(game_year(-4000, 0, last, last), AGES_END, "{last}");
+            let years: Vec<i32> = (1..=last).map(|t| game_year(-4000, 0, t, last)).collect();
+            assert!(years.windows(2).all(|w| w[1] >= w[0]), "{last}: never goes back");
+        }
+        // Civ III's own milestones on its own length.
+        for (turn, year) in [(26, -2750), (241, 1250), (441, 1950)] {
+            assert!((game_year(-4000, 0, turn, 540) - year).abs() <= 5, "turn {turn}");
+        }
+        // Turns quicken: early turns span far more years than late ones.
+        assert!(game_year(-4000, 0, 2, 400) - game_year(-4000, 0, 1, 400) > 50);
+        assert!(game_year(-4000, 0, 400, 400) - game_year(-4000, 0, 399, 400) <= 2);
+        // A scenario's fixed years per turn are kept.
+        assert_eq!(game_year(1939, 1, 7, 400), 1945);
+    }
 }
 
 #[cfg(test)]

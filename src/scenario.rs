@@ -200,7 +200,8 @@ pub fn catalog_with(on: impl Fn(&str) -> bool) -> Vec<Scenario> {
         name: "New World".into(),
         blurb: "Peoples share an unknown, randomly generated land: choose how many and how big. Every game is different.".into(),
         start_year: -4000,
-        years_per_turn: 40,
+        // Civilization III's calendar, ending in 2050 AD on the last turn.
+        years_per_turn: 0,
         theme: theme.into(),
         ..default()
     };

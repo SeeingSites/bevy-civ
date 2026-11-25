@@ -383,7 +383,10 @@ cities are brought up before the turn ends.
 Choose a world and your people, then the difficulty and the length of the game. Difficulty sets how
 fast the computer players build and learn (from 0.6x on Chieftain to 1.4x on Emperor); on Chieftain
 and Warlord your citizens are also easier to please. Games last 200, 300 or 400 turns; if nobody
-has won by the last turn, the highest score wins. When the game ends, a summary shows the final
+has won by the last turn, the highest score wins. The Whole Earth and New Worlds keep Civilization
+III's calendar, from 4000 BC to 2050 AD on the last turn: turns of about 70 years at first in a
+400-turn game, shortening as history quickens to a year or two at the end (scenarios keep their own
+years a turn). When the game ends, a summary shows the final
 standing.
 
 Tips for new players appear the first time something happens (your first turn, first city, first
