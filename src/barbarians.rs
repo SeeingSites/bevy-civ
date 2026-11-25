@@ -27,9 +27,37 @@ pub const SPAWN_EVERY: u32 = 8;
 /// No barbarians in the first turns of a game.
 pub const QUIET_TURNS: u32 = 10;
 
-#[derive(Resource, Default, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Resource, Clone, serde::Serialize, serde::Deserialize)]
 pub struct BarbarianState {
     pub spawn_timer: u32,
+    /// How often they rise (Civilization III's setting; see [`LEVELS`]).
+    #[serde(default = "default_level")]
+    pub level: u8,
+}
+
+/// Civilization III's barbarian settings, from none at all to raging.
+pub const LEVELS: [&str; 4] = ["None", "Roaming", "Restless", "Raging"];
+/// The level a game has unless the player chooses: as the game has always played.
+pub const DEFAULT_LEVEL: u8 = 2;
+
+fn default_level() -> u8 {
+    DEFAULT_LEVEL
+}
+
+impl Default for BarbarianState {
+    fn default() -> Self {
+        Self { spawn_timer: 0, level: DEFAULT_LEVEL }
+    }
+}
+
+/// Turns between bands at a level (None: no barbarians at all).
+pub fn spawn_every(level: u8) -> Option<u32> {
+    match level {
+        0 => None,
+        1 => Some(14),
+        2 => Some(SPAWN_EVERY),
+        _ => Some(5),
+    }
 }
 
 /// Most modern raiders allowed near one city at a time.
@@ -115,8 +143,9 @@ pub fn process_barbarians(
     turn: u32,
     world_techs: usize,
 ) {
+    let Some(every) = spawn_every(state.level) else { return };
     state.spawn_timer += 1;
-    if state.spawn_timer < SPAWN_EVERY || turn < QUIET_TURNS {
+    if state.spawn_timer < every || turn < QUIET_TURNS {
         return;
     }
     state.spawn_timer = 0;
@@ -133,13 +162,26 @@ pub fn process_barbarians(
     let camp = wild[rng.gen_range(0..wild.len())];
     // The band gathers on the camp and the wild land beside it.
     let spots: Vec<Hex> = std::iter::once(camp).chain(camp.all_neighbors().into_iter().filter(|h| wild.contains(h))).collect();
-    for (i, kind) in band(world_techs).into_iter().enumerate() {
+    // Raging barbarians come in larger bands.
+    let mut kinds = band(world_techs);
+    if state.level >= 3 {
+        kinds.push(kinds[0]);
+    }
+    for (i, kind) in kinds.into_iter().enumerate() {
         spawn_unit(commands, spots[i % spots.len()], kind, BARBARIANS);
     }
 }
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn civ_threes_barbarian_settings_set_how_often_bands_rise() {
+        assert_eq!(spawn_every(0), None, "no barbarians");
+        assert!(spawn_every(1) > spawn_every(2) && spawn_every(2) > spawn_every(3));
+        assert_eq!(BarbarianState::default().level, DEFAULT_LEVEL);
+        assert_eq!(spawn_every(DEFAULT_LEVEL), Some(SPAWN_EVERY), "the default plays as before");
+    }
+
     use super::*;
 
     #[test]

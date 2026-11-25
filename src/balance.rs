@@ -248,7 +248,7 @@ fn map_size_of(name: &str) -> Result<usize, String> {
     scenario::MAP_SIZES
         .iter()
         .position(|(n, _, _)| n.eq_ignore_ascii_case(name))
-        .ok_or_else(|| format!("--size must be small, normal or large, not {name}"))
+        .ok_or_else(|| format!("--size must be tiny, small, normal, large or huge, not {name}"))
 }
 
 /// Map size and people count for game `index`.
@@ -258,15 +258,15 @@ fn map_size_of(name: &str) -> Result<usize, String> {
 /// every game, and the other way about.
 fn schedule(index: u32, opts: &Options) -> (usize, usize) {
     let n = index as usize;
-    let map_size = opts.map_size.unwrap_or(n % scenario::MAP_SIZES.len());
+    let map_size = opts.map_size.unwrap_or(n % scenario::STANDARD_MAP_SIZES);
     let people_slot = if opts.map_size.is_none() {
-        n / scenario::MAP_SIZES.len()
+        n / scenario::STANDARD_MAP_SIZES
     } else {
         n
     };
     let peoples = opts
         .peoples
-        .unwrap_or(scenario::PEOPLE_CHOICES[people_slot % scenario::PEOPLE_CHOICES.len()]);
+        .unwrap_or(scenario::STANDARD_PEOPLE_CHOICES[people_slot % scenario::STANDARD_PEOPLE_CHOICES.len()]);
     (map_size, peoples)
 }
 
@@ -719,6 +719,7 @@ fn play(index: u32, opts: &Options) -> Result<GameResult, String> {
         last_turn: opts.turns.max(1),
         map_size,
         peoples: seated,
+        barbarians: bevy_civ::barbarians::DEFAULT_LEVEL,
     });
     if let Err(e) = app.world_mut().run_system_once(crate::setup_world) {
         return Err(format!("The world could not be set up: {e}"));
@@ -865,12 +866,12 @@ mod tests {
     #[test]
     fn schedule_rotates_size_then_peoples() {
         let opts = options_from(&args(&["bevy-civ", "--balance"])).unwrap();
-        assert_eq!(schedule(0, &opts), (0, scenario::PEOPLE_CHOICES[0]));
-        assert_eq!(schedule(1, &opts), (1, scenario::PEOPLE_CHOICES[0]));
-        let after_sizes = scenario::MAP_SIZES.len() as u32;
+        assert_eq!(schedule(0, &opts), (0, scenario::STANDARD_PEOPLE_CHOICES[0]));
+        assert_eq!(schedule(1, &opts), (1, scenario::STANDARD_PEOPLE_CHOICES[0]));
+        let after_sizes = scenario::STANDARD_MAP_SIZES as u32;
         assert_eq!(
             schedule(after_sizes, &opts),
-            (0, scenario::PEOPLE_CHOICES[1])
+            (0, scenario::STANDARD_PEOPLE_CHOICES[1])
         );
 
         let fixed = options_from(&args(&[

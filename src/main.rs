@@ -141,10 +141,23 @@ pub enum Difficulty {
     Regent,
     Monarch,
     Emperor,
+    /// Civilization III's three hardest levels.
+    Demigod,
+    Deity,
+    Sid,
 }
 
 impl Difficulty {
-    pub const ALL: [Difficulty; 5] = [Difficulty::Chieftain, Difficulty::Warlord, Difficulty::Regent, Difficulty::Monarch, Difficulty::Emperor];
+    pub const ALL: [Difficulty; 8] = [
+        Difficulty::Chieftain,
+        Difficulty::Warlord,
+        Difficulty::Regent,
+        Difficulty::Monarch,
+        Difficulty::Emperor,
+        Difficulty::Demigod,
+        Difficulty::Deity,
+        Difficulty::Sid,
+    ];
 
     pub fn name(&self) -> &'static str {
         match self {
@@ -153,6 +166,9 @@ impl Difficulty {
             Difficulty::Regent => "Regent",
             Difficulty::Monarch => "Monarch",
             Difficulty::Emperor => "Emperor",
+            Difficulty::Demigod => "Demigod",
+            Difficulty::Deity => "Deity",
+            Difficulty::Sid => "Sid",
         }
     }
 
@@ -164,6 +180,19 @@ impl Difficulty {
             Difficulty::Regent => 1.0,
             Difficulty::Monarch => 1.2,
             Difficulty::Emperor => 1.4,
+            Difficulty::Demigod => 1.6,
+            Difficulty::Deity => 1.8,
+            Difficulty::Sid => 2.0,
+        }
+    }
+
+    /// Citizens in each of the player's cities who are unhappy beyond the usual (as Civilization III's
+    /// hardest levels have fewer content citizens).
+    pub fn player_discontent(&self) -> u32 {
+        match self {
+            Difficulty::Demigod | Difficulty::Deity => 1,
+            Difficulty::Sid => 2,
+            _ => 0,
         }
     }
 
@@ -183,6 +212,9 @@ impl Difficulty {
             Difficulty::Regent => "Even terms",
             Difficulty::Monarch => "Rivals build and learn a fifth faster",
             Difficulty::Emperor => "Rivals build and learn two fifths faster",
+            Difficulty::Demigod => "Rivals three fifths faster; your citizens harder to please",
+            Difficulty::Deity => "Rivals four fifths faster; your citizens harder to please",
+            Difficulty::Sid => "Rivals twice as fast; your citizens hardest to please",
         }
     }
 }
@@ -1285,6 +1317,7 @@ fn setup_world(
         last_turn: scenario.fixed_last_turn().unwrap_or(new_game.last_turn),
         ..default()
     };
+    commands.insert_resource(BarbarianState { spawn_timer: 0, level: new_game.barbarians });
     // A developed world's cities have buildings to keep: start with taxes that pay for them, and a
     // little luxury for its great cities (computer players set their own).
     if scenario.developed {
@@ -4207,7 +4240,7 @@ fn process_turn(
         let sprawl = bevy_civ::diplomacy::sprawl_unhappiness(empire_sizes.get(&owner).copied().unwrap_or(1));
         let gm_distrusted = buildings.has(Building::GmFarms) && !buildings.has(Building::FoodSafety);
         let troubled = bevy_civ::troubles::unhappiness(city.narcotics, city.scandal, gm_distrusted);
-        let calm = calm.saturating_sub(weary + sprawl + troubled);
+        let calm = calm.saturating_sub(weary + sprawl + troubled + if mine { state.difficulty.player_discontent() } else { 0 });
         happiness.update(city.population, calm, joy);
         if happiness.in_disorder() {
             *rioting.entry(owner).or_default() += 1;
