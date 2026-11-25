@@ -4658,7 +4658,7 @@ fn process_turn(
             if to == BARBARIANS || from == BARBARIANS || !industrial.contains(&to) || diplomacy.get_treaty(to, from) == Treaty::War {
                 return false;
             }
-            if to == PLAYER { welcome_ours } else { !matches!(governments.get(&to), Some(Government::Communism | Government::Fundamentalism)) }
+            if to == PLAYER { welcome_ours } else { !matches!(governments.get(&to), Some(Government::Communism | Government::Fundamentalism | Government::Fascism)) }
         };
         let mut moves: Vec<(Hex, Hex)> = Vec::new();
         for from in prospects.iter().filter(|p| p.pushes() && p.owner != BARBARIANS) {

@@ -433,6 +433,12 @@ working directory.
   (needs a Library) and Research Lab +50% science each, Observatory +25%; Marketplace +50% taxes
   and luxury, Bank and Stock Exchange +30% each. Scientists add 3 science and tax collectors 2 gold
   before the multipliers; entertainers calm two citizens. Every 2 luxury make a citizen happy.
+- **Governments**: Civilization III's, with the three of its Conquests expansion. Despotism;
+  **Tribalism** (Bronze Working: the despot's poor tiles, but five units a city free and less
+  corruption, no forced labour); Monarchy; **Feudalism** (Chivalry: five units a city free, rates up to
+  70%, war weariness of at most one citizen); Republic; Democracy; Communism; **Fascism** (Steel: five
+  units a city free, low corruption, rates up to 80%, strong martial law, forced labour and no war
+  weariness); Fundamentalism. Warlike computer leaders favour Tribalism, Feudalism and Fascism.
 - **Corruption and waste**: a city's corruption has two halves - distance to the nearest palace
   (the capital or a Forbidden Palace; full at 24 tiles) and rank, the number of its people's cities
   nearer a palace, which counts against the optimal number of cities (the world's land shared

@@ -1255,7 +1255,8 @@ mod tests {
     #[test]
     fn research_follows_temperament() {
         let tech = TechState::default();
-        assert_eq!(pick_research(&tech, 0.9), Some(Tech::AnimalHusbandry));
+        // A warlike leader makes for Bronze Working and the warriors' rule, Tribalism.
+        assert_eq!(pick_research(&tech, 0.9), Some(Tech::BronzeWorking));
         assert_eq!(pick_research(&tech, 0.1), Some(Tech::Pottery));
     }
 

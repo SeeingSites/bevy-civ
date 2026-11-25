@@ -269,7 +269,7 @@ impl CivDef {
     /// The government it starts under.
     pub fn starting_government(&self) -> bevy_civ::government::Government {
         use bevy_civ::government::Government::*;
-        [Monarchy, Republic, Democracy, Communism, Fundamentalism]
+        bevy_civ::government::Government::CHOICES
             .into_iter()
             .find(|g| Some(g.base_name()) == self.government.as_deref())
             .unwrap_or(Despotism)
