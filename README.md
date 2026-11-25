@@ -91,16 +91,18 @@ Troops board a ship with room (from the shore or in port), sail with it, and go 
 to it; boarding and landing end the move.
 
 ## Resources and trade
-Eighteen resources are scattered by terrain:
+Twenty-two resources, Civilization III's, are scattered by terrain:
 
-- **Strategic** (Horses, Iron, Saltpeter, Coal, Oil, Rubber) are required to build things: Horsemen
-  and War Chariots need Horses, Legions and Immortals need Iron, Knights need both, Riflemen need
-  Saltpeter, Cannons Iron and Saltpeter, Cavalry Horses and Saltpeter, Tanks Oil and Rubber, and a
-  Factory needs Coal and Iron. Each stays invisible until the technology that uses it is known
-  (Animal Husbandry, Iron Working, Gunpowder, Steam Power, Refining, Replaceable Parts).
+- **Strategic** (Horses, Iron, Saltpeter, Coal, Oil, Rubber, Aluminum, Uranium) are required to build
+  things: Horsemen and War Chariots need Horses, Legions and Immortals need Iron, Knights need both,
+  Riflemen need Saltpeter, Cannons Iron and Saltpeter, Cavalry Horses and Saltpeter, Tanks Oil and
+  Rubber, Modern Armor Oil and Aluminum, Radar Artillery and the starship's structures and components
+  Aluminum, Nuclear Missiles Uranium, and a Factory needs Coal and Iron. Each stays invisible until
+  the technology that uses it is known (Animal Husbandry, Iron Working, Gunpowder, Steam Power,
+  Refining, Replaceable Parts, Rocketry, Nuclear Fission).
 - **Luxuries** (Wine, Spices, Silk, Furs, Dyes, Incense, Ivory, Gems): every different one a city has
   access to keeps one more citizen content; a Marketplace makes further luxuries count for more.
-- **Bonus** resources (Wheat, Cattle, Fish, Gold) add food, shields or gold to the city whose land
+- **Bonus** resources (Wheat, Cattle, Fish, Whales, Game, Gold) add food, shields or gold to the city whose land
   they lie in, as do Farms and Mines.
 
 A source only counts when it is inside your borders **and connected**: its tile needs a road, and

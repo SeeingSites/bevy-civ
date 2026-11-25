@@ -72,6 +72,14 @@ pub enum Resource {
     Cattle,
     Fish,
     Gold,
+    /// Civilization III's light metal of the modern age (Rocketry).
+    Aluminum,
+    /// The fuel of the atom (Nuclear Fission).
+    Uranium,
+    /// A bonus of the sea.
+    Whales,
+    /// A bonus of the wild: forest, jungle and tundra.
+    Game,
 }
 
 impl Terrain {
@@ -170,10 +178,11 @@ impl Improvement {
 
 impl Resource {
     /// Every resource, in declaration order (also the frame order of the icon atlas).
-    pub const ALL: [Resource; 18] = [
+    pub const ALL: [Resource; 22] = [
         Resource::Horses, Resource::Iron, Resource::Wine, Resource::Spices, Resource::Silk, Resource::Saltpeter,
         Resource::Coal, Resource::Oil, Resource::Rubber, Resource::Furs, Resource::Dyes, Resource::Incense,
         Resource::Ivory, Resource::Gems, Resource::Wheat, Resource::Cattle, Resource::Fish, Resource::Gold,
+        Resource::Aluminum, Resource::Uranium, Resource::Whales, Resource::Game,
     ];
 
     pub fn name(&self) -> &'static str {
@@ -201,6 +210,10 @@ impl Resource {
             Resource::Cattle => "Cattle",
             Resource::Fish => "Fish",
             Resource::Gold => "Gold",
+            Resource::Aluminum => "Aluminum",
+            Resource::Uranium => "Uranium",
+            Resource::Whales => "Whales",
+            Resource::Game => "Game",
         }
     }
 
@@ -210,8 +223,8 @@ impl Resource {
 
     pub fn kind(&self) -> ResourceKind {
         match self {
-            Resource::Horses | Resource::Iron | Resource::Saltpeter | Resource::Coal | Resource::Oil | Resource::Rubber => ResourceKind::Strategic,
-            Resource::Wheat | Resource::Cattle | Resource::Fish | Resource::Gold => ResourceKind::Bonus,
+            Resource::Horses | Resource::Iron | Resource::Saltpeter | Resource::Coal | Resource::Oil | Resource::Rubber | Resource::Aluminum | Resource::Uranium => ResourceKind::Strategic,
+            Resource::Wheat | Resource::Cattle | Resource::Fish | Resource::Gold | Resource::Whales | Resource::Game => ResourceKind::Bonus,
             _ => ResourceKind::Luxury,
         }
     }
@@ -238,6 +251,8 @@ impl Resource {
             Resource::Coal => Some(Tech::SteamPower),
             Resource::Oil => Some(Tech::Refining),
             Resource::Rubber => Some(Tech::ReplaceableParts),
+            Resource::Aluminum => Some(Tech::Rocketry),
+            Resource::Uranium => Some(Tech::NuclearFission),
             _ => None,
         }
     }
@@ -249,6 +264,8 @@ impl Resource {
             Resource::Cattle => (1, 1, 0),
             Resource::Fish => (2, 0, 0),
             Resource::Gold => (0, 0, 3),
+            Resource::Whales => (1, 1, 1),
+            Resource::Game => (2, 0, 0),
             _ => (0, 0, 0),
         }
     }
@@ -308,15 +325,15 @@ pub fn random_terrain(rng: &mut impl Rng) -> Terrain {
 pub fn random_resource(rng: &mut impl Rng, terrain: Terrain) -> Option<Resource> {
     use crate::terrain::Resource::*;
     let (chance, options): (u32, &[Resource]) = match terrain {
-        Terrain::Water => (5, &[Fish]),
+        Terrain::Water => (6, &[Fish, Fish, Whales]),
         Terrain::Grassland => (13, &[Horses, Cattle, Wheat, Wine, Dyes, Cattle, Wheat]),
         Terrain::Plains => (13, &[Horses, Wheat, Ivory, Oil, Cattle, Wheat, Wine]),
-        Terrain::Desert => (13, &[Saltpeter, Oil, Incense, Saltpeter, Oil, Gold]),
-        Terrain::Forest => (14, &[Rubber, Furs, Silk, Spices, Dyes, Coal, Furs, Spices]),
-        Terrain::Hills => (17, &[Iron, Coal, Saltpeter, Wine, Incense, Gems, Gold, Iron, Coal]),
-        Terrain::Mountain => (17, &[Iron, Gold, Gems, Coal, Iron]),
-        Terrain::Tundra => (14, &[Furs, Oil, Furs]),
-        Terrain::Jungle => (16, &[Rubber, Gems, Spices, Ivory, Dyes, Silk]),
+        Terrain::Desert => (14, &[Saltpeter, Oil, Incense, Saltpeter, Oil, Gold, Uranium, Aluminum]),
+        Terrain::Forest => (15, &[Rubber, Furs, Silk, Spices, Dyes, Coal, Furs, Spices, Game, Game]),
+        Terrain::Hills => (18, &[Iron, Coal, Saltpeter, Wine, Incense, Gems, Gold, Iron, Coal, Aluminum]),
+        Terrain::Mountain => (18, &[Iron, Gold, Gems, Coal, Iron, Uranium, Aluminum]),
+        Terrain::Tundra => (16, &[Furs, Oil, Furs, Game, Uranium]),
+        Terrain::Jungle => (17, &[Rubber, Gems, Spices, Ivory, Dyes, Silk, Game]),
         Terrain::Marsh => (12, &[Oil, Dyes, Spices]),
     };
     (rng.gen_range(0..100) < chance).then(|| options[rng.gen_range(0..options.len())])
@@ -325,6 +342,19 @@ pub fn random_resource(rng: &mut impl Rng, terrain: Terrain) -> Option<Resource>
 #[cfg(test)]
 mod pillage_tests {
     use super::*;
+
+    #[test]
+    fn civ_threes_resources_are_all_here() {
+        assert_eq!(Resource::ALL.len(), 22);
+        assert!(Resource::Aluminum.is_strategic() && Resource::Uranium.is_strategic());
+        assert_eq!(Resource::Whales.kind(), ResourceKind::Bonus);
+        assert_eq!(Resource::Game.bonus_yield(), (2, 0, 0));
+        assert_eq!(Resource::Uranium.reveal_tech(), Some(crate::tech::Tech::NuclearFission));
+        assert!(crate::unit::UnitType::NuclearMissile.required_resources().contains(&Resource::Uranium));
+        assert!(crate::building::Building::SpaceStructure.required_resources().contains(&Resource::Aluminum));
+        // Every resource has an icon frame in order.
+        assert!(Resource::ALL.iter().enumerate().all(|(i, r)| r.index() == i));
+    }
 
     #[test]
     fn pillagers_wreck_rails_and_works_before_roads() {

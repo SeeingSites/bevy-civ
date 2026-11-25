@@ -761,7 +761,11 @@ impl UnitType {
             UnitType::Cannon => &[Resource::Iron, Resource::Saltpeter],
             UnitType::Pikeman => &[Resource::Iron],
             UnitType::Musketman | UnitType::Rifleman => &[Resource::Saltpeter],
-            UnitType::MechInfantry | UnitType::ModernArmor => &[Resource::Oil],
+            UnitType::MechInfantry => &[Resource::Oil],
+            // As Civilization III's: modern armour and missile artillery need aluminium, the bomb uranium.
+            UnitType::ModernArmor => &[Resource::Oil, Resource::Aluminum],
+            UnitType::RadarArtillery => &[Resource::Aluminum],
+            UnitType::NuclearMissile => &[Resource::Uranium],
             UnitType::Cavalry => &[Resource::Horses, Resource::Saltpeter],
             UnitType::Tank | UnitType::Bomber => &[Resource::Oil, Resource::Rubber],
             UnitType::Frigate => &[Resource::Iron, Resource::Saltpeter],

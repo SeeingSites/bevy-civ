@@ -289,6 +289,8 @@ impl Building {
         match self {
             Building::Factory => &[Resource::Coal, Resource::Iron],
             Building::Colossus => &[Resource::Iron],
+            // A starship is built of aluminium.
+            Building::SpaceStructure | Building::SpaceComponent => &[Resource::Aluminum],
             _ => &[],
         }
     }

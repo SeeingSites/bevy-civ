@@ -395,7 +395,7 @@ function overlayFrame(col) {
 }
 
 // ---------------------------------------------------------------------------------------------
-const RESOURCES = ['horses', 'iron', 'wine', 'spices', 'silk', 'saltpeter', 'coal', 'oil', 'rubber', 'furs', 'dyes', 'incense', 'ivory', 'gems', 'wheat', 'cattle', 'fish', 'gold'];
+const RESOURCES = ['horses', 'iron', 'wine', 'spices', 'silk', 'saltpeter', 'coal', 'oil', 'rubber', 'furs', 'dyes', 'incense', 'ivory', 'gems', 'wheat', 'cattle', 'fish', 'gold', 'aluminum', 'uranium', 'whales', 'game'];
 
 function resourceFrame(col) {
   const plate =
@@ -550,6 +550,48 @@ function resourceFrame(col) {
         `<path d="M22,46 C36,26 62,28 72,44 L86,32 L84,58 L72,48 C62,64 36,66 22,46 Z" fill="#7fc7d9"/>` +
         `<path d="M40,34 q8,-10 16,-4 q-4,6 -16,4 Z M44,58 q6,8 14,4 q-4,-6 -14,-4 Z" fill="#4f9fb5"/></g>` +
         `<circle cx="32" cy="44" r="2.6" fill="#12303a"/><path d="M42,40 q4,6 0,12 M50,40 q4,6 0,12 M58,41 q4,5 0,10" fill="none" stroke="#12303a" stroke-width="1.6"/>`
+      );
+    case 'aluminum':
+      // Bright ingots, stacked.
+      return (
+        plate +
+        `<g stroke="#4a5560" stroke-width="2" stroke-linejoin="round">` +
+        `<path d="M14,78 l6,-14 h30 l6,14 Z" fill="#c9d3dc"/><path d="M20,64 l4,-6 h22 l4,6 Z" fill="#eef3f7"/>` +
+        `<path d="M46,78 l6,-14 h30 l6,14 Z" fill="#b8c3cd"/><path d="M52,64 l4,-6 h22 l4,6 Z" fill="#e3eaf0"/>` +
+        `<path d="M30,56 l6,-14 h30 l6,14 Z" fill="#d6dee6"/><path d="M36,42 l4,-6 h22 l4,6 Z" fill="#f7fafc"/></g>` +
+        `<path d="M40,46 h14 M24,68 h12 M56,68 h12" stroke="#ffffff" stroke-width="2.4" stroke-linecap="round"/>`
+      );
+    case 'uranium':
+      // Glowing ore and the trefoil.
+      return (
+        plate +
+        `<g stroke="#1f2a12" stroke-width="2" stroke-linejoin="round">` +
+        `<path d="M14,80 l8,-20 l18,-6 l14,10 l2,16 Z" fill="#4c5a2e"/><path d="M44,80 l6,-24 l18,-6 l14,12 l-2,18 Z" fill="#3f4c26"/></g>` +
+        `<circle cx="30" cy="66" r="5" fill="#b6f24a"/><circle cx="62" cy="62" r="6" fill="#c8ff5c"/><circle cx="70" cy="72" r="3.5" fill="#b6f24a"/>` +
+        `<circle cx="48" cy="30" r="17" fill="#f2d23c" stroke="#3a2f08" stroke-width="2"/>` +
+        `<g fill="#1d1a0c"><circle cx="48" cy="30" r="3.4"/>` +
+        `<path d="M48,30 L39.5,15.3 A17,17 0 0 1 56.5,15.3 Z" transform="scale(0.82) translate(10.5,6.6)"/>` +
+        `<path d="M48,30 L39.5,15.3 A17,17 0 0 1 56.5,15.3 Z" transform="rotate(120 48 30) scale(0.82) translate(10.5,6.6)"/>` +
+        `<path d="M48,30 L39.5,15.3 A17,17 0 0 1 56.5,15.3 Z" transform="rotate(240 48 30) scale(0.82) translate(10.5,6.6)"/></g>`
+      );
+    case 'whales':
+      return (
+        `<path d="M10,66 q20,-8 40,0 t40,0" fill="none" stroke="rgba(255,255,255,0.65)" stroke-width="3" stroke-linecap="round"/>` +
+        `<g stroke="#122636" stroke-width="2.2" stroke-linejoin="round">` +
+        `<path d="M14,58 C14,40 40,32 62,40 C72,44 76,52 74,58 L86,48 L88,64 L76,62 C66,70 30,72 14,58 Z" fill="#4d6f8a"/>` +
+        `<path d="M22,60 C36,66 58,66 70,60 C58,70 34,70 22,60 Z" fill="#c9d8e3"/></g>` +
+        `<circle cx="26" cy="50" r="2.4" fill="#122636"/>` +
+        `<path d="M36,36 q-2,-10 -8,-14 M36,36 q2,-10 8,-14" fill="none" stroke="#bfe4f6" stroke-width="2.6" stroke-linecap="round"/>`
+      );
+    case 'game':
+      // A deer.
+      return (
+        plate +
+        `<g stroke="#2b1a0e" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round">` +
+        `<path d="M30,78 l2,-18 M40,78 l0,-16 M58,78 l0,-16 M66,78 l-2,-18" fill="none" stroke="#6b4423" stroke-width="4.5"/>` +
+        `<path d="M24,52 C26,42 42,40 56,42 C62,42 66,38 68,32 L74,24 L82,30 L80,38 L74,38 C74,48 70,60 60,62 L32,62 C26,62 23,58 24,52 Z" fill="#a8723c"/>` +
+        `<path d="M72,24 l-4,-10 M72,24 l4,-12 M68,18 l-6,-4 M75,16 l6,-4 M78,26 l8,-8 M83,21 l4,2" fill="none" stroke="#5a3a1a" stroke-width="2.6"/></g>` +
+        `<circle cx="77" cy="30" r="1.8" fill="#111"/><path d="M30,50 q10,4 20,0" fill="none" stroke="#f3e0c0" stroke-width="2"/>`
       );
     case 'gold':
       return (
