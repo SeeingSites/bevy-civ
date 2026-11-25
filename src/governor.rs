@@ -64,8 +64,8 @@ pub struct CivView<'a> {
     pub space_parts: &'a [Building],
     /// Free land for new cities lies within reach of its cities.
     pub room_to_expand: bool,
-    /// Already has a Forbidden Palace somewhere.
-    pub forbidden_palace: bool,
+    /// The national wonders (one per people) it already has somewhere.
+    pub national: &'a [Building],
     /// Ships it has (or is building) for carrying troops overseas.
     pub ferries: usize,
     /// Its units waiting in port for a ship.
@@ -97,7 +97,7 @@ pub fn can_build(building: &Building, city: &CityView, civ: &CivView, supplies: 
         && building.required_tech().is_none_or(|t| civ.tech.researched.contains(&t))
         && supplies.has(city.position, building.required_resources())
         && (!building.needs_coast() || city.coastal)
-        && !(building.one_per_people() && civ.forbidden_palace)
+        && !(building.one_per_people() && civ.national.contains(building))
         && building.required_building().is_none_or(|b| city.built.contains(&b))
 }
 
@@ -266,6 +266,14 @@ pub fn choose(city: &CityView, civ: &CivView, supplies: &Supplies, rng: &mut imp
         (Building::MassTransit, city.population >= 10 && industrial),
         (Building::RecyclingCenter, city.population >= 10 && industrial && spare),
         (Building::Airport, civ.at_war && civ.air > 0 && spare),
+        // Civilization III's later works: industry, money and war colleges where they pay.
+        (Building::IronWorks, industrial && city.population >= 10),
+        (Building::ManufacturingPlant, industrial && city.population >= 14 && spare),
+        (Building::OffshorePlatform, city.coastal && city.population >= 12 && industrial && spare),
+        (Building::WallStreet, city.trade >= 20),
+        (Building::MilitaryAcademy, civ.at_war && city.population >= 8),
+        (Building::BattlefieldMedicine, civ.at_war && city.population >= 8 && spare),
+        (Building::CivilDefense, civ.at_war && city.population >= 12 && spare),
     ];
     if let Some((building, _)) = wish.into_iter().find(|(b, wanted)| *wanted && can_build(b, city, civ, supplies)) {
         return ProductionItem::Building(building);
@@ -309,7 +317,7 @@ mod tests {
     }
 
     fn civ(tech: &TechState) -> CivView<'_> {
-        CivView { tech, aggression: 0.4, cities: 2, workers: 2, settlers: 2, military: 3, navy: 0, air: 0, road_work: 0, cut_off: 0, at_war: false, wonders_taken: &NO_WONDERS, caravans: 2, diplomats: 1, missionaries: 0, faith_to_spread: false, wonder_elsewhere: false, space_parts: &[], room_to_expand: true, forbidden_palace: false, ferries: 0, ferry_wanted: 0, thrifty: false }
+        CivView { tech, aggression: 0.4, cities: 2, workers: 2, settlers: 2, military: 3, navy: 0, air: 0, road_work: 0, cut_off: 0, at_war: false, wonders_taken: &NO_WONDERS, caravans: 2, diplomats: 1, missionaries: 0, faith_to_spread: false, wonder_elsewhere: false, space_parts: &[], room_to_expand: true, national: &[], ferries: 0, ferry_wanted: 0, thrifty: false }
     }
 
     fn knowing(techs: &[Tech]) -> TechState {

@@ -219,7 +219,14 @@ pub fn science_bonus(buildings: &[Building]) -> u32 {
 
 /// Percent a city's Factory and Power Plant add to its shields (after waste).
 pub fn production_bonus(buildings: &[Building]) -> u32 {
-    buildings.iter().map(|b| if matches!(b, Building::Factory | Building::PowerPlant) { 25 } else { 0 }).sum()
+    buildings
+        .iter()
+        .map(|b| match b {
+            Building::Factory | Building::PowerPlant | Building::ManufacturingPlant => 25,
+            Building::IronWorks => 50,
+            _ => 0,
+        })
+        .sum()
 }
 
 /// Percent a city's buildings add to its taxes and to its luxury.
@@ -240,7 +247,8 @@ pub fn upkeep(building: Building) -> u32 {
     use Building::*;
     match building {
         Factory | StockExchange => 2,
-        Walls | CoastalFortress | ForbiddenPalace => 0,
+        Walls | CoastalFortress | ForbiddenPalace | IronWorks | WallStreet | MilitaryAcademy | BattlefieldMedicine => 0,
+        ManufacturingPlant => 3,
         b if b.is_wonder() || b.is_spaceship_part() => 0,
         _ => 1,
     }

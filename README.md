@@ -608,6 +608,14 @@ working directory.
   (Sanitation, +3 food), Mass Transit (Mass Production, no
   pollution), Recycling Center (Ecology, halves pollution), Coastal Fortress (Steel, +100% defence
   against ships) and Airport (Flight, veteran aircraft).
+- **Civilization III's national wonders and later works**: one of each per people - **Iron Works**
+  (Industrialization, needs Coal and Iron: +50% shields there), **Wall Street** (Economics, needs a
+  Bank: +10 to the interest cap), **Military Academy** (Gunpowder: troops trained there one level
+  higher), **Battlefield Medicine** (Sanitation: troops heal two hit points a turn in the field) - beside
+  the Forbidden Palace; the world wonder **Women's Suffrage** (Industrialization: war weariness halved
+  everywhere); and the **Offshore Platform** (Computers: +1 shield on worked ocean tiles),
+  **Manufacturing Plant** (Computers, needs a Factory: +25% shields) and **Civil Defense**
+  (Electronics: a nuclear strike costs a quarter of the city, not half).
 - **More units**: Scout (explorer, 2 moves), Longbowman (Monarchy), Knight (Chivalry), Galleon
   (Navigation), Submarine (Electronics), Engineers (Steam Power: workers that move 2 and finish jobs
   in 2 turns), Radar Artillery (Rocketry). Battleship needs Steel, Fighter Flight, Bomber Advanced

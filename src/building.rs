@@ -67,10 +67,28 @@ pub enum Building {
     CureForCancer,
     Manhattan,
     UnitedNations,
+    // Civilization III's later additions.
+    /// +1 shield on every ocean tile the city works.
+    OffshorePlatform,
+    /// +25% shields (needs a Factory).
+    ManufacturingPlant,
+    /// A nuclear strike costs the city a quarter of its people, not half.
+    CivilDefense,
+    // National wonders: one in each people's empire.
+    /// +50% shields in its city (it must reach Coal and Iron).
+    IronWorks,
+    /// +10 gold to the cap on the treasury's interest.
+    WallStreet,
+    /// Troops trained in its city one level higher.
+    MilitaryAcademy,
+    /// Its people's troops heal two hit points a turn in the field.
+    BattlefieldMedicine,
+    /// A world wonder: a Police Station's calm in every city - war weariness halved everywhere.
+    WomensSuffrage,
 }
 
 impl Building {
-    pub const ALL: [Building; 61] = [
+    pub const ALL: [Building; 69] = [
         Building::Granary, Building::Barracks, Building::Library, Building::Marketplace, Building::Walls,
         Building::Aqueduct, Building::University, Building::Bank, Building::Factory, Building::Harbor,
         Building::Temple, Building::Courthouse, Building::Colosseum, Building::Cathedral, Building::SewerSystem, Building::StockExchange,
@@ -78,6 +96,8 @@ impl Building {
         Building::SpaceStructure, Building::SpaceComponent, Building::SpaceModule, Building::Pyramids,
         Building::GreatLibrary, Building::HangingGardens, Building::Colossus, Building::Oracle,
         Building::GreatLighthouse, Building::GreatWall, Building::StatueOfZeus, Building::Mausoleum, Building::Copernicus, Building::SunTzu, Building::MarcoPolo, Building::KingRichards, Building::Michelangelo, Building::Leonardo, Building::Bach, Building::Magellan, Building::Newton, Building::AdamSmith, Building::Shakespeare, Building::Darwin, Building::Liberty, Building::HooverDam, Building::Eiffel, Building::Internet, Building::Apollo, Building::CureForCancer, Building::Manhattan, Building::UnitedNations,
+        Building::OffshorePlatform, Building::ManufacturingPlant, Building::CivilDefense, Building::IronWorks, Building::WallStreet,
+        Building::MilitaryAcademy, Building::BattlefieldMedicine, Building::WomensSuffrage,
     ];
 
     pub fn name(&self) -> &'static str {
@@ -148,6 +168,14 @@ impl Building {
             Building::Internet => "The Internet",
             Building::Apollo => "Apollo Program",
             Building::CureForCancer => "Cure for Cancer",
+            Building::OffshorePlatform => "Offshore Platform",
+            Building::ManufacturingPlant => "Manufacturing Plant",
+            Building::CivilDefense => "Civil Defense",
+            Building::IronWorks => "Iron Works",
+            Building::WallStreet => "Wall Street",
+            Building::MilitaryAcademy => "Military Academy",
+            Building::BattlefieldMedicine => "Battlefield Medicine",
+            Building::WomensSuffrage => "Women's Suffrage",
         }
     }
 
@@ -214,6 +242,14 @@ impl Building {
             Building::Internet => 600,
             Building::Apollo => 600,
             Building::CureForCancer => 700,
+            Building::OffshorePlatform => 200,
+            Building::ManufacturingPlant => 280,
+            Building::CivilDefense => 120,
+            Building::IronWorks => 300,
+            Building::WallStreet => 400,
+            Building::MilitaryAcademy => 300,
+            Building::BattlefieldMedicine => 300,
+            Building::WomensSuffrage => 600,
         }
     }
 
@@ -280,6 +316,14 @@ impl Building {
             Building::Internet => Some(crate::tech::Tech::Computers),
             Building::Apollo => Some(crate::tech::Tech::SpaceFlight),
             Building::CureForCancer => Some(crate::tech::Tech::Superconductors),
+            Building::OffshorePlatform => Some(crate::tech::Tech::Computers),
+            Building::ManufacturingPlant => Some(crate::tech::Tech::Computers),
+            Building::CivilDefense => Some(crate::tech::Tech::Electronics),
+            Building::IronWorks => Some(crate::tech::Tech::Industrialization),
+            Building::WallStreet => Some(crate::tech::Tech::Economics),
+            Building::MilitaryAcademy => Some(crate::tech::Tech::Gunpowder),
+            Building::BattlefieldMedicine => Some(crate::tech::Tech::Sanitation),
+            Building::WomensSuffrage => Some(crate::tech::Tech::Industrialization),
         }
     }
 
@@ -289,6 +333,7 @@ impl Building {
         match self {
             Building::Factory => &[Resource::Coal, Resource::Iron],
             Building::Colossus => &[Resource::Iron],
+            Building::IronWorks => &[Resource::Coal, Resource::Iron],
             // A starship is built of aluminium.
             Building::SpaceStructure | Building::SpaceComponent => &[Resource::Aluminum],
             _ => &[],
@@ -368,13 +413,20 @@ impl Building {
             Building::SpaceStructure => "spaceship part (4 needed)",
             Building::SpaceComponent => "spaceship part (2 needed)",
             Building::SpaceModule => "spaceship part (2 needed)",
+            Building::OffshorePlatform => "+1 shield on worked ocean tiles (coastal cities)",
+            Building::ManufacturingPlant => "+25% shields (needs a Factory)",
+            Building::CivilDefense => "a nuclear strike costs the city a quarter of its people, not half",
+            Building::IronWorks => "+50% shields here (needs Coal and Iron; one per people)",
+            Building::WallStreet => "+10 to the cap on the treasury's interest (needs a Bank; one per people)",
+            Building::MilitaryAcademy => "troops trained here one level higher (one per people)",
+            Building::BattlefieldMedicine => "your troops heal two hit points a turn in the field (one per people)",
             _ => self.wonder_effect(),
         }
     }
 
     /// The wonders added after the first six (each with its own effect, mostly handled in the game's turn).
     fn is_later_wonder(&self) -> bool {
-        matches!(self, Building::GreatWall | Building::StatueOfZeus | Building::Mausoleum | Building::Copernicus | Building::SunTzu | Building::MarcoPolo | Building::KingRichards | Building::Michelangelo | Building::Leonardo | Building::Bach | Building::Magellan | Building::Newton | Building::AdamSmith | Building::Shakespeare | Building::Darwin | Building::Liberty | Building::HooverDam | Building::Eiffel | Building::Internet | Building::Apollo | Building::CureForCancer | Building::Manhattan | Building::UnitedNations)
+        matches!(self, Building::GreatWall | Building::StatueOfZeus | Building::Mausoleum | Building::Copernicus | Building::SunTzu | Building::MarcoPolo | Building::KingRichards | Building::Michelangelo | Building::Leonardo | Building::Bach | Building::Magellan | Building::Newton | Building::AdamSmith | Building::Shakespeare | Building::Darwin | Building::Liberty | Building::HooverDam | Building::Eiffel | Building::Internet | Building::Apollo | Building::CureForCancer | Building::Manhattan | Building::UnitedNations | Building::WomensSuffrage)
     }
 
     pub fn is_wonder(&self) -> bool {
@@ -420,12 +472,12 @@ pub const AQUEDUCT_LIMIT: u32 = 6;
 impl Building {
     /// Only one in each people's empire.
     pub fn one_per_people(&self) -> bool {
-        *self == Building::ForbiddenPalace
+        matches!(self, Building::ForbiddenPalace | Building::IronWorks | Building::WallStreet | Building::MilitaryAcademy | Building::BattlefieldMedicine)
     }
 
     /// Only a city on the coast can build it (the seafaring wonders too, as in Civ III).
     pub fn needs_coast(&self) -> bool {
-        matches!(self, Building::Harbor | Building::CoastalFortress | Building::Colossus | Building::GreatLighthouse | Building::Magellan)
+        matches!(self, Building::Harbor | Building::CoastalFortress | Building::Colossus | Building::GreatLighthouse | Building::Magellan | Building::OffshorePlatform)
     }
 
     /// A building the city must already have before it can build this one.
@@ -437,6 +489,8 @@ impl Building {
             Building::ResearchLab => Some(Building::University),
             Building::PowerPlant => Some(Building::Factory),
             Building::GmFarms => Some(Building::Granary),
+            Building::ManufacturingPlant => Some(Building::Factory),
+            Building::WallStreet => Some(Building::Bank),
             _ => None,
         }
     }
@@ -482,6 +536,7 @@ impl Building {
             Building::CureForCancer => "+2 content in every city",
             Building::Manhattan => "lets every people who knows Rocketry build Nuclear Missiles",
             Building::UnitedNations => "every 10 turns the world votes for Secretary-General: a majority of all the members wins a diplomatic victory",
+            Building::WomensSuffrage => "war weariness halved in every city, as by a Police Station",
             _ => "",
         }
     }
@@ -511,6 +566,28 @@ impl Building {
             Building::Colossus => Some(Tech::Flight),
             Building::Leonardo => Some(Tech::MotorizedTransport),
             _ => None,
+        }
+    }
+}
+
+#[cfg(test)]
+mod civ3_building_tests {
+    use super::*;
+
+    #[test]
+    fn civ_threes_later_works_are_here() {
+        for b in [Building::IronWorks, Building::WallStreet, Building::MilitaryAcademy, Building::BattlefieldMedicine, Building::ForbiddenPalace] {
+            assert!(b.one_per_people() && !b.is_wonder(), "{b:?} is a national wonder");
+        }
+        assert!(Building::WomensSuffrage.is_wonder());
+        assert!(Building::OffshorePlatform.needs_coast());
+        assert_eq!(Building::ManufacturingPlant.required_building(), Some(Building::Factory));
+        assert_eq!(Building::IronWorks.required_resources(), &[crate::terrain::Resource::Coal, crate::terrain::Resource::Iron]);
+        assert_eq!(crate::economy::production_bonus(&[Building::Factory, Building::IronWorks, Building::ManufacturingPlant]), 100);
+        // Every building has a name, a cost and a technology.
+        for b in Building::ALL {
+            assert!(!b.base_name().is_empty() && b.cost() > 0, "{b:?}");
+            assert!(b.required_tech().is_some() || b == Building::Barracks, "{b:?}");
         }
     }
 }
