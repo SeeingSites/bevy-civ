@@ -371,7 +371,7 @@ mod tests {
 
     #[test]
     fn a_cut_off_coastal_city_builds_a_harbour() {
-        let tech = knowing(&[Tech::Seafaring, Tech::Pottery]);
+        let tech = knowing(&[Tech::Seafaring, Tech::MapMaking, Tech::Pottery]);
         let view = CityView { coastal: true, linked: false, ..city() };
         assert_eq!(choose(&view, &civ(&tech), &Supplies::default(), &mut rand::thread_rng()), ProductionItem::Building(Building::Harbor));
         // The mainland builds one too while part of the empire is cut off.
@@ -438,7 +438,7 @@ mod tests {
 
     #[test]
     fn a_coastal_city_builds_a_ferry_for_troops_waiting_in_port() {
-        let tech = knowing(&[Tech::Pottery, Tech::Seafaring]);
+        let tech = knowing(&[Tech::Pottery, Tech::Seafaring, Tech::MapMaking]);
         let at_war = |coastal: bool| (CityView { coastal, ..city() }, CivView { at_war: true, military: 6, ferry_wanted: 3, ..civ(&tech) });
         let (port, state) = at_war(true);
         assert_eq!(choose(&port, &state, &Supplies::default(), &mut rand::thread_rng()), ProductionItem::Unit(UnitType::Galley));

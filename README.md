@@ -80,11 +80,11 @@ Natural Earth coastlines (public domain) and the definitions in `tools/maps/scen
 scenario there, rebuild, and list its JSON in `src/scenario.rs`.
 
 **Roads** speed troops on foot: a step from one road tile to another costs a third of a move, so a
-unit covers three times as much ground along them (cities count as road). Once **Steam Power** is
+unit covers three times as much ground along them (cities count as road). Once the **Railroad** is
 known, a worker on a road lays a **railroad** (the same **R** order): moving from rail to rail costs
 nothing at all, and railroads run on through cities. Route planning prefers roads and railroads,
-for computer players too, whose workers also lay railroads over their roads once they have Steam
-Power (after any roads their network still needs). Ships and aircraft ignore both.
+for computer players too, whose workers also lay railroads over their roads once they know the
+Railroad (after any roads their network still needs). Ships and aircraft ignore both.
 
 Land units cross water only aboard ships: a Galley or Frigate holds 2, a Galleon 4, a Transport 8.
 As Civilization III's galley, a Galley keeps in sight of land - it sails only on water beside the
@@ -462,6 +462,15 @@ working directory.
   Smith's Trading Company. Savings earn 5% interest a turn, up to 2 gold per Bank and 3 per Stock
   Exchange. A Great Merchant makes a trade mission abroad (gold now) or settles in one of your
   cities as a trading house (+3 gold there every turn).
+- **Civilization III's tree**: 68 technologies. Beside the earlier ones, Warrior Code (Archers),
+  Ceremonial Burial (Temples), Map Making (Galleys, the Great Lighthouse), Literature (the Great
+  Library), Polytheism (the Statue of Zeus), Monotheism (Michelangelo's Chapel, Crusaders), Feudalism
+  (Pikemen, Medieval Infantry, Sun Tzu, Feudalism), Invention (Leonardo; on the way to Gunpowder),
+  Physics (the Observatory; on the way to Steam Power), Magnetism (Galleons and Frigates), the Railroad
+  (railroads, Darwin's Voyage; on the way to Industrialization), Refrigeration (Supermarkets), Radio
+  (Airports), Robotics (Modern Armor, the Manufacturing Plant) and Miniaturization (the Offshore
+  Platform). Each discovery makes the next dearer by a little less than before, so the longer tree
+  costs about as much in all.
 - **Science and ages**: technologies belong to four ages - Ancient Times, the Middle Ages, the
   Industrial Age and the Modern Age. A people enters an age with its first discovery there, and can
   study an age's technologies only once it knows every required technology of the ages before
@@ -611,12 +620,12 @@ working directory.
 - **Tribal villages**: scattered on the land at the start (about one per 30 land tiles). The first
   unit in finds gold, a technology, warriors who join, maps of the area, or now and then hostile
   tribesmen (scouts are careful and rarely meet them).
-- **Late buildings**: Observatory (Astronomy, +25% science), Research Lab (Computers, +50% science,
+- **Late buildings**: Observatory (Physics, +25% science), Research Lab (Computers, +50% science,
   needs a University), Factory (Industrialization, +25% shields), Power Plant (Electronics, +25%
   shields, needs a Factory), Police Station (Sanitation, +2 content, cuts corruption), Supermarket
-  (Sanitation, +3 food), Mass Transit (Mass Production, no
+  (Refrigeration, +3 food), Mass Transit (Mass Production, no
   pollution), Recycling Center (Ecology, halves pollution), Coastal Fortress (Steel, +100% defence
-  against ships) and Airport (Flight, veteran aircraft).
+  against ships) and Airport (Radio, veteran aircraft).
 - **Civilization III's national wonders and later works**: one of each per people - **Iron Works**
   (Industrialization, needs Coal and Iron: +50% shields there), **Wall Street** (Economics, needs a
   Bank: +10 to the interest cap), **Military Academy** (Gunpowder: troops trained there one level
@@ -636,9 +645,9 @@ working directory.
   in 2 turns), Radar Artillery (Rocketry). Battleship needs Steel, Fighter Flight, Bomber Advanced
   Flight; Copernicus needs Astronomy, Magellan Navigation, Newton Theory of Gravity, Shakespeare
   Medicine and the Hoover Dam Electronics.
-- **Defenders**: Pikeman (Engineering, Iron), Musketman (Gunpowder, Saltpeter), Rifleman
+- **Defenders**: Pikeman (Feudalism, Iron), Musketman (Gunpowder, Saltpeter), Rifleman
   (Industrialization, Saltpeter), Infantry (Electricity), Mech. Infantry (Computers, Oil); Modern
-  Armor (Plastics, Oil) follows the Tank. Older units upgrade along this line in a city for gold, skipping
+  Armor (Robotics, Oil, Aluminum) follows the Tank. Older units upgrade along this line in a city for gold, skipping
   straight to the best the city can equip (a city without Saltpeter can still turn Longbowmen into
   Infantry). Upgrade all here re-equips a whole garrison at once, cheapest first.
 - **Happiness**: five citizens are content; the rest are unhappy until calmed by temples (+2),

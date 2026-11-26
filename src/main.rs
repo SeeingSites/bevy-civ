@@ -1385,7 +1385,7 @@ fn developed_land(scenario: &scenario::Scenario, defs: &[scenario::CivDef]) -> H
     }
     let mut worked: HashMap<Hex, Vec<Improvement>> = HashMap::new();
     for def in defs {
-        let rails = def.techs.iter().any(|t| t == Tech::SteamPower.base_name());
+        let rails = def.techs.iter().any(|t| t == Tech::Railroad.base_name());
         for city in &def.cities {
             for hex in hexx::shapes::hexagon(scenario::offset_to_hex(city.col, city.row), 2) {
                 let Some(t) = terrain.get(&hex).copied().filter(|t| *t != Terrain::Water) else { continue };
@@ -2360,7 +2360,7 @@ fn automate_workers(
     let city_tiles: HashSet<Hex> = cities.iter().map(|c| c.position).collect();
     let roads = road_network(tiles.iter(), city_tiles.iter().copied());
     let land: Vec<(Hex, Terrain)> = tiles.iter().map(|t| (t.coord, t.terrain)).collect();
-    let steam = tech.researched.contains(&Tech::SteamPower);
+    let steam = tech.researched.contains(&Tech::Railroad);
     let farms: HashSet<Hex> = tiles.iter().filter(|t| t.improvements.contains(&Improvement::Farm)).map(|t| t.coord).collect();
     let electricity = tech.researched.contains(&Tech::Electricity);
     let watered = |at: Hex| bevy_civ::tiles::irrigable(at, |h| rivers.tiles.contains(&h), |h| map.water.contains(&h) || farms.contains(&h) || city_tiles.contains(&h), electricity);
@@ -3240,8 +3240,8 @@ fn apply_actions(
                         log.push("A railroad already runs here.");
                         continue;
                     }
-                    if !tech.researched.contains(&Tech::SteamPower) {
-                        log.push("A road already runs here. Railroads need Steam Power.");
+                    if !tech.researched.contains(&Tech::Railroad) {
+                        log.push("A road already runs here. Railroads need the Railroad.");
                         continue;
                     }
                     Improvement::Railroad

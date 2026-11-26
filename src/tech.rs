@@ -134,10 +134,26 @@ pub enum Tech {
     NuclearFission,
     /// Engineered crops: GM Farms.
     GeneticEngineering,
+    // Civilization III's technologies added later.
+    WarriorCode,
+    CeremonialBurial,
+    MapMaking,
+    Literature,
+    Polytheism,
+    Monotheism,
+    Feudalism,
+    Invention,
+    Physics,
+    Magnetism,
+    Railroad,
+    Refrigeration,
+    Radio,
+    Robotics,
+    Miniaturization,
 }
 
 impl Tech {
-    pub const ALL: [Tech; 53] = [
+    pub const ALL: [Tech; 68] = [
         Tech::Pottery, Tech::AnimalHusbandry, Tech::Mining, Tech::BronzeWorking, Tech::Masonry,
         Tech::Alphabet, Tech::TheWheel, Tech::Writing, Tech::CodeOfLaws, Tech::Mysticism, Tech::Seafaring,
         Tech::IronWorking, Tech::Mathematics, Tech::HorsebackRiding, Tech::Construction,
@@ -149,6 +165,7 @@ impl Tech {
         Tech::Banking, Tech::Economics,
         Tech::Astronomy, Tech::Chivalry, Tech::Navigation, Tech::TheoryOfGravity, Tech::Medicine, Tech::Steel, Tech::Electronics, Tech::Flight, Tech::AdvancedFlight, Tech::MassProduction, Tech::Ecology, Tech::NuclearFission,
         Tech::GeneticEngineering,
+        Tech::WarriorCode, Tech::CeremonialBurial, Tech::MapMaking, Tech::Literature, Tech::Polytheism, Tech::Monotheism, Tech::Feudalism, Tech::Invention, Tech::Physics, Tech::Magnetism, Tech::Railroad, Tech::Refrigeration, Tech::Radio, Tech::Robotics, Tech::Miniaturization,
     ];
 
     pub fn cost(&self) -> u32 {
@@ -179,7 +196,7 @@ impl Tech {
             Tech::Banking => 45,
             Tech::Economics => 75,
             Tech::Astronomy => 35,
-            Tech::Chivalry => 35,
+            Tech::Chivalry => 45,
             Tech::Navigation => 45,
             Tech::TheoryOfGravity => 55,
             Tech::Medicine => 50,
@@ -191,6 +208,18 @@ impl Tech {
             Tech::Ecology => 130,
             Tech::NuclearFission => 115,
             Tech::GeneticEngineering => 120,
+            Tech::WarriorCode | Tech::CeremonialBurial => 10,
+            Tech::MapMaking => 15,
+            Tech::Literature => 25,
+            Tech::Polytheism => 30,
+            Tech::Feudalism => 40,
+            Tech::Physics => 45,
+            Tech::Monotheism | Tech::Invention | Tech::Magnetism => 50,
+            Tech::Railroad => 65,
+            Tech::Refrigeration => 95,
+            Tech::Radio => 100,
+            Tech::Miniaturization => 120,
+            Tech::Robotics => 130,
         }
     }
 
@@ -199,7 +228,11 @@ impl Tech {
         use Tech::*;
         match self {
             Pottery | AnimalHusbandry | Mining | BronzeWorking | Masonry | Alphabet | TheWheel | Writing | CodeOfLaws | Mysticism | Seafaring | IronWorking
-            | Mathematics | HorsebackRiding | Construction | Philosophy | Monarchy | Currency | TheRepublic => Era::Ancient,
+            | Mathematics | HorsebackRiding | Construction | Philosophy | Monarchy | Currency | TheRepublic | WarriorCode | CeremonialBurial | MapMaking
+            | Literature | Polytheism => Era::Ancient,
+            Monotheism | Feudalism | Invention | Physics | Magnetism => Era::Middle,
+            Railroad | Refrigeration => Era::Industrial,
+            Radio | Robotics | Miniaturization => Era::Modern,
             Engineering | Astronomy | Chivalry | Theology | Banking | Gunpowder | PrintingPress | Navigation | TheoryOfGravity | Democracy | Medicine
             | Economics => Era::Middle,
             SteamPower | Industrialization | Electricity | Refining | ReplaceableParts | Steel | Electronics | Sanitation | Communism | Fundamentalism
@@ -215,6 +248,7 @@ impl Tech {
         matches!(
             self,
             Tech::HorsebackRiding | Tech::Seafaring | Tech::TheRepublic | Tech::Chivalry | Tech::Democracy | Tech::Navigation | Tech::Communism | Tech::Fundamentalism
+                | Tech::Polytheism | Tech::Monotheism | Tech::Magnetism | Tech::Refrigeration
         )
     }
 
@@ -222,8 +256,8 @@ impl Tech {
         match self {
             Tech::Writing => vec![Tech::Alphabet],
             Tech::CodeOfLaws => vec![Tech::Writing],
-            Tech::Mysticism => vec![Tech::Pottery],
-            Tech::Seafaring => vec![Tech::Pottery],
+            Tech::Mysticism => vec![Tech::Pottery, Tech::CeremonialBurial],
+            Tech::Seafaring => vec![Tech::Pottery, Tech::MapMaking],
             Tech::IronWorking => vec![Tech::BronzeWorking],
             Tech::Mathematics => vec![Tech::Writing, Tech::Masonry],
             Tech::HorsebackRiding => vec![Tech::AnimalHusbandry],
@@ -232,11 +266,11 @@ impl Tech {
             Tech::Monarchy => vec![Tech::CodeOfLaws],
             Tech::Currency => vec![Tech::CodeOfLaws],
             Tech::Engineering => vec![Tech::Mathematics, Tech::Construction],
-            Tech::Gunpowder => vec![Tech::IronWorking, Tech::Engineering],
+            Tech::Gunpowder => vec![Tech::IronWorking, Tech::Invention],
             Tech::PrintingPress => vec![Tech::Writing],
             Tech::Democracy => vec![Tech::Philosophy, Tech::PrintingPress],
-            Tech::SteamPower => vec![Tech::Gunpowder],
-            Tech::Industrialization => vec![Tech::SteamPower, Tech::Currency],
+            Tech::SteamPower => vec![Tech::Gunpowder, Tech::Physics],
+            Tech::Industrialization => vec![Tech::Railroad, Tech::Currency],
             Tech::Refining => vec![Tech::Industrialization],
             Tech::ReplaceableParts => vec![Tech::Industrialization],
             Tech::MotorizedTransport => vec![Tech::Refining, Tech::ReplaceableParts],
@@ -254,7 +288,7 @@ impl Tech {
             Tech::Banking => vec![Tech::Currency, Tech::TheRepublic],
             Tech::Economics => vec![Tech::Banking, Tech::PrintingPress],
             Tech::Astronomy => vec![Tech::Mysticism, Tech::Mathematics],
-            Tech::Chivalry => vec![Tech::Monarchy, Tech::HorsebackRiding],
+            Tech::Chivalry => vec![Tech::Feudalism, Tech::HorsebackRiding],
             Tech::Navigation => vec![Tech::Seafaring, Tech::Astronomy],
             Tech::TheoryOfGravity => vec![Tech::Astronomy, Tech::PrintingPress],
             Tech::Medicine => vec![Tech::Philosophy, Tech::Currency],
@@ -266,6 +300,19 @@ impl Tech {
             Tech::Ecology => vec![Tech::Computers, Tech::Sanitation],
             Tech::NuclearFission => vec![Tech::Electronics, Tech::MassProduction],
             Tech::GeneticEngineering => vec![Tech::Medicine, Tech::Computers],
+            Tech::MapMaking => vec![Tech::Alphabet],
+            Tech::Literature => vec![Tech::Writing, Tech::CodeOfLaws],
+            Tech::Polytheism => vec![Tech::HorsebackRiding, Tech::CeremonialBurial],
+            Tech::Monotheism => vec![Tech::Philosophy, Tech::Polytheism],
+            Tech::Feudalism => vec![Tech::Monarchy, Tech::WarriorCode],
+            Tech::Invention => vec![Tech::Engineering, Tech::Literature],
+            Tech::Physics => vec![Tech::Astronomy, Tech::Literature],
+            Tech::Magnetism => vec![Tech::Physics, Tech::MapMaking],
+            Tech::Railroad => vec![Tech::SteamPower, Tech::Construction],
+            Tech::Refrigeration => vec![Tech::Electricity, Tech::Sanitation],
+            Tech::Radio => vec![Tech::Flight, Tech::Electronics],
+            Tech::Robotics => vec![Tech::Computers, Tech::MassProduction],
+            Tech::Miniaturization => vec![Tech::Computers, Tech::ReplaceableParts],
             _ => vec![],
         }
     }
@@ -330,6 +377,21 @@ impl Tech {
             Tech::Ecology => "Ecology",
             Tech::NuclearFission => "Nuclear Fission",
             Tech::GeneticEngineering => "Genetic Engineering",
+            Tech::WarriorCode => "Warrior Code",
+            Tech::CeremonialBurial => "Ceremonial Burial",
+            Tech::MapMaking => "Map Making",
+            Tech::Literature => "Literature",
+            Tech::Polytheism => "Polytheism",
+            Tech::Monotheism => "Monotheism",
+            Tech::Feudalism => "Feudalism",
+            Tech::Invention => "Invention",
+            Tech::Physics => "Physics",
+            Tech::Magnetism => "Magnetism",
+            Tech::Railroad => "Railroad",
+            Tech::Refrigeration => "Refrigeration",
+            Tech::Radio => "Radio",
+            Tech::Robotics => "Robotics",
+            Tech::Miniaturization => "Miniaturization",
         }
     }
 }
@@ -399,7 +461,9 @@ impl TechState {
             0..=45 => 1,
             _ => 2,
         };
-        let full = tech.cost() * era * (2 + self.researched.len() as u32) / 2 * (100 + self.extra_cost) / 100;
+        // Each discovery makes the next dearer; the step is scaled so that Civilization III's longer
+        // tree (68 technologies, where there were 53) costs about as much in all.
+        let full = tech.cost() * era * (2 + self.researched.len() as u32 * 5 / 8) / 2 * (100 + self.extra_cost) / 100;
         full * (100 - self.discount.get(&tech).copied().unwrap_or(0).min(MAX_DIFFUSION)) / 100
     }
 
@@ -610,14 +674,14 @@ mod tree_tests {
     #[test]
     fn an_age_opens_once_the_required_techs_of_the_ages_before_are_known() {
         let mut state = TechState::knowing(&[]);
-        // Gunpowder's prerequisites alone are not enough: the Ancient age must be finished.
-        state.researched.extend([Tech::BronzeWorking, Tech::IronWorking, Tech::Masonry, Tech::Construction, Tech::Alphabet, Tech::Writing, Tech::Mathematics, Tech::Engineering]);
-        assert!(!state.can_research(Tech::Gunpowder));
+        // Invention's prerequisites alone are not enough: the Ancient age must be finished.
+        state.researched.extend([Tech::BronzeWorking, Tech::IronWorking, Tech::Masonry, Tech::Construction, Tech::Alphabet, Tech::Writing, Tech::Mathematics, Tech::Engineering, Tech::CodeOfLaws, Tech::Literature]);
+        assert!(!state.can_research(Tech::Invention));
         assert!(state.missing_for_next_era().contains(&Tech::Pottery));
         for t in Tech::ALL.into_iter().filter(|t| t.era() == Era::Ancient && !t.optional()) {
             state.researched.insert(t);
         }
-        assert!(state.can_research(Tech::Gunpowder), "optional ancient techs are not needed");
+        assert!(state.can_research(Tech::Invention), "optional ancient techs are not needed");
         assert!(!state.can_research(Tech::SteamPower) && state.missing_for_next_era().is_empty() == false);
         // Every step of a path is open by the time it is reached, the gates included.
         let fresh = TechState::knowing(&[]);
