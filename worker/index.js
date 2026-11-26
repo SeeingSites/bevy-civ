@@ -6,6 +6,12 @@
 //   POST /api/stats      {player, events: [{kind, scenario, turn, detail}]}   (opted-in players only)
 //   POST /api/forget     {player}                                  -> deletes that player's data
 //
+// Online games (see migrations/0002_online_games.sql). A save travels as base64 of its gzipped JSON.
+//   POST /api/game/create {seats: [ids], next_seat, turn, title, save} -> {game, tokens: {seat: token}}
+//   POST /api/game/state  {game, token}  -> {turn, next_seat, seat, title, updated, your_move}
+//   POST /api/game/fetch  {game, token}  -> {turn, next_seat, seat, save}
+//   POST /api/game/turn   {game, token, turn, next_seat, save}  (only by the seat whose move it is)
+//
 // Nothing here identifies a player except an email they chose to give. The player id is a random
 // UUID kept in their browser.
 
@@ -13,6 +19,10 @@ const UTM = ["utm_source", "utm_medium", "utm_campaign", "utm_content", "utm_ter
 const INTERESTS = new Set(["strategy", "history", "sci-fi", "fantasy", "mobile", "multiplayer"]);
 const EVENT_KINDS = new Set(["game_start", "turn", "game_over", "victory"]);
 const MAX_BODY = 8 * 1024;
+// A gzipped save of a large late game is a few MB; D1 rows stay well under their 2 MB limit.
+const MAX_SAVE_BODY = 24 * 1024 * 1024;
+const CHUNK = 1024 * 1024;
+const MAX_SEATS = 8;
 
 const json = (body, status = 200) =>
   new Response(JSON.stringify(body), {
@@ -37,9 +47,9 @@ const validEmail = (value) => {
   return t && /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(t) ? t.toLowerCase() : null;
 };
 
-async function readBody(request) {
+async function readBody(request, max = MAX_BODY) {
   const raw = await request.text();
-  if (raw.length > MAX_BODY) throw new Error("too large");
+  if (raw.length > max) throw new Error("too large");
   return JSON.parse(raw || "{}");
 }
 
@@ -111,6 +121,95 @@ async function forget(env, body) {
   return json({ ok: true });
 }
 
+const seatId = (v) => (Number.isInteger(v) && v >= 0 && v < 1000 ? v : null);
+const secret = () => crypto.randomUUID().replaceAll("-", "");
+const fromBase64 = (b64) => Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+const toBase64 = (bytes) => {
+  let s = "";
+  for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return btoa(s);
+};
+
+// The save's statements: replace every chunk of a game's save.
+function storeSave(env, game, b64) {
+  let bytes;
+  try {
+    bytes = fromBase64(b64);
+  } catch {
+    return null;
+  }
+  // gzip magic: refuse anything that is not a compressed save.
+  if (bytes.length < 18 || bytes[0] !== 0x1f || bytes[1] !== 0x8b) return null;
+  const parts = [env.DB.prepare("DELETE FROM game_saves WHERE game = ?").bind(game)];
+  let idx = 0;
+  for (let i = 0; i < bytes.length; i += CHUNK, idx++)
+    parts.push(env.DB.prepare("INSERT INTO game_saves (game, idx, data) VALUES (?, ?, ?)").bind(game, idx, bytes.subarray(i, i + CHUNK)));
+  return { parts, chunks: idx };
+}
+
+async function seatOf(env, body) {
+  const game = text(body.game, 40);
+  const token = text(body.token, 64);
+  if (!game || !token) return null;
+  return env.DB.prepare(
+    "SELECT g.game, g.turn, g.next_seat, g.title, g.updated, s.seat FROM games g JOIN game_seats s ON s.game = g.game WHERE g.game = ? AND s.token = ?",
+  ).bind(game, token).first();
+}
+
+async function createGame(env, body) {
+  const seats = Array.isArray(body.seats) ? [...new Set(body.seats.map(seatId))] : [];
+  const next = seatId(body.next_seat);
+  if (seats.length < 2 || seats.length > MAX_SEATS || seats.includes(null) || !seats.includes(next) || !Number.isInteger(body.turn))
+    return json({ error: "Choose two to eight human seats." }, 400);
+  const game = secret().slice(0, 12);
+  const save = storeSave(env, game, body.save);
+  if (!save) return json({ error: "bad save" }, 400);
+  const tokens = Object.fromEntries(seats.map((s) => [s, secret()]));
+  const t = now();
+  await env.DB.batch([
+    env.DB.prepare("INSERT INTO games (game, created, updated, turn, next_seat, title, chunks) VALUES (?, ?, ?, ?, ?, ?, ?)")
+      .bind(game, t, t, body.turn, next, text(body.title, 80), save.chunks),
+    ...seats.map((s) => env.DB.prepare("INSERT INTO game_seats (game, seat, token) VALUES (?, ?, ?)").bind(game, s, tokens[s])),
+    ...save.parts,
+  ]);
+  return json({ game, tokens });
+}
+
+async function gameState(env, body) {
+  const row = await seatOf(env, body);
+  if (!row) return json({ error: "No such game, or not your invitation." }, 404);
+  return json({ turn: row.turn, next_seat: row.next_seat, seat: row.seat, title: row.title, updated: row.updated, your_move: row.next_seat === row.seat });
+}
+
+async function fetchGame(env, body) {
+  const row = await seatOf(env, body);
+  if (!row) return json({ error: "No such game, or not your invitation." }, 404);
+  const { results } = await env.DB.prepare("SELECT data FROM game_saves WHERE game = ? ORDER BY idx").bind(row.game).all();
+  const parts = results.map((r) => new Uint8Array(r.data));
+  const all = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
+  let at = 0;
+  for (const p of parts) all.set(p, (at += p.length) - p.length);
+  return json({ turn: row.turn, next_seat: row.next_seat, seat: row.seat, title: row.title, save: toBase64(all) });
+}
+
+async function uploadTurn(env, body) {
+  const row = await seatOf(env, body);
+  if (!row) return json({ error: "No such game, or not your invitation." }, 404);
+  if (row.next_seat !== row.seat) return json({ error: "It is not your move." }, 409);
+  const next = seatId(body.next_seat);
+  const seat = next === null ? null : await env.DB.prepare("SELECT seat FROM game_seats WHERE game = ? AND seat = ?").bind(row.game, next).first();
+  if (!seat || !Number.isInteger(body.turn) || body.turn < row.turn) return json({ error: "bad turn" }, 400);
+  const save = storeSave(env, row.game, body.save);
+  if (!save) return json({ error: "bad save" }, 400);
+  // The guard on next_seat keeps two uploads of the same move from both landing.
+  const [moved] = await env.DB.batch([
+    env.DB.prepare("UPDATE games SET turn = ?, next_seat = ?, updated = ?, chunks = ? WHERE game = ? AND next_seat = ?")
+      .bind(body.turn, next, now(), save.chunks, row.game, row.seat),
+    ...save.parts.map((p) => p),
+  ]);
+  return json({ ok: moved.meta.changes === 1 });
+}
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
@@ -121,7 +220,7 @@ export default {
     if (origin && new URL(origin).host !== url.host) return json({ error: "origin" }, 403);
     let body;
     try {
-      body = await readBody(request);
+      body = await readBody(request, url.pathname.startsWith("/api/game/") ? MAX_SAVE_BODY : MAX_BODY);
     } catch {
       return json({ error: "bad request" }, 400);
     }
@@ -136,6 +235,14 @@ export default {
           return await stats(env, body);
         case "/api/forget":
           return await forget(env, body);
+        case "/api/game/create":
+          return await createGame(env, body);
+        case "/api/game/state":
+          return await gameState(env, body);
+        case "/api/game/fetch":
+          return await fetchGame(env, body);
+        case "/api/game/turn":
+          return await uploadTurn(env, body);
         default:
           return json({ error: "not found" }, 404);
       }
