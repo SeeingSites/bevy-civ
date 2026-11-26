@@ -72,7 +72,13 @@ pub enum DiploAct {
     Withdraw,
     /// Demand that they stop the drug smugglers crossing into our cities.
     Crackdown,
+    /// Civilization III's ceasefire: the fighting stops for a while; peace must follow, or the war
+    /// resumes.
+    Ceasefire,
 }
+
+/// Turns a ceasefire holds before the war resumes (unless peace is signed).
+pub const CEASEFIRE_TURNS: u32 = 16;
 
 #[derive(Clone, PartialEq, Debug, serde::Serialize, serde::Deserialize)]
 pub enum OfferKind {
@@ -210,6 +216,9 @@ pub struct Foreign {
     /// Peoples we promised to stop our smugglers reaching, and until which turn.
     #[serde(default, with = "bevy_civ::save::pairs")]
     pub our_crackdown: HashMap<u32, u32>,
+    /// Ceasefires with us: the people, and the turn the war resumes unless peace is signed.
+    #[serde(default, with = "bevy_civ::save::pairs")]
+    pub ceasefires: HashMap<u32, u32>,
     /// Withdrawals agreed but not yet carried out: (whose troops, out of whose lands).
     #[serde(skip)]
     pub withdrawals: Vec<(u32, u32)>,
@@ -392,6 +401,30 @@ pub fn player_act(ctx: &mut Ctx, civ: u32, act: DiploAct) {
             } else {
                 declare_war(ctx, civ, &name);
                 if aggression > 0.6 { "You will regret this." } else { "So be it. We will defend what is ours." }.into()
+            }
+        }
+        DiploAct::Ceasefire => {
+            if !at_war {
+                "We are not at war.".into()
+            } else if age < 3 {
+                "The fighting has only begun. Ask again later.".into()
+            } else if theirs > ours * 2.0 && attitude < -30 {
+                "We will not stop while victory is so near.".into()
+            } else {
+                set_treaty(ctx, PLAYER, civ, Treaty::Peace);
+                ctx.foreign.ceasefires.insert(civ, ctx.state.turn + CEASEFIRE_TURNS);
+                ctx.log.push(format!("A ceasefire with {name}: {CEASEFIRE_TURNS} turns to make peace, or the war resumes."));
+                "Very well: the guns fall silent - for now.".into()
+            }
+        }
+        DiploAct::Peace if ctx.foreign.ceasefires.contains_key(&civ) => {
+            if attitude >= -20 {
+                ctx.foreign.ceasefires.remove(&civ);
+                ctx.foreign.since.insert(pair(PLAYER, civ), ctx.state.turn);
+                ctx.log.push(format!("The ceasefire with {name} becomes a lasting peace."));
+                "Let the ceasefire become a lasting peace.".into()
+            } else {
+                "We are not ready to bind ourselves to peace. Improve relations first.".into()
             }
         }
         DiploAct::Peace => {
@@ -789,10 +822,25 @@ fn best_lesson(from: &TechState, to: &TechState) -> Option<Tech> {
     Tech::ALL.into_iter().filter(|t| from.researched.contains(t) && to.can_research(*t)).max_by_key(|t| t.cost())
 }
 
+/// A ceasefire that has run its course without a peace: the war resumes.
+pub fn lapse_ceasefires(ctx: &mut Ctx) {
+    let turn = ctx.state.turn;
+    let lapsed: Vec<u32> = ctx.foreign.ceasefires.iter().filter(|(_, until)| **until <= turn).map(|(civ, _)| *civ).collect();
+    for civ in lapsed {
+        ctx.foreign.ceasefires.remove(&civ);
+        if ctx.diplomacy.get_treaty(PLAYER, civ) == Treaty::Peace {
+            set_treaty(ctx, PLAYER, civ, Treaty::War);
+            let name = ctx.civs.players.iter().find(|c| c.id == civ).map(|c| c.name.clone()).unwrap_or_default();
+            ctx.log.push(format!("The ceasefire with {name} has run out without a peace: the war resumes."));
+        }
+    }
+}
+
 pub fn turn(ctx: &mut Ctx, fog: &FogOfWar, supplies: &Supplies, units: &[(Hex, u32)], cities: &[(Hex, u32)]) {
     let mut rng = rand::thread_rng();
     let turn = ctx.state.turn;
     ctx.foreign.forget_old_grievances(turn);
+    lapse_ceasefires(ctx);
     let roster: Vec<(u32, String, String, f32)> =
         ctx.civs.players.iter().filter(|c| !c.is_human && !c.eliminated).map(|c| (c.id, c.name.clone(), c.leader.clone(), c.aggression)).collect();
     let city_count = |owner: u32| cities.iter().filter(|(_, o)| *o == owner).count();
@@ -1365,6 +1413,30 @@ mod tests {
         table.foreign.smugglers.insert(1);
         player_act(&mut table.ctx(), 1, DiploAct::Crackdown);
         assert!(table.foreign.crackdown.get(&1).is_some_and(|until| *until > table.state.turn));
+    }
+
+    #[test]
+    fn a_ceasefire_becomes_peace_or_the_war_resumes() {
+        let start = |table: &mut Table| {
+            table.diplomacy.set_treaty(PLAYER, 1, Treaty::War);
+            table.state.turn = 10;
+            table.foreign.since.insert(pair(PLAYER, 1), 1);
+            player_act(&mut table.ctx(), 1, DiploAct::Ceasefire);
+        };
+        // Left alone, the ceasefire lapses back into war.
+        let mut table = Table::new(1);
+        start(&mut table);
+        assert_eq!(table.diplomacy.get_treaty(PLAYER, 1), Treaty::Peace);
+        table.state.turn = 10 + CEASEFIRE_TURNS;
+        lapse_ceasefires(&mut table.ctx());
+        assert_eq!(table.diplomacy.get_treaty(PLAYER, 1), Treaty::War);
+        // Signed in time, it becomes a lasting peace.
+        let mut table = Table::new(1);
+        start(&mut table);
+        player_act(&mut table.ctx(), 1, DiploAct::Peace);
+        table.state.turn = 10 + CEASEFIRE_TURNS;
+        lapse_ceasefires(&mut table.ctx());
+        assert_eq!(table.diplomacy.get_treaty(PLAYER, 1), Treaty::Peace);
     }
 
     #[test]
