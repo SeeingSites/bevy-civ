@@ -1589,7 +1589,11 @@ fn handle_map_click(
     (mut sounds, mut battles, mut strikes, mut aim, mut last_move): (EventWriter<Sfx>, EventWriter<BattleShown>, EventWriter<Detonation>, ResMut<NukeAim>, ResMut<LastMove>),
     mut orders: EventWriter<Action>,
     mut commands: Commands,
+    mut airlifts: Local<(u32, HashSet<Hex>)>,
 ) {
+    if airlifts.0 != state.turn {
+        *airlifts = (state.turn, HashSet::new());
+    }
     for click in clicks.read() {
         if state.victory.is_some() {
             continue;
@@ -1622,6 +1626,35 @@ fn handle_map_click(
             continue;
         }
         aim.0 = None;
+        // Civilization III's air missions. A land unit in a city of ours with an Airport is airlifted to
+        // another such city (one airlift from each Airport a turn); a fighter flies reconnaissance
+        // over land we cannot see, within its range.
+        if let Some(selected) = selection.unit.filter(|_| !click.secondary) {
+            let airport_at = |at: Hex| cities.iter().find(|(_, c)| c.position == at && c.owner == PLAYER).is_some_and(|(e, _)| walls_of.get(e).is_ok_and(|b| b.has(Building::Airport)));
+            if let Ok((_, mut unit)) = units.get_mut(selected) {
+                let from = unit.position;
+                if unit.owner == PLAYER && unit.unit_type.domain() == Domain::Land && unit.can_move() && from.distance_to(hex) > 1 && airport_at(from) && airport_at(hex) {
+                    if airlifts.1.contains(&from) {
+                        log.push("This Airport has already flown one airlift this turn.");
+                        continue;
+                    }
+                    airlifts.1.insert(from);
+                    unit.position = hex;
+                    unit.end_move();
+                    fog.reveal(hex, 2);
+                    dirty.map = true;
+                    log.push(format!("{} is airlifted to a city with an Airport.", unit.unit_type.name()));
+                    continue;
+                }
+                if unit.owner == PLAYER && unit.unit_type.is_interceptor() && unit.can_move() && !fog.visible.contains(&hex) && from.distance_to(hex) <= bevy_civ::unit::AIR_RANGE {
+                    unit.end_move();
+                    fog.reveal(hex, 2);
+                    dirty.map = true;
+                    log.push(format!("Our {} flies reconnaissance: the land around is revealed.", unit.unit_type.name()));
+                    continue;
+                }
+            }
+        }
         // With one of our cities open, a click on a tile of its area moves a citizen there (or off it).
         if let Some(city_entity) = selection.city.filter(|_| selection.unit.is_none() && !click.secondary) {
             let own_units_here = units.iter().any(|(_, u)| u.position == hex && u.owner == PLAYER);

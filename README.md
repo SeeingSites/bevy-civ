@@ -611,6 +611,10 @@ working directory.
 - **Pillage and fortresses**: troops on improved enemy land (at war) press P to wreck the railroad,
   fortress, mine, farm or road there, for 5 gold; computer troops raid your land too. Workers build
   a Fortress (O, needs Construction) in the field: troops in it defend 50% harder.
+- **Air missions** (as in Civilization III): select a land unit in one of your cities with an
+  Airport and click another of your Airport cities to **airlift** it there (one airlift from each
+  Airport a turn; it ends the unit's move); select a fighter and click land you cannot see within
+  its range (8 tiles) to fly **reconnaissance**, revealing the land around it.
 - **Mutual protection**: as under Civilization III's pacts, when a computer player attacks another
   without a just cause, the victim's other allies (unless also allied to the attacker) stand by it and
   declare war three times in four; your allies answer for you as before.
