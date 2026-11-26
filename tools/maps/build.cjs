@@ -292,9 +292,21 @@ const outDir = path.join(__dirname, '..', '..', 'assets', 'scenarios');
 fs.mkdirSync(outDir, { recursive: true });
 // ONLY=a,b builds just those scenarios (and the expansion packs); hand-tuned files stay as they are.
 const only = process.env.ONLY ? process.env.ONLY.split(',') : null;
+// Rome and Discovery have been tuned by hand since their definitions here were written (their peoples,
+// units and tech lists differ): rebuilding them would undo that, so only their map rows are refreshed
+// unless FORCE=1.
+const HAND_TUNED = new Set(['rome', 'discovery']);
 for (const def of scenarios) {
   if (only && !only.includes(def.id)) continue;
   const scenario = assemble(def, polygons);
+  const file = path.join(outDir, `${def.id}.json`);
+  if (HAND_TUNED.has(def.id) && !process.env.FORCE && fs.existsSync(file)) {
+    const kept = JSON.parse(fs.readFileSync(file, 'utf8'));
+    kept.rows = scenario.rows;
+    fs.writeFileSync(file, JSON.stringify(kept));
+    console.log(`${def.id}: map rows refreshed (hand-tuned; FORCE=1 rebuilds it all)`);
+    continue;
+  }
   fs.writeFileSync(path.join(outDir, `${def.id}.json`), JSON.stringify(scenario));
   console.log(`${def.id}: ${scenario.width}x${scenario.height}, ${scenario.civs.length} civilizations`);
   if (process.env.SHOW) console.log(scenario.rows.join('\n'));
