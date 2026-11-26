@@ -389,6 +389,8 @@ pub struct MenuState {
     pub peoples: Option<usize>,
     /// Barbarian level (None until chosen: Restless).
     pub barbarians: Option<u8>,
+    /// Humans in an online game (0: playing alone).
+    pub online: usize,
 }
 
 #[derive(Clone)]
@@ -441,6 +443,7 @@ pub enum Command {
     PickMapSize(usize),
     PickPeoples(usize),
     PickBarbarians(u8),
+    PickOnline(usize),
     StartGame,
     BackToPeoples,
 }
@@ -3300,6 +3303,7 @@ pub fn button_actions(
             Command::PickMapSize(size) => menu.map_size = Some(*size),
             Command::PickPeoples(n) => menu.peoples = Some(*n),
             Command::PickBarbarians(level) => menu.barbarians = Some(*level),
+            Command::PickOnline(n) => menu.online = *n,
             Command::StartGame => {
                 if let (Some(scenario), Some(civ)) = (menu.scenario.and_then(|i| menu.catalog.get(i)), menu.civ) {
                     let last_turn = if menu.last_turn == 0 { crate::LAST_TURN } else { menu.last_turn };
@@ -3313,6 +3317,7 @@ pub fn button_actions(
                         map_size: menu.map_size.unwrap_or(1),
                         peoples: menu.peoples.unwrap_or(default_peoples()),
                         barbarians: menu.barbarians.unwrap_or(bevy_civ::barbarians::DEFAULT_LEVEL),
+                        online: menu.online,
                     });
                     menu.civ = None;
                     next.set(AppState::Playing);
@@ -3509,6 +3514,17 @@ pub fn rebuild_menu(
                             button(r, art, *name, Command::PickBarbarians(level as u8), tint, 14.0);
                         }
                     });
+                    // Online play, as correspondence chess: the first peoples are humans, invited by link.
+                    w.spawn(label(&art.font_title, "Online players", 17.0, INK_SOFT));
+                    w.spawn(row(6.0)).with_children(|r| {
+                        for n in [0, 2, 3, 4] {
+                            let tint = if menu.online == n { GREEN } else { BRONZE };
+                            button(r, art, if n == 0 { "Just me".to_string() } else { format!("{n} humans") }, Command::PickOnline(n), tint, 14.0);
+                        }
+                    });
+                    if menu.online > 0 {
+                        w.spawn(label(&art.font_body, "You lead the people chosen; the next peoples in the list go to the friends you invite. After your first turn you get a link for each.", 14.0, INK_SOFT));
+                    }
                     // A New World can be made smaller or larger, with fewer or more peoples.
                     if scenario.rows.is_empty() {
                         let size = menu.map_size.unwrap_or(1);

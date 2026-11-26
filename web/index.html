@@ -46,6 +46,17 @@
     #splash a { color: #f2d58a; }
     #splash .links { margin-top: 12px; display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; }
     #splash button.link { background: none; border: none; color: #f2d58a; font: inherit; font-size: 15px; cursor: pointer; text-decoration: underline; padding: 4px; }
+    #online { margin-top: 12px; text-align: left; display: none; }
+    #online.some { display: block; }
+    #online h2 { font: 400 18px Cinzel, serif; color: #f2d58a; margin: 0 0 6px; }
+    #online .game { display: flex; gap: 8px; align-items: center; justify-content: space-between; padding: 6px 0; border-top: 1px solid rgba(227, 179, 65, 0.25); color: #e8dcc0; font-size: 15px; }
+    #online .game button, #sent button { font: 700 14px Alegreya, sans-serif; background: #4f8a3a; color: #fff; border: 1px solid #1d1611; border-radius: 8px; padding: 6px 12px; cursor: pointer; }
+    #online .game button.quiet { background: none; color: #cdbf9f; border-color: rgba(227, 179, 65, 0.4); }
+    #sent { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; background: rgba(0, 0, 0, 0.7); z-index: 20; font-family: Alegreya, serif; }
+    #sent.open { display: flex; }
+    #sent .card { background: #1d1611; border: 1px solid #e3b341; border-radius: 12px; padding: 20px; max-width: min(520px, calc(100vw - 32px)); color: #e8dcc0; }
+    #sent h2 { font: 400 22px Cinzel, serif; color: #f2d58a; margin: 0 0 8px; }
+    #sent input { width: 100%; box-sizing: border-box; margin: 4px 0 10px; padding: 6px; font: 13px monospace; }
     #news { display: none; margin-top: 12px; text-align: left; }
     #news.open { display: block; }
     #news input[type=email] {
@@ -74,6 +85,7 @@
       <div class="links">
         <button class="link" id="newslink" type="button">✉ Get news of our next games</button>
       </div>
+      <div id="online" aria-live="polite"><h2>Online games</h2><div id="games"></div></div>
       <form id="news" novalidate>
         <input id="email" type="email" autocomplete="email" placeholder="you@example.com" aria-label="Email address">
         <div class="chips" aria-label="What do you enjoy?">
@@ -91,6 +103,7 @@
       <div class="small" style="margin-top:8px"><a href="privacy.html" target="_blank">Privacy</a> · Play is free, no account needed.</div>
     </div>
   </div>
+  <div id="sent" role="dialog" aria-modal="true"><div class="card"><h2 id="senttitle">Turn sent</h2><div id="sentbody"></div><button id="sentback" type="button">Back to my games</button></div></div>
   <script>
     // Browsers start Web Audio suspended until the player interacts with the page, and the game
     // creates its audio context at launch. Keep track of every context and resume it on the first
@@ -140,6 +153,122 @@
       imported = null;
       return text;
     };
+
+    // Online games, played as correspondence chess: the server keeps each game's latest save, and
+    // the browser remembers the games this player sits at (game id, seat and its secret token).
+    (() => {
+      const KEY = "bevyCiv.games";
+      const mine = () => { try { return JSON.parse(localStorage.getItem(KEY) || "[]"); } catch { return []; } };
+      const keep = (games) => { try { localStorage.setItem(KEY, JSON.stringify(games)); } catch {} };
+      const api = async (path, body) => {
+        const response = await fetch("/api/game/" + path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data.error || "The server could not be reached.");
+        return data;
+      };
+      const pipe = async (bytes, stream) => new Uint8Array(await new Response(new Blob([bytes]).stream().pipeThrough(stream)).arrayBuffer());
+      const toB64 = (bytes) => { let s = ""; for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode(...bytes.subarray(i, i + 0x8000)); return btoa(s); };
+      const fromB64 = (b64) => Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+      const gzip = (text) => pipe(new TextEncoder().encode(text), new CompressionStream("gzip")).then(toB64);
+      const gunzip = async (b64) => new TextDecoder().decode(await pipe(fromB64(b64), new DecompressionStream("gzip")));
+      const remember = (entry) => keep([entry, ...mine().filter((g) => !(g.game === entry.game && g.seat === entry.seat))]);
+      const inviteLink = (game, seat, token) => `${location.origin}${location.pathname}?join=${game}.${seat}.${token}`;
+
+      // An invitation: ?join=<game>.<seat>.<token>
+      const join = new URLSearchParams(location.search).get("join");
+      if (join && /^[a-f0-9]{6,40}\.\d{1,3}\.[a-f0-9]{16,64}$/.test(join)) {
+        const [game, seat, token] = join.split(".");
+        remember({ game, seat: Number(seat), token, title: "Invitation" });
+        history.replaceState(null, "", location.pathname + location.search.replace(/[?&]join=[^&]*/, "").replace(/^&/, "?"));
+      }
+
+      const sent = document.getElementById("sent");
+      const sentBody = document.getElementById("sentbody");
+      document.getElementById("sentback").onclick = () => location.reload();
+      const showSent = (title, html) => {
+        document.getElementById("senttitle").textContent = title;
+        sentBody.innerHTML = html;
+        sent.classList.add("open");
+      };
+      const esc = (t) => String(t).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+
+      // The game sends a finished turn; the first one of a new game creates it on the server.
+      window.bevyCivUploadTurn = async (game, token, turn, text) => {
+        showSent("Sending your turn…", "");
+        try {
+          const save = JSON.parse(text);
+          const online = save.online;
+          const nextSeat = online.order[online.next];
+          const body = await gzip(text);
+          if (!game) {
+            const made = await api("create", { seats: online.order, next_seat: nextSeat, turn, title: save.state.title, save: body });
+            const names = Object.fromEntries((save.civs?.players || []).map((c) => [c.id, c.name]));
+            remember({ game: made.game, seat: online.seat, token: made.tokens[online.seat], title: save.state.title });
+            const links = online.order.filter((s) => s !== online.seat).map((s) =>
+              `<div>Seat for ${esc(names[s] ?? "seat " + s)}:</div><input readonly value="${esc(inviteLink(made.game, s, made.tokens[s]))}" onclick="this.select()">`).join("");
+            showSent("Game created", `<p>Send each friend their link. Whoever holds a link plays that people, so share it only with them. The game will show you when it is your move again.</p>${links}`);
+          } else {
+            await api("turn", { game, token, turn, next_seat: nextSeat, save: body });
+            showSent("Turn sent", "<p>The next player can move now. Come back to this page to see when it is your move again.</p>");
+          }
+        } catch (error) {
+          showSent("The turn was not sent", `<p>${esc(error.message)}</p><p>Your game is kept in the autosave; reload, Continue and end the turn again to retry.</p>`);
+        }
+      };
+
+      // The list of games on the start screen, with whose move it is.
+      const list = document.getElementById("games");
+      const panel = document.getElementById("online");
+      const render = async () => {
+        const games = mine();
+        panel.classList.toggle("some", games.length > 0);
+        list.innerHTML = "";
+        for (const entry of games) {
+          const row = document.createElement("div");
+          row.className = "game";
+          const name = document.createElement("span");
+          name.textContent = entry.title + " - checking…";
+          row.append(name);
+          list.append(row);
+          api("state", entry).then((state) => {
+            entry.title = state.title || entry.title;
+            keep(mine().map((g) => (g.game === entry.game && g.seat === entry.seat ? { ...g, title: entry.title } : g)));
+            name.textContent = `${entry.title}, turn ${state.turn} - ${state.your_move ? "your move" : "waiting for another player"}`;
+            if (state.your_move) {
+              const go = document.createElement("button");
+              go.textContent = "Play your move";
+              go.onclick = () => playMove(entry, go);
+              row.append(go);
+            }
+          }).catch((error) => {
+            name.textContent = `${entry.title} - ${error.message}`;
+            const drop = document.createElement("button");
+            drop.className = "quiet";
+            drop.textContent = "Forget";
+            drop.onclick = () => { keep(mine().filter((g) => !(g.game === entry.game && g.seat === entry.seat))); render(); };
+            row.append(drop);
+          });
+        }
+      };
+      const playMove = async (entry, button) => {
+        button.disabled = true;
+        button.textContent = "Loading…";
+        try {
+          const got = await api("fetch", entry);
+          const save = JSON.parse(await gunzip(got.save));
+          Object.assign(save.online, { game: entry.game, token: entry.token, seat: entry.seat, active: false });
+          imported = JSON.stringify(save);
+          const play = document.getElementById("play");
+          const start = () => play.click();
+          if (play.disabled) new MutationObserver((_, o) => { if (!play.disabled) { o.disconnect(); start(); } }).observe(play, { attributes: true });
+          else start();
+        } catch (error) {
+          button.textContent = error.message;
+        }
+      };
+      render();
+      setInterval(() => document.getElementById("splash") && render(), 60000);
+    })();
   </script>
   <script>
     // Players, sign-ups and opt-in statistics. Nothing is sent unless the player opts in: either by

@@ -720,6 +720,7 @@ fn play(index: u32, opts: &Options) -> Result<GameResult, String> {
         map_size,
         peoples: seated,
         barbarians: bevy_civ::barbarians::DEFAULT_LEVEL,
+        online: 0,
     });
     if let Err(e) = app.world_mut().run_system_once(crate::setup_world) {
         return Err(format!("The world could not be set up: {e}"));

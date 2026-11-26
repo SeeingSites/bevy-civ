@@ -195,6 +195,8 @@ pub fn write_save(
         if let Some(o) = canonical.online.as_mut() {
             o.next = next;
             o.active = false;
+            // Everyone at the table reads the stored game: it must not carry this player's secret.
+            o.token.clear();
         }
         match serde_json::to_string(&canonical) {
             Ok(json) => {
