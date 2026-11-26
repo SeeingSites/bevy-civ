@@ -75,6 +75,24 @@ pub enum DiploAct {
     /// Civilization III's ceasefire: the fighting stops for a while; peace must follow, or the war
     /// resumes.
     Ceasefire,
+    /// Civilization III's trade table: buy a technology now, paid in gold each turn.
+    BuyTech,
+    /// Sell them one of ours for gold each turn.
+    SellTech,
+    /// Buy their maps: the lands around their cities.
+    BuyMaps,
+    /// Declare (or lift) an embargo: no resource deals with them.
+    Embargo,
+}
+
+/// Turns a technology bought or sold for gold per turn is paid over.
+pub const TECH_PAYMENT_TURNS: u32 = 20;
+/// Gold their maps cost.
+pub const MAP_PRICE: i32 = 40;
+
+/// Gold a turn, over [`TECH_PAYMENT_TURNS`], for a technology of this many beakers.
+pub fn tech_payment(beakers: u32) -> i32 {
+    (beakers as i32 / TECH_PAYMENT_TURNS as i32 / 3).max(2)
 }
 
 /// Turns a ceasefire holds before the war resumes (unless peace is signed).
@@ -216,6 +234,12 @@ pub struct Foreign {
     /// Peoples we promised to stop our smugglers reaching, and until which turn.
     #[serde(default, with = "bevy_civ::save::pairs")]
     pub our_crackdown: HashMap<u32, u32>,
+    /// Peoples we have embargoed: no resource deals with them.
+    #[serde(default)]
+    pub embargoes: HashSet<u32>,
+    /// Peoples whose maps we just bought, for the map to show (handled where the fog is).
+    #[serde(skip)]
+    pub maps_bought: Vec<u32>,
     /// Ceasefires with us: the people, and the turn the war resumes unless peace is signed.
     #[serde(default, with = "bevy_civ::save::pairs")]
     pub ceasefires: HashMap<u32, u32>,
@@ -401,6 +425,68 @@ pub fn player_act(ctx: &mut Ctx, civ: u32, act: DiploAct) {
             } else {
                 declare_war(ctx, civ, &name);
                 if aggression > 0.6 { "You will regret this." } else { "So be it. We will defend what is ours." }.into()
+            }
+        }
+        DiploAct::BuyTech | DiploAct::SellTech | DiploAct::BuyMaps if at_war => "We do not trade with our enemies.".into(),
+        DiploAct::BuyTech => {
+            let Some(other) = ctx.civs.players.iter().find(|c| c.id == civ) else { return };
+            let want = Tech::ALL.into_iter().filter(|t| other.tech.researched.contains(t) && ctx.tech.can_research(*t)).min_by_key(|t| ctx.tech.cost_of(*t));
+            match want {
+                None => "We know nothing you could use.".into(),
+                Some(_) if attitude < -10 => "We will not share our knowledge with you.".into(),
+                Some(t) => {
+                    let gold = tech_payment(ctx.tech.cost_of(t));
+                    ctx.tech.learn(t);
+                    ctx.foreign.deals.push(Deal { civ, export: None, import: None, gold: -gold, ends: ctx.state.turn + TECH_PAYMENT_TURNS });
+                    ctx.log.push(format!("We buy {} from {name} for {gold} gold a turn over {TECH_PAYMENT_TURNS} turns.", t.name()));
+                    format!("{} is yours, for {gold} gold a turn.", t.name())
+                }
+            }
+        }
+        DiploAct::SellTech => {
+            let Some(other) = ctx.civs.players.iter_mut().find(|c| c.id == civ) else { return };
+            let offer = Tech::ALL.into_iter().filter(|t| ctx.tech.researched.contains(t) && other.tech.can_research(*t)).min_by_key(|t| other.tech.cost_of(*t));
+            match offer {
+                None => "You know nothing we lack.".into(),
+                Some(t) => {
+                    let gold = tech_payment(other.tech.cost_of(t));
+                    if other.gold < gold * 4 {
+                        "We cannot afford it.".into()
+                    } else {
+                        other.tech.learn(t);
+                        ctx.foreign.deals.push(Deal { civ, export: None, import: None, gold, ends: ctx.state.turn + TECH_PAYMENT_TURNS });
+                        ctx.log.push(format!("We sell {} to {name} for {gold} gold a turn over {TECH_PAYMENT_TURNS} turns.", t.name()));
+                        format!("We will pay {gold} gold a turn for {}.", t.name())
+                    }
+                }
+            }
+        }
+        DiploAct::BuyMaps => {
+            if ctx.state.gold < MAP_PRICE {
+                format!("Our maps cost {MAP_PRICE} gold.")
+            } else if attitude < -20 {
+                "We will not show you our lands.".into()
+            } else {
+                ctx.state.gold -= MAP_PRICE;
+                if let Some(other) = ctx.civs.players.iter_mut().find(|c| c.id == civ) {
+                    other.gold += MAP_PRICE;
+                }
+                ctx.foreign.maps_bought.push(civ);
+                ctx.log.push(format!("We buy {name}'s maps for {MAP_PRICE} gold."));
+                "Here are our maps.".into()
+            }
+        }
+        DiploAct::Embargo => {
+            if ctx.foreign.embargoes.remove(&civ) {
+                ctx.log.push(format!("We lift our embargo on {name}."));
+                "Trade may resume.".into()
+            } else {
+                ctx.foreign.embargoes.insert(civ);
+                let before = ctx.foreign.deals.len();
+                ctx.foreign.deals.retain(|d| d.civ != civ || (d.export.is_none() && d.import.is_none()));
+                ctx.diplomacy.change_attitude(PLAYER, civ, -10);
+                ctx.log.push(format!("We place an embargo on {name}{}.", if ctx.foreign.deals.len() < before { ", ending our resource deals" } else { "" }));
+                "You will regret this.".into()
             }
         }
         DiploAct::Ceasefire => {
@@ -610,6 +696,10 @@ pub fn player_trade(ctx: &mut Ctx, supplies: &Supplies, civ: u32, ask: TradeAsk)
     let at_war = ctx.diplomacy.get_treaty(PLAYER, civ) == Treaty::War;
     let (ours, theirs) = (supplies.civ(PLAYER), supplies.civ(civ));
     let ends = ctx.state.turn + DEAL_TURNS;
+    if ctx.foreign.embargoes.contains(&civ) && !matches!(ask, TradeAsk::Cancel(_)) {
+        ctx.foreign.reply.insert(civ, "You have placed an embargo on us. Lift it first.".into());
+        return;
+    }
 
     let reply: String = match ask {
         TradeAsk::Cancel(index) => {
@@ -1413,6 +1503,31 @@ mod tests {
         table.foreign.smugglers.insert(1);
         player_act(&mut table.ctx(), 1, DiploAct::Crackdown);
         assert!(table.foreign.crackdown.get(&1).is_some_and(|until| *until > table.state.turn));
+    }
+
+    #[test]
+    fn technology_trades_for_gold_a_turn_and_embargoes_end_resource_deals() {
+        // Buying: we learn their technology now and owe gold each turn.
+        let mut table = Table::new(1);
+        table.diplomacy.change_attitude(PLAYER, 1, 10);
+        table.civs.players[1].tech.learn(Tech::Pottery);
+        player_act(&mut table.ctx(), 1, DiploAct::BuyTech);
+        assert!(table.tech.researched.contains(&Tech::Pottery));
+        let deal = table.foreign.deals.last().expect("a payment").clone();
+        assert!(deal.gold < 0 && deal.ends == table.state.turn + TECH_PAYMENT_TURNS);
+        // An embargo ends resource deals (not payments) and refuses new ones.
+        table.foreign.deals.push(Deal { civ: 1, export: None, import: Some(Good::Wine), gold: -2, ends: 99 });
+        player_act(&mut table.ctx(), 1, DiploAct::Embargo);
+        assert!(table.foreign.embargoes.contains(&1));
+        assert!(table.foreign.deals.iter().all(|d| d.import.is_none()));
+        player_act(&mut table.ctx(), 1, DiploAct::Embargo);
+        assert!(!table.foreign.embargoes.contains(&1), "lifted");
+        // Nothing is traded with an enemy.
+        let mut table = Table::new(1);
+        table.diplomacy.set_treaty(PLAYER, 1, Treaty::War);
+        table.civs.players[1].tech.learn(Tech::Pottery);
+        player_act(&mut table.ctx(), 1, DiploAct::BuyTech);
+        assert!(!table.tech.researched.contains(&Tech::Pottery));
     }
 
     #[test]

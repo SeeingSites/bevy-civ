@@ -2794,6 +2794,10 @@ pub fn rebuild_panels(
                                     if !foreign.pacts.contains(&civ.id) {
                                         button(r, art, "Trade agreement", ask(DiploAct::TradePact), BRONZE, 14.0);
                                     }
+                                    button(r, art, "Buy a technology (gold a turn)", ask(DiploAct::BuyTech), BRONZE, 14.0);
+                                    button(r, art, "Sell a technology (gold a turn)", ask(DiploAct::SellTech), BRONZE, 14.0);
+                                    button(r, art, format!("Buy their maps ({} gold)", crate::foreign::MAP_PRICE), ask(DiploAct::BuyMaps), BRONZE, 14.0);
+                                    button(r, art, if foreign.embargoes.contains(&civ.id) { "Lift embargo" } else { "Embargo" }, ask(DiploAct::Embargo), BRONZE, 14.0);
                                     button(r, art, "Exchange technology", ask(DiploAct::TechTrade), BRONZE, 14.0);
                                     if let Some(troops) = foreign.trespass.get(&civ.id).filter(|n| **n > 0) {
                                         button(r, art, format!("Demand they withdraw ({troops} troops in our lands)"), ask(DiploAct::Withdraw), BRONZE, 14.0);

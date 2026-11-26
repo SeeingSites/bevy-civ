@@ -3408,6 +3408,13 @@ fn apply_actions(
             Action::Diplo(civ, act) => {
                 let mut ctx = foreign::Ctx { diplomacy: &mut diplomacy, foreign: &mut foreign, civs: &mut civs, state: &mut state, tech: &mut tech, log: &mut log };
                 foreign::player_act(&mut ctx, *civ, *act);
+                // Maps bought show the lands around the seller's cities.
+                for seller in std::mem::take(&mut foreign.maps_bought) {
+                    for city in cities.iter().filter(|c| c.owner == seller) {
+                        fog.explored.extend(hexx::shapes::hexagon(city.position, 5).filter(|h| map.cells.contains(h)));
+                    }
+                    dirty.map = true;
+                }
             }
             Action::AnswerOffer(accept) => {
                 let mut ctx = foreign::Ctx { diplomacy: &mut diplomacy, foreign: &mut foreign, civs: &mut civs, state: &mut state, tech: &mut tech, log: &mut log };
