@@ -34,7 +34,7 @@ const AUTOSAVE: &str = "autosave.json";
 /// Where a file is written on the desktop (and read by Load there).
 const SAVE_FILE: &str = "savegame.json";
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct SavedUnit {
     pub unit: Unit,
     pub home: Option<Hex>,
@@ -45,7 +45,7 @@ pub struct SavedUnit {
     pub exploring: bool,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct SavedCity {
     pub city: City,
     pub buildings: Vec<Building>,
@@ -55,7 +55,7 @@ pub struct SavedCity {
     pub mood: Option<[u32; 3]>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct SaveGame {
     pub version: u32,
     pub state: GameState,
@@ -82,6 +82,11 @@ pub struct SaveGame {
     pub tiles: Vec<HexTile>,
     pub cities: Vec<SavedCity>,
     pub units: Vec<SavedUnit>,
+    /// Online play: the other humans' seats, and the game's place on the server.
+    #[serde(default)]
+    pub seats: Vec<crate::online::Seat>,
+    #[serde(default)]
+    pub online: Option<crate::online::Online>,
 }
 
 impl SaveGame {
@@ -99,6 +104,8 @@ impl SaveGame {
 #[derive(Event)]
 pub struct SaveRequest {
     pub download: bool,
+    /// Online play: send the game to the server, the move passing to this index of the order.
+    pub upload: Option<usize>,
 }
 
 /// A saved game waiting to be restored when the game starts.
@@ -137,11 +144,16 @@ pub fn write_save(
         Res<bevy_civ::villages::Villages>,
     ),
     mut log: ResMut<GameLog>,
+    (online, seats): (Option<Res<crate::online::Online>>, Res<crate::online::OnlineSeats>),
     tiles: Query<&HexTile>,
     cities: Query<(&City, &CityBuildings, &Happiness)>,
     units: Query<(&Unit, Option<&HomeCity>, Option<&GoTo>, Has<Automated>, Has<Exploring>)>,
 ) {
-    let download = requests.read().fold(None, |any: Option<bool>, r| Some(any.unwrap_or(false) || r.download));
+    let mut upload = None;
+    let download = requests.read().fold(None, |any: Option<bool>, r| {
+        upload = upload.or(r.upload);
+        Some(any.unwrap_or(false) || r.download)
+    });
     let Some(download) = download else { return };
     let game = SaveGame {
         version: VERSION,
@@ -170,7 +182,28 @@ pub fn write_save(
             .iter()
             .map(|(u, home, goto, automated, exploring)| SavedUnit { unit: u.clone(), home: home.map(|h| h.0), goto: goto.map(|g| g.0), automated, exploring })
             .collect(),
+        seats: seats.0.clone(),
+        online: online.as_deref().cloned(),
     };
+    // Online play: the last human of the round sends the game on once the world's turn has run
+    // (the automatic save at the end of every turn).
+    let upload = upload.or(online.as_deref().filter(|m| !download && m.last_of_round()).map(|m| m.after_me()));
+    // Online play: the game goes back to its canonical numbering, the move to the next seat.
+    if let (Some(next), Some(meta)) = (upload, online.as_deref()) {
+        let mut canonical = game.clone();
+        crate::online::swap_seat(&mut canonical, meta.seat);
+        if let Some(o) = canonical.online.as_mut() {
+            o.next = next;
+            o.active = false;
+        }
+        match serde_json::to_string(&canonical) {
+            Ok(json) => {
+                platform::upload(&meta.game, &meta.token, state.turn, &json);
+                log.push("Your turn is sent. The game will tell the next player it is their move.");
+            }
+            Err(e) => log.push(format!("The turn could not be sent: {e}")),
+        }
+    }
     let json = match serde_json::to_string(&game) {
         Ok(json) => json,
         Err(e) => {
@@ -207,7 +240,20 @@ pub fn restore_world(
     pending: Res<PendingLoad>,
     mut camera: Query<(&mut Transform, &mut OrthographicProjection), With<Camera2d>>,
 ) {
-    let game = &pending.0;
+    // An online game from the server comes in its canonical numbering: this player's seat becomes 0.
+    let mut owned = pending.0.clone();
+    if let Some(meta) = owned.online.clone().filter(|m| !m.active) {
+        crate::online::swap_seat(&mut owned, meta.seat);
+        if let Some(o) = owned.online.as_mut() {
+            o.active = true;
+        }
+    }
+    let game = &owned;
+    match game.online.clone() {
+        Some(meta) => commands.insert_resource(meta),
+        None => commands.remove_resource::<crate::online::Online>(),
+    }
+    commands.insert_resource(crate::online::OnlineSeats(game.seats.clone()));
     let layout = HexLayout::flat().with_hex_size(crate::client::map::HEX_SIZE);
     let mut map = MapData {
         layout,
@@ -323,6 +369,11 @@ mod platform {
     pub fn take_import() -> Option<String> {
         IMPORT.lock().unwrap().take()
     }
+
+    /// Desktop: online play goes through the browser; the turn is written beside the save.
+    pub fn upload(game: &str, _token: &str, turn: u32, json: &str) {
+        let _ = std::fs::write(format!("online-{game}-turn-{turn}.json"), json);
+    }
 }
 
 /// Browser: a download, and a file picker (both small helpers in `web/index.html`).
@@ -338,6 +389,12 @@ mod platform {
         fn js_pick_file();
         #[wasm_bindgen(js_name = bevyCivTakeImport)]
         fn js_take_import() -> Option<String>;
+        #[wasm_bindgen(js_name = bevyCivUploadTurn)]
+        fn js_upload(game: &str, token: &str, turn: u32, text: &str);
+    }
+
+    pub fn upload(game: &str, token: &str, turn: u32, json: &str) {
+        js_upload(game, token, turn, json);
     }
 
     pub fn download(name: &str, json: &str) -> Option<String> {
@@ -438,7 +495,31 @@ mod tests {
             tiles: vec![HexTile { coord: Hex::new(1, 2), terrain: Terrain::Hills, improvements: vec![], resource: None }],
             cities: vec![SavedCity { city, buildings: vec![Building::Temple, Building::Oracle], mood: Some([0, 5, 1]) }],
             units: vec![SavedUnit { unit, home: Some(Hex::new(1, 2)), goto: Some(Hex::new(5, 5)), automated: false, exploring: false }],
+            seats: Vec::new(),
+            online: None,
         }
+    }
+
+    #[test]
+    fn swapping_a_seat_twice_gives_the_game_back() {
+        let mut game = sample();
+        let civ = |id: u32, gold: i32, name: &str| bevy_civ::ai::Civ {
+            id, name: name.into(), is_human: true, gold, tech: TechState::default(), aggression: 0.5, leader: String::new(),
+            adjective: String::new(), portrait: 0, city_names: Vec::new(), government: Default::default(), anarchy: 0,
+            pending_government: None, eliminated: false, rates: Default::default(),
+        };
+        game.civs.players = vec![civ(0, 0, "the Romans"), civ(2, 55, "the Greeks")];
+        game.state.gold = 10;
+        crate::online::swap_seat(&mut game, 2);
+        assert_eq!((game.state.gold, game.cities[0].city.owner, game.units[0].unit.owner), (55, 2, 2));
+        assert_eq!(game.diplomacy.get_treaty(0, 2), Treaty::War);
+        assert_eq!((game.log.len(), game.seats.len(), game.seats[0].id), (0, 1, 2));
+        assert_eq!(game.culture.of_people(2), 77);
+        crate::online::swap_seat(&mut game, 2);
+        assert_eq!((game.state.gold, game.cities[0].city.owner, game.units[0].unit.owner), (10, 0, 0));
+        assert_eq!((game.log.clone(), game.seats.len(), game.seats[0].id), (vec!["hello".to_string()], 1, 2));
+        assert_eq!(game.civs.players.iter().map(|c| (c.id, c.gold)).collect::<Vec<_>>(), vec![(0, 0), (2, 55)]);
+        assert_eq!(game.culture.of_people(0), 77);
     }
 
     #[test]

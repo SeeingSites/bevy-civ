@@ -116,6 +116,7 @@ mod balance;
 mod client;
 mod foreign;
 mod governor;
+mod online;
 mod savegame;
 mod scenario;
 mod supply;
@@ -223,7 +224,7 @@ impl Difficulty {
 fn peoples_knowledge(civs: &Civilizations, tech: &TechState, holding: &HashSet<u32>) -> Vec<(u32, HashSet<Tech>)> {
     civs.players
         .iter()
-        .filter(|c| !c.is_human && !c.eliminated && holding.contains(&c.id))
+        .filter(|c| c.id != PLAYER && !c.eliminated && holding.contains(&c.id))
         .map(|c| (c.id, c.tech.researched.clone()))
         .chain(holding.contains(&PLAYER).then(|| (PLAYER, tech.researched.clone())))
         .collect()
@@ -268,7 +269,7 @@ fn great_library(civs: &mut Civilizations, tech: &mut TechState, wonders: &World
 
 /// A people entering a new age: the news, and a free discovery for a scientific people.
 fn new_ages(civs: &mut Civilizations, tech: &mut TechState, met: &HashSet<u32>, holding: &HashSet<u32>, log: &mut GameLog) {
-    for civ in civs.players.iter_mut().filter(|c| !c.is_human && !c.eliminated) {
+    for civ in civs.players.iter_mut().filter(|c| c.id != PLAYER && !c.eliminated) {
         let Some(era) = civ.tech.enter_new_era() else { continue };
         let scientific = bevy_civ::traits::of(&civ.name).has(bevy_civ::traits::Trait::Scientific);
         let gift = if scientific { civ.tech.discover() } else { None };
@@ -1063,6 +1064,7 @@ pub fn init_game(app: &mut App) {
         .init_resource::<FogOfWar>()
         .init_resource::<Diplomacy>()
         .init_resource::<BarbarianState>()
+        .init_resource::<online::OnlineSeats>()
         .init_resource::<TradeRoutes>()
         .init_resource::<SpaceRace>()
         .init_resource::<Foreign>()
@@ -2539,6 +2541,7 @@ fn end_turn_guard(
     cities: Query<&City>,
     units: Query<&Unit>,
     mut log: ResMut<GameLog>,
+    (online, mut saves, mut sent): (Option<Res<online::Online>>, EventWriter<savegame::SaveRequest>, Local<Option<u32>>),
 ) {
     for _ in requests.read() {
         let at_war = |owner: u32| owner == BARBARIANS || (owner != PLAYER && diplomacy.get_treaty(PLAYER, owner) == Treaty::War);
@@ -2559,9 +2562,19 @@ fn end_turn_guard(
                 focus.send(Focus(at));
                 log.push(format!("{city} has no soldier inside and an enemy {enemy} is {distance} tiles away. Press End Turn again to end the turn anyway."));
             }
-            _ => {
-                go.send(EndTurnNow);
-            }
+            _ => match online.as_deref() {
+                // Online, before the last human of the round: the move passes on; the world's turn
+                // runs once everyone has moved.
+                Some(meta) if !meta.last_of_round() => {
+                    if *sent != Some(state.turn) {
+                        *sent = Some(state.turn);
+                        saves.send(savegame::SaveRequest { download: false, upload: Some(meta.after_me()) });
+                    }
+                }
+                _ => {
+                    go.send(EndTurnNow);
+                }
+            },
         }
     }
 }
@@ -3553,7 +3566,7 @@ fn apply_actions(
                             // Exposed: worse than an honest war. The world hears of it, and a framed
                             // people takes it as an attack too.
                             foreign.reputation -= espionage::EXPOSED_REPUTATION;
-                            for other in civs.players.iter().filter(|c| !c.is_human && !c.eliminated && c.id != victim).map(|c| c.id).collect::<Vec<_>>() {
+                            for other in civs.players.iter().filter(|c| c.id != PLAYER && !c.eliminated && c.id != victim).map(|c| c.id).collect::<Vec<_>>() {
                                 diplomacy.change_attitude(PLAYER, other, espionage::EXPOSED_ATTITUDE);
                             }
                             if let Mission::Frame(framed) = mission {
@@ -3573,7 +3586,7 @@ fn apply_actions(
             }
 
             Action::Save => {
-                saves.send(savegame::SaveRequest { download: true });
+                saves.send(savegame::SaveRequest { download: true, upload: None });
             }
             Action::QueueProduction(item) => {
                 let Some(mut city) = selection.city.and_then(|e| cities.get_mut(e).ok()) else { continue };
@@ -3865,7 +3878,7 @@ fn process_turn(
         let holding: HashSet<u32> = cities.iter().map(|(c, _, _)| c.owner).collect();
         let knowledge = peoples_knowledge(&civs, &tech, &holding);
         let others = |me: u32| knowledge.iter().filter(move |(id, _)| *id != me);
-        for civ in civs.players.iter_mut().filter(|c| !c.is_human) {
+        for civ in civs.players.iter_mut().filter(|c| c.id != PLAYER) {
             let id = civ.id;
             civ.tech.set_known_abroad(|t| others(id).filter(|(_, k)| k.contains(&t)).count() as u32, others(id).count() as u32);
         }
@@ -3956,8 +3969,8 @@ fn process_turn(
     prof::mark("setup: research, wonders, routes");
     // Each civilization lives under its own government. Computer players adopt the best they know.
     let mut governments: HashMap<u32, Government> = HashMap::from([(PLAYER, state.government)]);
-    for civ in civs.players.iter_mut().filter(|c| !c.is_human) {
-        // Computer players pay for a revolution with anarchy too.
+    for civ in civs.players.iter_mut().filter(|c| c.id != PLAYER) {
+        // Computer players pay for a revolution with anarchy too (and other humans, online).
         if civ.anarchy > 0 {
             civ.anarchy -= 1;
             if civ.anarchy == 0 {
@@ -3968,7 +3981,7 @@ fn process_turn(
                     }
                 }
             }
-        } else {
+        } else if !civ.is_human {
             let preferred = Government::preferred(&civ.tech, civ.aggression);
             // A people a scenario starts under a government of its period keeps it for a while.
             let settled = civ.government != Government::Despotism && state.turn <= SCENARIO_GOVERNMENT_TURNS;
@@ -4655,7 +4668,9 @@ fn process_turn(
 
         // A computer player's city gets its next project from the governor - and so does one of ours
         // whose governor we have put in charge of building, once its queue runs out.
-        let governed = !mine || (city.auto_build && city.queue.is_empty());
+        // Another human's city (online) keeps the queue they set; with none, the governor stands in.
+        let human = !mine && civs.players.iter().any(|c| c.id == owner && c.is_human);
+        let governed = (!mine && !human) || (city.queue.is_empty() && (city.auto_build || human));
         if needs_orders && governed && owner != BARBARIANS {
             if let Some(civ) = civs.players.iter().find(|c| c.id == owner) {
                 let civ_view = governor::CivView {
@@ -4843,10 +4858,12 @@ fn process_turn(
         }
     }
     let difficulty = state.difficulty;
-    for civ in civs.players.iter_mut().filter(|c| !c.is_human) {
+    for civ in civs.players.iter_mut().filter(|c| c.id != PLAYER) {
         let (science, gold) = ai_income.get(&civ.id).copied().unwrap_or_default();
         let (trade_gold, trade_science) = trade.income(civ.id);
-        let (science, gold) = (((science + trade_science) as f32 * difficulty.ai_output()) as u32, gold + trade_gold as i32);
+        // The difficulty speeds the computer players, not the other humans.
+        let boost = if civ.is_human { 1.0 } else { difficulty.ai_output() };
+        let (science, gold) = (((science + trade_science) as f32 * boost) as u32, gold + trade_gold as i32);
         let (banks, exchanges) = finance.get(&civ.id).copied().unwrap_or_default();
         let interest = bevy_civ::building::interest(civ.gold, banks, exchanges);
         // Buildings cost their upkeep (not in anarchy, when no taxes come in).
@@ -4892,7 +4909,7 @@ fn process_turn(
     state.accounts = accounts;
     // A treasury that cannot pay its bills sells buildings, the dearest to keep first, until it can.
     {
-        let mut debtors: Vec<(u32, i32)> = civs.players.iter().filter(|c| !c.is_human && c.gold < 0).map(|c| (c.id, c.gold)).collect();
+        let mut debtors: Vec<(u32, i32)> = civs.players.iter().filter(|c| c.id != PLAYER && c.gold < 0).map(|c| (c.id, c.gold)).collect();
         if state.gold < 0 {
             debtors.push((PLAYER, state.gold));
         }
@@ -5952,7 +5969,7 @@ fn process_turn(
             .map(|(c, _, _)| c.owner)
             .chain(units.iter().filter(|(e, u)| !dead.contains(e) && u.unit_type == UnitType::Settler).map(|(_, u)| u.owner))
             .collect();
-        for civ in civs.players.iter_mut().filter(|c| !c.is_human && !c.eliminated && !alive.contains(&c.id)) {
+        for civ in civs.players.iter_mut().filter(|c| c.id != PLAYER && !c.eliminated && !alive.contains(&c.id)) {
             civ.eliminated = true;
             for (entity, unit) in units.iter() {
                 if unit.owner == civ.id {
@@ -5968,11 +5985,11 @@ fn process_turn(
     }
 
     // The automatic save, every turn.
-    saves.send(savegame::SaveRequest { download: false });
+    saves.send(savegame::SaveRequest { download: false, upload: None });
     let objectives = state.objectives.clone();
     state.score = Score::calculate(cities.iter().map(|(c, b, _)| (c, b)), &tech, &objectives);
     history.scores.push((state.turn, PLAYER, state.score.total));
-    for civ in civs.players.iter().filter(|c| !c.is_human) {
+    for civ in civs.players.iter().filter(|c| c.id != PLAYER) {
         history.scores.push((state.turn, civ.id, rival_score(civ, &cities, &objectives)));
     }
 
@@ -6043,7 +6060,7 @@ fn process_turn(
             let with = if allies.is_empty() { String::new() } else { format!("; allied: {}", allies.join(", ")) };
             Some(format!("Objectives victory for {} ({gain:+} objective cities{with}).", civ_named(*lead)))
         } else if state.turn >= state.last_turn {
-            let best = civs.players.iter().filter(|c| !c.is_human).map(|c| (rival_score(c, &cities, &objectives), c.name.clone())).max_by_key(|(s, _)| *s);
+            let best = civs.players.iter().filter(|c| c.id != PLAYER).map(|c| (rival_score(c, &cities, &objectives), c.name.clone())).max_by_key(|(s, _)| *s);
             best.map(|(s, name)| format!("Score victory for {name} ({s}) at the turn limit."))
         } else {
             None
@@ -6087,7 +6104,7 @@ fn process_turn(
     } else if state.turn >= state.last_turn {
         // Time runs out: the highest score wins.
         let ours = state.score.total;
-        let best_rival = civs.players.iter().filter(|c| !c.is_human).map(|c| (rival_score(c, &cities, &objectives), c.name.clone())).max_by_key(|(s, _)| *s);
+        let best_rival = civs.players.iter().filter(|c| c.id != PLAYER).map(|c| (rival_score(c, &cities, &objectives), c.name.clone())).max_by_key(|(s, _)| *s);
         state.victory = Some(match best_rival {
             Some((theirs, name)) if theirs > ours => format!("Time is up: {name} lead the world on score ({theirs} to our {ours})."),
             _ => format!("Score Victory! Time is up and we lead the world with {ours} points."),
@@ -6873,7 +6890,7 @@ mod tests {
         let mut app = App::new();
         app.add_plugins(MinimalPlugins)
             .add_event::<EndTurnRequest>()
-            .add_event::<EndTurnNow>()
+            .add_event::<EndTurnNow>().add_event::<savegame::SaveRequest>()
             .add_event::<Focus>()
             .init_resource::<GameState>()
             .init_resource::<FogOfWar>()
