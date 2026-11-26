@@ -247,7 +247,7 @@ pub fn upkeep(building: Building) -> u32 {
     use Building::*;
     match building {
         Factory | StockExchange => 2,
-        Walls | CoastalFortress | ForbiddenPalace | IronWorks | WallStreet | MilitaryAcademy | BattlefieldMedicine => 0,
+        Walls | CoastalFortress | ForbiddenPalace | IronWorks | WallStreet | MilitaryAcademy | BattlefieldMedicine | Pentagon | IntelligenceAgency => 0,
         ManufacturingPlant => 3,
         b if b.is_wonder() || b.is_spaceship_part() => 0,
         _ => 1,

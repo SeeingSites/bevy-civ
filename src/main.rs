@@ -2553,6 +2553,9 @@ fn apply_actions(
     ),
     mut commands: Commands,
 ) {
+    // National wonders of ours that act on our orders.
+    let ours_has = |b: Building| walled.iter().any(|(e, built)| built.has(b) && cities.get(e).is_ok_and(|c| c.owner == PLAYER));
+    let (player_pentagon, player_agency) = (ours_has(Building::Pentagon), ours_has(Building::IntelligenceAgency));
     for action in actions.read() {
         dirty.ui = true;
         dirty.map = true;
@@ -2715,7 +2718,7 @@ fn apply_actions(
                 // Ground troops join an army of ours on their tile that has room.
                 if bevy_civ::unit::can_join_army(unit) {
                     let recruit = unit.clone();
-                    let capacity = bevy_civ::unit::army_capacity(wonders.owns(PLAYER, Building::SunTzu));
+                    let capacity = bevy_civ::unit::army_capacity(wonders.owns(PLAYER, Building::SunTzu), player_pentagon);
                     let army = unit_entities.iter().find(|e| {
                         *e != entity && units.get(*e).is_ok_and(|a| a.owner == PLAYER && a.position == here && a.is_army_group() && (a.members() as usize) < capacity)
                     });
@@ -2863,7 +2866,7 @@ fn apply_actions(
                             Vec::new()
                         };
                         let refs: Vec<&Unit> = stack.iter().map(|(_, u)| u).collect();
-                        match bevy_civ::unit::plan_army(&refs, bevy_civ::unit::army_capacity(wonders.owns(PLAYER, Building::SunTzu))) {
+                        match bevy_civ::unit::plan_army(&refs, bevy_civ::unit::army_capacity(wonders.owns(PLAYER, Building::SunTzu), player_pentagon)) {
                             Some((leader, absorbed)) => {
                                 let members: Vec<Unit> = absorbed.iter().map(|i| stack[*i].1.clone()).collect();
                                 for i in &absorbed {
@@ -3446,7 +3449,7 @@ fn apply_actions(
                         continue;
                     }
                     let mut rng = rand::thread_rng();
-                    if rng.gen::<f32>() < mission.odds(city_walls.contains(&at)) {
+                    if rng.gen::<f32>() < mission.odds_with(city_walls.contains(&at), player_agency) {
                         match mission {
                             Mission::StealTech => {
                                 let stolen = loot[rng.gen_range(0..loot.len())];
@@ -4890,7 +4893,7 @@ fn process_turn(
                 continue;
             }
             let refs: Vec<&Unit> = stack.iter().map(|(_, u)| u).collect();
-            let capacity = bevy_civ::unit::army_capacity(wonders.owns(owner, Building::SunTzu));
+            let capacity = bevy_civ::unit::army_capacity(wonders.owns(owner, Building::SunTzu), nationals.get(&owner).is_some_and(|n| n.contains(&Building::Pentagon)));
             let Some((leader, mut absorbed)) = bevy_civ::unit::plan_army(&refs, capacity) else { continue };
             // One unit always stays behind to hold the city.
             let joinable = stack.iter().filter(|(_, u)| bevy_civ::unit::can_join_army(u)).count();
@@ -4912,7 +4915,7 @@ fn process_turn(
             .map(|(e, u)| (e, u.position, u.owner))
             .collect();
         for (army, at, owner) in armies {
-            let capacity = bevy_civ::unit::army_capacity(wonders.owns(owner, Building::SunTzu));
+            let capacity = bevy_civ::unit::army_capacity(wonders.owns(owner, Building::SunTzu), nationals.get(&owner).is_some_and(|n| n.contains(&Building::Pentagon)));
             let recruits: Vec<(Entity, Unit)> = units
                 .iter()
                 .filter(|(e, u)| *e != army && !taken.contains(e) && u.position == at && u.owner == owner && bevy_civ::unit::can_join_army(u))
@@ -5714,7 +5717,7 @@ fn process_turn(
                         spies.embassies.insert((owner, partner));
                         continue;
                     }
-                    if rng.gen::<f32>() >= mission.odds(walls) {
+                    if rng.gen::<f32>() >= mission.odds_with(walls, nationals.get(&owner).is_some_and(|n| n.contains(&Building::IntelligenceAgency))) {
                         diplomacy.change_attitude(owner, partner, espionage::CAUGHT_ATTITUDE);
                         foreign.add_grievance(partner, owner, foreign::Wrong::SpyCaught, state.turn);
                         if let Mission::Frame(framed) = mission {

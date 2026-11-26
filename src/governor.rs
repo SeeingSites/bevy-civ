@@ -274,6 +274,8 @@ pub fn choose(city: &CityView, civ: &CivView, supplies: &Supplies, rng: &mut imp
         (Building::MilitaryAcademy, civ.at_war && city.population >= 8),
         (Building::BattlefieldMedicine, civ.at_war && city.population >= 8 && spare),
         (Building::CivilDefense, civ.at_war && city.population >= 12 && spare),
+        (Building::Pentagon, civ.at_war && city.population >= 10 && civ.military >= 12),
+        (Building::IntelligenceAgency, civ.diplomats > 0 && city.population >= 10 && spare),
     ];
     if let Some((building, _)) = wish.into_iter().find(|(b, wanted)| *wanted && can_build(b, city, civ, supplies)) {
         return ProductionItem::Building(building);

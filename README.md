@@ -633,7 +633,8 @@ working directory.
   the Forbidden Palace; the world wonder **Women's Suffrage** (Industrialization: war weariness halved
   everywhere); and the **Offshore Platform** (Computers: +1 shield on worked ocean tiles),
   **Manufacturing Plant** (Computers, needs a Factory: +25% shields) and **Civil Defense**
-  (Electronics: a nuclear strike costs a quarter of the city, not half).
+  (Electronics: a nuclear strike costs a quarter of the city, not half). Two more national wonders: the **Pentagon** (Radio: your armies hold one more unit) and the
+  **Intelligence Agency** (Electronics: your diplomats' covert missions succeed 15% more often).
 - **Civilization III's later units**: the **Crusader** (Theology, 5/3/1, Horses), **Medieval Infantry**
   (Chivalry, 4/2/1, Iron: Legions and Immortals upgrade to it), the **Trebuchet** (Engineering, bombards
   6 - between the Catapult and the Cannon), the **Caravel** (Astronomy: crosses the ocean with 3
