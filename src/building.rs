@@ -85,10 +85,14 @@ pub enum Building {
     BattlefieldMedicine,
     /// A world wonder: a Police Station's calm in every city - war weariness halved everywhere.
     WomensSuffrage,
+    /// A national wonder: its people's armies hold one more unit.
+    Pentagon,
+    /// A national wonder: its people's diplomats succeed more often.
+    IntelligenceAgency,
 }
 
 impl Building {
-    pub const ALL: [Building; 69] = [
+    pub const ALL: [Building; 71] = [
         Building::Granary, Building::Barracks, Building::Library, Building::Marketplace, Building::Walls,
         Building::Aqueduct, Building::University, Building::Bank, Building::Factory, Building::Harbor,
         Building::Temple, Building::Courthouse, Building::Colosseum, Building::Cathedral, Building::SewerSystem, Building::StockExchange,
@@ -97,7 +101,7 @@ impl Building {
         Building::GreatLibrary, Building::HangingGardens, Building::Colossus, Building::Oracle,
         Building::GreatLighthouse, Building::GreatWall, Building::StatueOfZeus, Building::Mausoleum, Building::Copernicus, Building::SunTzu, Building::MarcoPolo, Building::KingRichards, Building::Michelangelo, Building::Leonardo, Building::Bach, Building::Magellan, Building::Newton, Building::AdamSmith, Building::Shakespeare, Building::Darwin, Building::Liberty, Building::HooverDam, Building::Eiffel, Building::Internet, Building::Apollo, Building::CureForCancer, Building::Manhattan, Building::UnitedNations,
         Building::OffshorePlatform, Building::ManufacturingPlant, Building::CivilDefense, Building::IronWorks, Building::WallStreet,
-        Building::MilitaryAcademy, Building::BattlefieldMedicine, Building::WomensSuffrage,
+        Building::MilitaryAcademy, Building::BattlefieldMedicine, Building::WomensSuffrage, Building::Pentagon, Building::IntelligenceAgency,
     ];
 
     pub fn name(&self) -> &'static str {
@@ -176,6 +180,8 @@ impl Building {
             Building::MilitaryAcademy => "Military Academy",
             Building::BattlefieldMedicine => "Battlefield Medicine",
             Building::WomensSuffrage => "Women's Suffrage",
+            Building::Pentagon => "The Pentagon",
+            Building::IntelligenceAgency => "Intelligence Agency",
         }
     }
 
@@ -250,6 +256,8 @@ impl Building {
             Building::MilitaryAcademy => 300,
             Building::BattlefieldMedicine => 300,
             Building::WomensSuffrage => 600,
+            Building::Pentagon => 400,
+            Building::IntelligenceAgency => 300,
         }
     }
 
@@ -324,6 +332,8 @@ impl Building {
             Building::MilitaryAcademy => Some(crate::tech::Tech::Gunpowder),
             Building::BattlefieldMedicine => Some(crate::tech::Tech::Sanitation),
             Building::WomensSuffrage => Some(crate::tech::Tech::Industrialization),
+            Building::Pentagon => Some(crate::tech::Tech::Radio),
+            Building::IntelligenceAgency => Some(crate::tech::Tech::Electronics),
         }
     }
 
@@ -420,6 +430,8 @@ impl Building {
             Building::WallStreet => "+10 to the cap on the treasury's interest (needs a Bank; one per people)",
             Building::MilitaryAcademy => "troops trained here one level higher (one per people)",
             Building::BattlefieldMedicine => "your troops heal two hit points a turn in the field (one per people)",
+            Building::Pentagon => "your armies hold one more unit (one per people)",
+            Building::IntelligenceAgency => "your diplomats' missions succeed more often (one per people)",
             _ => self.wonder_effect(),
         }
     }
@@ -472,7 +484,10 @@ pub const AQUEDUCT_LIMIT: u32 = 6;
 impl Building {
     /// Only one in each people's empire.
     pub fn one_per_people(&self) -> bool {
-        matches!(self, Building::ForbiddenPalace | Building::IronWorks | Building::WallStreet | Building::MilitaryAcademy | Building::BattlefieldMedicine)
+        matches!(
+            self,
+            Building::ForbiddenPalace | Building::IronWorks | Building::WallStreet | Building::MilitaryAcademy | Building::BattlefieldMedicine | Building::Pentagon | Building::IntelligenceAgency
+        )
     }
 
     /// Only a city on the coast can build it (the seafaring wonders too, as in Civ III).

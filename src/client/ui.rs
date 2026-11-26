@@ -1221,7 +1221,7 @@ pub fn rebuild_panels(
                 p.spawn(label(&art.font_bold, great::ability(unit.unit_type), 14.0, GOLD));
             }
             if unit.is_army_group() {
-                let capacity = bevy_civ::unit::army_capacity(wonders.owns(unit.owner, Building::SunTzu));
+                let capacity = bevy_civ::unit::army_capacity(wonders.owns(unit.owner, Building::SunTzu), cities.iter().any(|(c, b, _)| c.owner == unit.owner && b.has(Building::Pentagon)));
                 let bonus = (bevy_civ::unit::ARMY_MEMBER_BONUS * (unit.members() - 1) as f32 * 100.0).round();
                 p.spawn(label(
                     &art.font_body,
@@ -1417,7 +1417,7 @@ pub fn rebuild_panels(
                         button(r, art, keyed(&screen, "Spread Faith (U)"), Command::Game(Action::UseUnit), GREEN, 15.0);
                     }
                     // Ground troops can join an army of ours on their tile that has room.
-                    let capacity = bevy_civ::unit::army_capacity(wonders.owns(PLAYER, Building::SunTzu));
+                    let capacity = bevy_civ::unit::army_capacity(wonders.owns(PLAYER, Building::SunTzu), cities.iter().any(|(c, b, _)| c.owner == PLAYER && b.has(Building::Pentagon)));
                     let army_here = unit_entities.iter().filter(|e| Some(*e) != selection.unit).filter_map(|e| units.get(e).ok()).any(|a| {
                         a.owner == PLAYER && a.position == unit.position && a.is_army_group() && (a.members() as usize) < capacity
                     });

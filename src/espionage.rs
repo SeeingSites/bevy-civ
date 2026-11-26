@@ -74,6 +74,11 @@ impl Mission {
         *self != Mission::Embassy
     }
 
+    /// Chance of success with an Intelligence Agency behind the diplomat.
+    pub fn odds_with(&self, walls: bool, agency: bool) -> f32 {
+        if *self == Mission::Embassy { 1.0 } else { (self.odds(walls) + if agency { 0.15 } else { 0.0 }).min(0.95) }
+    }
+
     /// Chance of success. City walls make covert work harder.
     pub fn odds(&self, walls: bool) -> f32 {
         let base = match self {

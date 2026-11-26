@@ -1130,8 +1130,8 @@ pub fn spawn_unit(commands: &mut Commands, coord: Hex, unit_type: UnitType, owne
 pub const ARMY_SIZE: usize = 3;
 
 /// How many units an army of this owner can hold.
-pub fn army_capacity(sun_tzu: bool) -> usize {
-    ARMY_SIZE + usize::from(sun_tzu)
+pub fn army_capacity(sun_tzu: bool, pentagon: bool) -> usize {
+    ARMY_SIZE + usize::from(sun_tzu) + usize::from(pentagon)
 }
 
 /// The stoutest ordinary defender a people knowing `knows` can train without any strategic
@@ -1258,10 +1258,10 @@ mod army_tests {
         // An army does not join another.
         assert!(plan_army(&[&army, &units[0]], 3).is_none());
         // A unit joins the army while there is room: 3 units, or 4 with Sun Tzu.
-        assert!(!army.take_into_army(&units[0], army_capacity(false)), "full");
-        assert!(!army.take_into_army(&units[2], army_capacity(true)), "workers never join");
-        assert!(army.take_into_army(&units[0], army_capacity(true)));
+        assert!(!army.take_into_army(&units[0], army_capacity(false, false)), "full");
+        assert!(!army.take_into_army(&units[2], army_capacity(true, false)), "workers never join");
+        assert!(army.take_into_army(&units[0], army_capacity(true, false)));
         assert_eq!((army.members(), army.max_hp(), army.hp), (4, 12, 11));
-        assert!(!army.take_into_army(&units[4], army_capacity(true)), "full");
+        assert!(!army.take_into_army(&units[4], army_capacity(true, false)), "full");
     }
 }
