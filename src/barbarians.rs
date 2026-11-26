@@ -116,12 +116,13 @@ pub fn extortion(population: u32, treasury: i32) -> i32 {
 /// The band that rises when the world's peoples know `techs` technologies on average.
 pub fn band(techs: usize) -> Vec<UnitType> {
     let pair = match techs {
-        0..=7 => [UnitType::Warrior, UnitType::Warrior],
-        8..=15 => [UnitType::Archer, UnitType::Horseman],
-        16..=23 => [UnitType::Legion, UnitType::Horseman],
-        24..=31 => [UnitType::Longbowman, UnitType::Knight],
-        32..=39 => [UnitType::Musketman, UnitType::Cavalry],
-        40..=45 => [UnitType::Rifleman, UnitType::Cavalry],
+        // Scaled to Civilization III's tree of 68 technologies.
+        0..=9 => [UnitType::Warrior, UnitType::Warrior],
+        10..=19 => [UnitType::Archer, UnitType::Horseman],
+        20..=29 => [UnitType::Legion, UnitType::Horseman],
+        30..=40 => [UnitType::Longbowman, UnitType::Knight],
+        41..=50 => [UnitType::Musketman, UnitType::Cavalry],
+        51..=58 => [UnitType::Rifleman, UnitType::Cavalry],
         _ => [UnitType::Infantry, UnitType::Cavalry],
     };
     let size = match techs {
@@ -188,7 +189,7 @@ mod tests {
     fn bands_grow_and_rearm_with_the_world() {
         assert_eq!(band(0), vec![UnitType::Warrior]);
         assert_eq!(band(20).len(), 2);
-        assert!(band(50).contains(&UnitType::Infantry) && band(50).len() == 3);
+        assert!(band(64).contains(&UnitType::Infantry) && band(64).len() == 3);
     }
 
     #[test]

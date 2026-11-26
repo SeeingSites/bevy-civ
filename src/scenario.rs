@@ -384,6 +384,20 @@ pub fn world_rng(seed: Option<u64>, stream: u64) -> rand::rngs::StdRng {
 
 /// Fills in a random map and start positions for the "New World" scenario.
 /// `player` is kept among the civilizations that take part; its new index is returned.
+/// Tundra tiles within two tiles of a site (and on it).
+fn tundra_near(grid: &[Vec<char>], col: i32, row: i32) -> usize {
+    let centre = offset_to_hex(col, row);
+    let mut count = 0;
+    for (r, line) in grid.iter().enumerate() {
+        for (c, ch) in line.iter().enumerate() {
+            if *ch == 't' && offset_to_hex(c as i32, r as i32).distance_to(centre) <= 2 {
+                count += 1;
+            }
+        }
+    }
+    count
+}
+
 pub fn generate_random(template: &Scenario, player: usize, map_size: usize, peoples: usize) -> (Scenario, usize) {
     let (_, cols, rows) = MAP_SIZES[map_size.min(MAP_SIZES.len() - 1)];
     #[allow(non_snake_case)]
@@ -446,11 +460,8 @@ pub fn generate_random(template: &Scenario, player: usize, map_size: usize, peop
     let mut sites: Vec<(i32, i32)> = (0..ROWS)
         .flat_map(|row| (0..COLS).map(move |col| (col, row)))
         .filter(|(col, row)| land(&grid, *col, *row) && neighbours(*col, *row).iter().filter(|(c, r)| land(&grid, *c, *r)).count() >= 5)
-        // Nobody starts on the polar tundra or hemmed in by it.
-        .filter(|(col, row)| {
-            let tundra = |c: i32, r: i32| land(&grid, c, r) && grid[r as usize][c as usize] == 't';
-            !tundra(*col, *row) && neighbours(*col, *row).iter().filter(|(c, r)| tundra(*c, *r)).count() <= 1
-        })
+        // Nobody starts on the polar tundra or hemmed in by it (its land reaches two tiles out).
+        .filter(|(col, row)| tundra_near(&grid, *col, *row) <= 2)
         .collect();
     sites.shuffle(&mut rng);
     let mut homes: Vec<(i32, i32)> = sites.first().copied().into_iter().collect();
@@ -564,11 +575,11 @@ mod tests {
         for size in 0..MAP_SIZES.len() {
             let (world, _) = generate_random(&template, 0, size, 8);
             let at = |col: i32, row: i32| world.rows.get(row as usize).and_then(|r| r.as_bytes().get(col as usize)).copied();
+            let grid: Vec<Vec<char>> = world.rows.iter().map(|r| r.chars().collect()).collect();
             for civ in &world.civs {
-                let Some(home) = civ.units.first() else { continue };
+                let Some(home) = civ.cities.first() else { continue };
                 assert_ne!(at(home.col, home.row), Some(b't'), "{} starts on tundra", civ.name);
-                let tundra = neighbours(home.col, home.row).iter().filter(|(c, r)| at(*c, *r) == Some(b't')).count();
-                assert!(tundra <= 1, "{} starts hemmed in by tundra", civ.name);
+                assert!(tundra_near(&grid, home.col, home.row) <= 2, "{} starts hemmed in by tundra", civ.name);
             }
         }
     }

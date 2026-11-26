@@ -152,6 +152,21 @@ fn appeal(tech: Tech) -> (f32, f32) {
         Tech::Ecology => (0.5, 3.0),
         Tech::NuclearFission => (4.0, 1.5),
         Tech::GeneticEngineering => (0.5, 4.0),
+        Tech::WarriorCode => (3.0, 0.5),
+        Tech::CeremonialBurial => (0.5, 2.5),
+        Tech::MapMaking => (1.5, 2.5),
+        Tech::Literature => (0.5, 3.0),
+        Tech::Polytheism => (2.5, 1.5),
+        Tech::Monotheism => (1.5, 3.0),
+        Tech::Feudalism => (3.5, 1.5),
+        Tech::Invention => (1.5, 3.5),
+        Tech::Physics => (1.0, 3.0),
+        Tech::Magnetism => (3.0, 2.5),
+        Tech::Railroad => (3.0, 3.5),
+        Tech::Refrigeration => (0.5, 3.5),
+        Tech::Radio => (2.5, 2.5),
+        Tech::Robotics => (4.0, 3.0),
+        Tech::Miniaturization => (1.0, 3.5),
     }
 }
 
@@ -557,7 +572,7 @@ pub fn process_ai_turn(
                 }
             }
             // Once Steam Power is known, lay railroads over the roads inside the borders, nearest first.
-            let steam = civs.players.iter().any(|c| c.id == owner && c.tech.researched.contains(&Tech::SteamPower));
+            let steam = civs.players.iter().any(|c| c.id == owner && c.tech.researched.contains(&Tech::Railroad));
             if steam {
                 if unrailed.contains(&here) && owns(here, owner) && rail_claimed.insert(here) {
                     unit.start_build(Improvement::Railroad);
@@ -1079,7 +1094,7 @@ mod tests {
             unit.movement_left = 1;
         };
         reset(&mut world);
-        world.resource_mut::<Civilizations>().players[0].tech.researched.insert(Tech::SteamPower);
+        world.resource_mut::<Civilizations>().players[0].tech.researched.insert(Tech::Railroad);
         // Three turns to walk there, one to start work.
         for _ in 0..4 {
             world.run_system_once(ai_phase).unwrap();

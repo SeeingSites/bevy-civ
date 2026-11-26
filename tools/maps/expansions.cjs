@@ -6,21 +6,26 @@
 // What each technology needs (as in src/tech.rs), so a period's knowledge can be given as its
 // newest discoveries.
 const PREREQ = {
-  'Writing': ['Alphabet'], 'Code of Laws': ['Writing'], 'Mysticism': ['Pottery'], 'Seafaring': ['Pottery'],
+  'Writing': ['Alphabet'], 'Code of Laws': ['Writing'], 'Mysticism': ['Pottery', 'Ceremonial Burial'], 'Seafaring': ['Pottery', 'Map Making'],
   'Iron Working': ['Bronze Working'], 'Mathematics': ['Writing', 'Masonry'], 'Horseback Riding': ['Animal Husbandry'],
   'Construction': ['Masonry'], 'Philosophy': ['Mysticism', 'Writing'], 'Monarchy': ['Code of Laws'], 'Currency': ['Code of Laws'],
-  'Engineering': ['Mathematics', 'Construction'], 'Gunpowder': ['Iron Working', 'Engineering'], 'Printing Press': ['Writing'],
-  'Democracy': ['Philosophy', 'Printing Press'], 'Steam Power': ['Gunpowder'], 'Industrialization': ['Steam Power', 'Currency'],
+  'Engineering': ['Mathematics', 'Construction'], 'Gunpowder': ['Iron Working', 'Invention'], 'Printing Press': ['Writing'],
+  'Democracy': ['Philosophy', 'Printing Press'], 'Steam Power': ['Gunpowder', 'Physics'], 'Industrialization': ['Railroad', 'Currency'],
   'Refining': ['Industrialization'], 'Replaceable Parts': ['Industrialization'], 'Motorized Transport': ['Refining', 'Replaceable Parts'],
   'The Republic': ['Code of Laws', 'Writing'], 'Theology': ['Philosophy', 'Monarchy'], 'Fundamentalism': ['Theology', 'Gunpowder'],
   'Communism': ['Philosophy', 'Industrialization'], 'Sanitation': ['Engineering', 'Industrialization'], 'Electricity': ['Steam Power', 'Mathematics'],
   'Computers': ['Electronics', 'Replaceable Parts'], 'Banking': ['Currency', 'The Republic'], 'Economics': ['Banking', 'Printing Press'],
-  'Astronomy': ['Mysticism', 'Mathematics'], 'Chivalry': ['Monarchy', 'Horseback Riding'], 'Navigation': ['Seafaring', 'Astronomy'],
+  'Astronomy': ['Mysticism', 'Mathematics'], 'Chivalry': ['Feudalism', 'Horseback Riding'], 'Navigation': ['Seafaring', 'Astronomy'],
   'Theory of Gravity': ['Astronomy', 'Printing Press'], 'Medicine': ['Philosophy', 'Currency'], 'Steel': ['Electricity', 'Industrialization'],
   'Electronics': ['Electricity', 'Engineering'], 'Flight': ['Refining', 'Theory of Gravity'], 'Advanced Flight': ['Flight', 'Electronics'],
   'Mass Production': ['Motorized Transport', 'Economics'], 'Rocketry': ['Computers', 'Advanced Flight'], 'Space Flight': ['Rocketry'],
   'Plastics': ['Space Flight', 'Refining'], 'Ecology': ['Computers', 'Sanitation'], 'Nuclear Fission': ['Electronics', 'Mass Production'],
   'Genetic Engineering': ['Medicine', 'Computers'],
+  'Map Making': ['Alphabet'], 'Literature': ['Writing', 'Code of Laws'], 'Polytheism': ['Horseback Riding', 'Ceremonial Burial'],
+  'Monotheism': ['Philosophy', 'Polytheism'], 'Feudalism': ['Monarchy', 'Warrior Code'], 'Invention': ['Engineering', 'Literature'],
+  'Physics': ['Astronomy', 'Literature'], 'Magnetism': ['Physics', 'Map Making'], 'Railroad': ['Steam Power', 'Construction'],
+  'Refrigeration': ['Electricity', 'Sanitation'], 'Radio': ['Flight', 'Electronics'], 'Robotics': ['Computers', 'Mass Production'],
+  'Miniaturization': ['Computers', 'Replaceable Parts'],
 };
 const BASICS = ['Pottery', 'Animal Husbandry', 'Mining', 'Bronze Working', 'Masonry', 'Alphabet', 'The Wheel'];
 /** Every technology needed for `newest`, and those. */
@@ -31,13 +36,13 @@ function knowing(...newest) {
   return [...out];
 }
 
-const ENLIGHTENMENT = knowing('Navigation', 'Theory of Gravity', 'Economics', 'Medicine', 'Theology', 'Chivalry', 'Gunpowder', 'Monarchy');
-const REVOLUTION = knowing(...['The Republic', 'Navigation', 'Theory of Gravity', 'Economics', 'Medicine', 'Theology', 'Chivalry', 'Gunpowder', 'Democracy']);
+const ENLIGHTENMENT = knowing('Magnetism', 'Navigation', 'Theory of Gravity', 'Economics', 'Medicine', 'Theology', 'Chivalry', 'Gunpowder', 'Monarchy');
+const REVOLUTION = knowing(...['Magnetism', 'The Republic', 'Navigation', 'Theory of Gravity', 'Economics', 'Medicine', 'Theology', 'Chivalry', 'Gunpowder', 'Democracy']);
 const GREAT_WAR = knowing('The Republic', 'Steel', 'Replaceable Parts', 'Refining', 'Sanitation', 'Economics', 'Democracy', 'Theology', 'Medicine', 'Navigation', 'Theory of Gravity', 'Chivalry');
 const WORLD_WAR = knowing('Fundamentalism', 'The Republic', 'Advanced Flight', 'Mass Production', 'Steel', 'Sanitation', 'Democracy', 'Theology', 'Medicine', 'Navigation', 'Chivalry');
 
 // Peoples of the Americas before contact: farming, building, writing their laws.
-const FIRST_NATIONS = knowing('Mysticism', 'Code of Laws', 'Horseback Riding', 'Iron Working', 'Construction');
+const FIRST_NATIONS = knowing('Warrior Code', 'Mysticism', 'Code of Laws', 'Horseback Riding', 'Iron Working', 'Construction');
 
 const EARTH = { lon0: -169, lon1: 191, latTop: 73, latBottom: -56, cols: 90, landThreshold: 2 };
 
@@ -100,7 +105,7 @@ const packs = [
 // workers needed. Leaders are titles, never real people. [name, adjective, leader, government,
 // size ('great' | 'power' | 'state'), aggression, cities [name, lon, lat, population]].
 // 2025: the information age everywhere - computers, jet flight, mass production, biotech.
-const MODERN_TECHS = knowing('Mass Production', 'Advanced Flight', 'Computers', 'Ecology', 'Genetic Engineering', 'Steel', 'Motorized Transport', 'Electricity', 'Refining', 'Sanitation', 'Communism', 'Fundamentalism', 'Flight', 'Electronics', 'Economics', 'Democracy', 'Theology', 'Medicine', 'Navigation', 'Theory of Gravity', 'Chivalry', 'The Republic', 'Replaceable Parts');
+const MODERN_TECHS = knowing('Monotheism', 'Magnetism', 'Mass Production', 'Advanced Flight', 'Computers', 'Ecology', 'Genetic Engineering', 'Steel', 'Motorized Transport', 'Electricity', 'Refining', 'Sanitation', 'Communism', 'Fundamentalism', 'Flight', 'Electronics', 'Economics', 'Democracy', 'Theology', 'Medicine', 'Navigation', 'Theory of Gravity', 'Chivalry', 'The Republic', 'Replaceable Parts');
 // The great powers reach space and split the atom; a few other nations have the bomb and missiles.
 // Nobody yet has the materials (Plastics) for a starship's components: today's main battle tanks
 // are the game's Tanks, and Modern Armor is still to come.

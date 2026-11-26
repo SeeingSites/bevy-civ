@@ -163,7 +163,7 @@ impl Government {
             Government::Communism => Some(Tech::Communism),
             Government::Fundamentalism => Some(Tech::Fundamentalism),
             Government::Tribalism => Some(Tech::BronzeWorking),
-            Government::Feudalism => Some(Tech::Chivalry),
+            Government::Feudalism => Some(Tech::Feudalism),
             // The industrial war state, of Steel's arsenals.
             Government::Fascism => Some(Tech::Steel),
         }
