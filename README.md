@@ -422,6 +422,12 @@ colour, with play/pause, step and jump controls. The replay is recorded as the g
 tiles and cities that change hands each turn are kept, in the saved game), so a loaded game replays
 from its start.
 
+## Online play
+
+Played as correspondence chess is: in the browser, choose **Online players** (2 to 4 humans) when starting a game. You lead the people you picked and the next peoples in the list go to friends. After your first turn the page gives you an invitation link for each seat; whoever opens a link plays that people. Humans move one after another, and the computer players move once a round, after the last human. The start screen lists your online games and shows **Play your move** when it is your turn; nobody needs to be online at the same time.
+
+The server (`worker/index.js`, `/api/game/*`) keeps each game's latest save, gzipped, in D1 (`migrations/0002_online_games.sql`), and only accepts a turn from the seat whose move it is. Each player loads the game re-numbered so that their own people is seat 0 (`src/online.rs`), and it is turned back before it is sent.
+
 ## Saving and loading
 The game saves itself at the end of every turn; **Continue your last game** on the start menu picks
 it up. **F2** (or *Save to a file* in the Game menu) downloads the whole game as a `.json` file.

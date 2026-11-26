@@ -51,7 +51,7 @@ pub fn run(which: &str, turns: u32) -> bool {
     crate::init_game(&mut app);
     app.insert_resource(Observer);
     add_turn_systems(&mut app);
-    app.insert_resource(NewGame { scenario, civ: 0, difficulty: crate::Difficulty::Regent, last_turn: turns.max(1), map_size: 1, peoples: scenario::DEFAULT_PEOPLES, barbarians: bevy_civ::barbarians::DEFAULT_LEVEL });
+    app.insert_resource(NewGame { scenario, civ: 0, difficulty: crate::Difficulty::Regent, last_turn: turns.max(1), map_size: 1, peoples: scenario::DEFAULT_PEOPLES, barbarians: bevy_civ::barbarians::DEFAULT_LEVEL, online: 0 });
     if let Err(e) = app.world_mut().run_system_once(crate::setup_world) {
         eprintln!("The world could not be set up: {e}");
         return false;

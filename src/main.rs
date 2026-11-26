@@ -1164,13 +1164,21 @@ fn setup_world(
         }
     }
 
+    // An online game: the first peoples are humans, moving in turn (the host first).
+    let humans = new_game.online.min(defs.len());
+    if humans >= 2 {
+        commands.insert_resource(online::Online { order: (0..humans as u32).collect(), active: true, ..default() });
+    } else {
+        commands.remove_resource::<online::Online>();
+    }
+    commands.insert_resource(online::OnlineSeats::default());
     civs.players = defs
         .iter()
         .enumerate()
         .map(|(id, def)| bevy_civ::ai::Civ {
             id: id as u32,
             name: def.name.clone(),
-            is_human: id == 0,
+            is_human: id == 0 || id < new_game.online,
             gold: def.gold,
             tech: TechState::knowing(&def.techs).costing(scenario.research_cost).capped(scenario.allowed_techs()),
             aggression: def.aggression,

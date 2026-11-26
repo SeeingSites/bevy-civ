@@ -265,6 +265,8 @@ pub struct NewGame {
     pub peoples: usize,
     /// How often barbarians rise (see `bevy_civ::barbarians::LEVELS`).
     pub barbarians: u8,
+    /// Humans in an online game (the first peoples; 0 or 1 for a game alone).
+    pub online: usize,
 }
 
 /// The New World's map sizes: (name, columns, rows).
