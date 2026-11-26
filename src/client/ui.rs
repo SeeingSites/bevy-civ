@@ -2777,7 +2777,11 @@ pub fn rebuild_panels(
                                 let ask = |act: DiploAct| Command::Game(Action::Diplo(civ.id, act));
                                 if treaty == Treaty::War {
                                     button(r, art, "Propose peace", ask(DiploAct::Peace), GREEN, 14.0);
+                                    button(r, art, "Propose ceasefire", ask(DiploAct::Ceasefire), BRONZE, 14.0);
                                 } else {
+                                    if let Some(until) = foreign.ceasefires.get(&civ.id) {
+                                        button(r, art, format!("Make the ceasefire a peace ({} turns left)", until.saturating_sub(state.turn)), ask(DiploAct::Peace), GREEN, 14.0);
+                                    }
                                     if treaty != Treaty::Alliance {
                                         button(r, art, "Propose alliance", ask(DiploAct::Alliance), BRONZE, 14.0);
                                     }

@@ -615,6 +615,9 @@ working directory.
   Airport and click another of your Airport cities to **airlift** it there (one airlift from each
   Airport a turn; it ends the unit's move); select a fighter and click land you cannot see within
   its range (8 tiles) to fly **reconnaissance**, revealing the land around it.
+- **Ceasefire** (as in Civilization III): at war, propose a ceasefire in Diplomacy - easier to win
+  than peace. The guns fall silent for 16 turns; make it a lasting peace before it runs out, or the
+  war resumes.
 - **Mutual protection**: as under Civilization III's pacts, when a computer player attacks another
   without a just cause, the victim's other allies (unless also allied to the attacker) stand by it and
   declare war three times in four; your allies answer for you as before.
