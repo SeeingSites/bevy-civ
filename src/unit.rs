@@ -147,6 +147,10 @@ pub enum UnitType {
     StealthBomber,
     AegisCruiser,
     NuclearSubmarine,
+    /// Advanced Flight's airborne infantry: dropped from an Airport city within 6 tiles.
+    Paratrooper,
+    /// Rocketry's one-shot bombardment: spent when it strikes.
+    CruiseMissile,
 }
 
 /// What sets a unique unit apart (see [`UnitType::ability`]).
@@ -210,7 +214,7 @@ pub const AIR_RANGE: i32 = 8;
 
 impl UnitType {
     /// Every unit type, in declaration order (also the row order of the sprite atlas).
-    pub const ALL: [UnitType; 88] = [
+    pub const ALL: [UnitType; 90] = [
         UnitType::Settler, UnitType::Worker, UnitType::Warrior, UnitType::Spearman, UnitType::Archer,
         UnitType::Horseman, UnitType::Legion, UnitType::WarChariot, UnitType::Immortal, UnitType::Phalanx,
         UnitType::Catapult, UnitType::Knight, UnitType::Cannon, UnitType::Rifleman, UnitType::Cavalry,
@@ -225,6 +229,7 @@ impl UnitType {
         UnitType::Marine, UnitType::Panzer, UnitType::GuardsRifleman, UnitType::Bandeirante, UnitType::LightHorse, UnitType::Mountie, UnitType::Charro, UnitType::Commando,
         UnitType::BlackHussar, UnitType::Grenzer, UnitType::Bersaglieri,
         UnitType::Crusader, UnitType::MedievalInfantry, UnitType::Trebuchet, UnitType::Caravel, UnitType::JetFighter, UnitType::StealthBomber, UnitType::AegisCruiser, UnitType::NuclearSubmarine,
+        UnitType::Paratrooper, UnitType::CruiseMissile,
     ];
 
     /// The five kinds of great person.
@@ -353,6 +358,8 @@ impl UnitType {
             UnitType::StealthBomber => "Stealth Bomber",
             UnitType::AegisCruiser => "AEGIS Cruiser",
             UnitType::NuclearSubmarine => "Nuclear Submarine",
+            UnitType::Paratrooper => "Paratrooper",
+            UnitType::CruiseMissile => "Cruise Missile",
             UnitType::Praetorian => "Praetorian",
             UnitType::Hoplite => "Hoplite",
             UnitType::Companion => "Companion Cavalry",
@@ -454,6 +461,8 @@ impl UnitType {
             UnitType::JetFighter | UnitType::AegisCruiser => Some(Tech::Rocketry),
             UnitType::StealthBomber => Some(Tech::Superconductors),
             UnitType::NuclearSubmarine => Some(Tech::NuclearFission),
+            UnitType::Paratrooper => Some(Tech::AdvancedFlight),
+            UnitType::CruiseMissile => Some(Tech::Rocketry),
             UnitType::Galleon => Some(Tech::Magnetism),
             UnitType::Submarine => Some(Tech::Electronics),
             UnitType::Engineers => Some(Tech::SteamPower),
@@ -581,6 +590,8 @@ impl UnitType {
             UnitType::StealthBomber => (18, 5, 12),
             UnitType::AegisCruiser => (8, 10, 6),
             UnitType::NuclearSubmarine => (14, 4, 6),
+            UnitType::Paratrooper => (6, 9, 1),
+            UnitType::CruiseMissile => (0, 1, 6),
             UnitType::GreatGeneral | UnitType::GreatMerchant | UnitType::GreatScientist | UnitType::GreatArtist | UnitType::GreatEngineer => (0, 0, 2),
         }
     }
@@ -642,6 +653,8 @@ impl UnitType {
             UnitType::StealthBomber => 160,
             UnitType::AegisCruiser => 130,
             UnitType::NuclearSubmarine => 130,
+            UnitType::Paratrooper => 90,
+            UnitType::CruiseMissile => 60,
             // Never trained; this is only their value as a prize.
             UnitType::GreatGeneral | UnitType::GreatMerchant | UnitType::GreatScientist | UnitType::GreatArtist | UnitType::GreatEngineer => 200,
         }
@@ -696,6 +709,8 @@ impl UnitType {
             UnitType::Trebuchet => Color::srgb(0.5, 0.33, 0.15),
             UnitType::Caravel => Color::srgb(0.62, 0.47, 0.3),
             UnitType::AegisCruiser | UnitType::NuclearSubmarine => Color::srgb(0.42, 0.46, 0.5),
+            UnitType::Paratrooper => Color::srgb(0.37, 0.42, 0.23),
+            UnitType::CruiseMissile => Color::srgb(0.85, 0.85, 0.8),
             UnitType::GreatGeneral | UnitType::GreatMerchant | UnitType::GreatScientist | UnitType::GreatArtist | UnitType::GreatEngineer => Color::srgb(0.95, 0.82, 0.35),
         }
     }
@@ -713,7 +728,7 @@ impl UnitType {
         match self {
             UnitType::Galley | UnitType::Galleon | UnitType::Frigate | UnitType::Ironclad | UnitType::Destroyer | UnitType::Battleship | UnitType::Submarine | UnitType::Transport | UnitType::Carrier => Domain::Sea,
             UnitType::Caravel | UnitType::AegisCruiser | UnitType::NuclearSubmarine => Domain::Sea,
-            UnitType::Fighter | UnitType::Bomber | UnitType::JetFighter | UnitType::StealthBomber => Domain::Air,
+            UnitType::Fighter | UnitType::Bomber | UnitType::JetFighter | UnitType::StealthBomber | UnitType::CruiseMissile => Domain::Air,
             _ => Domain::Land,
         }
     }
@@ -727,6 +742,11 @@ impl UnitType {
     /// A fighter: intercepts bombers near it.
     pub fn is_interceptor(&self) -> bool {
         matches!(self, UnitType::Fighter | UnitType::JetFighter)
+    }
+
+    /// Spent when it strikes (the Cruise Missile).
+    pub fn one_shot(&self) -> bool {
+        *self == UnitType::CruiseMissile
     }
 
     /// A bomber: may be met by enemy fighters.
@@ -934,6 +954,7 @@ impl UnitType {
             UnitType::Catapult => Some((4, 1, 1)),
             UnitType::Trebuchet => Some((6, 1, 1)),
             UnitType::StealthBomber => Some((16, 1, 3)),
+            UnitType::CruiseMissile => Some((18, 1, 3)),
             UnitType::AegisCruiser => Some((6, 1, 1)),
             UnitType::Cannon => Some((8, 1, 1)),
             UnitType::Artillery => Some((12, 2, 2)),
@@ -1212,7 +1233,8 @@ mod army_tests {
         assert!(JetFighter.is_interceptor() && StealthBomber.is_bomber() && StealthBomber.domain() == Domain::Air);
         // A stealth bomber is harder to shoot down than a bomber.
         assert!(UnitType::interception_odds(Fighter, StealthBomber) < UnitType::interception_odds(Fighter, Bomber));
-        for u in [Crusader, MedievalInfantry, Trebuchet, Caravel, JetFighter, StealthBomber, AegisCruiser, NuclearSubmarine] {
+        assert!(CruiseMissile.one_shot() && CruiseMissile.bombard_only() && CruiseMissile.domain() == Domain::Air && Paratrooper.is_army());
+        for u in [Crusader, MedievalInfantry, Trebuchet, Caravel, JetFighter, StealthBomber, AegisCruiser, NuclearSubmarine, Paratrooper, CruiseMissile] {
             assert!(u.is_trainable() && u.required_tech().is_some() && u.cost() > 0, "{u:?}");
         }
     }

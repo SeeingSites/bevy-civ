@@ -1646,6 +1646,20 @@ fn handle_map_click(
                     log.push(format!("{} is airlifted to a city with an Airport.", unit.unit_type.name()));
                     continue;
                 }
+                // Paratroopers drop from an Airport city onto land within 6 tiles that no other people holds.
+                let held = |h: Hex| cities.iter().any(|(_, c)| c.position == h && c.owner != PLAYER);
+                if unit.owner == PLAYER && unit.unit_type == UnitType::Paratrooper && unit.can_move() && airport_at(from) && from.distance_to(hex) > 1 && from.distance_to(hex) <= 6 {
+                    if map.water.contains(&hex) || held(hex) {
+                        log.push("Paratroopers drop onto open land, not the sea or a foreign city.");
+                        continue;
+                    }
+                    unit.position = hex;
+                    unit.end_move();
+                    fog.reveal(hex, 2);
+                    dirty.map = true;
+                    log.push("Paratroopers drop behind the lines.");
+                    continue;
+                }
                 if unit.owner == PLAYER && unit.unit_type.is_interceptor() && unit.can_move() && !fog.visible.contains(&hex) && from.distance_to(hex) <= bevy_civ::unit::AIR_RANGE {
                     unit.end_move();
                     fog.reveal(hex, 2);
@@ -3205,6 +3219,11 @@ fn apply_actions(
                 }
                 if let Ok(mut unit) = units.get_mut(entity) {
                     unit.end_move();
+                }
+                // A cruise missile is spent in the strike.
+                if kind.one_shot() {
+                    commands.entity(entity).try_despawn_recursive();
+                    selection.unit = None;
                 }
                 let hits = their_hp - hp;
                 log.push(match hits {
@@ -5206,6 +5225,10 @@ fn process_turn(
             }
             tally.bombardments += 1;
             tally.shelled += before - hp;
+            if a_type.one_shot() {
+                dead.insert(attack.attacker);
+                commands.entity(attack.attacker).try_despawn_recursive();
+            }
             if d_owner == PLAYER {
                 log.push(format!("A {} {} bombards our {}: {hp} of {most} hit points left.", civ_name(a_owner), a_type.name(), d_type.name()));
                 battles.send(BattleShown {

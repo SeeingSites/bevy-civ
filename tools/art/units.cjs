@@ -648,6 +648,10 @@ const LATER = [
   [22, badge(`<rect x="-6" y="-8" width="12" height="12" fill="#5a6470" stroke="#22262b" stroke-width="1.2"/><path d="M-3,-5 h6 v6 h-6 Z" fill="#9fd8ff"/><path d="M-9,8 h18" stroke="#22262b" stroke-width="2"/>`)],
   // Nuclear Submarine: a submarine with the trefoil
   [39, badge(`<circle r="9" fill="#f2d23c"/><circle r="2.2" fill="#1d1a0c"/><path d="M0,0 L-4.5,-7.8 A9,9 0 0 1 4.5,-7.8 Z M0,0 L9,0 A9,9 0 0 1 4.5,7.8 Z M0,0 L-4.5,7.8 A9,9 0 0 1 -9,0 Z" fill="#1d1a0c" transform="scale(0.85)"/>`)],
+  // Paratrooper: infantry under a parachute
+  [33, badge(`<path d="M-10,-1 a10,9 0 0 1 20,0 Z" fill="#e8e2cf" stroke="#4a4a3a" stroke-width="1.2"/><path d="M-10,-1 L0,9 L10,-1 M0,-10 V9" stroke="#4a4a3a" stroke-width="1"/>`)],
+  // Cruise Missile: the missile's figure with a target badge
+  [43, badge(`<circle r="8" fill="none" stroke="#c8281c" stroke-width="2"/><circle r="3" fill="#c8281c"/><path d="M-11,0 h5 M6,0 h5 M0,-11 v5 M0,6 v5" stroke="#c8281c" stroke-width="2"/>`)],
 ];
 const DARKEN = `<filter id="stealthy"><feColorMatrix type="matrix" values="0.35 0 0 0 0.03  0 0.35 0 0 0.03  0 0 0.38 0 0.05  0 0 0 1 0"/></filter>`;
 LATER.forEach(([base, emblem, look]) => {
