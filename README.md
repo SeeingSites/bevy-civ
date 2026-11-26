@@ -618,6 +618,10 @@ working directory.
 - **Ceasefire** (as in Civilization III): at war, propose a ceasefire in Diplomacy - easier to win
   than peace. The guns fall silent for 16 turns; make it a lasting peace before it runs out, or the
   war resumes.
+- **Trade table** (as in Civilization III): in Diplomacy, buy a technology a people knows (it is
+  yours at once, paid in gold each turn for 20 turns), sell them one of yours the same way, buy
+  their maps (40 gold: the lands around their cities), or place an embargo (ending your resource
+  deals with them, and refusing new ones, until you lift it).
 - **Mutual protection**: as under Civilization III's pacts, when a computer player attacks another
   without a just cause, the victim's other allies (unless also allied to the attacker) stand by it and
   declare war three times in four; your allies answer for you as before.
