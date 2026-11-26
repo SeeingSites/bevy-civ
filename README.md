@@ -647,7 +647,9 @@ working directory.
   6 - between the Catapult and the Cannon), the **Caravel** (Astronomy: crosses the ocean with 3
   aboard, between the Galley and the Galleon), the **Jet Fighter** (Rocketry), **AEGIS Cruiser**
   (Rocketry), **Nuclear Submarine** (Nuclear Fission, Uranium) and **Stealth Bomber** (Superconductors,
-  hard to intercept). Jet fighters intercept as fighters do.
+  hard to intercept). Jet fighters intercept as fighters do. **Paratroopers** (Advanced Flight, 6/9/1) drop from
+  a city with an Airport onto open land within 6 tiles (select, then click the spot); the **Cruise
+  Missile** (Rocketry) bombards at 18 and is spent in the strike.
 - **More units**: Scout (explorer, 2 moves), Longbowman (Monarchy), Knight (Chivalry), Galleon
   (Navigation), Submarine (Electronics), Engineers (Steam Power: workers that move 2 and finish jobs
   in 2 turns), Radar Artillery (Rocketry). Battleship needs Steel, Fighter Flight, Bomber Advanced
