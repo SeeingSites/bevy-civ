@@ -5178,6 +5178,27 @@ fn process_turn(
         fortress: fortresses.contains(&at),
         last_stand: last_stands.contains(&at),
     };
+    // Civilization III's airlift, for the computer players: a city of theirs with an Airport and
+    // enemy troops near it, held by fewer than two units, takes one unit flown in from another of
+    // their Airport cities that can spare it (one airlift from each Airport a turn).
+    {
+        let airports: Vec<(Hex, u32)> = cities.iter().filter(|(c, b, _)| c.owner != PLAYER && c.owner != BARBARIANS && b.has(Building::Airport)).map(|(c, _, _)| (c.position, c.owner)).collect();
+        let snapshot: Vec<(Entity, Hex, u32, bool)> = units.iter().map(|(e, u)| (e, u.position, u.owner, u.unit_type.is_army() && u.can_move())).collect();
+        let held = |at: Hex, owner: u32| snapshot.iter().filter(|(_, p, o, _)| *p == at && *o == owner).count();
+        let menaced = |at: Hex, owner: u32| snapshot.iter().any(|(_, p, o, army)| *army && hostile(owner, *o) && p.distance_to(at) <= 3);
+        let mut flown: HashSet<Hex> = HashSet::new();
+        for &(to, owner) in airports.iter().filter(|(at, o)| menaced(*at, *o) && held(*at, *o) < 2) {
+            let source = airports.iter().find(|(from, o)| *o == owner && *from != to && !flown.contains(from) && !menaced(*from, *o) && held(*from, *o) >= 3).map(|(from, _)| *from);
+            let Some(from) = source else { continue };
+            if let Some((entity, ..)) = snapshot.iter().find(|(_, p, o, army)| *p == from && *o == owner && *army) {
+                if let Ok((_, mut unit)) = units.get_mut(*entity) {
+                    unit.position = to;
+                    unit.end_move();
+                    flown.insert(from);
+                }
+            }
+        }
+    }
     let attacks = process_ai_turn(&mut civs, &mut units, &city_owners, &tiles, &hostile, &mut road_jobs, &owns, &mut ferries, &mut commands, &must_fall, &ground_at);
     let names: HashMap<u32, String> = civs.players.iter().map(|c| (c.id, c.adjective.clone())).collect();
     let civ_name = |owner: u32| names.get(&owner).cloned().unwrap_or_else(|| bevy_civ::theme::term("barbarian", "Barbarian").to_string());
