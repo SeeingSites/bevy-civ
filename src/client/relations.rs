@@ -27,7 +27,7 @@ pub fn setup_web(mut commands: Commands, mut images: ResMut<Assets<Image>>) {
 /// The peoples on the web, in order: us, then everyone we know.
 pub fn web_ids(civs: &Civilizations, foreign: &Foreign) -> Vec<u32> {
     std::iter::once(PLAYER)
-        .chain(civs.players.iter().filter(|c| !c.is_human && !foreign.gone.contains(&c.id) && foreign.met.contains(&c.id)).map(|c| c.id))
+        .chain(civs.players.iter().filter(|c| c.id != PLAYER && !foreign.gone.contains(&c.id) && foreign.met.contains(&c.id)).map(|c| c.id))
         .collect()
 }
 

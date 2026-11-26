@@ -313,10 +313,14 @@ pub fn process_ai_turn(
     let mut rng = rand::thread_rng();
     let mut attacks = Vec::new();
 
+    // Seat 0 is the player at the keyboard; other humans (online play) research as they chose, and
+    // the computer never moves their units.
+    let humans: std::collections::HashSet<u32> = civs.players.iter().filter(|c| c.is_human).map(|c| c.id).chain([0]).collect();
     for civ in &mut civs.players {
-        if civ.is_human { continue; }
+        if civ.is_human && civ.id == 0 { continue; }
         // Science comes from the civilization's cities (set by the caller before this phase).
-        if civ.tech.process_turn().is_some() || civ.tech.current.is_none() {
+        let done = civ.tech.process_turn().is_some();
+        if (done && !civ.is_human) || civ.tech.current.is_none() {
             civ.tech.current = pick_research(&civ.tech, civ.aggression);
         }
     }
@@ -418,7 +422,7 @@ pub fn process_ai_turn(
     let mut holders: HashMap<Hex, Vec<(Entity, f32)>> = HashMap::new();
     let mut field_armies: HashMap<u32, usize> = HashMap::new();
     for (entity, unit) in units.iter() {
-        if unit.owner == 0 || !unit.unit_type.is_army() {
+        if humans.contains(&unit.owner) || !unit.unit_type.is_army() {
             continue;
         }
         *field_armies.entry(unit.owner).or_default() += 1;
@@ -443,7 +447,7 @@ pub fn process_ai_turn(
     let mut undefended: Vec<(Hex, u32)> = city_positions.iter().copied().filter(|(p, o)| *o != 0 && holders.get(p).map_or(0, |l| l.len()) < keep(p)).collect();
 
     for (entity, mut unit) in units.iter_mut() {
-        if unit.owner == 0 || unit.movement_left == 0 || unit.build_turns_left.is_some() {
+        if humans.contains(&unit.owner) || unit.movement_left == 0 || unit.build_turns_left.is_some() {
             continue;
         }
         // Units at sea in a ship, and the ferries and carriers themselves, are moved below.
@@ -856,7 +860,7 @@ pub fn process_ai_turn(
         unit.movement_left -= 1;
     }
 
-    sail_ferries(units, &requests, &land, (&land_set, &water_set), &continent, city_positions, &occupied, ferries);
+    sail_ferries(units, &requests, &land, (&land_set, &water_set), &continent, city_positions, &occupied, ferries, &humans);
     attacks
 }
 
@@ -872,6 +876,7 @@ fn sail_ferries(
     city_positions: &[(Hex, u32)],
     occupied: &HashMap<Hex, (u32, f32)>,
     ferries: &mut Ferries,
+    humans: &HashSet<u32>,
 ) {
     let berths: Vec<Berth> = units.iter().map(|(e, u)| Berth::of(e, &u)).collect();
     let mut waiting: HashMap<(Hex, u32), Vec<(Entity, Hex)>> = HashMap::new();
@@ -884,7 +889,7 @@ fn sail_ferries(
     }
     let alive: HashSet<Entity> = berths.iter().map(|b| b.entity).collect();
     ferries.plans.retain(|ship, _| alive.contains(ship));
-    let ships: Vec<Entity> = berths.iter().filter(|b| b.owner != 0 && b.unit_type.is_ferry()).map(|b| b.entity).collect();
+    let ships: Vec<Entity> = berths.iter().filter(|b| !humans.contains(&b.owner) && b.unit_type.is_ferry()).map(|b| b.entity).collect();
     for ship in ships {
         let Ok((_, unit)) = units.get(ship) else { continue };
         let (owner, capacity) = (unit.owner, unit.unit_type.capacity());

@@ -1260,7 +1260,7 @@ pub fn rebuild_panels(
                                 production_button(grid, art, mission.name(), format!("{odds}%: {}", mission.describe()), Command::Game(Action::Spy(mission)), tint);
                             }
                             // Framing: one button for each other people we know, to take the blame.
-                            for other in civs.players.iter().filter(|c| !c.is_human && !c.eliminated && c.id != city.owner && foreign.met.contains(&c.id)) {
+                            for other in civs.players.iter().filter(|c| c.id != PLAYER && !c.eliminated && c.id != city.owner && foreign.met.contains(&c.id)) {
                                 let mission = Mission::Frame(other.id);
                                 let odds = (mission.odds(walls) * 100.0).round() as u32;
                                 production_button(
@@ -1881,7 +1881,7 @@ pub fn rebuild_panels(
     }
 
     // --- advisors and messages from other leaders ---
-    let rivals: Vec<&bevy_civ::ai::Civ> = civs.players.iter().filter(|c| !c.is_human && !foreign.gone.contains(&c.id)).collect();
+    let rivals: Vec<&bevy_civ::ai::Civ> = civs.players.iter().filter(|c| c.id != PLAYER && !foreign.gone.contains(&c.id)).collect();
     let known: Vec<&bevy_civ::ai::Civ> = rivals.iter().copied().filter(|c| foreign.met.contains(&c.id)).collect();
     if ui.modal == Some(Modal::Diplomacy) && !ui.diplo_target.is_some_and(|t| known.iter().any(|c| c.id == t)) {
         let first = known.first().map(|c| c.id);
@@ -1922,7 +1922,7 @@ pub fn rebuild_panels(
                     w.spawn(label(&art.font_bold, outcome.clone(), 20.0, INK));
                     w.spawn(label(&art.font_body, format!("Turn {} ({}). Our score: {}.", state.turn, year_label(&state), state.score.total), 15.0, INK_SOFT));
                     let mut standing: Vec<(String, u32)> = std::iter::once(PLAYER)
-                        .chain(civs.players.iter().filter(|c| !c.is_human && foreign.met.contains(&c.id)).map(|c| c.id))
+                        .chain(civs.players.iter().filter(|c| c.id != PLAYER && foreign.met.contains(&c.id)).map(|c| c.id))
                         .map(|id| {
                             let name = if id == PLAYER { "Us".to_string() } else { civs.players.iter().find(|c| c.id == id).map(|c| c.name.clone()).unwrap_or_default() };
                             let score = history.scores.iter().rev().find(|(_, c, _)| *c == id).map(|(_, _, s)| *s).unwrap_or(0);
@@ -2220,7 +2220,7 @@ pub fn rebuild_panels(
                                     INK_SOFT,
                                 ));
                                 let mut fleet: Vec<(u32, String)> = vec![(PLAYER, "Our ship".to_string())];
-                                fleet.extend(civs.players.iter().filter(|c| !c.is_human && foreign.met.contains(&c.id)).map(|c| (c.id, format!("{} ship", c.adjective))));
+                                fleet.extend(civs.players.iter().filter(|c| c.id != PLAYER && foreign.met.contains(&c.id)).map(|c| (c.id, format!("{} ship", c.adjective))));
                                 let mut any = false;
                                 for (id, name) in fleet {
                                     let Some(ship) = space.ships.get(&id) else { continue };
@@ -2259,7 +2259,7 @@ pub fn rebuild_panels(
                             }
                             EmpireTab::Score => {
                                 let mut civ_ids: Vec<u32> = vec![PLAYER];
-                                civ_ids.extend(civs.players.iter().filter(|c| !c.is_human && foreign.met.contains(&c.id)).map(|c| c.id));
+                                civ_ids.extend(civs.players.iter().filter(|c| c.id != PLAYER && foreign.met.contains(&c.id)).map(|c| c.id));
                                 let latest = |id: u32| history.scores.iter().rev().find(|(_, c, _)| *c == id).map(|(_, _, s)| *s).unwrap_or(0);
                                 let best = civ_ids.iter().map(|id| latest(*id)).max().unwrap_or(1).max(1);
                                 w.spawn(label(&art.font_body, format!("Turn {} of {}: if nobody wins sooner, the highest score wins then.", state.turn, state.last_turn), 14.0, INK_SOFT));
@@ -2322,7 +2322,7 @@ pub fn rebuild_panels(
                         let owners: Vec<(hexx::Hex, u32)> = city_list.iter().map(|(_, c)| (c.position, c.owner)).collect();
                         let culture_of = culture.totals(owners.iter().copied());
                         let mut table: Vec<(String, u32, usize, u32, usize, u32)> = std::iter::once(PLAYER)
-                            .chain(civs.players.iter().filter(|c| !c.is_human).map(|c| c.id))
+                            .chain(civs.players.iter().filter(|c| c.id != PLAYER).map(|c| c.id))
                             .map(|id| {
                                 let name = if id == PLAYER { format!("{} (us)", state.title) } else { civs.players.iter().find(|c| c.id == id).map(|c| c.name.clone()).unwrap_or_default() };
                                 let score = history.scores.iter().rev().find(|(_, c, _)| *c == id).map(|(_, _, s)| *s).unwrap_or(0);
